@@ -1,0 +1,12 @@
+# Example values for future use once a remote GitHub repository exists.
+# This file is not consumed by the current root project.
+
+kubeconfig_path   = "./kubeconfig.yaml"
+git_url           = "https://github.com/YOUR_ORG/YOUR_REPO.git"
+git_branch        = "main"
+git_author_name   = "Flux"
+git_author_email  = "flux@example.com"
+git_http_username = "YOUR_GITHUB_USERNAME"
+git_http_password = "ghp_xxx"
+cluster_path      = "clusters/homelab"
+flux_namespace    = "flux-system"

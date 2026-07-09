@@ -1,0 +1,63 @@
+# ==============================================================================
+# Terraform Ignore Patterns
+# ==============================================================================
+# Local .terraform directory (contains downloaded providers and modules)
+**/.terraform/*
+
+# .tfstate files (contains live infrastructure state and sensitive data)
+*.tfstate
+*.tfstate.*
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Exclude all .tfvars files (likely contain sensitive passwords/secrets)
+*.tfvars
+*.tfvars.json
+
+# Ignore override files as they may contain local overrides
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Include dependency lockfile (crucial for reproducible provider versions)
+!.terraform.lock.hcl
+
+# Terraform CLI configuration
+.terraform.rc
+terraform.rc
+
+
+# ==============================================================================
+# Kubernetes / Cluster Secret Ignore Patterns
+# ==============================================================================
+kubeconfig.yaml
+kubeconfig
+*.kubeconfig
+secrets.yaml
+*.secret
+
+
+# ==============================================================================
+# OS & System-Specific Files
+# ==============================================================================
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+
+# ==============================================================================
+# Logs and Run Output
+# ==============================================================================
+*.log
+diagnostics.log
