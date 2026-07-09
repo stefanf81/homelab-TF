@@ -4,6 +4,9 @@
 # Local .terraform directory (contains downloaded providers and modules)
 **/.terraform/*
 
+# OpenTofu shared provider plugin cache (see Makefile TF_PLUGIN_CACHE_DIR)
+.terraform/providers-cache/
+
 # .tfstate files (contains live infrastructure state and sensitive data)
 *.tfstate
 *.tfstate.*

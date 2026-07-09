@@ -78,6 +78,51 @@ Before your first real deploy, verify these three items:
    - `kubeconfig.yaml` is fetched successfully
    - SSH access works
 
+## Provider Plugin Cache
+
+To avoid re-downloading provider binaries (the `bpg/proxmox` provider alone is
+tens of MB, and they can reach hundreds of MB) on every `init`/`plan`/`apply`/
+`destroy`, this project points OpenTofu at a shared, project-local plugin cache
+via `TF_PLUGIN_CACHE_DIR` (set in the `Makefile`).
+
+- Cache location: `$(ROOT)/.terraform/providers-cache` (under `.terraform/`, so
+  it is already excluded from version control).
+- OpenTofu populates and reuses the cache automatically — the first `tofu init`
+  downloads into the cache, subsequent runs link from it (instant).
+- The directory is created for you by the `ensure-cache` step that every `tofu`
+  target depends on, so you never have to create it manually.
+
+### Useful targets
+
+```bash
+make cache        # show cache path and current on-disk size
+make cache-clean  # wipe cached provider binaries (re-downloaded on next init)
+```
+
+### Using the cache outside `make`
+
+The cache is only wired in for `make` targets. To get the same behavior when
+running `tofu` directly, either export the variable in your shell:
+
+```bash
+export TF_PLUGIN_CACHE_DIR="$PWD/.terraform/providers-cache"
+```
+
+…or create a project-local CLI config file (e.g. `tofu.tfrc`) with:
+
+```hcl
+plugin_cache_dir = ".terraform/providers-cache"
+```
+
+and point OpenTofu at it:
+
+```bash
+export TF_CLI_CONFIG_FILE="$PWD/tofu.tfrc"
+```
+
+> Note: the cache directory must not be one of OpenTofu's implied filesystem
+> mirror directories (`terraform.d/plugins`); `.terraform/providers-cache` is safe.
+
 ## Notes
 
 - The kubeconfig is written to `kubeconfig_path` (default `./kubeconfig.yaml`).
