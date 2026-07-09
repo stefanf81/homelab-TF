@@ -9,7 +9,6 @@ Right now it only exists locally. Once you create a remote Git repository (for e
 ```text
 gitops/
 ├── clusters/                   # 1. Cluster entrypoints (The Bootstrap Target)
-│   ├── homelab/
 │   └── taskflow/
 ├── infrastructure/             # 2. Platform/System services (Helm charts & System configs)
 │   ├── controllers/

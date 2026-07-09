@@ -30,19 +30,5 @@ module "k3s_kubeconfig" {
   depends_on = [module.proxmox]
 }
 
-/*
-# Future Flux bootstrap (enable later, once you have a remote Git repository)
-module "flux_bootstrap" {
-  source = "./modules/flux-bootstrap"
 
-  kubeconfig_path   = module.k3s_kubeconfig.kubeconfig_path
-  git_url           = var.git_url
-  git_branch        = var.git_branch
-  git_http_username  = var.git_http_username
-  git_http_password  = var.git_http_password
-  cluster_path      = var.cluster_path
-
-  depends_on = [module.k3s_kubeconfig]
-}
-*/
 

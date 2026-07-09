@@ -14,7 +14,7 @@ From the `gitops/` directory, make it the repository root content or copy it int
 
 Important paths expected by the prepared Flux module:
 
-- `clusters/homelab`
+- `gitops/clusters/taskflow`
 - `infrastructure/controllers`
 - `infrastructure/configs`
 
@@ -42,4 +42,4 @@ make kubeconfig
 tofu apply
 ```
 
-At that point Flux will reconcile `clusters/homelab`, which in turn points to the infrastructure manifests under this GitOps tree.
+At that point Flux will reconcile `gitops/clusters/taskflow`, which in turn points to the infrastructure manifests under this GitOps tree.
