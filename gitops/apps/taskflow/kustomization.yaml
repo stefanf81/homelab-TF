@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - configmap.yaml
+  - taskflow-secrets.yaml
   - backend.yaml
   - frontend.yaml
   - jaeger.yaml
@@ -10,3 +11,5 @@ resources:
   - postgres-db.yaml
   - postgres-pvc.yaml
   - redis.yaml
+
+
