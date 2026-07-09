@@ -62,11 +62,12 @@ spec:
                 secretKeyRef:
                   name: db-secret
                   key: POSTGRES_PASSWORD
-            # Heap 1.5 GB (fixed, container-aware via Java 21 default UseContainerSupport).
-            # StringDedup saves 5-20 % heap on string-heavy workloads; metaspace/direct caps
-            # prevent runaway off-heap memory from thrashing before the OOM killer fires.
+            # Heap 1.5 GB fixed (not container-auto-sized). StringDeduplication is low-risk and
+            # modestly reduces heap for string-heavy workloads. Metaspace/direct-memory caps are
+            # intentionally omitted until measured — hard caps risk OOM if the framework or client
+            # libraries need more off-heap memory.
             - name: JAVA_TOOL_OPTIONS
-              value: "-Xms1536m -Xmx1536m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=192m"
+              value: "-Xms1536m -Xmx1536m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication"
           ports:
             - containerPort: 8080
               name: http

@@ -19,13 +19,12 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             # Cap memory to leave headroom for Redis overhead; evict LRU keys on pressure.
+            # No RDB persistence: /data is an emptyDir, so snapshots would NOT survive a Pod
+            # replacement and may fail to write as UID 10001. Re-add --save only with a real PVC.
             - "--maxmemory"
             - "384mb"
             - "--maxmemory-policy"
             - "allkeys-lru"
-            # RDB snapshot every 15 min if ≥1 key changed → survives pod restart without PVC.
-            - "--save"
-            - "900 1"
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
