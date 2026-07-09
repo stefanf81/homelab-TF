@@ -6,8 +6,6 @@ metadata:
 spec:
   parentRefs:
     - name: taskflow-gateway
-  hostnames:
-    - "taskflow.local"
   rules:
     # Route API traffic to the backend service
     - matches:
