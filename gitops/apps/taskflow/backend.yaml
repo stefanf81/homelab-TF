@@ -31,7 +31,9 @@ spec:
       containers:
         - name: backend
           image: ghcr.io/stefanf81/taskflow-backend:latest
-          imagePullPolicy: IfNotPresent
+          # Always re-pull :latest so freshly-pushed builds are picked up on rollout
+          # (IfNotPresent would reuse the node-cached image when the tag is unchanged).
+          imagePullPolicy: Always
           securityContext:
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
