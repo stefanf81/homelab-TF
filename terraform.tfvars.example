@@ -1,0 +1,15 @@
+proxmox_endpoint = "https://192.168.50.50:8006/"
+proxmox_api_token = "REPLACE_ME"
+proxmox_node      = "homelab"
+datastore_id      = "local-lvm"
+network_bridge    = "vmbr0"
+ssh_public_key    = "ssh-ed25519 REPLACE_ME"
+ip_address        = "192.168.50.55/24"
+gateway           = "192.168.50.1"
+cpu_cores         = 10
+memory_size       = 14336
+disk_size         = 100
+ssh_user          = "ubuntu"
+k3s_token         = "REPLACE_ME"
+docker_hub_mirror = "https://mirror.gcr.io"
+kubeconfig_path   = "./kubeconfig.yaml"

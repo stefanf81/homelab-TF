@@ -1,8 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - gateway-api-crds
-  - cilium
-  - cert-manager
-  - metallb
-  - longhorn
+  - namespace.yaml
+  - repository.yaml
+  - release.yaml

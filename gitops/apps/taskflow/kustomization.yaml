@@ -11,5 +11,7 @@ resources:
   - postgres-db.yaml
   - postgres-pvc.yaml
   - redis.yaml
+  - gateway.yaml
+  - httproute.yaml
 
 

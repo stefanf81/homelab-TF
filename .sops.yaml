@@ -1,0 +1,9 @@
+# SOPS Configuration File
+# This file defines encryption rules for SOPS.
+# To generate an age key: age-keygen -o key.txt
+# To encrypt your secrets file: sops -e -i gitops/apps/taskflow/taskflow-secrets.yaml
+
+creation_rules:
+  - path_regex: .*-secrets\.yaml$
+    # Replace with your age public key (from key.txt)
+    age: "age1yourpublickeyhereplaceholder"

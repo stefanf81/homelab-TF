@@ -23,6 +23,7 @@ module "k3s_kubeconfig" {
   source = "./modules/k3s-kubeconfig"
 
   ip_address      = module.proxmox.k3s_node_ip
+  vm_recreate_id  = module.proxmox.k3s_node_id
   ssh_user        = var.ssh_user
   kubeconfig_path = var.kubeconfig_path
 

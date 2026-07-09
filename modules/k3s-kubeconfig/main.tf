@@ -12,6 +12,7 @@ resource "null_resource" "fetch_kubeconfig" {
     ip_address      = local.node_ip
     ssh_user        = var.ssh_user
     kubeconfig_path = abspath(var.kubeconfig_path)
+    vm_recreate_id  = var.vm_recreate_id
   }
 
   provisioner "local-exec" {

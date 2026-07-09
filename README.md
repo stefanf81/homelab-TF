@@ -35,12 +35,41 @@ running on the VM. So `modules/k3s-kubeconfig` remains as a small bridge that
 waits for that file and downloads it — everything else is boot-time, not
 apply-time-scripted.
 
+## Built-in Enterprise Optimizations
+
+To ensure production-grade security, resiliency, and performance on your single-node Homelab, several key optimizations are pre-baked into this project:
+
+### 1. Control Plane & Provisioning Stability
+* **Reconstruction-Aware Kubeconfig Sync:** The `fetch_kubeconfig` module is linked to the Proxmox VM instance ID trigger. If you destroy or rebuild the VM, OpenTofu detects the change in VM ID and automatically triggers a re-fetch of the kubeconfig, avoiding stale certificate errors.
+* **Syntax-Safe Cloud-Init Snippets:** Cloud-init user-data heredocs are defined from column 0 of line 1 to prevent silent whitespace parsing errors, securing predictable boot-time system configurations.
+
+### 2. Cilium CNI, Network Security & Gateway API (Consolidated)
+* **High-Performance CNI (Cilium):** Disabled K3s's default flannel CNI (`--flannel-backend=none`) and default network policies (`--disable-network-policy`) inside `modules/proxmox/main.tf` to let **Cilium v1.16.1** serve as the single, high-performance CNI and security engine.
+* **Modern Kubernetes Gateway API:** Deployed the standard Gateway API CRDs (`gateway-api-crds`) and enabled Cilium's built-in Gateway API controller. Traffic is routed using standard, modern `Gateway` and `HTTPRoute` resources rather than legacy Ingress.
+* **Consolidated Hostname Routing:** The TaskFlow app is exposed securely on port `80` under the hostname **`taskflow.local`**. The single gateway routes `/` to the Frontend, `/api` to the Backend, and `/jaeger` to the Jaeger telemetry UI, leaving Services as secure `ClusterIP` resources.
+* **ServiceLB Deconfliction:** K3s's built-in, low-performance `ServiceLB` is disabled (`--disable servicelb`), and **MetalLB** handles IP pool allocations matching your homelab subnet (`192.168.50.200 - 192.168.50.250`).
+
+### 3. Storage Resiliency & Performance
+* **Resilient Distributed Storage Class:** The PostgreSQL Database (`postgres-pvc.yaml`) volume mapping is scaled from a restrictive `1Gi` to **`10Gi`** and explicitly bound to the **Longhorn** replica-replicated storage engine (`storageClassName: longhorn`).
+* **Longhorn Single-Node Efficiency:** The Longhorn configuration (`gitops/infrastructure/controllers/longhorn/release.yaml`) has been optimized to limit standard replica counts to 1 (`defaultClassReplicaCount: 1`), keeping volumes healthy on a single-node homelab without warning indicators.
+
+### 4. Database Engine Performance Tuning
+* **PostgreSQL Engine RAM Tuning:** The database deployment (`postgres-db.yaml`) has been injected with optimized database startup arguments to utilize its 1GB RAM container boundary effectively, replacing standard, extremely conservative container defaults:
+  * `shared_buffers = 256MB` (optimizes memory-resident caching)
+  * `effective_cache_size = 768MB` (improves query planning calculations)
+  * `work_mem = 16MB` (faster complex sorting operations)
+  * `maintenance_work_mem = 64MB` (faster index rebuilds)
+  * `max_connections = 50` (prevents connection overhead bloat)
+
+### 5. GitOps Secrets Protection
+* **SOPS Integration Ready:** A standard `.sops.yaml` configuration is located at the root of the project to facilitate secure, encrypted secrets workflow in Flux. This allows encrypting `gitops/apps/taskflow/taskflow-secrets.yaml` natively.
+
 ## Preflight checklist
 
 Before your first real deploy, verify these three items:
 
 1. Create a remote Git repository and wire Flux bootstrap to it.
-2. Replace the placeholder MetalLB IP range in `gitops/infrastructure/configs/metallb/ipaddresspool.yaml`.
+2. Replace or verify the MetalLB IP range in `gitops/infrastructure/configs/metallb/ipaddresspool.yaml` (pre-configured for your 192.168.50.x network).
 3. Run a test deploy of the Proxmox + cloud-init bootstrap path and confirm:
    - VM boots successfully
    - k3s installs on boot
