@@ -4,5 +4,4 @@ resources:
   - gateway-api
   - cilium
   - cert-manager
-  - metallb
   - longhorn

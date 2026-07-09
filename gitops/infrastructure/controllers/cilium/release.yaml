@@ -29,3 +29,5 @@ spec:
       replicas: 1 # Optimized for single-node cluster
     gatewayAPI:
       enabled: true # Enable the Gateway API controller inside Cilium
+    l2announcements:
+      enabled: true
