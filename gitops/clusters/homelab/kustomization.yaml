@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - infra/controllers
   - infra/configs
+  - taskflow.yaml
