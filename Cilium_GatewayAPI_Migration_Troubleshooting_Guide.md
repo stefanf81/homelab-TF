@@ -15,7 +15,7 @@ This guide compiles the complete technical logs, structural adjustments, and tro
 | **Default Hostname** | Host Node IP Address only | **`taskflow.local`** & **Wildcard IP routing** |
 | **Secrets Security** | Checked-in raw YAML files | **SOPS Integration Ready** (with age configuration) |
 | **PostgreSQL persistency** | `1Gi` standard storage | **`10Gi` high-availability (Longhorn-backed)** |
-| **Database configuration**| Default Alpine parameters (128MB RAM budget) | **Tuned Engine Parameters (for 1GB RAM container limits)** |
+| **Database configuration**| Default Alpine parameters (128MB RAM budget) | **Tuned Engine Parameters (for 1536Mi RAM container limit)** |
 
 ---
 
@@ -62,7 +62,7 @@ This guide compiles the complete technical logs, structural adjustments, and tro
 * **`postgres-pvc.yaml`**:
   * Scaled storage request limits from `1Gi` to **`10Gi`** and explicitly specified `storageClassName: longhorn`.
 * **`postgres-db.yaml`**:
-  * Injected custom container startup arguments to align PostgreSQL memory and planner operations with its 1GB container limits (e.g. `shared_buffers = 256MB`, `effective_cache_size = 768MB`, `work_mem = 16MB`, `max_connections = 50`).
+  * Injected custom container startup arguments to align PostgreSQL memory and planner operations with its 1536Mi container limit (e.g. `shared_buffers = 256MB`, `effective_cache_size = 768MB`, `work_mem = 8MB`, `max_connections = 30`).
 * **`kustomization.yaml`**:
   * Registered `gateway.yaml` and `httproute.yaml` into the application lifecycle.
 

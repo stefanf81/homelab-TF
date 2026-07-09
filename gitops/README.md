@@ -47,10 +47,10 @@ This layer houses user-facing workloads and microservices. Workloads here are ke
 
 #### `apps/taskflow/`
 This folder represents your **TaskFlow** application (Angular 22, Spring Boot 3.5.3, PostgreSQL 17, Redis 7.2, and Jaeger).
-* **`backend.yaml`**: Configures the JVM Spring Boot 3.5.3 server with preflight checks (`wait-for-db` init-container) and memory limits (G1GC tuning).
+* **`backend.yaml`**: Configures the JVM Spring Boot 3.5.3 server with preflight checks (`wait-for-db` init-container) and a fixed 1.5 GB heap with G1GC tuning (`JAVA_TOOL_OPTIONS`).
 * **`frontend.yaml`**: Configures the Angular 22 client packaged with Nginx, utilizing custom emptyDirs to secure a `readOnlyRootFilesystem`.
-* **`postgres-db.yaml` & `postgres-pvc.yaml`**: Configures the database storage. *Optimized:* Postgres now runs tuned caching params (`shared_buffers=256MB`) to maximize performance in its 1GB RAM budget, and storage is scaled to `10Gi` backed by the dynamic `longhorn` storage engine.
-* **`redis.yaml`**: Configures the caching layer.
+* **`postgres-db.yaml` & `postgres-pvc.yaml`**: Configures the database storage. *Optimized:* Postgres now runs tuned caching params (`shared_buffers=256MB`, `work_mem=8MB`, `max_connections=30`) within its 1536Mi RAM limit, and storage is scaled to `10Gi` backed by the dynamic `longhorn` storage engine.
+* **`redis.yaml`**: Configures the caching layer. *Optimized:* capped at `--maxmemory 384mb` with `allkeys-lru` eviction to avoid OOM-kill cache loss (ephemeral `emptyDir`, no persistence).
 * **`jaeger.yaml`**: Configures Jaeger All-in-One telemetry for OTLP trace collection.
 * **`network-policy.yaml`**: Enforces strict network-level isolation (e.g., restricting PostgreSQL & Redis ingress ports to the backend container).
 * **`kustomization.yaml`**: Aggregates all these resources into a single manifest compilation unit for Flux.
@@ -61,7 +61,7 @@ The scaffolded manifests inside this layout include critical performance and net
 
 ### 1. Database & Storage Scaling (`apps/taskflow/`)
 * **Longhorn Storage Association:** `postgres-pvc.yaml` is configured with `storageClassName: longhorn` and scaled to `10Gi` of block-replicated storage to ensure database high availability.
-* **PostgreSQL Engine Tuning:** `postgres-db.yaml` utilizes container launch variables to tune buffers, cache sizes, and connection limits for its 1GB RAM budget (e.g. `shared_buffers=256MB`, `effective_cache_size=768MB`).
+* **PostgreSQL Engine Tuning:** `postgres-db.yaml` utilizes container launch variables to tune buffers, cache sizes, and connection limits within its 1536Mi RAM limit (e.g. `shared_buffers=256MB`, `effective_cache_size=768MB`, `work_mem=8MB`, `max_connections=30`).
 
 ### 2. Modern Kubernetes Gateway API with Cilium (`apps/taskflow/`)
 * **Cilium CNI & Gateway API Operator:** Deployed under `infrastructure/controllers/cilium/`. The core Gateway API schemas are fully managed under `infrastructure/controllers/gateway-api/` using a **local-vendored** copy of the official `v1.2.1` standard installation release. This ensures Flux CD performs dry-run validations with 100% compliance, preventing any schema version conflicts or ownership clashes with K3s's built-in platform installers.
