@@ -18,5 +18,6 @@ spec:
   values:
     defaultSettings:
       defaultDataPath: /var/lib/longhorn
+      defaultReplicaCount: 1
     persistence:
       defaultClassReplicaCount: 1
