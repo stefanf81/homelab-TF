@@ -24,9 +24,9 @@ spec:
           args:
             # Memory — raised limit to 1536Mi so shared_buffers + concurrent work_mem fit comfortably.
             - "-c"
-            - "shared_buffers=256MB"
+            - "shared_buffers=384MB"
             - "-c"
-            - "effective_cache_size=768MB"
+            - "effective_cache_size=1152MB"
             - "-c"
             - "work_mem=8MB"
             - "-c"
@@ -34,6 +34,17 @@ spec:
             # Fewer connections → less per-connection memory pressure.
             - "-c"
             - "max_connections=30"
+            # SSD/Longhorn tuning: planner assumes flash + parallel I/O; longer, smoother checkpoints.
+            - "-c"
+            - "random_page_cost=1.1"
+            - "-c"
+            - "effective_io_concurrency=200"
+            - "-c"
+            - "checkpoint_timeout=900"
+            - "-c"
+            - "wal_buffers=16MB"
+            - "-c"
+            - "max_wal_size=2GB"
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true

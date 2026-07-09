@@ -13,6 +13,9 @@ spec:
       labels:
         app: taskflow-backend
     spec:
+      # Allow in-flight requests to drain on rollout. Pair with server.shutdown=graceful in the
+      # backend's prod profile so Spring finishes active requests before the pod is killed.
+      terminationGracePeriodSeconds: 45
       initContainers:
         - name: wait-for-db
           image: alpine:3.19.1
@@ -66,8 +69,11 @@ spec:
             # modestly reduces heap for string-heavy workloads. Metaspace/direct-memory caps are
             # intentionally omitted until measured — hard caps risk OOM if the framework or client
             # libraries need more off-heap memory.
+            # GC/startup perf: AlwaysPreTouch removes first-touch page faults on the fixed heap,
+            # ParallelRefProcEnabled speeds GC reference processing, DisableExplicitGC blocks
+            # stop-the-world Full GCs triggered by System.gc().
             - name: JAVA_TOOL_OPTIONS
-              value: "-Xms1536m -Xmx1536m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication"
+              value: "-Xms1536m -Xmx1536m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC"
           ports:
             - containerPort: 8080
               name: http
@@ -84,18 +90,21 @@ spec:
               port: 8080
             initialDelaySeconds: 10
             periodSeconds: 5
+            timeoutSeconds: 3
             failureThreshold: 20
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
               port: 8080
             periodSeconds: 15
+            timeoutSeconds: 3
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
               port: 8080
             periodSeconds: 10
+            timeoutSeconds: 3
             failureThreshold: 2
       volumes:
         - name: tmp-volume

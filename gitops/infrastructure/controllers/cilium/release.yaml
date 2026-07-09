@@ -21,6 +21,8 @@ spec:
     ipam:
       mode: "kubernetes"
     kubeProxyReplacement: true
+    bpf:
+      masquerade: true # Offload SNAT to eBPF (requires kubeProxyReplacement: true, already set)
     securityContext:
       capabilities:
         cleanCiliumState:

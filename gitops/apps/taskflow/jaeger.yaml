@@ -17,6 +17,9 @@ spec:
         - name: jaeger
           image: jaegertracing/all-in-one:1.57
           imagePullPolicy: IfNotPresent
+          args:
+            # Cap retained spans so the in-memory store can't exhaust the 256Mi limit under trace load.
+            - "--memory.max-traces=5000"
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true

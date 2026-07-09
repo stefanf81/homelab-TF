@@ -25,6 +25,11 @@ spec:
             - "384mb"
             - "--maxmemory-policy"
             - "allkeys-lru"
+            # Evict in a background thread (no main-thread stall) and sample more keys for accuracy.
+            - "--lazyfree-lazy-eviction"
+            - "yes"
+            - "--maxmemory-samples"
+            - "10"
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
