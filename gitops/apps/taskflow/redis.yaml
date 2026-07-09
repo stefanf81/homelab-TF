@@ -17,6 +17,15 @@ spec:
         - name: redis
           image: redis:7.2-alpine
           imagePullPolicy: IfNotPresent
+          args:
+            # Cap memory to leave headroom for Redis overhead; evict LRU keys on pressure.
+            - "--maxmemory"
+            - "384mb"
+            - "--maxmemory-policy"
+            - "allkeys-lru"
+            # RDB snapshot every 15 min if ≥1 key changed → survives pod restart without PVC.
+            - "--save"
+            - "900 1"
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
