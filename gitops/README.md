@@ -65,7 +65,7 @@ The scaffolded manifests inside this layout include critical performance and net
 * **PostgreSQL Engine Tuning:** `postgres-db.yaml` utilizes container launch variables to tune buffers, cache sizes, and connection limits for its 1GB RAM budget (e.g. `shared_buffers=256MB`, `effective_cache_size=768MB`).
 
 ### 2. Modern Kubernetes Gateway API with Cilium (`apps/taskflow/`)
-* **Cilium CNI & Gateway API Operator:** Deployed under `infrastructure/controllers/cilium/` and `gateway-api-crds/`. It manages the routing tables and integrates with the cluster networking.
+* **Cilium CNI & Gateway API Operator:** Deployed under `infrastructure/controllers/cilium/`. The core Gateway API schemas are fully managed under `infrastructure/controllers/gateway-api/` using a **local-vendored** copy of the official `v1.2.1` standard installation release. This ensures Flux CD performs dry-run validations with 100% compliance, preventing any schema version conflicts or ownership clashes with K3s's built-in platform installers.
 * **Unified Gateway Routing (`gateway.yaml` & `httproute.yaml`):** The TaskFlow app is securely routed using Cilium-native Gateway API rules. All traffic flows through the single hostname `taskflow.local` on standard port `80`:
   * `http://taskflow.local/` maps to the TaskFlow Angular Frontend
   * `http://taskflow.local/api` maps to the Spring Boot Backend API
