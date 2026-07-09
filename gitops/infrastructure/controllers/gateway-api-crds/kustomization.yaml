@@ -1,5 +1,5 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # Pull the standard Kubernetes Gateway API CRDs directly from the upstream repository
-  - github.com/kubernetes-sigs/gateway-api/config/crd?ref=v1.1.0
+  # Pull the experimental channel Gateway API CRDs (which include TLSRoute required by Cilium)
+  - github.com/kubernetes-sigs/gateway-api/config/crd/experimental?ref=v1.1.0
