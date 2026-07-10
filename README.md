@@ -27,6 +27,79 @@ make provision   # create the VM (k3s installs itself via cloud-init)
 make kubeconfig  # wait for k3s + fetch kubeconfig.yaml
 ```
 
+## Fresh Proxmox → current cluster bootstrap
+
+This is the intended bring-up order for a brand-new Proxmox VM and a fresh k3s
+cluster that ends in the current GitOps layout.
+
+### 1) Provision the VM and fetch kubeconfig
+
+```bash
+make init
+make provision
+make kubeconfig
+```
+
+### 2) Install the Cilium CLI on your workstation
+
+macOS example:
+
+```bash
+CILIUM_CLI_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)
+CLI_ARCH=arm64
+curl -L --fail --remote-name-all \
+  https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-darwin-${CLI_ARCH}.tar.gz{,.sha256sum}
+shasum -a 256 -c cilium-darwin-${CLI_ARCH}.tar.gz.sha256sum
+sudo tar xzvfC cilium-darwin-${CLI_ARCH}.tar.gz /usr/local/bin
+rm cilium-darwin-${CLI_ARCH}.tar.gz{,.sha256sum}
+```
+
+### 3) Install Cilium on the k3s cluster
+
+This repo disables k3s Flannel, so Cilium is installed on top of a CNI-free
+cluster:
+
+```bash
+export KUBECONFIG=$PWD/kubeconfig.yaml
+cilium install --version 1.16.1
+cilium status --wait
+```
+
+If the node is still NotReady or Cilium stalls, check the Cilium pods/logs and
+fix networking before continuing.
+
+### 4) Seed the Flux SOPS age key once
+
+Flux decrypts `*-secrets.yaml` using the `sops-age` secret in `flux-system`.
+Seed it once before first reconciliation:
+
+```bash
+kubectl create secret generic sops-age -n flux-system \
+  --from-file=age.agekey=key.txt
+```
+
+### 5) Bootstrap Flux and reconcile
+
+`gotk-components.yaml` / `gotk-sync.yaml` already live under
+`gitops/clusters/taskflow/flux-system/`.
+
+```bash
+kubectl apply -k gitops/clusters/taskflow/flux-system
+flux reconcile source git flux-system
+flux reconcile kustomization flux-system
+flux reconcile kustomization infra-controllers -n flux-system
+flux reconcile kustomization infra-configs -n flux-system
+flux reconcile kustomization taskflow-app -n flux-system
+```
+
+### 6) Verify the app stack
+
+```bash
+kubectl get pods -A
+kubectl get gateway,httproute -n taskflow
+kubectl get secret -n taskflow db-secret backend-secret
+```
+
 ## Why it's still phased
 
 k3s installation no longer needs an SSH provisioner — it happens automatically

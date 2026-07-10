@@ -15,7 +15,8 @@ spec:
   wait: true
   timeout: 5m
   # Decrypt SOPS-encrypted manifests (e.g. *-secrets.yaml) using the age key
-  # stored in the sops-age Secret (see apps/taskflow/sops-age-secrets.yaml).
+  # stored in the sops-age Secret. Seed that Secret once before the first sync;
+  # after that, Flux keeps all SOPS-managed manifests in sync.
   decryption:
     provider: sops
     secretRef:

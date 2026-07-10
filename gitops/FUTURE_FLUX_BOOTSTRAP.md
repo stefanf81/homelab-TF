@@ -1,45 +1,65 @@
-# Future Flux Bootstrap Steps
+# TaskFlow bootstrap checklist
 
-When you are ready to move from local-only GitOps scaffolding to a real Flux-managed cluster:
+This is the end-to-end path from a fresh Proxmox VM to the current TaskFlow
+GitOps state.
 
-## 1. Create a remote GitHub repository
+## 0. Prereqs
 
-Example:
+- A remote Git repository containing this tree
+- `tofu`, `kubectl`, `flux`, and the Cilium CLI on your workstation
+- `key.txt` present locally for the SOPS age secret
 
-- `https://github.com/YOUR_ORG/YOUR_REPO`
-
-## 2. Push this directory into that repository
-
-From the `gitops/` directory, make it the repository root content or copy it into your chosen repo layout.
-
-Important paths expected by the prepared Flux module:
-
-- `gitops/clusters/taskflow`
-- `infrastructure/controllers`
-- `infrastructure/configs`
-
-## 3. Add a root sensitive variable later
-
-Example future root variable:
-
-```hcl
-variable "git_http_password" {
-  type      = string
-  sensitive = true
-}
-```
-
-## 4. Wire `modules/flux-bootstrap` into root `main.tf`
-
-Use the example from `../../modules/flux-bootstrap/README.md`.
-
-## 5. Apply
+## 1. Provision the VM and fetch kubeconfig
 
 ```bash
 make init
 make provision
 make kubeconfig
-tofu apply
 ```
 
-At that point Flux will reconcile `gitops/clusters/taskflow`, which in turn points to the infrastructure manifests under this GitOps tree.
+## 2. Install Cilium on the k3s cluster
+
+The VM boots k3s without Flannel, so Cilium must be installed on top.
+
+```bash
+export KUBECONFIG=$PWD/kubeconfig.yaml
+cilium install --version 1.16.1
+cilium status --wait
+```
+
+If the node stays NotReady, fix Cilium before moving on.
+
+## 3. Seed the Flux SOPS key once
+
+Flux decrypts `*-secrets.yaml` via the `sops-age` Secret in `flux-system`.
+
+```bash
+kubectl create secret generic sops-age -n flux-system \
+  --from-file=age.agekey=key.txt
+```
+
+## 4. Bootstrap Flux
+
+The bootstrap manifests already live in `gitops/clusters/taskflow/flux-system/`.
+
+```bash
+kubectl apply -k gitops/clusters/taskflow/flux-system
+flux reconcile source git flux-system
+flux reconcile kustomization flux-system -n flux-system
+```
+
+## 5. Reconcile the platform and app layers
+
+```bash
+flux reconcile kustomization infra-controllers -n flux-system
+flux reconcile kustomization infra-configs -n flux-system
+flux reconcile kustomization taskflow-app -n flux-system
+```
+
+## 6. Verify
+
+```bash
+kubectl get pods -A
+kubectl get gateway,httproute -n taskflow
+kubectl get secret -n taskflow db-secret backend-secret
+```
