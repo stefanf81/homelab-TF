@@ -514,14 +514,13 @@ and is **ready the moment the backend emits metrics** — but note the split:
 - **`monitoring-app`** Kustomization (`gitops/monitoring/app`) applies the
   ServiceMonitors. Depends on `monitoring` so the ServiceMonitor CRD already exists.
 
-**Reaching the UIs** (kept off the public Gateway, same rationale as the Jaeger lockdown):
+**Reaching the UIs:**
 
-```bash
-# VictoriaMetrics (VMSingle port 8428)
-kubectl -n monitoring port-forward svc/victoria-metrics-k8s-stack-vmsingle 8428:8428
-# Grafana (port 3000, admin login from the SOPS-encrypted grafana-secrets.yaml)
-kubectl -n monitoring port-forward svc/victoria-metrics-k8s-stack-grafana 3000:80
-```
+The monitoring UIs are now exposed through the main Cilium Gateway API on the `taskflow.local` domain under sub-paths.
+
+- **Grafana:** [http://taskflow.local/grafana](http://taskflow.local/grafana)
+  *(admin login from the SOPS-encrypted grafana-secrets.yaml)*
+- **VictoriaMetrics (VMSingle):** [http://taskflow.local/vmsingle](http://taskflow.local/vmsingle)
 
 **What produces metrics today vs. later:**
 - ✅ Node + kubelet (cadvisor) — from the stack itself, immediately. (kube-state-metrics is **disabled by choice** to save ~150–250 MiB RSS; k8s-object dashboards like pod/deployment counts will be blank.)

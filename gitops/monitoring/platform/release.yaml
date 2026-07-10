@@ -60,6 +60,8 @@ spec:
         extraArgs:
           # Limit internal caches so the container doesn't OOM under pressure
           memory.allowedPercent: "60"
+          # Serve VMSingle UI from a sub-path so we can route it via Gateway API
+          http.pathPrefix: "/vmsingle"
         # Persist TSDB on Proxmox CSI
         storage:
           storageClassName: proxmox-csi
@@ -94,7 +96,12 @@ spec:
 
     grafana:
       enabled: true
-      # Grafana stays off the public Gateway
+      grafana.ini:
+        server:
+          domain: taskflow.local
+          root_url: "%(protocol)s://%(domain)s/grafana/"
+          serve_from_sub_path: true
+      # Grafana is exposed via an HTTPRoute on the public Gateway
       ingress:
         enabled: false
       # Admin credentials from the SOPS-encrypted secret

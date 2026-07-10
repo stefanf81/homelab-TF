@@ -157,4 +157,4 @@ If that curl returns metrics, the cluster integration is already done.
 | `gitops/apps/taskflow/configmap.yaml` | `SPRING_PROFILES_ACTIVE=prod`, CORS origins |
 | `gitops/monitoring/app/vmservicescrapes.yaml` | The `taskflow-backend` VMServiceScrape (waits on you) |
 | `gitops/monitoring/platform/release.yaml` | victoria-metrics-k8s-stack (VictoriaMetrics + Grafana) |
-| `docs/ARCHITECTURE.md` §10.9 | How to reach Grafana/VictoriaMetrics (port-forward; off the public Gateway) |
+| `docs/ARCHITECTURE.md` §10.9 | How to reach Grafana/VictoriaMetrics (via the public Gateway) |
