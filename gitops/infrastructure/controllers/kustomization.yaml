@@ -4,4 +4,4 @@ resources:
   - gateway-api
   - cilium
   - cert-manager
-  - longhorn
+  - proxmox-csi

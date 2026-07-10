@@ -236,7 +236,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 | VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.85.10) in namespace `monitoring` |
 | CRDs | Installed by the chart (VMServiceScrape, VMSingle, …) |
 | Persistence | VictoriaMetrics TSDB on a **Longhorn-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `longhorn`) |
-| Grafana auth | Admin credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana has **no ingress** — off the public Gateway, consistent with the Jaeger lockdown |
+| Grafana auth | Admin credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana and VictoriaMetrics UIs are routed via the Gateway API (see `routes.yaml`), secured by Grafana's login screen |
 | App metrics | `VMServiceScrape`s in `gitops/monitoring/app` scrape the backend (`/actuator/prometheus`), `postgres-exporter`, and `redis-exporter` |
 | DB/Redis metrics | Side-car exporters (`postgres-exporter.yaml`, `redis-exporter.yaml` in `gitops/apps/taskflow`) — **no backend change required**; they reuse `db-secret` |
 | Backend metrics | **Require an app-repo change** — the backend must add `micrometer-registry-prometheus` and expose `/actuator/prometheus` (see `docs/BACKEND_INTEGRATION_CONTEXT.md`). The VMServiceScrape exists but is inert until then. |
@@ -251,7 +251,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 | Pod security | All containers: `readOnlyRootFilesystem`, `allowPrivilegeEscalation=false`, drop ALL capabilities, runAsNonRoot |
 | Secrets encryption | SOPS age-encrypted (`*-secrets.yaml`), decrypted by Flux at reconciliation time only |
 | Image pinning | Flux image automation rewrites `:latest` to `@sha256:<digest>` — immutable references in Git |
-| Grafana lockdown | Grafana (and VictoriaMetrics) UIs are **not** on the public Gateway; reached only via `kubectl port-forward` from a host with cluster access. Grafana admin password is SOPS-encrypted. |
+| Grafana & VM UIs | Exposed securely on the Gateway at `/grafana` and `/vmsingle`. Grafana is secured by a login form with a strong, SOPS-encrypted admin password, and VictoriaMetrics exposes its read-only dashboard. |
 | In-cluster scrape only | VictoriaMetrics scrapes taskflow services over the cluster network (plain HTTP, no auth). The backend must therefore permit `GET /actuator/prometheus` unauthenticated (see `docs/BACKEND_INTEGRATION_CONTEXT.md` §2.3). |
 | SSH hardening | kubeconfig fetch uses strict host key checking disabled (homelab convenience) with known_hosts file |
 | Cloud-init isolation | k3s installed via cloud-init user-data heredoc from column 0 (no whitespace parsing issues) |

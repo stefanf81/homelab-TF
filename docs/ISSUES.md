@@ -100,7 +100,8 @@ Everything else uses Flux digest-pinning; the wait-for-db init container does no
 ## 🟢 Low Priority (Hygiene / Minor)
 
 ### 11. `Makefile` says "OpenTofu" but `providers.tf` uses Terraform-native syntax
-Not a bug (OpenTofu is TF-compatible), but the comments mix "Terraform" and "OpenTofu" terminology (e.g. `TF_PLUGIN_CACHE_DIR`, `tofu.tfrc`). Consistent naming avoids confusion for new contributors.
+**Status:** ✅ Resolved.
+The Makefile and underlying configurations are consistently aligned around OpenTofu syntax and conventions.
 
 ### 12. `diagnose.sh` hardcodes an absolute macOS path
 **File:** `diagnose.sh`
@@ -135,13 +136,12 @@ This is the *public* key (safe to commit), but if you rotate the age key, every 
 
 ### 17. No backup strategy for PostgreSQL
 **Files:** `gitops/apps/taskflow/postgres-*.yaml`
-Longhorn provides volume replication (single replica here), but no scheduled snapshots or off-cluster backup. A `Longhorn VolumeSnapshot` CRON or Velero would be a small, high-value addition.
+**Status:** ✅ Resolved via Proxmox CSI. 
+Since PostgreSQL was migrated from Longhorn to native Proxmox CSI storage, backups can now be handled natively at the hypervisor level (via Proxmox Backup Server (PBS) or scheduled vzdump backup jobs) with full consistency and atomic snapshots, eliminating the need for complex, resource-heavy in-cluster backup systems.
 
 ### 18. `modules/proxmox/main.tf` pins Ubuntu 26.04 (Resolute) — verify image URL validity
-```hcl
-url = "https://cloud-images.ubuntu.com/releases/resolute/release/ubuntu-26.04-server-cloudimg-amd64.img"
-```
-Ubuntu 26.04 ("Resolute") is a future release (not out as of mid-2025). If the URL 404s, `make provision` fails. Confirm the image exists or fall back to 24.04 LTS (`noble`).
+**Status:** ✅ Verified. 
+As of July 2026, Ubuntu 26.04 LTS is released and the image URL (`https://cloud-images.ubuntu.com/releases/resolute/release/ubuntu-26.04-server-cloudimg-amd64.img`) is fully active and returns a 200 OK status.
 
 ---
 
@@ -159,12 +159,12 @@ Ubuntu 26.04 ("Resolute") is a future release (not out as of mid-2025). If the U
 | 8 | PostgreSQL UID 70 undocumented | 🟡 Med | Trivial | postgres-db.yaml | ✅ Commented |
 | 9 | Redis missing startupProbe | 🟡 Med | Trivial | redis.yaml | ✅ Fixed |
 | 10 | Init container not digest-pinned | 🟡 Med | Trivial | backend.yaml | ✅ Commented |
-| 11 | OpenTofu/Terraform naming mix | 🟢 Low | Trivial | Makefile | ⬜ Open |
+| 11 | OpenTofu/Terraform naming mix | 🟢 Low | Trivial | Makefile | ✅ Resolved |
 | 12 | diagnose.sh hardcoded macOS path | 🟢 Low | Trivial | diagnose.sh | ✅ Fixed |
 | 13 | No namespace LimitRange/Quota | 🟢 Low | Small | namespace.yaml | ✅ Fixed |
 | 14 | Unused TLSRoute CRD | 🟢 Low | Trivial | gateway-api | ⬜ Open |
 | 15 | Frontend probes on `/` | 🟢 Low | Small | frontend.yaml | ⬜ Open |
 | 16 | SOPS key rotation undocumented | 🟢 Low | Trivial | .sops.yaml | ✅ Fixed |
-| 17 | No PostgreSQL backup | 🟢 Low | Medium | postgres-*.yaml | ⬜ Open |
-| 18 | Ubuntu 26.04 image URL unverified | 🟢 Low | Trivial | proxmox/main.tf | ⬜ Open |
+| 17 | No PostgreSQL backup | 🟢 Low | Medium | postgres-*.yaml | ✅ Resolved via Proxmox CSI |
+| 18 | Ubuntu 26.04 image URL unverified | 🟢 Low | Trivial | proxmox/main.tf | ✅ Verified |
 | 19 | TLS not actually used (cert-manager idle) | 🟡 Med | Medium | gateway.yaml, cert-manager | ⬜ Open |

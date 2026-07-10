@@ -82,7 +82,7 @@ runcmd:
             - "${var.docker_hub_mirror}"
     MIRROR_EOF
     fi
-  - curl -sfL https://get.k3s.io | K3S_TOKEN=${var.k3s_token} sh -s - server --tls-san=${split("/", var.ip_address)[0]} --kubelet-arg="system-reserved=cpu=200m,memory=500Mi" --kubelet-arg="kube-reserved=cpu=200m,memory=500Mi" --disable servicelb --disable traefik --flannel-backend=none --disable-network-policy
+  - curl -sfL https://get.k3s.io | K3S_TOKEN=${var.k3s_token} sh -s - server --tls-san=${split("/", var.ip_address)[0]} --kubelet-arg="system-reserved=cpu=200m,memory=500Mi" --kubelet-arg="kube-reserved=cpu=200m,memory=500Mi" --node-label="topology.kubernetes.io/region=homelab" --node-label="topology.kubernetes.io/zone=${var.proxmox_node}" --disable servicelb --disable traefik --flannel-backend=none --disable-network-policy
 EOF
     file_name = "k3s-cloud-config.yaml"
   }
