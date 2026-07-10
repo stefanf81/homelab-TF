@@ -98,7 +98,9 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Allow backend to submit OTLP trace data
+    # Allow ONLY the backend to submit OTLP trace data. The Jaeger UI (16686) is
+    # intentionally NOT exposed externally (no auth in front of it) — reach it via
+    # kubectl port-forward, not the Gateway.
     - from:
         - podSelector:
             matchLabels:
@@ -108,7 +110,3 @@ spec:
           port: 4317
         - protocol: TCP
           port: 4318
-    # Allow external web browsers to view the Jaeger UI
-    - ports:
-        - protocol: TCP
-          port: 16686

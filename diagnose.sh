@@ -1,8 +1,9 @@
 #!/bin/zsh
 set -eo pipefail
 
-LOG_FILE="/Users/stefanfaes/homelab/TF/diagnostics.log"
-KUBECONFIG_PATH="/Users/stefanfaes/homelab/TF/kubeconfig.yaml"
+SCRIPT_DIR="${0:A:h}"   # zsh: absolute directory of this script
+LOG_FILE="${SCRIPT_DIR}/diagnostics.log"
+KUBECONFIG_PATH="${SCRIPT_DIR}/kubeconfig.yaml"
 
 echo "=== STARTING CLUSTER DIAGNOSTICS ===" > "$LOG_FILE"
 echo "Date: $(date)" >> "$LOG_FILE"

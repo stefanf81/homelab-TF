@@ -1,5 +1,8 @@
 proxmox_endpoint = "https://192.168.50.50:8006/"
 proxmox_api_token = "REPLACE_ME"
+# WARNING: proxmox_insecure=true (default) disables TLS verification to the Proxmox API.
+# Only acceptable for a homelab with a self-signed cert. Set false + trust the cert for anything else.
+proxmox_insecure = true
 proxmox_node      = "homelab"
 datastore_id      = "local-lvm"
 network_bridge    = "vmbr0"

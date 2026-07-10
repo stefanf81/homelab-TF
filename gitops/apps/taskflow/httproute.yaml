@@ -18,14 +18,12 @@ spec:
         - name: backend
           port: 8080
 
-    # Route Jaeger UI traffic
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /jaeger
-      backendRefs:
-        - name: jaeger-ui
-          port: 16686
+    # Jaeger UI is intentionally NOT exposed through the Gateway: there is no auth in front
+    # of it, so exposing /jaeger would leak full distributed traces (SQL, tokens, PII) to
+    # anyone who can reach the Gateway. Reach it instead via:
+    #   kubectl port-forward -n taskflow svc/jaeger-ui 16686:16686
+    # OTLP trace ingest (4317/4318) still flows backend -> jaeger internally; see
+    # network-policy.yaml (restrict-jaeger-access).
 
     # Route default web traffic to the frontend service
     - matches:

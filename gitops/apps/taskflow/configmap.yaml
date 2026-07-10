@@ -5,4 +5,8 @@ metadata:
   namespace: taskflow
 data:
   SPRING_PROFILES_ACTIVE: "prod"
-  APP_CORS_ALLOWED_ORIGINS: "http://localhost:4200"
+  # Allow BOTH the local dev server (ng serve on :4200) and the in-cluster Gateway
+  # hostname. The browser reaches /api via http://taskflow.local, so it MUST be listed
+  # here or CORS will reject the request once DNS/routing is wired up (was localhost-only
+  # before, which broke prod access).
+  APP_CORS_ALLOWED_ORIGINS: "http://localhost:4200,http://taskflow.local"

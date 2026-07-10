@@ -22,6 +22,9 @@ spec:
           image: ghcr.io/stefanf81/taskflow-frontend:latest # {"$imagepolicy": "flux-system:taskflow-frontend:digest"}
           imagePullPolicy: IfNotPresent
           securityContext:
+            # UID/GID 101 is the unprivileged "nginx" user inside the nginx:alpine base
+            # image (not the project's 10001 convention). It is correct here because the
+            # image's nginx master/drop privileges expect 101. Keep in sync if you swap images.
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             runAsNonRoot: true

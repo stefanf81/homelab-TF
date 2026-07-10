@@ -2,7 +2,7 @@
 
 This directory is intended to become the future Git repository that Flux will reconcile from.
 
-Right now it only exists locally. Once you create a remote Git repository (for example on GitHub), you can copy or push this directory there and then use the Terraform `modules/flux-bootstrap` module template to bootstrap Flux against it.
+Right now it only exists locally. Once you create a remote Git repository (for example on GitHub), you can copy or push this directory there and then bootstrap Flux against it manually (see `./FUTURE_FLUX_BOOTSTRAP.md`). Note: the Terraform `modules/flux-bootstrap` module is **planned but not yet created**.
 
 ## Directory Structure & Architecture
 
@@ -82,4 +82,4 @@ The scaffolded manifests inside this layout include critical performance and net
 1. Create a remote repository.
 2. Push this `gitops/` directory into it.
 3. Follow `./FUTURE_FLUX_BOOTSTRAP.md`.
-4. Wire `modules/flux-bootstrap` into the root Terraform when you are ready.
+4. Bootstrap Flux manually per `./FUTURE_FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` Terraform module is planned but not yet created).

@@ -8,7 +8,7 @@ managed directly by Terraform.
 
 - `modules/proxmox` – provisions the VM; cloud-init installs k3s at boot (no SSH provisioner needed for this part, per [Terraform's own guidance](https://developer.hashicorp.com/terraform/language/post-apply-operations) to prefer cloud-init over provisioners)
 - `modules/k3s-kubeconfig` – waits for cloud-init's k3s install to finish, then fetches `kubeconfig.yaml` over SSH
-- `modules/flux-bootstrap` – future GitHub-ready Flux bootstrap module template (prepared but not wired in yet)
+- `modules/flux-bootstrap` – **planned, not yet created**; a future GitHub-ready Flux bootstrap module (see `gitops/FUTURE_FLUX_BOOTSTRAP.md` for the manual steps)
 - `gitops/` – Flux-style GitOps layout for Cilium L2 announcements, Longhorn, and cert-manager
 
 ## Workflow
@@ -128,13 +128,13 @@ To ensure production-grade security, resiliency, and performance on your single-
 
 ### 4. Database Engine Performance Tuning
 * **PostgreSQL Engine RAM Tuning:** The database deployment (`postgres-db.yaml`) has been injected with optimized database startup arguments to utilize its 1536Mi RAM container limit effectively, replacing standard, extremely conservative container defaults:
-  * `shared_buffers = 256MB` (optimizes memory-resident caching)
-  * `effective_cache_size = 768MB` (improves query planning calculations)
+  * `shared_buffers = 384MB` (optimizes memory-resident caching; matches the container's 1536Mi cap)
+  * `effective_cache_size = 700MB` (planner hint for cached data; was overstated at 1152MB — see docs/PERFORMANCE.md #2.1)
   * `work_mem = 8MB` (faster complex sorting/aggregation; kept modest to bound concurrent memory use)
   * `maintenance_work_mem = 64MB` (faster index rebuilds/VACUUM)
   * `max_connections = 30` (prevents connection overhead bloat; sized for a single-node homelab backend)
 * **Redis Cache Memory Guard:** The Redis deployment (`redis.yaml`) runs with `--maxmemory 384mb` and `--maxmemory-policy allkeys-lru`, capping memory well under its 512Mi container limit so the cache evicts LRU keys under pressure instead of being OOM-killed (which would drop the whole cache and stampede PostgreSQL). Redis is an ephemeral L2 cache on an `emptyDir`; no RDB/AOF persistence is configured.
-* **JVM Heap & GC Tuning:** The backend (`backend.yaml`) sets `JAVA_TOOL_OPTIONS` to a fixed 1.5 GB heap (`-Xms1536m -Xmx1536m`), the G1 garbage collector, fail-fast on OOM (`-XX:+ExitOnOutOfMemoryError`), and `-XX:+UseStringDeduplication` to shrink heap for string-heavy workloads. Off-heap caps (metaspace/direct memory) are intentionally left uncapped pending metrics.
+* **JVM Heap & GC Tuning:** The backend (`backend.yaml`) sets `JAVA_TOOL_OPTIONS` to a fixed 1.5 GB heap (`-Xms1536m -Xmx1536m`), the G1 garbage collector, fail-fast on OOM (`-XX:+ExitOnOutOfMemoryError`), `-XX:+UseStringDeduplication`, and **bounded off-heap** (`-XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=512m`) so a benign native-memory spike can't trip `ExitOnOutOfMemoryError` and restart the pod (see docs/PERFORMANCE.md #1.1). The pod runs as **Guaranteed QoS** (`requests == limits = 3Gi` CPU/memory) so the full budget is reserved and CPU is never throttled.
 
 ### 5. GitOps Secrets Protection
 * **SOPS Integration Ready:** A standard `.sops.yaml` configuration is located at the root of the project to facilitate secure, encrypted secrets workflow in Flux. This allows encrypting `gitops/apps/taskflow/taskflow-secrets.yaml` natively.
@@ -202,7 +202,6 @@ export TF_CLI_CONFIG_FILE="$PWD/tofu.tfrc"
 - `k3s_token` and `docker_hub_mirror` are consumed by `modules/proxmox` and
   baked into the VM's cloud-init user-data.
 - The `gitops/` directory is local scaffolding for now. Once you create a remote
-  Git repository, push that directory there and then wire in
-  `modules/flux-bootstrap` to install Flux against it.
-- See `gitops/FUTURE_FLUX_BOOTSTRAP.md`
-  for the exact future GitHub + PAT bootstrap wiring.
+  Git repository, push that directory there and then bootstrap Flux against it
+  manually — the `modules/flux-bootstrap` Terraform module is **planned but not yet
+  created** (see `gitops/FUTURE_FLUX_BOOTSTRAP.md` for the exact steps).

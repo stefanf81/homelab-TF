@@ -11,7 +11,7 @@ variable "proxmox_api_token" {
 
 variable "proxmox_insecure" {
   type        = bool
-  description = "Allow insecure connections to Proxmox API"
+  description = "Allow insecure (TLS-verification-skipped) connections to the Proxmox API. SAFE ONLY for homelabs using Proxmox's self-signed cert. Set to false (and trust the cert / use a CA) for any non-trivial environment — leaving this true disables MITM protection for API tokens."
   default     = true
 }
 

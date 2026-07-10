@@ -16,6 +16,10 @@ resource "null_resource" "fetch_kubeconfig" {
   }
 
   provisioner "local-exec" {
+    # SECURITY NOTE: StrictHostKeyChecking is disabled and UserKnownHostsFile=/dev/null so
+    # the first boot (unknown host key) doesn't hang. This is acceptable for a single-node
+    # homelab but is MITM-exposed. For anything shared, pin the host key: capture it from
+    # the VM's cloud-init (echo /etc/ssh/ssh_host_ed25519_key.pub) and use a known_hosts file.
     command = <<-EOT
       set -euo pipefail
       SSH_OPTS='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'

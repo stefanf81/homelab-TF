@@ -26,7 +26,11 @@ spec:
             - "-c"
             - "shared_buffers=384MB"
             - "-c"
-            - "effective_cache_size=1152MB"
+            # effective_cache_size is a PLANNER HINT for how much data is cached. The container is
+            # capped at 1536Mi; Postgres RSS (~384 shared + ~300 for 30 backends) leaves only ~700Mi
+            # of real OS page cache, so 1152MB was overstated and could steer the planner to
+            # suboptimal plans. Set to ~700MB to match reality (see docs/PERFORMANCE.md #2.1).
+            - "effective_cache_size=700MB"
             - "-c"
             - "work_mem=8MB"
             - "-c"
@@ -46,6 +50,9 @@ spec:
             - "-c"
             - "max_wal_size=2GB"
           securityContext:
+            # postgres:17-alpine runs as UID/GID 70 by design. Do NOT "normalize" this to
+            # 10001 — the PGDATA volume ownership depends on UID 70, and changing it will
+            # prevent PostgreSQL from starting. fsGroup 70 + OnRootMismatch handles perms.
             allowPrivilegeEscalation: false
             runAsNonRoot: true
             runAsUser: 70
