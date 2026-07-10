@@ -101,9 +101,17 @@ spec:
           limits:
             cpu: "1000m"
             memory: 1536Mi
-        # Persist the TSDB to the explicit Longhorn PVC (prometheus-pvc.yaml).
-        # NOTE: `existingClaim` is the long-standing field; if a future
-        # prometheus-operator removes it, switch to `storageSpec.volumeClaimTemplate`
-        # (which auto-creates a Longhorn PVC from storageClassName below).
+        # Persist the TSDB on Longhorn. volumeClaimTemplate lets the operator
+        # auto-provision a PVC from the `longhorn` StorageClass (single-replica
+        # homelab profile). NOTE: `existingClaim` was REMOVED from StorageSpec, so
+        # this is the supported way to pin Prometheus storage to Longhorn.
         storageSpec:
-          existingClaim: prometheus-pvc
+          volumeClaimTemplate:
+            spec:
+              storageClassName: longhorn
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 8Gi
+              selector: {}

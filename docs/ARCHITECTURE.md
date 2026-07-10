@@ -235,7 +235,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 |-----------|----------------|
 | Prometheus + Grafana | `kube-prometheus-stack` HelmRelease (chart 87.12.3) in namespace `monitoring` |
 | CRDs | Installed by the chart (ServiceMonitor, Prometheus, …) |
-| Persistence | Prometheus TSDB on an explicit **Longhorn PVC** (`prometheus-pvc`, 8Gi) via `storageSpec.existingClaim` |
+| Persistence | Prometheus TSDB on a **Longhorn-backed PVC** (8Gi) via `storageSpec.volumeClaimTemplate` (StorageClass `longhorn`) |
 | Grafana auth | Admin credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana has **no ingress** — off the public Gateway, consistent with the Jaeger lockdown |
 | App metrics | `ServiceMonitor`s in `gitops/monitoring/app` scrape the backend (`/actuator/prometheus`), `postgres-exporter`, and `redis-exporter` |
 | DB/Redis metrics | Side-car exporters (`postgres-exporter.yaml`, `redis-exporter.yaml` in `gitops/apps/taskflow`) — **no backend change required**; they reuse `db-secret` |
@@ -329,7 +329,6 @@ TF/
   │   │   ├── platform/                # Operator + CRDs + storage + Grafana secret
   │   │   │   ├── namespace.yaml       # monitoring namespace
   │   │   │   ├── repository.yaml      # prometheus-community HelmRepository
-  │   │   │   ├── prometheus-pvc.yaml  # 8Gi Longhorn PVC for the TSDB
   │   │   │   ├── grafana-secrets.yaml # SOPS-encrypted Grafana admin (age-encrypted)
   │   │   │   ├── release.yaml         # kube-prometheus-stack HelmRelease (tuned)
   │   │   │   └── kustomization.yaml
