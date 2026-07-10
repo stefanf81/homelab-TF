@@ -27,7 +27,7 @@ spec:
   endpoints:
     - port: 8080               # backend Service port (integer — no name needed)
       path: /actuator/prometheus
-      interval: 30s
+      interval: 60s
       scheme: http
 ---
 # --- PostgreSQL exporter ------------------------------------------------------
@@ -48,7 +48,7 @@ spec:
   endpoints:
     - port: metrics            # postgres-exporter Service port name
       path: /metrics
-      interval: 30s
+      interval: 60s
       scheme: http
 ---
 # --- Redis exporter ----------------------------------------------------------
@@ -69,5 +69,5 @@ spec:
   endpoints:
     - port: metrics            # redis-exporter Service port name
       path: /metrics
-      interval: 30s
+      interval: 60s
       scheme: http

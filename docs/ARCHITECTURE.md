@@ -528,6 +528,14 @@ kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
 - ✅ PostgreSQL + Redis — via the `postgres-exporter` / `redis-exporter` side-cars in `gitops/apps/taskflow` (no backend change).
 - ⏳ **Backend JVM/HTTP** — requires the app repo to add `micrometer-registry-prometheus` and expose `/actuator/prometheus` (unauthenticated, in-cluster scrape). The ServiceMonitor already exists and is inert until then. See `docs/BACKEND_INTEGRATION_CONTEXT.md`.
 
-**Resource budget:** the stack adds ~3 GiB of working set (Prometheus ≈1.5 GiB cap, Grafana + operator + exporters ≈0.5 GiB). On the 14 GiB node this is tight alongside backend (3 GiB guaranteed) + Postgres + Redis + Jaeger. If the node OOMs, bump `vm_memory` in `variables.tf` (ISSUES.md #16) before disabling monitoring.
+**Resource budget (memory-trimmed):** the stack reserves ~1.9 GiB of limit
+(Prometheus 1024 Mi cap / 384 Mi req, kube-state-metrics 192 Mi, Grafana 128 Mi,
+operator 128 Mi, exporters + node-exporter ~0.4 GiB). Prometheus runs **3d
+retention / 2 GiB size cap** and scrapes at **60s** (not 30s) to keep WAL/RAM low.
+On the 14 GiB node this still leaves the bulk for backend (3 GiB guaranteed) +
+Postgres + Redis + Jaeger; if it's still tight, the biggest single lever is the
+backend JVM (drop `-Xmx` to 1 GiB + 2 GiB QoS, ~1 GiB freed) or disabling
+kube-state-metrics entirely. As a last resort, bump `vm_memory` in `variables.tf`
+(ISSUES.md #16) before disabling monitoring.
 
 **Footgun:** the `monitoring` Kustomization has SOPS decryption enabled (reuses `sops-age`). The Grafana secret (`grafana-secrets.yaml`) **must stay encrypted** — editing it in plaintext will make Flux fail to decrypt. Rotate with `sops edit gitops/monitoring/platform/grafana-secrets.yaml`.

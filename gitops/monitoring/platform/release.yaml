@@ -46,22 +46,24 @@ spec:
           memory: 256Mi
 
     kubeStateMetrics:
+      # Memory-trimmed for a single-node homelab (it holds one series per k8s
+      # object in RAM, so it's a notable consumer — see ARCHITECTURE.md S10.9).
       resources:
         requests:
           cpu: 50m
-          memory: 128Mi
+          memory: 96Mi
         limits:
-          cpu: 250m
-          memory: 256Mi
+          cpu: 200m
+          memory: 192Mi
 
     nodeExporter:
       resources:
         requests:
           cpu: 50m
-          memory: 64Mi
+          memory: 48Mi
         limits:
-          cpu: 250m
-          memory: 128Mi
+          cpu: 150m
+          memory: 96Mi
 
     grafana:
       enabled: true
@@ -78,29 +80,35 @@ spec:
       resources:
         requests:
           cpu: 50m
-          memory: 128Mi
+          memory: 96Mi
         limits:
-          cpu: 500m
-          memory: 256Mi
+          cpu: 250m
+          memory: 128Mi
 
     prometheus:
       prometheusSpec:
-        # 7 days of history is plenty for a homelab; cap disk so the Longhorn
-        # volume can't grow unbounded.
-        retention: 7d
-        retentionSize: 4Gi
+        # 3 days of history is plenty for a homelab; 7d was over-provisioned for
+        # a 14 GiB node. retentionSize caps disk so the Longhorn volume stays small.
+        retention: 3d
+        retentionSize: 2Gi
+        # Scrape/evaluate every 60s instead of 30s — halves WAL churn and CPU on
+        # a single node; dashboards don't need 30s resolution here.
+        scrapeInterval: 60s
+        evaluationInterval: 60s
         # Discover ServiceMonitors (and PodMonitors) in ALL namespaces — including
         # the ones we define in gitops/monitoring/app for the taskflow services.
         serviceMonitorSelector: {}
         serviceMonitorNamespaceSelector: {}
         podMonitorNamespaceSelector: {}
         resources:
+          # Right-sized: ~5–15k series fits easily in 384Mi; 1024Mi limit leaves
+          # headroom without the 1536Mi over-reservation from the initial scaffold.
           requests:
-            cpu: 500m
-            memory: 768Mi
+            cpu: 300m
+            memory: 384Mi
           limits:
-            cpu: "1000m"
-            memory: 1536Mi
+            cpu: "750m"
+            memory: 1024Mi
         # Persist the TSDB on Longhorn. volumeClaimTemplate lets the operator
         # auto-provision a PVC from the `longhorn` StorageClass (single-replica
         # homelab profile). NOTE: `existingClaim` was REMOVED from StorageSpec, so
@@ -113,5 +121,5 @@ spec:
                 - ReadWriteOnce
               resources:
                 requests:
-                  storage: 8Gi
+                  storage: 4Gi
               selector: {}
