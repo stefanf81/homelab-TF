@@ -25,8 +25,9 @@ spec:
   values:
     # ---------------------------------------------------------------------
     # Trim the stack for a 14 GiB single-node homelab. We keep the pieces that
-    # give us dashboards/metrics (Prometheus + Grafana + node + kube-state), and
-    # drop Alertmanager (no routing configured for a homelab).
+    # give us dashboards/metrics (Prometheus + Grafana + node-exporter + kubelet/
+    # cadvisor), and drop Alertmanager (no routing configured for a homelab).
+    # kube-state-metrics is disabled separately (see kubeStateMetrics.enabled).
     # ---------------------------------------------------------------------
     alertmanager:
       enabled: false
@@ -46,15 +47,12 @@ spec:
           memory: 256Mi
 
     kubeStateMetrics:
-      # Memory-trimmed for a single-node homelab (it holds one series per k8s
-      # object in RAM, so it's a notable consumer — see ARCHITECTURE.md S10.9).
-      resources:
-        requests:
-          cpu: 50m
-          memory: 96Mi
-        limits:
-          cpu: 200m
-          memory: 192Mi
+      # Disabled to save ~150–250 MiB RSS and to cut Prometheus series (which also
+      # lowers Prometheus RAM). Trade-off: k8s-object dashboards (pods/deployments/
+      # namespaces counts) go blank. node-exporter + kubelet (cadvisor) + app
+      # metrics still cover the essentials. Re-enable (enabled: true) if you want
+      # those dashboards back — also re-enable before turning on Alertmanager.
+      enabled: false
 
     nodeExporter:
       resources:
@@ -102,7 +100,7 @@ spec:
         podMonitorNamespaceSelector: {}
         resources:
           # Right-sized: ~5–15k series fits easily in 384Mi; 1024Mi limit leaves
-          # headroom without the 1536Mi over-reservation from the initial scaffold.
+          # headroom (down from the initial 1536Mi scaffold reservation).
           requests:
             cpu: 300m
             memory: 384Mi

@@ -168,10 +168,10 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 |----------|-------|
 | Image | `ghcr.io/stefanf81/taskflow-backend:latest` (digest-pinned by Flux) |
 | Replicas | 1 |
-| JVM Heap | Fixed 1.5 GB (`-Xms1536m -Xmx1536m`) |
+| JVM Heap | Fixed 1 GB (`-Xms1024m -Xmx1024m`) |
 | GC | G1 with StringDedup, AlwaysPreTouch, ParallelRefProc, DisableExplicitGC |
 | OOM Policy | `-XX:+ExitOnOutOfMemoryError` (fail fast) |
-| Resources | CPU: 1–4 cores, Memory: 2048–2560 MiB |
+| Resources | CPU: 2 cores (req=limit), Memory: 2Gi (Guaranteed QoS, req==limit) |
 | SecurityContext | readOnlyRootFS, runAsNonRoot UID/GID 10001, drop ALL capabilities |
 | Init Container | `alpine:3.19.1` — waits for DB (port 5432) + Redis (port 6379) via nc |
 | Probes | Startup: `/actuator/health/liveness`, Liveness: same, Readiness: `/actuator/health/readiness` |
@@ -196,7 +196,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 | SecurityContext | runAsNonRoot UID/GID 70 (postgres), drop ALL capabilities, fsGroup 70 with OnRootMismatch policy |
 | Tuning | `shared_buffers=384MB`, `effective_cache_size=1152MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `max_connections=30` |
 | SSD tuning | `random_page_cost=1.1`, `effective_io_concurrency=200`, `checkpoint_timeout=900s`, `wal_buffers=16MB`, `max_wal_size=2GB` |
-| Resources | CPU: 500m–2 cores, Memory: 768–1536 MiB |
+| Resources | CPU: 500m–2 cores, Memory: 768–1024 MiB |
 
 ### 5.5 Redis Deployment (`gitops/apps/taskflow/redis.yaml`)
 | Property | Value |
@@ -524,18 +524,18 @@ kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
 ```
 
 **What produces metrics today vs. later:**
-- ✅ Node, kube-state, kubelet — from the stack itself, immediately.
+- ✅ Node + kubelet (cadvisor) — from the stack itself, immediately. (kube-state-metrics is **disabled by choice** to save ~150–250 MiB RSS; k8s-object dashboards like pod/deployment counts will be blank.)
 - ✅ PostgreSQL + Redis — via the `postgres-exporter` / `redis-exporter` side-cars in `gitops/apps/taskflow` (no backend change).
 - ⏳ **Backend JVM/HTTP** — requires the app repo to add `micrometer-registry-prometheus` and expose `/actuator/prometheus` (unauthenticated, in-cluster scrape). The ServiceMonitor already exists and is inert until then. See `docs/BACKEND_INTEGRATION_CONTEXT.md`.
 
-**Resource budget (memory-trimmed):** the stack reserves ~1.9 GiB of limit
-(Prometheus 1024 Mi cap / 384 Mi req, kube-state-metrics 192 Mi, Grafana 128 Mi,
-operator 128 Mi, exporters + node-exporter ~0.4 GiB). Prometheus runs **3d
+**Resource budget (memory-trimmed):** the stack reserves ~1.7 GiB of limit
+(Prometheus 1024 Mi cap / 384 Mi req, Grafana 128 Mi,
+operator 128 Mi, exporters + node-exporter ~0.4 GiB; kube-state-metrics off). Prometheus runs **3d
 retention / 2 GiB size cap** and scrapes at **60s** (not 30s) to keep WAL/RAM low.
-On the 14 GiB node this still leaves the bulk for backend (3 GiB guaranteed) +
-Postgres + Redis + Jaeger; if it's still tight, the biggest single lever is the
-backend JVM (drop `-Xmx` to 1 GiB + 2 GiB QoS, ~1 GiB freed) or disabling
-kube-state-metrics entirely. As a last resort, bump `vm_memory` in `variables.tf`
+On the 14 GiB node this still leaves the bulk for backend (2 GiB guaranteed) +
+Postgres (1 GiB limit) + Redis + Jaeger; if it's still tight, the biggest single
+lever is the backend JVM (already trimmed to 1 GiB heap / 2 GiB QoS) or disabling
+monitoring entirely. As a last resort, bump `vm_memory` in `variables.tf`
 (ISSUES.md #16) before disabling monitoring.
 
 **Footgun:** the `monitoring` Kustomization has SOPS decryption enabled (reuses `sops-age`). The Grafana secret (`grafana-secrets.yaml`) **must stay encrypted** — editing it in plaintext will make Flux fail to decrypt. Rotate with `sops edit gitops/monitoring/platform/grafana-secrets.yaml`.

@@ -76,26 +76,29 @@ spec:
             # modestly reduces heap for string-heavy workloads.
             # Off-heap IS now capped (see docs/PERFORMANCE.md #1.1): with -XX:+ExitOnOutOfMemoryError a
             # single benign off-heap spike would otherwise kill the JVM and restart the pod. Capping
-            # metaspace + direct memory keeps native usage bounded and predictable; the 3Gi Guaranteed
-            # QoS (requests==limits below) gives the full 1.5G heap + ~1.2G off-heap headroom.
+            # metaspace + direct memory keeps native usage bounded and predictable; the 2Gi Guaranteed
+            # QoS (requests==limits below) gives the full 1Gi heap + ~1G off-heap headroom
+            # (256Mi metaspace + 512Mi direct + ~256Mi for thread stacks/GC).
             # GC/startup perf: AlwaysPreTouch removes first-touch page faults on the fixed heap,
             # ParallelRefProcEnabled speeds GC reference processing, DisableExplicitGC blocks
             # stop-the-world Full GCs triggered by System.gc().
             - name: JAVA_TOOL_OPTIONS
-              value: "-Xms1536m -Xmx1536m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=512m"
+              value: "-Xms1024m -Xmx1024m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=512m"
           ports:
             - containerPort: 8080
               name: http
           resources:
             # Guaranteed QoS: requests == limits so the full memory budget is reserved (no
-            # eviction under node pressure) and CPU is never throttled. 3Gi total − 1.5Gi heap
-            # − 256Mi metaspace − 512Mi direct ≈ 700Mi for thread stacks/GC/native libs.
+            # eviction under node pressure) and CPU is never throttled. 2Gi total − 1Gi heap
+            # − 256Mi metaspace − 512Mi direct ≈ 256Mi for thread stacks/GC/native libs.
+            # Trimmed from 3Gi→2Gi (heap 1.5→1 GiB) to free ~1 GiB on the 14 GiB node; the
+            # app must not need >1 GiB heap under load or this will OOM.
             limits:
               cpu: "2000m"
-              memory: 3Gi
+              memory: 2Gi
             requests:
               cpu: "2000m"
-              memory: 3Gi
+              memory: 2Gi
           startupProbe:
             httpGet:
               path: /actuator/health/liveness

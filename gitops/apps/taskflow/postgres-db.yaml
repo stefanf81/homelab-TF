@@ -22,12 +22,13 @@ spec:
           image: postgres:17-alpine
           imagePullPolicy: IfNotPresent
           args:
-            # Memory — raised limit to 1536Mi so shared_buffers + concurrent work_mem fit comfortably.
+            # Memory — trimmed limit to 1024Mi (from 1536Mi) for the memory-constrained
+            # node; shared_buffers + concurrent work_mem still fit for a low-traffic homelab.
             - "-c"
             - "shared_buffers=384MB"
             - "-c"
             # effective_cache_size is a PLANNER HINT for how much data is cached. The container is
-            # capped at 1536Mi; Postgres RSS (~384 shared + ~300 for 30 backends) leaves only ~700Mi
+            # capped at 1024Mi; Postgres RSS (~384 shared + ~300 for 30 backends) leaves only ~300Mi
             # of real OS page cache, so 1152MB was overstated and could steer the planner to
             # suboptimal plans. Set to ~700MB to match reality (see docs/PERFORMANCE.md #2.1).
             - "effective_cache_size=700MB"
@@ -78,8 +79,9 @@ spec:
           resources:
             limits:
               cpu: "2000m"
-              # Raised from 1024Mi → 1536Mi so shared_buffers + concurrent work_mem fit without OOM.
-              memory: 1536Mi
+              # Trimmed 1536Mi → 1024Mi to free memory on the node; 384 shared_buffers + peak
+            # work_mem (~240Mi) + backend overhead still fit. Less OS page cache remains.
+              memory: 1024Mi
             requests:
               cpu: "500m"
               memory: 768Mi

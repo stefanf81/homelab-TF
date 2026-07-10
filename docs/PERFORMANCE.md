@@ -24,13 +24,13 @@ resources:
 - Raise the memory request to meet the limit and add off-heap caps:
   ```yaml
   # Guaranteed QoS: requests == limits so the full budget is reserved and CPU isn't throttled
-  requests: { cpu: "2000m", memory: "3Gi" }
-  limits:   { cpu: "2000m", memory: "3Gi" }
+  requests: { cpu: "2000m", memory: "2Gi" }
+  limits:   { cpu: "2000m", memory: "2Gi" }
   ```
   ```bash
-  -Xms1536m -Xmx1536m -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=512m
+  -Xms1024m -Xmx1024m -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=512m
   ```
-  (Heap 1.5 GiB + metaspace 256 MiB + direct 512 MiB ≈ 2.25 GiB, comfortably under 3 GiB, leaving room for thread stacks/GC.)
+  (Heap 1 GiB + metaspace 256 MiB + direct 512 MiB ≈ 1.75 GiB, comfortably under 2 GiB, leaving ~256 MiB for thread stacks/GC. Trimmed from 3Gi/1.5GiB heap to free ~1 GiB on the 14 GiB node.)
 - The README already admits metaspace/direct caps were "intentionally omitted until measured" — but with `ExitOnOutOfMemoryError` on, *unmeasured* means *unprotected*. Cap them now.
 
 ### 1.2 No observability → you are tuning blind (HIGH)
@@ -55,10 +55,10 @@ PostgreSQL is the most I/O-sensitive workload in the stack, yet it sits on Longh
 **File:** `gitops/apps/taskflow/postgres-db.yaml`
 
 ```yaml
-effective_cache_size=1152MB   # but container memory limit is only 1536Mi
+effective_cache_size=1152MB   # but container memory limit is only 1024Mi
 ```
 
-`effective_cache_size` is a **planner hint** for how much of the data set is cached by the OS. The container is capped at 1536 MiB; Postgres RSS is ~384 (shared_buffers) + ~300 (30 backends × ~10 MiB) ≈ 800–900 MiB, leaving only **~600–700 MiB** of real OS page cache. Setting the hint to 1152 MiB (~2× reality) makes index scans look artificially cheap → the planner can pick suboptimal plans (wrong join/scan choices) under load.
+`effective_cache_size` is a **planner hint** for how much of the data set is cached by the OS. The container is capped at 1024 MiB; Postgres RSS is ~384 (shared_buffers) + ~300 (30 backends × ~10 MiB) ≈ 800–900 MiB, leaving only **~300 MiB** of real OS page cache. Setting the hint to 1152 MiB (~2×+ reality) makes index scans look artificially cheap → the planner can pick suboptimal plans (wrong join/scan choices) under load.
 
 **Fix:** Set `effective_cache_size=700MB` to match the realistic cache, or raise the container memory limit and set it proportionally.
 
@@ -103,7 +103,7 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 ## 4. Recommended order of operations
 
 1. **Add Prometheus/Grafana + Actuator Prometheus** (unblocks measuring everything else).
-2. **Fix the JVM off-heap** (§1.1): raise memory to `requests==limits=3Gi`, add `-XX:MaxMetaspaceSize` / `-XX:MaxDirectMemorySize`.
+2. **Fix the JVM off-heap** (§1.1): run as Guaranteed QoS `requests==limits=2Gi` with a 1 GiB heap, add `-XX:MaxMetaspaceSize` / `-XX:MaxDirectMemorySize`. (Applied; later trimmed from 3Gi/1.5GiB heap to free ~1 GiB on the node.)
 3. **Correct `effective_cache_size`** to ~700 MB (§2.1) and fix the README drift.
 4. **Move Postgres PVC to a local StorageClass** (§1.3) if DB latency is noticeable.
 5. **Harden Redis** (§2.3) or document the stampede risk prominently.
@@ -118,14 +118,14 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 env:
   - name: JAVA_TOOL_OPTIONS
     value: >-
-      -Xms1536m -Xmx1536m
+      -Xms1024m -Xmx1024m
       -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError
       -XX:+UseStringDeduplication -XX:+AlwaysPreTouch
       -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC
       -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=512m
 resources:
-  requests: { cpu: "2000m", memory: "3Gi" }   # Guaranteed QoS
-  limits:   { cpu: "2000m", memory: "3Gi" }
+  requests: { cpu: "2000m", memory: "2Gi" }   # Guaranteed QoS
+  limits:   { cpu: "2000m", memory: "2Gi" }
 ```
 
 This removes the 512 MiB off-heap trap, stops CPU throttling, and bounds native memory so `ExitOnOutOfMemoryError` only triggers on a real leak, not a benign spike.

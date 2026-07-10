@@ -127,14 +127,14 @@ To ensure production-grade security, resiliency, and performance on your single-
 * **Longhorn Single-Node Efficiency:** The Longhorn configuration (`gitops/infrastructure/controllers/longhorn/release.yaml`) has been optimized to limit standard replica counts to 1 (`defaultClassReplicaCount: 1`), keeping volumes healthy on a single-node homelab without warning indicators.
 
 ### 4. Database Engine Performance Tuning
-* **PostgreSQL Engine RAM Tuning:** The database deployment (`postgres-db.yaml`) has been injected with optimized database startup arguments to utilize its 1536Mi RAM container limit effectively, replacing standard, extremely conservative container defaults:
-  * `shared_buffers = 384MB` (optimizes memory-resident caching; matches the container's 1536Mi cap)
+* **PostgreSQL Engine RAM Tuning:** The database deployment (`postgres-db.yaml`) has been injected with optimized database startup arguments to utilize its 1024Mi RAM container limit effectively, replacing standard, extremely conservative container defaults:
+  * `shared_buffers = 384MB` (optimizes memory-resident caching; matches the container's 1024Mi cap)
   * `effective_cache_size = 700MB` (planner hint for cached data; was overstated at 1152MB — see docs/PERFORMANCE.md #2.1)
   * `work_mem = 8MB` (faster complex sorting/aggregation; kept modest to bound concurrent memory use)
   * `maintenance_work_mem = 64MB` (faster index rebuilds/VACUUM)
   * `max_connections = 30` (prevents connection overhead bloat; sized for a single-node homelab backend)
 * **Redis Cache Memory Guard:** The Redis deployment (`redis.yaml`) runs with `--maxmemory 384mb` and `--maxmemory-policy allkeys-lru`, capping memory well under its 512Mi container limit so the cache evicts LRU keys under pressure instead of being OOM-killed (which would drop the whole cache and stampede PostgreSQL). Redis is an ephemeral L2 cache on an `emptyDir`; no RDB/AOF persistence is configured.
-* **JVM Heap & GC Tuning:** The backend (`backend.yaml`) sets `JAVA_TOOL_OPTIONS` to a fixed 1.5 GB heap (`-Xms1536m -Xmx1536m`), the G1 garbage collector, fail-fast on OOM (`-XX:+ExitOnOutOfMemoryError`), `-XX:+UseStringDeduplication`, and **bounded off-heap** (`-XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=512m`) so a benign native-memory spike can't trip `ExitOnOutOfMemoryError` and restart the pod (see docs/PERFORMANCE.md #1.1). The pod runs as **Guaranteed QoS** (`requests == limits = 3Gi` CPU/memory) so the full budget is reserved and CPU is never throttled.
+* **JVM Heap & GC Tuning:** The backend (`backend.yaml`) sets `JAVA_TOOL_OPTIONS` to a fixed 1 GB heap (`-Xms1024m -Xmx1024m`), the G1 garbage collector, fail-fast on OOM (`-XX:+ExitOnOutOfMemoryError`), `-XX:+UseStringDeduplication`, and **bounded off-heap** (`-XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=512m`) so a benign native-memory spike can't trip `ExitOnOutOfMemoryError` and restart the pod (see docs/PERFORMANCE.md #1.1). The pod runs as **Guaranteed QoS** (`requests == limits = 2Gi` CPU/memory) so the full budget is reserved and CPU is never throttled.
 
 ### 5. GitOps Secrets Protection
 * **SOPS Integration Ready:** A standard `.sops.yaml` configuration is located at the root of the project to facilitate secure, encrypted secrets workflow in Flux. This allows encrypting `gitops/apps/taskflow/taskflow-secrets.yaml` natively.
