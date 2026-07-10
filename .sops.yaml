@@ -5,5 +5,4 @@
 
 creation_rules:
   - path_regex: .*-secrets\.yaml$
-    # Replace with your age public key (from key.txt)
-    age: "age1yourpublickeyhereplaceholder"
+    age: "age14tnw8z266962s0guenumuyqht55kt68grrx204wsle8u8p8ph9vscxnm22"

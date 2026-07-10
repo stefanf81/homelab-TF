@@ -14,3 +14,9 @@ spec:
     name: flux-system
   wait: true
   timeout: 5m
+  # Decrypt SOPS-encrypted manifests (e.g. *-secrets.yaml) using the age key
+  # stored in the sops-age Secret (see apps/taskflow/sops-age-secrets.yaml).
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age

@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - configmap.yaml
+  - sops-age-secrets.yaml
   - taskflow-secrets.yaml
   - backend.yaml
   - frontend.yaml

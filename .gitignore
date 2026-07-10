@@ -64,3 +64,11 @@ Desktop.ini
 # ==============================================================================
 *.log
 diagnostics.log
+
+# ==============================================================================
+# SOPS / Age Encryption Keys
+# ==============================================================================
+# NEVER commit the private age key — only the public key belongs in .sops.yaml
+key.txt
+*.age-key
+*.key
