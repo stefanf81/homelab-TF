@@ -15,13 +15,13 @@ backend-specific slice.
 
 1. **Add `micrometer-registry-prometheus`** so `/actuator/prometheus` exists.
 2. **Expose that endpoint** (`management.endpoints.web.exposure.include`).
-3. **Let Prometheus scrape it unauthenticated** — Spring Security must permit
+3. **Let VictoriaMetrics scrape it unauthenticated** — Spring Security must permit
    `GET /actuator/prometheus` (and already must permit `/actuator/health/*`).
 4. **Do not fight the container contract** — run as non-root UID `10001`, read-only
    root FS (only `/tmp` writable), heap via the `JAVA_TOOL_OPTIONS` env (already set
    by the deployment, don't hard-code heap in the Dockerfile).
 
-Everything else (Prometheus, Grafana, the ServiceMonitor, exporters) is already wired
+Everything else (VictoriaMetrics, Grafana, the VMServiceScrape, exporters) is already wired
 in the infra repo and will light up the moment the endpoint exists.
 
 ---
@@ -72,11 +72,11 @@ management.metrics.tags.application=taskflow-backend
 
 After this, `GET /actuator/prometheus` returns the OpenMetrics text format.
 
-### 2.3 Spring Security — let Prometheus in
+### 2.3 Spring Security — let VictoriaMetrics in
 
-The scrape comes from **in-cluster** Prometheus (namespace `monitoring`) over
+The scrape comes from **in-cluster** VictoriaMetrics (`vmagent` in namespace `monitoring`) over
 **plain HTTP** on port 8080. There is **no mTLS and no auth** in front of the
-scrape. You must permit the endpoint unauthenticated, otherwise Prometheus records
+scrape. You must permit the endpoint unauthenticated, otherwise `vmagent` records
 the target as down / 401 and you get no series.
 
 ```java
@@ -87,7 +87,7 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
             .authorizeHttpRequests(auth -> auth
-                // Actuator probes + Prometheus scrape must be reachable without auth
+                // Actuator probes + VictoriaMetrics scrape must be reachable without auth
                 .requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll()
                 .requestMatchers("/api/**").authenticated()   // your real app traffic
                 .anyRequest().permitAll()                     // adjust to your needs
@@ -100,19 +100,19 @@ public class SecurityConfig {
 ```
 
 > **Gotcha:** If you rely on a global `authenticated()` default or a CSRF policy that
-> covers Actuator, the Prometheus scrape (a plain `GET`, no session) will be rejected.
+> covers Actuator, the scrape (a plain `GET`, no session) will be rejected.
 > The probe endpoints already have to be open for the existing liveness/readiness
 > checks, so treat `/actuator/prometheus` the same way.
 
 ### 2.4 That's it for the backend
 
-The ServiceMonitor is **already defined** in the infra repo at
-`gitops/monitoring/app/servicemonitors.yaml` and looks like:
+The VMServiceScrape is **already defined** in the infra repo at
+`gitops/monitoring/app/vmservicescrapes.yaml` and looks like:
 
 ```yaml
-- port: 8080
+- port: "8080"
   path: /actuator/prometheus
-  interval: 30s
+  interval: 60s
   scheme: http
 selector: { matchLabels: { app: taskflow-backend } }   # matches the backend Service
 ```
@@ -139,9 +139,9 @@ If that curl returns metrics, the cluster integration is already done.
 ## 4. Things NOT to do
 
 - **Don't change the listening port from 8080** — the Gateway `HTTPRoute` and the
-  ServiceMonitor both assume 8080.
+  VMServiceScrape both assume 8080.
 - **Don't add a `/metrics` path** — Spring Boot Actuator's Prometheus endpoint is
-  `/actuator/prometheus` by default; the ServiceMonitor targets exactly that.
+  `/actuator/prometheus` by default; the VMServiceScrape targets exactly that.
 - **Don't require auth on `/actuator/prometheus`** (see 2.3).
 - **Don't write to the filesystem** outside `/tmp` — the container root FS is read-only.
 - **Don't set JVM heap in the image** — it's owned by `JAVA_TOOL_OPTIONS` in the
@@ -155,6 +155,6 @@ If that curl returns metrics, the cluster integration is already done.
 |------|------|
 | `gitops/apps/taskflow/backend.yaml` | Deployment + Service (port 8080, probes, securityContext, JVM env) |
 | `gitops/apps/taskflow/configmap.yaml` | `SPRING_PROFILES_ACTIVE=prod`, CORS origins |
-| `gitops/monitoring/app/servicemonitors.yaml` | The `taskflow-backend` ServiceMonitor (waits on you) |
-| `gitops/monitoring/platform/release.yaml` | kube-prometheus-stack (Prometheus + Grafana) |
-| `docs/ARCHITECTURE.md` §10.9 | How to reach Grafana/Prometheus (port-forward; off the public Gateway) |
+| `gitops/monitoring/app/vmservicescrapes.yaml` | The `taskflow-backend` VMServiceScrape (waits on you) |
+| `gitops/monitoring/platform/release.yaml` | victoria-metrics-k8s-stack (VictoriaMetrics + Grafana) |
+| `docs/ARCHITECTURE.md` §10.9 | How to reach Grafana/VictoriaMetrics (port-forward; off the public Gateway) |

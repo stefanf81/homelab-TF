@@ -36,9 +36,9 @@ resources:
 ### 1.2 No observability → you are tuning blind (HIGH)
 **Files:** whole repo (nothing for metrics)
 
-There is Jaeger for **traces** but **no Prometheus, no node-exporter, no kube-state-metrics, no Grafana, no Spring Boot Actuator Prometheus endpoint wired**. You cannot see CPU saturation, GC pause times, heap/off-heap usage, DB query latency, cache hit rate, or disk I/O. Every other item below is a guess until this exists.
+There is Jaeger for **traces** but **no VictoriaMetrics, no node-exporter, no kube-state-metrics, no Grafana, no Spring Boot Actuator Prometheus endpoint wired**. You cannot see CPU saturation, GC pause times, heap/off-heap usage, DB query latency, cache hit rate, or disk I/O. Every other item below is a guess until this exists.
 
-**Fix:** Add (at minimum) `kube-prometheus-stack` (or Prometheus Operator) via a Flux HelmRelease, enable the Spring Boot Actuator `/actuator/prometheus` endpoint on the backend, and scrape it. This is the prerequisite for confirming 1.1, 2.1, 2.2.
+**Fix:** Add (at minimum) `victoria-metrics-k8s-stack` via a Flux HelmRelease, enable the Spring Boot Actuator `/actuator/prometheus` endpoint on the backend, and scrape it. This is the prerequisite for confirming 1.1, 2.1, 2.2.
 
 ### 1.3 PostgreSQL runs on Longhorn (network storage) (MEDIUM-HIGH)
 **File:** `gitops/apps/taskflow/postgres-pvc.yaml` (`storageClassName: longhorn`)
@@ -102,7 +102,7 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 
 ## 4. Recommended order of operations
 
-1. **Add Prometheus/Grafana + Actuator Prometheus** (unblocks measuring everything else).
+1. **Add VictoriaMetrics/Grafana + Actuator Prometheus** (unblocks measuring everything else).
 2. **Fix the JVM off-heap** (§1.1): run as Guaranteed QoS `requests==limits=2Gi` with a 1 GiB heap, add `-XX:MaxMetaspaceSize` / `-XX:MaxDirectMemorySize`. (Applied; later trimmed from 3Gi/1.5GiB heap to free ~1 GiB on the node.)
 3. **Correct `effective_cache_size`** to ~700 MB (§2.1) and fix the README drift.
 4. **Move Postgres PVC to a local StorageClass** (§1.3) if DB latency is noticeable.

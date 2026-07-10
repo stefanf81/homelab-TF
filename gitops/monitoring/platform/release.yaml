@@ -1,80 +1,105 @@
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: kube-prometheus-stack
+  name: victoria-metrics-k8s-stack
   namespace: monitoring
 spec:
   interval: 30m
   chart:
     spec:
-      chart: kube-prometheus-stack
-      # Pin a known-good chart version. Bump deliberately; the CRDs are large and
-      # upgrades can be disruptive. Verify at artifacthub.io/packages/helm/prometheus-community/kube-prometheus-stack
-      version: 87.12.3
+      chart: victoria-metrics-k8s-stack
+      version: 0.85.10
       sourceRef:
         kind: HelmRepository
-        name: prometheus-community
+        name: victoriametrics
         namespace: monitoring
   install:
     createNamespace: true
-  # The chart installs its CRDs (ServiceMonitor, Prometheus, etc.) via its `crds`
-  # subchart (values.crds.enabled defaults to true). We let Flux also manage CRDs
-  # so upgrades replace them; harmless if the chart already did.
   upgrade:
     crds: CreateReplace
   values:
     # ---------------------------------------------------------------------
-    # Trim the stack for a 14 GiB single-node homelab. We keep the pieces that
-    # give us dashboards/metrics (Prometheus + Grafana + node-exporter + kubelet/
-    # cadvisor), and drop Alertmanager (no routing configured for a homelab).
-    # kube-state-metrics is disabled separately (see kubeStateMetrics.enabled).
+    # Trimmed stack for a 14 GiB single-node homelab. Replaces Prometheus with
+    # the dramatically lighter VictoriaMetrics (VMSingle + vmagent).
     # ---------------------------------------------------------------------
+    # Disable unneeded components
+    vmalert:
+      enabled: false
     alertmanager:
       enabled: false
-
-    prometheusOperator:
-      # Disable the admission webhook: avoids the cert-manager / webhook-certgen
-      # dependency entirely. We are not creating invalid Prometheus/ServiceMonitor
-      # CRs, so losing the validating webhook is acceptable here.
-      admissionWebhooks:
-        enabled: false
-      resources:
-        requests:
-          cpu: 50m
-          memory: 128Mi
-        limits:
-          cpu: 250m
-          memory: 256Mi
-
-    kubeStateMetrics:
-      # Disabled to save ~150–250 MiB RSS and to cut Prometheus series (which also
-      # lowers Prometheus RAM). Trade-off: k8s-object dashboards (pods/deployments/
-      # namespaces counts) go blank. node-exporter + kubelet (cadvisor) + app
-      # metrics still cover the essentials. Re-enable (enabled: true) if you want
-      # those dashboards back — also re-enable before turning on Alertmanager.
+    kube-state-metrics:
+      # Disabled to save ~150–250 MiB RSS. Re-enable (enabled: true) if you want
+      # k8s-object dashboards (pods/deployments counts) back.
+      enabled: false
+    # Disable control-plane scraping (irrelevant on k3s / single-node)
+    kubeControllerManager:
+      enabled: false
+    kubeScheduler:
+      enabled: false
+    kubeEtcd:
+      enabled: false
+    kubeProxy:
+      enabled: false
+    kubeDNS:
       enabled: false
 
-    nodeExporter:
+    # VMSingle — the TSDB
+    vmsingle:
+      enabled: true
+      spec:
+        # 3 days of history is plenty for a homelab. VM is extremely compact.
+        retentionPeriod: "3d"
+        # Highly optimized RAM profile (VMSingle uses 1/3 to 1/5 the RAM of Prometheus)
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: "500m"
+            memory: 512Mi
+        extraArgs:
+          # Limit internal caches so the container doesn't OOM under pressure
+          memory.allowedPercent: "60"
+        # Persist TSDB on Proxmox CSI
+        storage:
+          storageClassName: proxmox-csi
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 8Gi
+
+    # vmagent — does the scraping (replaces Prometheus scrape loops)
+    vmagent:
+      enabled: true
+      spec:
+        # Discover VMServiceScrapes (and VMProbes/VMRules) in ALL namespaces
+        selectAllByDefault: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+
+    victoria-metrics-operator:
       resources:
         requests:
           cpu: 50m
-          memory: 48Mi
+          memory: 64Mi
         limits:
-          cpu: 150m
-          memory: 96Mi
+          cpu: 200m
+          memory: 128Mi
 
     grafana:
       enabled: true
-      # No ingress: Grafana stays OFF the public Gateway, consistent with the
-      # Jaeger-UI lockdown. Reach it via `kubectl -n monitoring port-forward
-      # svc/kube-prometheus-stack-grafana 3000:80` (see ARCHITECTURE.md S10.9).
+      # Grafana stays off the public Gateway
       ingress:
         enabled: false
-      # Grafana admin credentials come from the SOPS-encrypted secret below.
+      # Admin credentials from the SOPS-encrypted secret
       admin:
         existingSecret: grafana-admin
-        userKey: admin-user
-        passwordKey: admin-password
       resources:
         requests:
           cpu: 50m
@@ -82,42 +107,3 @@ spec:
         limits:
           cpu: 250m
           memory: 128Mi
-
-    prometheus:
-      prometheusSpec:
-        # 3 days of history is plenty for a homelab; 7d was over-provisioned for
-        # a 14 GiB node. retentionSize caps disk so the Longhorn volume stays small.
-        retention: 3d
-        retentionSize: 2Gi
-        # Scrape/evaluate every 60s instead of 30s — halves WAL churn and CPU on
-        # a single node; dashboards don't need 30s resolution here.
-        scrapeInterval: 60s
-        evaluationInterval: 60s
-        # Discover ServiceMonitors (and PodMonitors) in ALL namespaces — including
-        # the ones we define in gitops/monitoring/app for the taskflow services.
-        serviceMonitorSelector: {}
-        serviceMonitorNamespaceSelector: {}
-        podMonitorNamespaceSelector: {}
-        resources:
-          # Right-sized: ~5–15k series fits easily in 384Mi; 1024Mi limit leaves
-          # headroom (down from the initial 1536Mi scaffold reservation).
-          requests:
-            cpu: 300m
-            memory: 384Mi
-          limits:
-            cpu: "750m"
-            memory: 1024Mi
-        # Persist the TSDB on Longhorn. volumeClaimTemplate lets the operator
-        # auto-provision a PVC from the `longhorn` StorageClass (single-replica
-        # homelab profile). NOTE: `existingClaim` was REMOVED from StorageSpec, so
-        # this is the supported way to pin Prometheus storage to Longhorn.
-        storageSpec:
-          volumeClaimTemplate:
-            spec:
-              storageClassName: longhorn
-              accessModes:
-                - ReadWriteOnce
-              resources:
-                requests:
-                  storage: 4Gi
-              selector: {}

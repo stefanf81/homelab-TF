@@ -1,9 +1,9 @@
-# Monitoring platform: Prometheus + Grafana operator and its CRDs.
+# Monitoring platform: VictoriaMetrics (VMSingle + vmagent) operator and its CRDs.
 #
 # Reach the UIs without exposing them on the public Gateway (consistent with the
 # Jaeger-UI lockdown — no auth in front of these):
-#   kubectl -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090:9090
-#   kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana    3000:80
+#   kubectl -n monitoring port-forward svc/victoria-metrics-k8s-stack-vmsingle 8428:8428
+#   kubectl -n monitoring port-forward svc/victoria-metrics-k8s-stack-grafana  3000:80
 # (Grafana admin login comes from the SOPS-encrypted gitops/monitoring/platform/grafana-secrets.yaml)
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -11,8 +11,8 @@ metadata:
   name: monitoring
   namespace: flux-system
 spec:
-  # CRDs (ServiceMonitor, Prometheus, ...) must exist before the app-layer
-  # ServiceMonitors in gitops/monitoring/app are applied.
+  # CRDs (VMServiceScrape, VMSingle, ...) must exist before the app-layer
+  # VMServiceScrapes in gitops/monitoring/app are applied.
   dependsOn:
     - name: infra-controllers
   interval: 30m

@@ -81,16 +81,16 @@ infra-controllers (HelmReleases: Cilium, cert-manager, Longhorn, Gateway API)
 infra-configs (Cilium IP pool + L2 policy, GatewayClass)
     │                                  │
     ▼                                  ▼
-taskflow-app                     monitoring (Prometheus + Grafana operator + CRDs;
+taskflow-app                     monitoring (VictoriaMetrics + Grafana operator + CRDs;
 (SOPS-decrypted app manifests)    SOPS-decrypted Grafana admin secret)
     │                                  │
     │                                  ▼
-    │                       monitoring-app (ServiceMonitors for taskflow services)
+    │                       monitoring-app (VMServiceScrapes for taskflow services)
     ▼
 (image automation commits new digests)
 ```
 > `monitoring` depends on `infra-controllers` (so CRDs land first); `monitoring-app`
-> depends on `monitoring` (so the ServiceMonitor CRD exists before the ServiceMonitors
+> depends on `monitoring` (so the VMServiceScrape CRD exists before the VMServiceScrapes
 > are applied). `taskflow-app` and `monitoring` are independent branches.
 
 ### 4.2 Flux Kustomizations
@@ -155,7 +155,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 
                   ┌──────────────────────────────────────────────┐
                   │  Monitoring (namespace: monitoring)           │
-                  │  Prometheus ──scrapes──▶ backend:8080         │
+                  │  VictoriaMetrics ──scrapes──▶ backend:8080    │
                   │  (TSDB on Longhorn PVC)    /actuator/prometheus│
                   │  Grafana (admin secret,   postgres-exporter   │
                   │   off public Gateway)    redis-exporter       │
@@ -233,13 +233,13 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.9 Monitoring Stack (`gitops/monitoring/`)
 | Component | Implementation |
 |-----------|----------------|
-| Prometheus + Grafana | `kube-prometheus-stack` HelmRelease (chart 87.12.3) in namespace `monitoring` |
-| CRDs | Installed by the chart (ServiceMonitor, Prometheus, …) |
-| Persistence | Prometheus TSDB on a **Longhorn-backed PVC** (8Gi) via `storageSpec.volumeClaimTemplate` (StorageClass `longhorn`) |
+| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.85.10) in namespace `monitoring` |
+| CRDs | Installed by the chart (VMServiceScrape, VMSingle, …) |
+| Persistence | VictoriaMetrics TSDB on a **Longhorn-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `longhorn`) |
 | Grafana auth | Admin credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana has **no ingress** — off the public Gateway, consistent with the Jaeger lockdown |
-| App metrics | `ServiceMonitor`s in `gitops/monitoring/app` scrape the backend (`/actuator/prometheus`), `postgres-exporter`, and `redis-exporter` |
+| App metrics | `VMServiceScrape`s in `gitops/monitoring/app` scrape the backend (`/actuator/prometheus`), `postgres-exporter`, and `redis-exporter` |
 | DB/Redis metrics | Side-car exporters (`postgres-exporter.yaml`, `redis-exporter.yaml` in `gitops/apps/taskflow`) — **no backend change required**; they reuse `db-secret` |
-| Backend metrics | **Require an app-repo change** — the backend must add `micrometer-registry-prometheus` and expose `/actuator/prometheus` (see `docs/BACKEND_INTEGRATION_CONTEXT.md`). The ServiceMonitor exists but is inert until then. |
+| Backend metrics | **Require an app-repo change** — the backend must add `micrometer-registry-prometheus` and expose `/actuator/prometheus` (see `docs/BACKEND_INTEGRATION_CONTEXT.md`). The VMServiceScrape exists but is inert until then. |
 
 ---
 
@@ -251,8 +251,8 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 | Pod security | All containers: `readOnlyRootFilesystem`, `allowPrivilegeEscalation=false`, drop ALL capabilities, runAsNonRoot |
 | Secrets encryption | SOPS age-encrypted (`*-secrets.yaml`), decrypted by Flux at reconciliation time only |
 | Image pinning | Flux image automation rewrites `:latest` to `@sha256:<digest>` — immutable references in Git |
-| Grafana lockdown | Grafana (and Prometheus) UIs are **not** on the public Gateway; reached only via `kubectl port-forward` from a host with cluster access. Grafana admin password is SOPS-encrypted. |
-| In-cluster scrape only | Prometheus scrapes taskflow services over the cluster network (plain HTTP, no auth). The backend must therefore permit `GET /actuator/prometheus` unauthenticated (see `docs/BACKEND_INTEGRATION_CONTEXT.md` §2.3). |
+| Grafana lockdown | Grafana (and VictoriaMetrics) UIs are **not** on the public Gateway; reached only via `kubectl port-forward` from a host with cluster access. Grafana admin password is SOPS-encrypted. |
+| In-cluster scrape only | VictoriaMetrics scrapes taskflow services over the cluster network (plain HTTP, no auth). The backend must therefore permit `GET /actuator/prometheus` unauthenticated (see `docs/BACKEND_INTEGRATION_CONTEXT.md` §2.3). |
 | SSH hardening | kubeconfig fetch uses strict host key checking disabled (homelab convenience) with known_hosts file |
 | Cloud-init isolation | k3s installed via cloud-init user-data heredoc from column 0 (no whitespace parsing issues) |
 
@@ -321,19 +321,19 @@ TF/
 │       ├── infra-controllers.yaml   # HelmRelease controllers (Cilium, Longhorn, etc.)
 │       ├── infra-configs.yaml       # Cilium configs + GatewayClass
   │       ├── taskflow.yaml            # App layer with SOPS decryption
-  │       ├── monitoring.yaml          # Prometheus + Grafana operator (SOPS-enabled)
-  │       ├── monitoring-app.yaml      # App ServiceMonitors (depends on monitoring)
+  │       ├── monitoring.yaml          # VictoriaMetrics + Grafana operator (SOPS-enabled)
+  │       ├── monitoring-app.yaml      # App VMServiceScrapes (depends on monitoring)
   │       └── image-automation.yaml    # ImageRepository + ImagePolicy + ImageUpdateAutomation
   │
   │   ├── monitoring/                  # Observability stack (NEW)
   │   │   ├── platform/                # Operator + CRDs + storage + Grafana secret
   │   │   │   ├── namespace.yaml       # monitoring namespace
-  │   │   │   ├── repository.yaml      # prometheus-community HelmRepository
+  │   │   │   ├── repository.yaml      # victoriametrics HelmRepository
   │   │   │   ├── grafana-secrets.yaml # SOPS-encrypted Grafana admin (age-encrypted)
-  │   │   │   ├── release.yaml         # kube-prometheus-stack HelmRelease (tuned)
+  │   │   │   ├── release.yaml         # victoria-metrics-k8s-stack HelmRelease (tuned)
   │   │   │   └── kustomization.yaml
-  │   │   └── app/                     # ServiceMonitors (applied after CRDs exist)
-  │   │       ├── servicemonitors.yaml # backend / postgres-exporter / redis-exporter
+  │   │   └── app/                     # VMServiceScrapes (applied after CRDs exist)
+  │   │       ├── vmservicescrapes.yaml # backend / postgres-exporter / redis-exporter
   │   │       └── kustomization.yaml
   ```
 
@@ -374,7 +374,7 @@ flux reconcile kustomization taskflow-app -n flux-system
 | Pod Disruption Budgets | Not defined | Add PDBs for backend, frontend, postgres |
 | Horizontal Pod Autoscaler | Single replicas everywhere | HPA for backend based on CPU/memory metrics |
 | Backup strategy | Longhorn snapshots only | Velero or restic-operator for PostgreSQL backups |
-| Monitoring stack | Jaeger traces only | Prometheus + Grafana scaffolded in `gitops/monitoring/` (see §5.9). **Backend JVM/HTTP metrics need an app-repo change** (`micrometer-registry-prometheus`) — tracked in `docs/BACKEND_INTEGRATION_CONTEXT.md`. DB/Redis metrics already flow via exporters. |
+| Monitoring stack | Jaeger traces only | VictoriaMetrics + Grafana scaffolded in `gitops/monitoring/` (see §5.9). **Backend JVM/HTTP metrics need an app-repo change** (`micrometer-registry-prometheus`) — tracked in `docs/BACKEND_INTEGRATION_CONTEXT.md`. DB/Redis metrics already flow via exporters. |
 | cert-manager | Installed (v1.14.4) but idle — no `Certificate`/`ClusterIssuer` or HTTPS Gateway listener yet | Add a `ClusterIssuer` + `Certificate` for `taskflow.local` and an HTTPS listener (see ISSUES.md #19) |
 
 ---
@@ -492,7 +492,7 @@ Key point: **Services are `ClusterIP` only**. Nothing is exposed except through 
 | Bump Cilium/Longhorn/cert-manager version | the `version:` in the relevant `release.yaml` | Flux upgrades (CRDs `CreateReplace`) |
 | Change VM size/network | `terraform.tfvars` + `variables.tf` | `make apply` (note: some changes force VM recreate → auto re-fetch kubeconfig) |
 | Add a TLS cert | `gitops/infrastructure/controllers/cert-manager/` + HTTPS listener in `gateway.yaml` | see ISSUES.md #19 |
-| Change Prometheus retention / storage | `gitops/monitoring/platform/release.yaml` (`prometheus.prometheusSpec`) | `flux reconcile kustomization monitoring -n flux-system` |
+| Change VictoriaMetrics retention / storage | `gitops/monitoring/platform/release.yaml` (`vmsingle.spec`, `vmsingle.storage`) | `flux reconcile kustomization monitoring -n flux-system` |
 | Rotate the Grafana admin password | `sops edit gitops/monitoring/platform/grafana-secrets.yaml` | Flux re-decrypts on next sync |
 
 ### 10.8 Footguns / things that will bite you
@@ -504,7 +504,7 @@ Key point: **Services are `ClusterIP` only**. Nothing is exposed except through 
 5. **Ubuntu 26.04 ("Resolute")** is a future release — verify the cloud-image URL in `modules/proxmox/main.tf` actually resolves before `make provision` (ISSUES.md #18).
 6. The whole stack is **single-replica** — there is no HA. A node reboot = full downtime. That's the accepted homelab tradeoff, not a bug.
 
-### 10.9 The monitoring stack (Prometheus + Grafana) and how to reach it
+### 10.9 The monitoring stack (VictoriaMetrics + Grafana) and how to reach it
 
 Scaffolded in `gitops/monitoring/` (see §5.9). It reconciles independently of the app
 and is **ready the moment the backend emits metrics** — but note the split:
@@ -517,21 +517,21 @@ and is **ready the moment the backend emits metrics** — but note the split:
 **Reaching the UIs** (kept off the public Gateway, same rationale as the Jaeger lockdown):
 
 ```bash
-# Prometheus (port 9090)
-kubectl -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090:9090
+# VictoriaMetrics (VMSingle port 8428)
+kubectl -n monitoring port-forward svc/victoria-metrics-k8s-stack-vmsingle 8428:8428
 # Grafana (port 3000, admin login from the SOPS-encrypted grafana-secrets.yaml)
-kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
+kubectl -n monitoring port-forward svc/victoria-metrics-k8s-stack-grafana 3000:80
 ```
 
 **What produces metrics today vs. later:**
 - ✅ Node + kubelet (cadvisor) — from the stack itself, immediately. (kube-state-metrics is **disabled by choice** to save ~150–250 MiB RSS; k8s-object dashboards like pod/deployment counts will be blank.)
 - ✅ PostgreSQL + Redis — via the `postgres-exporter` / `redis-exporter` side-cars in `gitops/apps/taskflow` (no backend change).
-- ⏳ **Backend JVM/HTTP** — requires the app repo to add `micrometer-registry-prometheus` and expose `/actuator/prometheus` (unauthenticated, in-cluster scrape). The ServiceMonitor already exists and is inert until then. See `docs/BACKEND_INTEGRATION_CONTEXT.md`.
+- ⏳ **Backend JVM/HTTP** — requires the app repo to add `micrometer-registry-prometheus` and expose `/actuator/prometheus` (unauthenticated, in-cluster scrape). The VMServiceScrape already exists and is inert until then. See `docs/BACKEND_INTEGRATION_CONTEXT.md`.
 
-**Resource budget (memory-trimmed):** the stack reserves ~1.7 GiB of limit
-(Prometheus 1024 Mi cap / 384 Mi req, Grafana 128 Mi,
-operator 128 Mi, exporters + node-exporter ~0.4 GiB; kube-state-metrics off). Prometheus runs **3d
-retention / 2 GiB size cap** and scrapes at **60s** (not 30s) to keep WAL/RAM low.
+**Resource budget (memory-trimmed):** the stack reserves ~1.1 GiB of limit
+(VMSingle 512 Mi cap / 128 Mi req, vmagent 256 Mi, Grafana 128 Mi,
+operator 128 Mi, exporters + node-exporter ~0.4 GiB; kube-state-metrics off). VictoriaMetrics runs **3d
+retention** and scrapes at **60s** (not 30s) to keep WAL/RAM low.
 On the 14 GiB node this still leaves the bulk for backend (2 GiB guaranteed) +
 Postgres (1 GiB limit) + Redis + Jaeger; if it's still tight, the biggest single
 lever is the backend JVM (already trimmed to 1 GiB heap / 2 GiB QoS) or disabling

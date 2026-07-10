@@ -1,5 +1,5 @@
-# App-layer ServiceMonitors for TaskFlow. Depends on `monitoring` so the
-# ServiceMonitor CRD is already registered when these are applied (Flux ordering
+# App-layer VMServiceScrapes for TaskFlow. Depends on `monitoring` so the
+# VMServiceScrape CRD is already registered when these are applied (Flux ordering
 # safety — a CR cannot be created before its CRD exists).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

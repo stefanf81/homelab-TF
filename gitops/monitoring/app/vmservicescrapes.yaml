@@ -1,22 +1,18 @@
-# ServiceMonitors for the TaskFlow application components. These are discovered by
-# Prometheus because the kube-prometheus-stack HelmRelease sets
-#   prometheus.prometheusSpec.serviceMonitorSelector: {}   (match ALL)
-#   prometheus.prometheusSpec.serviceMonitorNamespaceSelector: {}   (all namespaces)
+# VMServiceScrapes for the TaskFlow application components. These are discovered
+# by vmagent because the victoria-metrics-k8s-stack HelmRelease sets
+#   vmagent.spec.selectAllByDefault: true
 #
 # They live in a SEPARATE Kustomization (gitops/monitoring/app) that dependsOn the
-# platform Kustomization, so the ServiceMonitor CRD already exists when these apply.
+# platform Kustomization, so the VMServiceScrape CRD already exists when these apply.
 ---
 # --- Backend (Spring Boot Actuator /actuator/prometheus) -----------------------
-# INERT UNTIL THE APP REPO ADDS micrometer-registry-prometheus. The ServiceMonitor
-# is valid now; it just collects no series until the backend exposes that endpoint.
+# INERT UNTIL THE APP REPO ADDS micrometer-registry-prometheus.
 # See docs/BACKEND_INTEGRATION_CONTEXT.md for the exact backend change required.
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
 metadata:
   name: taskflow-backend
   namespace: monitoring
-  labels:
-    app: taskflow-backend
 spec:
   namespaceSelector:
     matchNames:
@@ -25,19 +21,17 @@ spec:
     matchLabels:
       app: taskflow-backend
   endpoints:
-    - port: 8080               # backend Service port (integer — no name needed)
+    - port: "8080"               # VMServiceScrape requires port to be a string
       path: /actuator/prometheus
       interval: 60s
       scheme: http
 ---
 # --- PostgreSQL exporter ------------------------------------------------------
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
 metadata:
   name: taskflow-postgres-exporter
   namespace: monitoring
-  labels:
-    app: postgres-exporter
 spec:
   namespaceSelector:
     matchNames:
@@ -52,13 +46,11 @@ spec:
       scheme: http
 ---
 # --- Redis exporter ----------------------------------------------------------
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
 metadata:
   name: taskflow-redis-exporter
   namespace: monitoring
-  labels:
-    app: redis-exporter
 spec:
   namespaceSelector:
     matchNames:
