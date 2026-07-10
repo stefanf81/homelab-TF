@@ -1,0 +1,109 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      # Pin a known-good chart version. Bump deliberately; the CRDs are large and
+      # upgrades can be disruptive. Verify at artifacthub.io/packages/helm/prometheus-community/kube-prometheus-stack
+      version: 87.12.3
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: monitoring
+  install:
+    createNamespace: true
+  # The chart installs its CRDs (ServiceMonitor, Prometheus, etc.) via its `crds`
+  # subchart (values.crds.enabled defaults to true). We let Flux also manage CRDs
+  # so upgrades replace them; harmless if the chart already did.
+  upgrade:
+    crds: CreateReplace
+  values:
+    # ---------------------------------------------------------------------
+    # Trim the stack for a 14 GiB single-node homelab. We keep the pieces that
+    # give us dashboards/metrics (Prometheus + Grafana + node + kube-state), and
+    # drop Alertmanager (no routing configured for a homelab).
+    # ---------------------------------------------------------------------
+    alertmanager:
+      enabled: false
+
+    prometheusOperator:
+      # Disable the admission webhook: avoids the cert-manager / webhook-certgen
+      # dependency entirely. We are not creating invalid Prometheus/ServiceMonitor
+      # CRs, so losing the validating webhook is acceptable here.
+      admissionWebhooks:
+        enabled: false
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 250m
+          memory: 256Mi
+
+    kubeStateMetrics:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 250m
+          memory: 256Mi
+
+    nodeExporter:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 250m
+          memory: 128Mi
+
+    grafana:
+      enabled: true
+      # No ingress: Grafana stays OFF the public Gateway, consistent with the
+      # Jaeger-UI lockdown. Reach it via `kubectl -n monitoring port-forward
+      # svc/kube-prometheus-stack-grafana 3000:80` (see ARCHITECTURE.md S10.9).
+      ingress:
+        enabled: false
+      # Grafana admin credentials come from the SOPS-encrypted secret below.
+      admin:
+        existingSecret: grafana-admin
+        userKey: admin-user
+        passwordKey: admin-password
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+
+    prometheus:
+      prometheusSpec:
+        # 7 days of history is plenty for a homelab; cap disk so the Longhorn
+        # volume can't grow unbounded.
+        retention: 7d
+        retentionSize: 4Gi
+        # Discover ServiceMonitors (and PodMonitors) in ALL namespaces — including
+        # the ones we define in gitops/monitoring/app for the taskflow services.
+        serviceMonitorSelector: {}
+        serviceMonitorNamespaceSelector: {}
+        podMonitorNamespaceSelector: {}
+        resources:
+          requests:
+            cpu: 500m
+            memory: 768Mi
+          limits:
+            cpu: "1000m"
+            memory: 1536Mi
+        # Persist the TSDB to the explicit Longhorn PVC (prometheus-pvc.yaml).
+        # NOTE: `existingClaim` is the long-standing field; if a future
+        # prometheus-operator removes it, switch to `storageSpec.volumeClaimTemplate`
+        # (which auto-creates a Longhorn PVC from storageClassName below).
+        storageSpec:
+          existingClaim: prometheus-pvc

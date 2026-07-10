@@ -127,6 +127,11 @@ kind: Service
 metadata:
   name: backend
   namespace: taskflow
+  # `app: taskflow-backend` label lets the Prometheus ServiceMonitor in
+  # gitops/monitoring/app select this Service (ServiceMonitor matches Service
+  # labels, not the pod selector).
+  labels:
+    app: taskflow-backend
 spec:
   ports:
     - port: 8080

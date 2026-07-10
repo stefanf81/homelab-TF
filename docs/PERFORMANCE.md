@@ -62,7 +62,7 @@ effective_cache_size=1152MB   # but container memory limit is only 1536Mi
 
 **Fix:** Set `effective_cache_size=700MB` to match the realistic cache, or raise the container memory limit and set it proportionally.
 
-> **Doc drift:** `README.md` line ~132 documents `effective_cache_size = 768MB` while the manifest sets `1152MB`. Update the README.
+> **Resolved:** `effective_cache_size` is now `700MB` in both the manifest and `README.md` (the prior drift — README said `768MB`, manifest said `1152MB` — has been corrected).
 
 ### 2.2 Backend is "Burstable" QoS → CPU throttling under load (MEDIUM)
 **File:** `gitops/apps/taskflow/backend.yaml`

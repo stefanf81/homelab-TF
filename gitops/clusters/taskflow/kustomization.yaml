@@ -6,3 +6,5 @@ resources:
   - infra-configs.yaml
   - image-automation.yaml
   - taskflow.yaml
+  - monitoring.yaml
+  - monitoring-app.yaml

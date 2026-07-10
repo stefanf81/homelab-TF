@@ -1,0 +1,30 @@
+# Monitoring platform: Prometheus + Grafana operator and its CRDs.
+#
+# Reach the UIs without exposing them on the public Gateway (consistent with the
+# Jaeger-UI lockdown — no auth in front of these):
+#   kubectl -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090:9090
+#   kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana    3000:80
+# (Grafana admin login comes from the SOPS-encrypted gitops/monitoring/platform/grafana-secrets.yaml)
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: monitoring
+  namespace: flux-system
+spec:
+  # CRDs (ServiceMonitor, Prometheus, ...) must exist before the app-layer
+  # ServiceMonitors in gitops/monitoring/app are applied.
+  dependsOn:
+    - name: infra-controllers
+  interval: 30m
+  path: ./gitops/monitoring/platform
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 10m
+  # Decrypt the SOPS-encrypted Grafana admin secret (reuses the same age key as taskflow-app).
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age

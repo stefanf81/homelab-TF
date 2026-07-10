@@ -1,0 +1,67 @@
+# Redis exporter — scrapes the TaskFlow Redis instance directly (no auth configured
+# on Redis, so no secret needed) and exposes /metrics on :9121 for the ServiceMonitor
+# in gitops/monitoring/app.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  namespace: taskflow
+  labels:
+    app: redis-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+    spec:
+      containers:
+        - name: redis-exporter
+          # Pin a specific tag; rotate to a @sha256 digest for full hermeticity.
+          image: oliver006/redis-exporter:v1.54.0
+          args:
+            - "--redis.addr=redis:6379"
+          ports:
+            - containerPort: 9121
+              name: metrics
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter
+  namespace: taskflow
+  labels:
+    app: redis-exporter
+spec:
+  ports:
+    - name: metrics
+      port: 9121
+      targetPort: 9121
+  selector:
+    app: redis-exporter
+  type: ClusterIP

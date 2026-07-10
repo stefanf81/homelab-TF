@@ -119,7 +119,7 @@ To ensure production-grade security, resiliency, and performance on your single-
 ### 2. Cilium CNI, Network Security & Gateway API (Consolidated)
 * **High-Performance CNI (Cilium):** Disabled K3s's default flannel CNI (`--flannel-backend=none`) and default network policies (`--disable-network-policy`) inside `modules/proxmox/main.tf` to let **Cilium v1.16.1** serve as the single, high-performance CNI and security engine.
 * **Modern Kubernetes Gateway API:** Deployed the standard Gateway API CRDs (`gateway-api`) and enabled Cilium's built-in Gateway API controller. Traffic is routed using standard, modern `Gateway` and `HTTPRoute` resources rather than legacy Ingress.
-* **Consolidated Hostname Routing:** The TaskFlow app is exposed securely on port `80` under the hostname **`taskflow.local`**. The single gateway routes `/` to the Frontend, `/api` to the Backend, and `/jaeger` to the Jaeger telemetry UI, leaving Services as secure `ClusterIP` resources.
+* **Consolidated Hostname Routing:** The TaskFlow app is exposed securely on port `80` under the hostname **`taskflow.local`**. The single gateway routes `/` to the Frontend and `/api` to the Backend, leaving all Services as secure `ClusterIP` resources. (Jaeger UI is **intentionally not** exposed through the Gateway — reach it via `kubectl port-forward`, see ISSUES.md #2.)
 * **ServiceLB Deconfliction:** K3s's built-in, low-performance `ServiceLB` is disabled (`--disable servicelb`), and **Cilium L2 announcements** (`CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy`) handle IP pool allocations matching your homelab subnet (`192.168.50.200 - 192.168.50.250`).
 
 ### 3. Storage Resiliency & Performance
