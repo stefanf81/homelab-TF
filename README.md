@@ -9,7 +9,7 @@ managed directly by Terraform.
 - `modules/proxmox` – provisions the VM; cloud-init installs k3s at boot (no SSH provisioner needed for this part, per [Terraform's own guidance](https://developer.hashicorp.com/terraform/language/post-apply-operations) to prefer cloud-init over provisioners)
 - `modules/k3s-kubeconfig` – waits for cloud-init's k3s install to finish, then fetches `kubeconfig.yaml` over SSH
 - `modules/flux-bootstrap` – future GitHub-ready Flux bootstrap module template (prepared but not wired in yet)
-- `gitops/` – Flux-style GitOps layout for MetalLB, Longhorn, and cert-manager
+- `gitops/` – Flux-style GitOps layout for Cilium L2 announcements, Longhorn, and cert-manager
 
 ## Workflow
 
@@ -45,9 +45,9 @@ To ensure production-grade security, resiliency, and performance on your single-
 
 ### 2. Cilium CNI, Network Security & Gateway API (Consolidated)
 * **High-Performance CNI (Cilium):** Disabled K3s's default flannel CNI (`--flannel-backend=none`) and default network policies (`--disable-network-policy`) inside `modules/proxmox/main.tf` to let **Cilium v1.16.1** serve as the single, high-performance CNI and security engine.
-* **Modern Kubernetes Gateway API:** Deployed the standard Gateway API CRDs (`gateway-api-crds`) and enabled Cilium's built-in Gateway API controller. Traffic is routed using standard, modern `Gateway` and `HTTPRoute` resources rather than legacy Ingress.
+* **Modern Kubernetes Gateway API:** Deployed the standard Gateway API CRDs (`gateway-api`) and enabled Cilium's built-in Gateway API controller. Traffic is routed using standard, modern `Gateway` and `HTTPRoute` resources rather than legacy Ingress.
 * **Consolidated Hostname Routing:** The TaskFlow app is exposed securely on port `80` under the hostname **`taskflow.local`**. The single gateway routes `/` to the Frontend, `/api` to the Backend, and `/jaeger` to the Jaeger telemetry UI, leaving Services as secure `ClusterIP` resources.
-* **ServiceLB Deconfliction:** K3s's built-in, low-performance `ServiceLB` is disabled (`--disable servicelb`), and **MetalLB** handles IP pool allocations matching your homelab subnet (`192.168.50.200 - 192.168.50.250`).
+* **ServiceLB Deconfliction:** K3s's built-in, low-performance `ServiceLB` is disabled (`--disable servicelb`), and **Cilium L2 announcements** (`CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy`) handle IP pool allocations matching your homelab subnet (`192.168.50.200 - 192.168.50.250`).
 
 ### 3. Storage Resiliency & Performance
 * **Resilient Distributed Storage Class:** The PostgreSQL Database (`postgres-pvc.yaml`) volume mapping is scaled from a restrictive `1Gi` to **`10Gi`** and explicitly bound to the **Longhorn** replica-replicated storage engine (`storageClassName: longhorn`).
@@ -71,7 +71,7 @@ To ensure production-grade security, resiliency, and performance on your single-
 Before your first real deploy, verify these three items:
 
 1. Create a remote Git repository and wire Flux bootstrap to it.
-2. Replace or verify the MetalLB IP range in `gitops/infrastructure/configs/metallb/ipaddresspool.yaml` (pre-configured for your 192.168.50.x network).
+2. Replace or verify the Cilium IP pool range in `gitops/infrastructure/configs/cilium/ippool.yaml` (pre-configured for your 192.168.50.x network).
 3. Run a test deploy of the Proxmox + cloud-init bootstrap path and confirm:
    - VM boots successfully
    - k3s installs on boot
@@ -131,5 +131,5 @@ export TF_CLI_CONFIG_FILE="$PWD/tofu.tfrc"
 - The `gitops/` directory is local scaffolding for now. Once you create a remote
   Git repository, push that directory there and then wire in
   `modules/flux-bootstrap` to install Flux against it.
-- See `gitops/FUTURE_FLUX_BOOTSTRAP.md` and `modules/flux-bootstrap/README.md`
+- See `gitops/FUTURE_FLUX_BOOTSTRAP.md`
   for the exact future GitHub + PAT bootstrap wiring.

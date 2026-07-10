@@ -24,23 +24,23 @@ This is where your Flux CD controllers start scanning. When you bootstrap Flux o
 
 * **Role:** Orchestrates the deployment order using **Kustomization dependency graphs** (`dependsOn`). It ensures platform infrastructure is fully running before application code attempts to deploy.
 * **How it works:**
-  1. Flux reads `clusters/taskflow/infra-controllers.yaml` and deploys the operators (MetalLB, Longhorn, cert-manager).
-  2. Once those are healthy, Flux reads `clusters/taskflow/infra-configs.yaml` to deploy configurations (MetalLB IP pools).
-  3. Finally, Flux reads `clusters/taskflow/taskflow.yaml` to deploy your TaskFlow application, guaranteeing the database persistent volumes (Longhorn) and IP allocations (MetalLB) are ready to consume.
+  1. Flux reads `clusters/taskflow/infra-controllers.yaml` and deploys the operators (Cilium, Longhorn, cert-manager).
+  2. Once those are healthy, Flux reads `clusters/taskflow/infra-configs.yaml` to deploy configurations (Cilium IP pools).
+  3. Finally, Flux reads `clusters/taskflow/taskflow.yaml` to deploy your TaskFlow application, guaranteeing the database persistent volumes (Longhorn) and IP allocations (Cilium L2 announcements) are ready to consume.
 
 ### 2. `infrastructure/` (The Platform / Systems Layer)
 This layer manages cluster-wide utilities and operators that provide auxiliary services (network, storage, TLS certs) to other workloads in the cluster. It is split into two logical subdirectories to prevent race conditions during deployment:
 
 #### A. `infrastructure/controllers/` (CRD and Operator Deployments)
 Contains the system controllers deployed primarily via **HelmReleases**. 
-* **`metallb/`**: Installs the MetalLB controller (load-balancer) to manage external IPs.
+* **`cilium/`**: Installs Cilium with native L2 announcements (`CiliumLoadBalancerIPPool`) to manage external LoadBalancer IPs.
 * **`longhorn/`**: Installs the distributed block storage system to handle persistent volumes (PVCs). Optimized to run on your single-node Homelab cluster by limiting volume replica checks (`defaultClassReplicaCount: 1`).
 * **`cert-manager/`**: Handles automated provisioning of TLS certificates.
 
 #### B. `infrastructure/configs/` (Controller Instances)
 Contains the actual custom configurations and Custom Resources (CRs) consumed by the controllers installed in the folder above.
-* **`metallb/ipaddresspool.yaml`**: Configures the IP pool block allocated for LoadBalancer services. *Optimized:* Adjusted to map your homelab subnet (`192.168.50.200 - 192.168.50.250`).
-* **`metallb/l2advertisement.yaml`**: Advertises the allocated IP ranges locally via Layer 2 (ARP).
+* **`cilium/ippool.yaml`**: Configures the IP pool block for LoadBalancer services via `CiliumLoadBalancerIPPool`. *Optimized:* Adjusted to map your homelab subnet (`192.168.50.200 - 192.168.50.250`).
+* **`cilium/l2announcement-policy.yaml`**: Advertises the allocated IP ranges locally via Layer 2 (ARP) using `CiliumL2AnnouncementPolicy`.
 
 ### 3. `apps/` (The Application Layer)
 This layer houses user-facing workloads and microservices. Workloads here are kept separate from the infrastructure layer to allow application developers to deploy code without risking platform-level system configuration.

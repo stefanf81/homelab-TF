@@ -2,6 +2,8 @@
 
 This guide compiles the complete technical logs, structural adjustments, and troubleshooting steps executed on **July 9, 2026**, during the migration of the TaskFlow Homelab cluster from legacy networking (Flannel + open NodePorts) to a modern, high-performance, kernel-level **Cilium (eBPF) CNI & Kubernetes Gateway API** architecture.
 
+> **Status update:** Following this migration, external IP allocation was moved off **MetalLB** to **native Cilium L2 announcements** (`CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy` under `gitops/infrastructure/configs/cilium/`). The MetalLB references below reflect the intermediate state *during* the July 9 migration and are now superseded by Cilium L2 announcements.
+
 ---
 
 ## 1. Migration Architecture: Before vs. After
@@ -39,7 +41,7 @@ This guide compiles the complete technical logs, structural adjustments, and tro
 * **`cilium/` (New Folder)**:
   * Created `namespace.yaml` (`kube-system`), `repository.yaml` (`https://helm.cilium.io/`), and `release.yaml` declaring a HelmRelease for Cilium `v1.16.1` with native CNI, IPAM (`mode: kubernetes`), `kubeProxyReplacement: true` (eBPF proxy bypass), and **`gatewayAPI.enabled = true`**.
 * **`kustomization.yaml`**:
-  * Wired `gateway-api` and `cilium` to the top of the Kustomize controller deployment list so networking boots before cert-manager, MetalLB, and Longhorn.
+  * Wired `gateway-api` and `cilium` to the top of the Kustomize controller deployment list so networking boots before cert-manager and Longhorn.
 
 ### C. GitOps Platform Configs (`gitops/infrastructure/configs/`)
 * **`gatewayclass.yaml` (New File)**:
