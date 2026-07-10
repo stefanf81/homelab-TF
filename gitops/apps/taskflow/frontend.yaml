@@ -15,10 +15,12 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: ghcr.io/stefanf81/taskflow-frontend:latest
-          # Always re-pull :latest so freshly-pushed builds are picked up on rollout
-          # (IfNotPresent would reuse the node-cached image when the tag is unchanged).
-          imagePullPolicy: Always
+          # Flux image automation pins :latest to its current digest (see ImagePolicy
+          # digestReflectionPolicy: Always). The marker below makes Flux rewrite this
+          # line to repo:latest@sha256:<digest> whenever a new :latest is pushed,
+          # committing the exact digest to Git -> auditable, automatic rollout.
+          image: ghcr.io/stefanf81/taskflow-frontend:latest # {"$imagepolicy": "flux-system:taskflow-frontend:digest"}
+          imagePullPolicy: IfNotPresent
           securityContext:
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false

@@ -1,0 +1,98 @@
+# Flux image automation for TaskFlow's mutable `:latest` images.
+#
+# Strategy: digest pinning. Instead of re-pulling `:latest` blindly (imagePullPolicy:
+# Always), we let Flux resolve `:latest` to its current sha256 digest and rewrite the
+# manifest to `repo:latest@sha256:<digest>`. When a new `:latest` is pushed to ghcr,
+# the ImagePolicy (digestReflectionPolicy: Always) picks up the new digest, the
+# ImageUpdateAutomation commits the updated reference to Git, and Flux rolls out the
+# new (unique) digest. The digest in Git is the auditable source of truth, and a plain
+# `rollout restart` will NOT silently change the running software.
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: taskflow-frontend
+  namespace: flux-system
+spec:
+  image: ghcr.io/stefanf81/taskflow-frontend
+  interval: 5m0s
+  # If the ghcr repos are PRIVATE, create a docker-registry secret and reference it:
+  #   kubectl -n flux-system create secret docker-registry ghcr-pull \
+  #     --docker-server=ghcr.io --docker-username=<user> --docker-password=<token>
+  # secretRef:
+  #   name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: taskflow-backend
+  namespace: flux-system
+spec:
+  image: ghcr.io/stefanf81/taskflow-backend
+  interval: 5m0s
+  # secretRef:
+  #   name: ghcr-pull
+---
+# Filter down to the single `latest` tag, then track its digest (not its tag) so we
+# detect re-pushes of the same mutable tag.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: taskflow-frontend
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: taskflow-frontend
+  filterTags:
+    pattern: '^latest$'
+  policy:
+    alphabetical: {}
+  digestReflectionPolicy: Always
+  interval: 5m0s
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: taskflow-backend
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: taskflow-backend
+  filterTags:
+    pattern: '^latest$'
+  policy:
+    alphabetical: {}
+  digestReflectionPolicy: Always
+  interval: 5m0s
+---
+# Periodically rewrites the `# {"$imagepolicy": ...:digest}` markers in the app
+# manifests (under ./gitops/apps/taskflow) and pushes the change to main.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageUpdateAutomation
+metadata:
+  name: taskflow-images
+  namespace: flux-system
+spec:
+  interval: 5m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        email: fluxcdbot@users.noreply.github.com
+        name: fluxcdbot
+      messageTemplate: |
+        chore: automated TaskFlow image update
+
+        {{ range .Changed.Changes -}}
+        - {{ .OldValue }} -> {{ .NewValue }}
+        {{ end -}}
+    push:
+      branch: main
+  update:
+    path: ./gitops/apps/taskflow
+    strategy: Setters

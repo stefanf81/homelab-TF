@@ -30,10 +30,12 @@ spec:
           command: ["sh", "-c", "until nc -z -w 2 db 5432 && nc -z -w 2 redis 6379; do echo 'Waiting for database and redis...'; sleep 2; done;"]
       containers:
         - name: backend
-          image: ghcr.io/stefanf81/taskflow-backend:latest
-          # Always re-pull :latest so freshly-pushed builds are picked up on rollout
-          # (IfNotPresent would reuse the node-cached image when the tag is unchanged).
-          imagePullPolicy: Always
+          # Flux image automation pins :latest to its current digest (see ImagePolicy
+          # digestReflectionPolicy: Always). The marker below makes Flux rewrite this
+          # line to repo:latest@sha256:<digest> whenever a new :latest is pushed,
+          # committing the exact digest to Git -> auditable, automatic rollout.
+          image: ghcr.io/stefanf81/taskflow-backend:latest # {"$imagepolicy": "flux-system:taskflow-backend:digest"}
+          imagePullPolicy: IfNotPresent
           securityContext:
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
