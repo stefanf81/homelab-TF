@@ -102,7 +102,7 @@ spec:
         path: /grafana/metrics
       grafana.ini:
         server:
-          domain: taskflow.local
+          domain: paintlab.duckdns.org
           root_url: "%(protocol)s://%(domain)s/grafana/"
           serve_from_sub_path: true
       # Grafana is exposed via an HTTPRoute on the public Gateway
