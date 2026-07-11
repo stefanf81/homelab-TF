@@ -6,6 +6,8 @@ metadata:
 spec:
   parentRefs:
     - name: taskflow-gateway
+  hostnames:
+    - "paintlab.duckdns.org"
   rules:
     # Route API traffic to the backend service
     - matches:

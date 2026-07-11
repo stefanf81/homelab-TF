@@ -15,4 +15,5 @@ resources:
   - redis-exporter.yaml
   - gateway.yaml
   - httproute.yaml
+  - certificate.yaml
 

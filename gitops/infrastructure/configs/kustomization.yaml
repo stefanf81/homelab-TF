@@ -3,3 +3,5 @@ kind: Kustomization
 resources:
   - gatewayclass.yaml
   - cilium
+  - letsencrypt-http01-issuers.yaml
+

@@ -1,0 +1,12 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: taskflow-duckdns-cert
+  namespace: taskflow
+spec:
+  secretName: taskflow-tls-secret
+  dnsNames:
+    - "paintlab.duckdns.org"
+  issuerRef:
+    name: letsencrypt-http01-production
+    kind: ClusterIssuer
