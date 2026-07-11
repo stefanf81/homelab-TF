@@ -29,34 +29,30 @@ spec:
     - Ingress
   # no ingress rules => deny all ingress
 ---
-# 2) Allow the Cilium Gateway (Envoy proxy runs in kube-system) to reach the
-#    public workloads on their serving port. Without this, external traffic via
-#    the Gateway cannot reach frontend/backend and the app goes dark.
-#    If your Cilium gateway proxy runs in a different namespace, change the
-#    namespaceSelector below (this is the #1 thing to check if the app breaks).
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
+# 2) Allow the Cilium Gateway (Envoy proxy carries the reserved:ingress identity)
+#    to reach the public workloads on their serving port.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
 metadata:
   name: allow-gateway-to-app
   namespace: taskflow
 spec:
-  podSelector:
+  endpointSelector:
     matchExpressions:
       - key: app
         operator: In
         values:
-          - frontend
+          - taskflow-frontend
           - taskflow-backend
-  policyTypes:
-    - Ingress
   ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: TCP
-          port: 8080
+    - fromEndpoints:
+        - matchExpressions:
+            - key: reserved:ingress
+              operator: Exists
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
 ---
 # 3) Allow the monitoring stack (VictoriaMetrics vmagent, in `monitoring`) to
 #    scrape the metrics endpoints. Without this, Postgres/Redis (and the inert
