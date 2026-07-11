@@ -46,7 +46,7 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 
 ### 3.1 Runtime
 - **Distribution**: k3s (single-node cluster)
-- **CNI**: Cilium v1.16.1 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
+- **CNI**: Cilium v1.19.5 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
 - **Storage**: Proxmox CSI (dynamic VM virtual disk provisioning)
 
 ### 3.2 Cilium Configuration (`gitops/infrastructure/controllers/cilium/release.yaml`)
@@ -173,7 +173,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 | OOM Policy | `-XX:+ExitOnOutOfMemoryError` (fail fast) |
 | Resources | CPU: 2 cores (req=limit), Memory: 2Gi (Guaranteed QoS, req==limit) |
 | SecurityContext | readOnlyRootFS, runAsNonRoot UID/GID 10001, drop ALL capabilities |
-| Init Container | `alpine:3.19.1` — waits for DB (port 5432) + Redis (port 6379) via nc |
+| Init Container | `alpine:3.20.3` — waits for DB (port 5432) + Redis (port 6379) via nc |
 | Probes | Startup: `/actuator/health/liveness`, Liveness: same, Readiness: `/actuator/health/readiness` |
 | Termination Grace Period | 45s (for Spring graceful shutdown) |
 
@@ -201,7 +201,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.5 Redis Deployment (`gitops/apps/taskflow/redis.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `redis:7.2-alpine` |
+| Image | `redis:7.4-alpine` |
 | Replicas | 1 |
 | Storage | emptyDir (ephemeral, no persistence) |
 | Memory Guard | `--maxmemory 384mb`, `allkeys-lru`, lazyfree eviction, 10 samples |
@@ -210,7 +210,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.6 Jaeger Deployment (`gitops/apps/taskflow/jaeger.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `jaegertracing/all-in-one:1.57` |
+| Image | `jaegertracing/all-in-one:1.60` |
 | Replicas | 1 |
 | Memory Guard | `--memory.max-traces=5000` (caps in-memory store) |
 | Ports | UI: 16686, OTLP-gRPC: 4317, OTLP-HTTP: 4318 |
@@ -233,7 +233,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.9 Monitoring Stack (`gitops/monitoring/`)
 | Component | Implementation |
 |-----------|----------------|
-| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.85.10) in namespace `monitoring` |
+| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.86.0) in namespace `monitoring` |
 | CRDs | Installed by the chart (VMServiceScrape, VMSingle, …) |
 | Persistence | VictoriaMetrics TSDB on a **Proxmox CSI-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `proxmox-csi`) |
 | Grafana auth | Admin credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana and VictoriaMetrics UIs are routed via the Gateway API (see `routes.yaml`), secured by Grafana's login screen |
@@ -293,7 +293,7 @@ TF/
 │   │   ├── frontend.yaml            # Angular/nginx deployment + ClusterIP service
 │   │   ├── postgres-db.yaml         # PostgreSQL 17 deployment + ClusterIP service (name: db)
 │   │   ├── postgres-pvc.yaml        # 10Gi Proxmox CSI PVC
-│   │   ├── redis.yaml               # Redis 7.2 deployment + ClusterIP service + NetworkPolicy
+│   │   ├── redis.yaml               # Redis 7.4 deployment + ClusterIP service + NetworkPolicy
 │   │   ├── jaeger.yaml              # Jaeger all-in-one + OTLP services + UI service + NetworkPolicy
 │   │   ├── gateway.yaml             # Cilium Gateway (port 80, same-namespace routes)
 │   │   ├── httproute.yaml           # /api→backend, /*→frontend (Jaeger UI NOT exposed)
@@ -302,8 +302,8 @@ TF/
 │   │
 │   ├── infrastructure/
 │   │   ├── controllers/             # HelmRelease + Repository for platform add-ons
-│   │   │   ├── cilium/release.yaml  # Cilium v1.16.1 (eBPF, Gateway API, L2 announcements)
-│   │   │   ├── cert-manager/        # Namespace only (no release yet — no TLS certs configured)
+│   │   │   ├── cilium/release.yaml  # Cilium v1.19.5 (eBPF, Gateway API, L2 announcements)
+│   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.0) with Let's Encrypt certificate automation
 │   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
 │   │   │   └── gateway-api/         # Standard Gateway API CRDs + TLSRoute CRD
 │   │   │
@@ -368,14 +368,14 @@ flux reconcile kustomization taskflow-app -n flux-system
 
 | Area | Current State | TODO |
 |------|-------------|------|
-| TLS/HTTPS | Not configured (HTTP only on port 80) | cert-manager HelmRelease + Certificate CRDs + HTTPS Gateway listener |
+| TLS/HTTPS | Fully configured (HTTPS on port 443) | cert-manager HelmRelease + Let's Encrypt certificates + HTTPS Gateway listener are fully active |
 | Multi-node HA | Single k3s node | Add worker nodes via additional Proxmox VMs |
 | GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FUTURE_FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` module is planned, not yet created) |
 | Pod Disruption Budgets | Not defined | Add PDBs for backend, frontend, postgres |
 | Horizontal Pod Autoscaler | Single replicas everywhere | HPA for backend based on CPU/memory metrics |
 | Backup strategy | Proxmox hypervisor backups | Configure scheduled VM backups at the Proxmox level (using PBS or vzdump) |
 | Monitoring stack | Jaeger traces only | VictoriaMetrics + Grafana scaffolded in `gitops/monitoring/` (see §5.9). **Backend JVM/HTTP metrics need an app-repo change** (`micrometer-registry-prometheus`) — tracked in `docs/BACKEND_INTEGRATION_CONTEXT.md`. DB/Redis metrics already flow via exporters. |
-| cert-manager | Installed (v1.14.4) | Configured Let's Encrypt HTTP-01 `ClusterIssuer` + `Certificate` for `paintlab.duckdns.org` with an HTTPS Gateway listener |
+| cert-manager | Installed (v1.21.0) | Configured Let's Encrypt HTTP-01 `ClusterIssuer` + `Certificate` for `paintlab.duckdns.org` with an HTTPS Gateway listener |
 
 ---
 
@@ -449,8 +449,8 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
 ```
 
 - **`infra-controllers`** (`gitops/infrastructure/controllers/`) installs the platform via HelmRelease objects:
-  - `cilium/release.yaml` — Cilium 1.16.1 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
-  - `cert-manager/release.yaml` — cert-manager 1.14.4 (installed, but currently idle — no certs issued yet, see §9/§10.6).
+  - `cilium/release.yaml` — Cilium 1.19.5 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
+  - `cert-manager/release.yaml` — cert-manager 1.21.0 (fully active, managing TLS certificates).
   - `proxmox-csi/` — Proxmox CSI driver (dynamic storage provisioning of virtual disks with native hypervisor backup integration).
   - `gateway-api/` — the standard Gateway API CRDs.
 - **`infra-configs`** (`gitops/infrastructure/configs/`) applies Cilium's `CiliumLoadBalancerIPPool` (`192.168.50.200–250`), the `CiliumL2AnnouncementPolicy` (which Ethernet interfaces advertise the IP via ARP), and the `GatewayClass` named `cilium`. These **must** come after the controllers, hence the dependency.

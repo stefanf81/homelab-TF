@@ -61,7 +61,7 @@ cluster:
 
 ```bash
 export KUBECONFIG=$PWD/kubeconfig.yaml
-cilium install --version 1.16.1
+cilium install --version 1.19.5
 cilium status --wait
 ```
 
@@ -117,7 +117,7 @@ To ensure production-grade security, resiliency, and performance on your single-
 * **Syntax-Safe Cloud-Init Snippets:** Cloud-init user-data heredocs are defined from column 0 of line 1 to prevent silent whitespace parsing errors, securing predictable boot-time system configurations.
 
 ### 2. Cilium CNI, Network Security & Gateway API (Consolidated)
-* **High-Performance CNI (Cilium):** Disabled K3s's default flannel CNI (`--flannel-backend=none`) and default network policies (`--disable-network-policy`) inside `modules/proxmox/main.tf` to let **Cilium v1.16.1** serve as the single, high-performance CNI and security engine.
+* **High-Performance CNI (Cilium):** Disabled K3s's default flannel CNI (`--flannel-backend=none`) and default network policies (`--disable-network-policy`) inside `modules/proxmox/main.tf` to let **Cilium v1.19.5** serve as the single, high-performance CNI and security engine.
 * **Modern Kubernetes Gateway API:** Deployed the standard Gateway API CRDs (`gateway-api`) and enabled Cilium's built-in Gateway API controller. Traffic is routed using standard, modern `Gateway` and `HTTPRoute` resources rather than legacy Ingress.
 * **Consolidated Hostname Routing:** The TaskFlow app and monitoring stack are exposed securely. They can be accessed directly via `https://paintlab.duckdns.org/` or `https://paintlab.duckdns.org/grafana` using the `paintlab.duckdns.org` domain. See [Gateway Access Guide](docs/GATEWAY_ACCESS_GUIDE.md) for full instructions. (Jaeger UI is **intentionally not** exposed through the Gateway — reach it via `kubectl port-forward`, see ISSUES.md #2.)
 * **ServiceLB Deconfliction:** K3s's built-in, low-performance `ServiceLB` is disabled (`--disable servicelb`), and **Cilium L2 announcements** (`CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy`) handle IP pool allocations matching your homelab subnet (`192.168.50.200 - 192.168.50.250`).

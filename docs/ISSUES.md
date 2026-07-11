@@ -57,7 +57,7 @@ The invalid backend was the **VMSingle** Service (originally `victoria-metrics-k
 ## 🟡 Medium Priority (Resilience / Best Practice)
 
 ### 5. ~~cert-manager namespace exists but is never installed~~ — RETRACTED
-**Correction:** I was wrong. `gitops/infrastructure/controllers/cert-manager/` contains a full `namespace.yaml` + `repository.yaml` (jetstack) + `release.yaml` (cert-manager v1.14.4), and it *is* referenced by the controllers Kustomization. cert-manager installs correctly. The only gap is that **no `Certificate`/ClusterIssuer or HTTPS Gateway listener is wired yet**, so TLS isn't actually used — that's a feature gap, not broken config. See #19 below.
+**Correction:** I was wrong. `gitops/infrastructure/controllers/cert-manager/` contains a full `namespace.yaml` + `repository.yaml` (jetstack) + `release.yaml` (cert-manager v1.21.0), and it *is* referenced by the controllers Kustomization. cert-manager installs correctly. The only gap is that **no `Certificate`/ClusterIssuer or HTTPS Gateway listener is wired yet**, so TLS isn't actually used — that's a feature gap, not broken config. See #19 below.
 
 ### 19. TLS still not actually used (cert-manager installed but idle)
 **Files:** `gateway.yaml`, `gitops/infrastructure/controllers/cert-manager/`
@@ -98,7 +98,7 @@ Backend, postgres, jaeger, frontend all have startupProbes; redis only has liven
 ### 10. Init container image not digest-pinned
 **File:** `gitops/apps/taskflow/backend.yaml`
 ```yaml
-image: alpine:3.19.1
+image: alpine:3.20.3
 ```
 Everything else uses Flux digest-pinning; the wait-for-db init container does not, so it can silently drift.
 **Fix:** Pin to a digest, or (better) drop the init container entirely and use a Spring Boot `depends-on` / a Kubernetes `startupProbe` with `pg_isready` style readiness gating.
