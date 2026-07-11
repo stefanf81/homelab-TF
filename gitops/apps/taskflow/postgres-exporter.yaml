@@ -22,7 +22,7 @@ spec:
       containers:
         - name: postgres-exporter
           # Pin a specific tag; rotate to a @sha256 digest for full hermeticity.
-          image: prometheuscommunity/postgres-exporter:v0.15.0
+          image: prometheuscommunity/postgres-exporter:v0.20.1
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:
