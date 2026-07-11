@@ -36,6 +36,13 @@ spec:
             - "work_mem=8MB"
             - "-c"
             - "maintenance_work_mem=64MB"
+            # PostgreSQL 17 VACUUM uses a compact radix-tree index memory structure that needs
+            # up to ~20x less memory than PG16. Allow up to 4 parallel workers for VACUUM /
+            # CREATE INDEX so maintenance finishes faster while staying inside the 1024Mi cap
+            # (peak ~4 × maintenance_work_mem during parallel vacuum). This is the zero-config
+            # win unlocked by the PG17 engine upgrade (see docs/PERFORMANCE.md #3.1).
+            - "-c"
+            - "max_parallel_maintenance_workers=4"
             # Fewer connections → less per-connection memory pressure.
             - "-c"
             - "max_connections=30"

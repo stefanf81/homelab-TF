@@ -194,7 +194,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 | Replicas | 1 |
 | Storage | 10 GiB PVC, storageClass: proxmox-csi (ReadWriteOnce) |
 | SecurityContext | runAsNonRoot UID/GID 70 (postgres), drop ALL capabilities, fsGroup 70 with OnRootMismatch policy |
-| Tuning | `shared_buffers=384MB`, `effective_cache_size=1152MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `max_connections=30` |
+| Tuning | `shared_buffers=384MB`, `effective_cache_size=700MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `max_connections=30`, `max_parallel_maintenance_workers=4` (PG17 compact-radix-tree VACUUM: up to ~20x less index memory, parallel maintenance) |
 | SSD tuning | `random_page_cost=1.1`, `effective_io_concurrency=200`, `checkpoint_timeout=900s`, `wal_buffers=16MB`, `max_wal_size=2GB` |
 | Resources | CPU: 500m–2 cores, Memory: 768–1024 MiB |
 
