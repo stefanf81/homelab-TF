@@ -6,6 +6,7 @@ metadata:
 spec:
   parentRefs:
     - name: taskflow-gateway
+      sectionName: https # serve only on :443; plaintext :80 is redirected by http-to-https-redirect
   hostnames:
     - "paintlab.duckdns.org"
   rules:

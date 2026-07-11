@@ -1,0 +1,36 @@
+# Force all plaintext HTTP (:80) traffic to redirect to HTTPS (:443).
+#
+# The taskflow-gateway has two listeners: `http` (80) and `https` (443). The app
+# routes (taskflow-route, monitoring-routes) are scoped to the `https` listener,
+# so the `http` listener's only job is this redirect. Without it, the Gateway
+# would happily serve the app over plaintext (a credential/Origin-leak risk and
+# a missed HSTS opportunity).
+#
+# ACME HTTP-01 STILL WORKS: cert-manager creates a temporary HTTPRoute for
+# `/.well-known/acme-challenge/<token>`. Per Gateway API precedence, that path is
+# MORE specific than this catch-all `/` prefix, so the challenge request is routed
+# to the solver pod (not redirected) and certificate issuance/renewal is unaffected.
+#
+# 308 (Permanent Redirect) so browsers cache it and clients retry on HTTPS.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: http-to-https-redirect
+  namespace: taskflow
+spec:
+  parentRefs:
+    - name: taskflow-gateway
+      sectionName: http # only the plaintext listener
+  hostnames:
+    - "paintlab.duckdns.org"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            port: 443
+            statusCode: 308

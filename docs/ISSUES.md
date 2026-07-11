@@ -162,6 +162,11 @@ Kubernetes/Cilium NetworkPolicy is **allow-by-default**: an "allow" rule only ev
 - *Data tier:* `default-deny-datastore-ingress` (denies all ingress to `postgres-db`, `redis`, `jaeger`). The three `restrict-*` policies now become the *only* permitted paths in. `restrict-db-access` / `restrict-redis-access` also allow the `postgres-exporter` / `redis-exporter` pods (otherwise metrics scraping would break). Cilium's host exemption keeps kubelet probes and admin `kubectl port-forward` working.
 - *Full namespace (follow-up):* `namespace-default-deny.yaml` adds `default-deny-all-ingress` (denies ALL ingress to every pod in `taskflow`) plus an explicit allow-list: the Cilium Gateway's Envoy proxy (`kube-system` ns) → `frontend`/`taskflow-backend`:8080, and the monitoring vmagent (`monitoring` ns) → `taskflow-backend`:8080, `postgres-exporter`:9187, `redis-exporter`:9121. The data-tier `default-deny.yaml` is deliberately kept as a safe fallback so deleting `namespace-default-deny.yaml` restores the app while datastore isolation stays. **EGRESS is intentionally still allow-all** — tightening egress (DNS, backend outbound calls) safely needs the live cluster and is a separate follow-up. Rollback: `kubectl -n taskflow delete -f gitops/apps/taskflow/namespace-default-deny.yaml`.
 
+### 22. Plaintext HTTP (:80) served with no HTTPS redirect
+**Files:** `gitops/apps/taskflow/http-redirect.yaml` (new), `httproute.yaml`, `gitops/monitoring/platform/routes.yaml`, `kustomization.yaml`
+The Gateway had both an `http` (:80) and `https` (:443) listener, but nothing redirected plaintext traffic — so `http://paintlab.duckdns.org/...` was served in the clear (credential/`Origin` leak risk, defeats HSTS).
+**Fix:** ✅ Fixed. Added `http-to-https-redirect` (HTTPRoute) on the `http` listener doing a catch-all `RequestRedirect` to `https`/`443` (308). The two app routes (`taskflow-route`, `monitoring-routes`) were scoped to the `https` listener (`sectionName: https`) so they no longer serve plaintext and don't conflict with the redirect. Cert-manager HTTP-01 still works: its `/.well-known/acme-challenge/<token>` route is a more specific path match and wins by Gateway API precedence, so issuance/renewal is unaffected. Verify: `curl -I http://paintlab.duckdns.org/` should return `308` → `https://`.
+
 ## Summary Table
 
 | # | Issue | Severity | Effort | File | Status |
@@ -187,3 +192,4 @@ Kubernetes/Cilium NetworkPolicy is **allow-by-default**: an "allow" rule only ev
 | 19 | TLS not actually used (cert-manager idle) | 🟡 Med | Medium | gateway.yaml, cert-manager | ✅ Resolved |
 | 20 | Grafana redirects to root domain | 🔴 High | Small | routes.yaml | ✅ Fixed |
 | 21 | restrict-* policies no-ops (no default-deny) | 🔴 High | Small | default-deny.yaml, network-policy.yaml, redis.yaml, jaeger.yaml | ✅ Fixed |
+| 22 | Plaintext HTTP (:80) served, no HTTPS redirect | 🟡 Med | Small | http-redirect.yaml, httproute.yaml, routes.yaml | ✅ Fixed |
