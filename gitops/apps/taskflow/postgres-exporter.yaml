@@ -23,19 +23,16 @@ spec:
         - name: postgres-exporter
           # Pin a specific tag; rotate to a @sha256 digest for full hermeticity.
           image: prometheuscommunity/postgres-exporter:v0.15.0
-          args:
-            - "--db.host=db"
-            - "--db.port=5432"
-            - "--db.user=postgres"
-            - "--db.password=$(POSTGRES_PASSWORD)"
-            - "--db.database=taskflow"
-            - "--auto-discover-databases"
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: db-secret
                   key: POSTGRES_PASSWORD
+            - name: DATA_SOURCE_NAME
+              value: "postgresql://postgres:$(POSTGRES_PASSWORD)@db:5432/taskflow?sslmode=disable"
+            - name: PG_EXPORTER_AUTO_DISCOVER_DATABASES
+              value: "true"
           ports:
             - containerPort: 9187
               name: metrics
