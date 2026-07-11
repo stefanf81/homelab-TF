@@ -11,7 +11,9 @@
 # MORE specific than this catch-all `/` prefix, so the challenge request is routed
 # to the solver pod (not redirected) and certificate issuance/renewal is unaffected.
 #
-# 308 (Permanent Redirect) so browsers cache it and clients retry on HTTPS.
+# 301 (Permanent Redirect) so browsers cache it and clients retry on HTTPS.
+# NOTE: the Gateway API CRDs installed in this cluster only validate statusCode
+# 301/302 (not 307/308), so 301 is used here.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -33,4 +35,4 @@ spec:
           requestRedirect:
             scheme: https
             port: 443
-            statusCode: 308
+            statusCode: 301
