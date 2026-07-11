@@ -11,8 +11,8 @@ A scanned list of easy, high-value fixes across the project. Grouped by severity
 ```yaml
 APP_CORS_ALLOWED_ORIGINS: "http://localhost:4200"
 ```
-The backend runs in-cluster behind the Gateway, but the browser accesses it via `http://taskflow.local`. CORS will reject the browser's `Origin: http://taskflow.local` → the frontend will fail all `/api` calls once DNS/routing works.
-**Fix:** Change to match the real published hostname, e.g. `http://taskflow.local` (or make it a Terraform/Flux variable driven from a `.tfvars` / Kustomize patch).
+The backend runs in-cluster behind the Gateway, but the browser accessed it via `http://taskflow.local`. CORS would reject the browser's `Origin` → the frontend would fail all `/api` calls.
+**Fix:** ✅ Fixed. Changed `configmap.yaml` to match the real published HTTPS hostname `https://paintlab.duckdns.org`.
 
 ### 2. Jaeger UI exposed to the internet with no auth
 **File:** `gitops/apps/taskflow/network-policy.yaml` (`restrict-jaeger-access`) + `httproute.yaml`
@@ -54,7 +54,7 @@ MITM-exposed: the local-exec blindly trusts whatever answers at the VM IP.
 ### 19. TLS still not actually used (cert-manager installed but idle)
 **Files:** `gateway.yaml`, `gitops/infrastructure/controllers/cert-manager/`
 cert-manager is installed but nothing requests a certificate and the Gateway only has an HTTP (port 80) listener. The TLSRoute CRD is installed but unused.
-**Fix:** Add a `ClusterIssuer` (e.g. self-signed or Let's Encrypt staging) + a `Certificate` for `taskflow.local`, then add an HTTPS listener to `gateway.yaml` and a TLS block to the HTTPRoute. Until then, remove the unused `tlsroute-crd.yaml` or leave it clearly marked "future use".
+**Fix:** ✅ Fixed. Added a Let's Encrypt HTTP-01 `ClusterIssuer` + a `Certificate` for `paintlab.duckdns.org`, and added an HTTPS listener to `gateway.yaml` with a TLS block on the HTTPRoute.
 
 ### 6. No PodDisruptionBudgets anywhere
 With single replicas, a node drain or k3s upgrade takes the whole stack down. Not strictly "low-hanging," but at minimum PostgreSQL (stateful, slow to come back) deserves a PDB + comment explaining why it's single-replica.
@@ -167,4 +167,4 @@ As of July 2026, Ubuntu 26.04 LTS is released and the image URL (`https://cloud-
 | 16 | SOPS key rotation undocumented | 🟢 Low | Trivial | .sops.yaml | ✅ Fixed |
 | 17 | No PostgreSQL backup | 🟢 Low | Medium | postgres-*.yaml | ✅ Resolved via Proxmox CSI |
 | 18 | Ubuntu 26.04 image URL unverified | 🟢 Low | Trivial | proxmox/main.tf | ✅ Verified |
-| 19 | TLS not actually used (cert-manager idle) | 🟡 Med | Medium | gateway.yaml, cert-manager | ⬜ Open |
+| 19 | TLS not actually used (cert-manager idle) | 🟡 Med | Medium | gateway.yaml, cert-manager | ✅ Resolved |
