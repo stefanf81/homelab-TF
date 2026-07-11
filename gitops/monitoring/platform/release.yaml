@@ -96,6 +96,8 @@ spec:
 
     grafana:
       enabled: true
+      plugins:
+        - victoriametrics-metrics-datasource
       grafana.ini:
         server:
           domain: taskflow.local
