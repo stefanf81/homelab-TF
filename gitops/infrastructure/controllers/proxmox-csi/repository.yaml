@@ -4,5 +4,6 @@ metadata:
   name: proxmox-csi
   namespace: csi-proxmox
 spec:
+  type: oci
   interval: 24h
-  url: https://sergelogvinov.github.io/helm-charts
+  url: oci://ghcr.io/sergelogvinov/charts
