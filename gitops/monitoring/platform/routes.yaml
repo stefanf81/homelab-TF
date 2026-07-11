@@ -8,6 +8,8 @@ spec:
   parentRefs:
     - name: taskflow-gateway
       namespace: taskflow
+  hostnames:
+    - "paintlab.duckdns.org"
   rules:
     # Grafana UI
     - matches:
