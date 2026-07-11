@@ -8,7 +8,7 @@ managed directly by Terraform.
 
 - `modules/proxmox` – provisions the VM; cloud-init installs k3s at boot (no SSH provisioner needed for this part, per [Terraform's own guidance](https://developer.hashicorp.com/terraform/language/post-apply-operations) to prefer cloud-init over provisioners)
 - `modules/k3s-kubeconfig` – waits for cloud-init's k3s install to finish, then fetches `kubeconfig.yaml` over SSH
-- `modules/flux-bootstrap` – **planned, not yet created**; a future GitHub-ready Flux bootstrap module (see `gitops/FUTURE_FLUX_BOOTSTRAP.md` for the manual steps)
+- `modules/flux-bootstrap` – **planned, not yet created**; a future GitHub-ready Flux bootstrap module (see `gitops/FLUX_BOOTSTRAP.md` for the manual steps)
 - `gitops/` – Flux-style GitOps layout for Cilium L2 announcements, Proxmox CSI, and cert-manager
 
 ## Workflow
@@ -203,4 +203,4 @@ export TF_CLI_CONFIG_FILE="$PWD/tofu.tfrc"
 - The `gitops/` directory is local scaffolding for now. Once you create a remote
   Git repository, push that directory there and then bootstrap Flux against it
   manually — the `modules/flux-bootstrap` Terraform module is **planned but not yet
-  created** (see `gitops/FUTURE_FLUX_BOOTSTRAP.md` for the exact steps).
+  created** (see `gitops/FLUX_BOOTSTRAP.md` for the exact steps).

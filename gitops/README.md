@@ -2,7 +2,7 @@
 
 This directory is intended to become the future Git repository that Flux will reconcile from.
 
-Right now it only exists locally. Once you create a remote Git repository (for example on GitHub), you can copy or push this directory there and then bootstrap Flux against it manually (see `./FUTURE_FLUX_BOOTSTRAP.md`). Note: the Terraform `modules/flux-bootstrap` module is **planned but not yet created**.
+Right now it only exists locally. Once you create a remote Git repository (for example on GitHub), you can copy or push this directory there and then bootstrap Flux against it manually (see `./FLUX_BOOTSTRAP.md`). Note: the Terraform `modules/flux-bootstrap` module is **planned but not yet created**.
 
 ## Directory Structure & Architecture
 
@@ -16,7 +16,7 @@ gitops/
 ├── apps/                       # 3. User-facing applications (TaskFlow frontend, backend, database)
 │   └── taskflow/
 ├── README.md                   # GitOps directory overview
-└── FUTURE_FLUX_BOOTSTRAP.md    # Instructions for remote Git & Flux CD integration
+└── FLUX_BOOTSTRAP.md    # Instructions for remote Git & Flux CD integration
 ```
 
 ### 1. `clusters/` (The Entrypoint & Orchestration Layer)
@@ -81,5 +81,5 @@ The scaffolded manifests inside this layout include critical performance and net
 
 1. Create a remote repository.
 2. Push this `gitops/` directory into it.
-3. Follow `./FUTURE_FLUX_BOOTSTRAP.md`.
-4. Bootstrap Flux manually per `./FUTURE_FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` Terraform module is planned but not yet created).
+3. Follow `./FLUX_BOOTSTRAP.md`.
+4. Bootstrap Flux manually per `./FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` Terraform module is planned but not yet created).

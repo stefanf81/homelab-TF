@@ -283,7 +283,7 @@ TF/
 │       └── variables.tf             # IP, VM ID, SSH user, output path
 │
 ├── gitops/
-│   ├── FUTURE_FLUX_BOOTSTRAP.md     # Future GitHub + Flux bootstrap plan
+│   ├── FLUX_BOOTSTRAP.md            # GitHub + Flux bootstrap steps
 │   │
 │   ├── apps/taskflow/               # Application manifests (kustomize)
 │   │   ├── namespace.yaml           # taskflow namespace
@@ -370,7 +370,7 @@ flux reconcile kustomization taskflow-app -n flux-system
 |------|-------------|------|
 | TLS/HTTPS | Fully configured (HTTPS on port 443) | cert-manager HelmRelease + Let's Encrypt certificates + HTTPS Gateway listener are fully active |
 | Multi-node HA | Single k3s node | Add worker nodes via additional Proxmox VMs |
-| GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FUTURE_FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` module is planned, not yet created) |
+| GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` module is planned, not yet created) |
 | Pod Disruption Budgets | Not defined | Add PDBs for backend, frontend, postgres |
 | Horizontal Pod Autoscaler | Single replicas everywhere | HPA for backend based on CPU/memory metrics |
 | Backup strategy | Proxmox hypervisor backups | Configure scheduled VM backups at the Proxmox level (using PBS or vzdump) |
