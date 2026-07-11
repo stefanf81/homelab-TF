@@ -98,6 +98,8 @@ spec:
       enabled: true
       plugins:
         - victoriametrics-metrics-datasource
+      serviceMonitor:
+        path: /grafana/metrics
       grafana.ini:
         server:
           domain: taskflow.local
