@@ -36,7 +36,7 @@ Defined in `gitops/apps/taskflow/backend.yaml`:
 | Listening port | **8080** (ContainerPort `http`) | Gateway routes `/api` → `backend:8080`. Don't change. |
 | Liveness/readiness | `GET /actuator/health/liveness` and `/actuator/health/readiness` on 8080 | Probes already use these. Actuator health must stay enabled. |
 | Security context | `runAsNonRoot: true`, `UID/GID 10001`, `readOnlyRootFilesystem: true`, `capabilities.drop: [ALL]` | The image **must** run as 10001 with no writes to the image layer. Mount only `/tmp` (already provided). Log to **stdout/stderr**, not a file. |
-| Env (config) | `SPRING_PROFILES_ACTIVE=prod`, `APP_CORS_ALLOWED_ORIGINS`, secrets via `SPRING_SECURITY_PASSWORD` / `SPRING_DATASOURCE_PASSWORD` | Don't hard-code these; they come from ConfigMap/Secret. |
+| Env (config) | `SPRING_PROFILES_ACTIVE=prod`, `APP_CORS_ALLOWED_ORIGINS`, secrets via `SPRING_SECURITY_PASSWORD` / `SPRING_DATASOURCE_PASSWORD` / `SPRING_DATA_REDIS_PASSWORD` (and `SPRING_REDIS_PASSWORD`) | Don't hard-code these; they come from ConfigMap/Secret. |
 | JVM heap | Set via `JAVA_TOOL_OPTIONS` env: `-Xms1024m -Xmx1024m ...` (off-heap capped) | **Do not set `-Xmx` in the Dockerfile/entrypoint** — it would be overridden by the env anyway, but keep the image neutral so the deployment stays the source of truth. |
 | Graceful shutdown | 45s termination grace | Configure `server.shutdown=graceful` so in-flight requests drain on rollout. |
 
@@ -140,6 +140,7 @@ If that curl returns metrics, the cluster integration is already done.
 
 - **Don't change the listening port from 8080** — the Gateway `HTTPRoute` and the
   VMServiceScrape both assume 8080.
+- **Don't connect to Redis without password authentication** — Redis authentication is now enabled on the cluster. The deployment injects the password from the SOPS secret into your container under `SPRING_DATA_REDIS_PASSWORD` and `SPRING_REDIS_PASSWORD`. Ensure your application reads and uses these properties.
 - **Don't add a `/metrics` path** — Spring Boot Actuator's Prometheus endpoint is
   `/actuator/prometheus` by default; the VMServiceScrape targets exactly that.
 - **Don't require auth on `/actuator/prometheus`** (see 2.3).

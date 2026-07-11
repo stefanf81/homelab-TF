@@ -16,7 +16,7 @@ spec:
     - "paintlab.duckdns.org"
 ```
 
-Because the `hostnames` attribute is specified, the Cilium Gateway routes traffic based on the combination of the `paintlab.duckdns.org` domain and path prefixes (`/`, `/api`, `/grafana`, `/vmsingle`). It will no longer act as a wildcard catch-all router for arbitrary IPs or domains.
+Because the `hostnames` attribute is specified, the Cilium Gateway routes traffic based on the combination of the `paintlab.duckdns.org` domain and path prefixes (`/`, `/api`, `/grafana`). It will no longer act as a wildcard catch-all router for arbitrary IPs or domains.
 
 ---
 
@@ -29,7 +29,7 @@ You can access every service directly using the **paintlab.duckdns.org** domain,
 | **TaskFlow Web App** | `https://paintlab.duckdns.org/` | The Angular 22 Frontend |
 | **TaskFlow API Backend** | `https://paintlab.duckdns.org/api/...` | The Spring Boot 3.5.3 REST API |
 | **Grafana Metrics UI** | `https://paintlab.duckdns.org/grafana` | Real-time performance dashboards |
-| **VictoriaMetrics TSDB** | `https://paintlab.duckdns.org/vmsingle/` | Scraped time-series metrics |
+| **VictoriaMetrics TSDB** | *(Private)* | Scraped time-series metrics. Accessed securely via `kubectl port-forward -n monitoring svc/vmsingle-victoria-metrics-k8s-stack 8428:8428` at `http://localhost:8428/vmsingle/` |
 
 ### 🔒 The Same-Origin CORS Advantage
 In traditional microservice setups, the frontend (e.g. `http://localhost:4200`) makes calls to a different API backend URL (e.g. `http://localhost:8080`), forcing you to manage complex CORS headers and origin policies. 

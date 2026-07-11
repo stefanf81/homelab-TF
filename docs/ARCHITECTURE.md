@@ -224,7 +224,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 | jaeger | pods with `app: taskflow-backend` | 4317, 4318 (OTLP) + 16686 (UI) | TCP |
 
 ### 5.8 Gateway & Routing (`gateway.yaml` + `httproute.yaml`)
-- **Gateway**: `taskflow-gateway`, class: `cilium`, port 80 (HTTP), allowed routes from same namespace only
+- **Gateway**: `taskflow-gateway`, class: `cilium`, port 80/443 (HTTP/HTTPS), allowed routes restricted to approved namespaces (`taskflow`, `monitoring`)
 - **HTTPRoute rules** (order matters — first match wins):
 1. `/api` → backend:8080 (backendRequest timeout: 10s)
 2. `/` → frontend:8080 (catch-all default)
@@ -236,7 +236,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 | VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.86.0) in namespace `monitoring` |
 | CRDs | Installed by the chart (VMServiceScrape, VMSingle, …) |
 | Persistence | VictoriaMetrics TSDB on a **Proxmox CSI-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `proxmox-csi`) |
-| Grafana auth | Admin credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana and VictoriaMetrics UIs are routed via the Gateway API (see `routes.yaml`), secured by Grafana's login screen |
+| Grafana auth | Admin credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana UI is routed via the Gateway API (see `routes.yaml`), secured by Grafana's login screen; VictoriaMetrics UI is kept strictly internal and accessed via port-forwarding |
 | App metrics | `VMServiceScrape`s in `gitops/monitoring/app` scrape the backend (`/actuator/prometheus`), `postgres-exporter`, and `redis-exporter` |
 | DB/Redis metrics | Side-car exporters (`postgres-exporter.yaml`, `redis-exporter.yaml` in `gitops/apps/taskflow`) — **no backend change required**; they reuse `db-secret` |
 | Backend metrics | **Require an app-repo change** — the backend must add `micrometer-registry-prometheus` and expose `/actuator/prometheus` (see `docs/BACKEND_INTEGRATION_CONTEXT.md`). The VMServiceScrape exists but is inert until then. |
@@ -251,7 +251,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 | Pod security | All containers: `readOnlyRootFilesystem`, `allowPrivilegeEscalation=false`, drop ALL capabilities, runAsNonRoot |
 | Secrets encryption | SOPS age-encrypted (`*-secrets.yaml`), decrypted by Flux at reconciliation time only |
 | Image pinning | Flux image automation rewrites `:latest` to `@sha256:<digest>` — immutable references in Git |
-| Grafana & VM UIs | Exposed securely on the Gateway at `/grafana` and `/vmsingle`. Grafana is secured by a login form with a strong, SOPS-encrypted admin password, and VictoriaMetrics exposes its read-only dashboard. |
+| Grafana & VM UIs | Grafana UI is exposed securely on the Gateway at `/grafana` (secured by a login form with a strong, SOPS-encrypted admin password). VictoriaMetrics (VMSingle) is kept strictly internal to protect operational metrics, accessible privately via port-forwarding. |
 | In-cluster scrape only | VictoriaMetrics scrapes taskflow services over the cluster network (plain HTTP, no auth). The backend must therefore permit `GET /actuator/prometheus` unauthenticated (see `docs/BACKEND_INTEGRATION_CONTEXT.md` §2.3). |
 | SSH hardening | kubeconfig fetch uses strict host key checking disabled (homelab convenience) with known_hosts file |
 | Cloud-init isolation | k3s installed via cloud-init user-data heredoc from column 0 (no whitespace parsing issues) |
@@ -295,7 +295,7 @@ TF/
 │   │   ├── postgres-pvc.yaml        # 10Gi Proxmox CSI PVC
 │   │   ├── redis.yaml               # Redis 7.4 deployment + ClusterIP service + NetworkPolicy
 │   │   ├── jaeger.yaml              # Jaeger all-in-one + OTLP services + UI service + NetworkPolicy
-│   │   ├── gateway.yaml             # Cilium Gateway (port 80, same-namespace routes)
+│   │   ├── gateway.yaml             # Cilium Gateway (port 80/443, restricted namespace routes)
 │   │   ├── httproute.yaml           # /api→backend, /*→frontend (Jaeger UI NOT exposed)
 │   │   ├── network-policy.yaml      # DB access restriction (backend-only ingress)
 │   │   └── kustomization.yaml       # Resource ordering
@@ -477,7 +477,7 @@ Key point: **Services are `ClusterIP` only**. Nothing is exposed except through 
 | **Jaeger UI locked down** | `httproute.yaml` + `jaeger.yaml` | The `/jaeger` Gateway route was **removed** and the open `16686` ingress rule deleted (ISSUES.md #2). Jaeger UI is now cluster-internal only — reach it via `kubectl port-forward`, never through the public Gateway, because it has no auth. |
 | Read-only root FS | every Deployment's `securityContext` | Containers can't write to their image layer; only explicit `emptyDir` mounts (`/tmp`, nginx caches) are writable. |
 | Non-root + dropped caps | every container | `runAsNonRoot: true`, `capabilities.drop: [ALL]`. Backend/Redis/Jaeger use UID `10001`; Postgres uses image-native UID `70`; frontend uses nginx UID `101`. |
-| Secret encryption | `.sops.yaml` + `taskflow-secrets.yaml` | `POSTGRES_PASSWORD` and `SPRING_SECURITY_PASSWORD` are age-encrypted; Flux decrypts at apply time using the `sops-age` Secret. The plaintext `key.txt` is `.gitignore`d. |
+| Secret encryption | `.sops.yaml` + `taskflow-secrets.yaml` | `POSTGRES_PASSWORD`, `SPRING_SECURITY_PASSWORD`, and `REDIS_PASSWORD` are age-encrypted; Flux decrypts at apply time using the `sops-age` Secret. The plaintext `key.txt` is `.gitignore`d. |
 | Immutable images | `image-automation.yaml` | Flux pins every app image to a `@sha256:` digest in Git. |
 
 ### 10.7 What to touch when you want to change X
@@ -520,7 +520,7 @@ The monitoring UIs are now exposed through the main Cilium Gateway API using zer
 
 - **Grafana:** `https://paintlab.duckdns.org/grafana`
   *(admin login credentials are saved in your local gitignored `grafana.secret`)*
-- **VictoriaMetrics (VMSingle):** `https://paintlab.duckdns.org/vmsingle`
+- **VictoriaMetrics (VMSingle):** Accessed privately via `kubectl port-forward -n monitoring svc/vmsingle-victoria-metrics-k8s-stack 8428:8428` at `http://localhost:8428/vmsingle/`
 
 **What produces metrics today vs. later:**
 - ✅ Node + kubelet (cadvisor) — from the stack itself, immediately. (kube-state-metrics is **disabled by choice** to save ~150–250 MiB RSS; k8s-object dashboards like pod/deployment counts will be blank.)
