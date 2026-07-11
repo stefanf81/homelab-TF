@@ -26,5 +26,7 @@ spec:
             type: PathPrefix
             value: /vmsingle
       backendRefs:
-        - name: victoria-metrics-k8s-stack-vmsingle
+        # VMSingle Services are created by the VictoriaMetrics operator as
+        # <kind>-<VMSingle resource name>.
+        - name: vmsingle-victoria-metrics-k8s-stack
           port: 8428

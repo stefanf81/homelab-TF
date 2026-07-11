@@ -6,4 +6,3 @@ resources:
   - grafana-secrets.yaml
   - release.yaml
   - routes.yaml
-  - referencegrant.yaml
