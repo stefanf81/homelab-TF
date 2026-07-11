@@ -131,7 +131,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
                            │
               ┌────────────┼────────────┐
               │            │            │
-              /api (30s)  Jaeger (internal   /
+              /api (10s)  Jaeger (internal   /
               │        only, not on GW) │
               │            │            │
               ┌─────────▼───┐  ┌────▼─────┐  ┌──▼──────────┐
@@ -194,8 +194,8 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 | Replicas | 1 |
 | Storage | 10 GiB PVC, storageClass: proxmox-csi (ReadWriteOnce) |
 | SecurityContext | runAsNonRoot UID/GID 70 (postgres), drop ALL capabilities, fsGroup 70 with OnRootMismatch policy |
-| Tuning | `shared_buffers=384MB`, `effective_cache_size=700MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `max_connections=30`, `max_parallel_maintenance_workers=4` (PG17 compact-radix-tree VACUUM: up to ~20x less index memory, parallel maintenance) |
-| SSD tuning | `random_page_cost=1.1`, `effective_io_concurrency=200`, `checkpoint_timeout=900s`, `wal_buffers=16MB`, `max_wal_size=2GB` |
+| Tuning | `shared_buffers=384MB`, `effective_cache_size=700MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `max_connections=30`, `max_parallel_maintenance_workers=2` (PG17 compact-radix-tree VACUUM: up to ~20x less index memory, parallel maintenance) |
+| SSD tuning | `random_page_cost=1.1`, `effective_io_concurrency=200`, `checkpoint_timeout=300s`, `wal_buffers=16MB`, `max_wal_size=2GB` |
 | Resources | CPU: 500m–2 cores, Memory: 768–1024 MiB |
 
 ### 5.5 Redis Deployment (`gitops/apps/taskflow/redis.yaml`)
@@ -226,7 +226,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.8 Gateway & Routing (`gateway.yaml` + `httproute.yaml`)
 - **Gateway**: `taskflow-gateway`, class: `cilium`, port 80 (HTTP), allowed routes from same namespace only
 - **HTTPRoute rules** (order matters — first match wins):
-1. `/api` → backend:8080 (backendRequest timeout: 30s)
+1. `/api` → backend:8080 (backendRequest timeout: 10s)
 2. `/` → frontend:8080 (catch-all default)
 - *Jaeger UI is intentionally NOT exposed through the Gateway (no auth in front of it); reach it via `kubectl port-forward` — see §10.6.*
 

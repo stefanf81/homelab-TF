@@ -16,7 +16,7 @@ spec:
             type: PathPrefix
             value: /api
       timeouts:
-        backendRequest: "30s" # Fail slow/hung backend calls instead of exhausting gateway connections
+        backendRequest: "10s" # Fail fast for hung backend calls instead of exhausting gateway connections
       backendRefs:
         - name: backend
           port: 8080

@@ -42,7 +42,7 @@ spec:
             # (peak ~4 × maintenance_work_mem during parallel vacuum). This is the zero-config
             # win unlocked by the PG17 engine upgrade (see docs/PERFORMANCE.md #3.1).
             - "-c"
-            - "max_parallel_maintenance_workers=4"
+            - "max_parallel_maintenance_workers=2"
             # Fewer connections → less per-connection memory pressure.
             - "-c"
             - "max_connections=30"
@@ -52,7 +52,7 @@ spec:
             - "-c"
             - "effective_io_concurrency=200"
             - "-c"
-            - "checkpoint_timeout=900"
+            - "checkpoint_timeout=300"
             - "-c"
             - "wal_buffers=16MB"
             - "-c"

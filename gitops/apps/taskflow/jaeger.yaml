@@ -42,6 +42,14 @@ spec:
             requests:
               cpu: "100m"
               memory: 128Mi
+          startupProbe:
+            httpGet:
+              path: /
+              port: 16686
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /
