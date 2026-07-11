@@ -72,6 +72,16 @@ spec:
                 secretKeyRef:
                   name: db-secret
                   key: POSTGRES_PASSWORD
+            - name: SPRING_DATA_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: REDIS_PASSWORD
+            - name: SPRING_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: REDIS_PASSWORD
             # Heap 1.5 GB fixed (not container-auto-sized). StringDeduplication is low-risk and
             # modestly reduces heap for string-heavy workloads.
             # Off-heap IS now capped (see docs/PERFORMANCE.md #1.1): with -XX:+ExitOnOutOfMemoryError a

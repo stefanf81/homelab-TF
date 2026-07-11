@@ -1,5 +1,5 @@
-# Redis exporter — scrapes the TaskFlow Redis instance directly (no auth configured
-# on Redis, so no secret needed) and exposes /metrics on :9121 for the ServiceMonitor
+# Redis exporter — scrapes the TaskFlow Redis instance directly using the SOPS-encrypted
+# Redis password and exposes /metrics on :9121 for the ServiceMonitor
 # in gitops/monitoring/app.
 apiVersion: apps/v1
 kind: Deployment
@@ -24,6 +24,12 @@ spec:
           image: oliver006/redis_exporter:v1.86.0
           args:
             - "--redis.addr=redis:6379"
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: REDIS_PASSWORD
           ports:
             - containerPort: 9121
               name: metrics

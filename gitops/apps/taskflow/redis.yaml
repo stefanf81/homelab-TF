@@ -30,6 +30,19 @@ spec:
             - "yes"
             - "--maxmemory-samples"
             - "10"
+            - "--requirepass"
+            - "$(REDIS_PASSWORD)"
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: REDIS_PASSWORD
+            - name: REDISCLI_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: REDIS_PASSWORD
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true

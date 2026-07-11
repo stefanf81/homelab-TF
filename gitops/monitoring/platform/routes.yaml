@@ -20,14 +20,3 @@ spec:
       backendRefs:
         - name: victoria-metrics-k8s-stack-grafana
           port: 80
-
-    # VictoriaMetrics (VMSingle) UI
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /vmsingle
-      backendRefs:
-        # VMSingle Services are created by the VictoriaMetrics operator as
-        # <kind>-<VMSingle resource name>.
-        - name: vmsingle-victoria-metrics-k8s-stack
-          port: 8428
