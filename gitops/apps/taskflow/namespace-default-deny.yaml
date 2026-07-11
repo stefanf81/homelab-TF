@@ -1,0 +1,91 @@
+# =============================================================================
+# Full-namespace default-deny (INGRESS) + zero-trust allow-list
+# =============================================================================
+# Extends the data-tier isolation in default-deny.yaml to the WHOLE taskflow
+# namespace. By default NO pod in this namespace accepts any ingress; every
+# permitted path must be explicitly re-opened below. This is the zero-trust
+# posture: a compromised pod in any other namespace cannot reach these workloads.
+#
+# SCOPE NOTE: only INGRESS is default-denied here. EGRESS is intentionally left
+# allow-all (DNS, the backend's outbound API calls, etc.) because tightening
+# egress safely requires enumerating every outbound dependency and cannot be
+# validated against this cluster from here. That is a separate follow-up.
+#
+# ROLLBACK (if the Gateway allow is wrong and the app goes dark):
+#   kubectl --kubeconfig kubeconfig.yaml -n taskflow delete -f namespace-default-deny.yaml
+# The data-tier isolation in default-deny.yaml remains in force, but
+# frontend/backend return to allow-all ingress and the app works again.
+# -----------------------------------------------------------------------------
+---
+# 1) Deny ALL ingress to every pod in the namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all-ingress
+  namespace: taskflow
+spec:
+  podSelector: {} # selects ALL pods in this namespace
+  policyTypes:
+    - Ingress
+  # no ingress rules => deny all ingress
+---
+# 2) Allow the Cilium Gateway (Envoy proxy runs in kube-system) to reach the
+#    public workloads on their serving port. Without this, external traffic via
+#    the Gateway cannot reach frontend/backend and the app goes dark.
+#    If your Cilium gateway proxy runs in a different namespace, change the
+#    namespaceSelector below (this is the #1 thing to check if the app breaks).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-app
+  namespace: taskflow
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - frontend
+          - taskflow-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# 3) Allow the monitoring stack (VictoriaMetrics vmagent, in `monitoring`) to
+#    scrape the metrics endpoints. Without this, Postgres/Redis (and the inert
+#    backend) metrics go dark.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring-scrape
+  namespace: taskflow
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - taskflow-backend
+          - postgres-exporter
+          - redis-exporter
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080 # backend actuator/prometheus (inert until micrometer added)
+        - protocol: TCP
+          port: 9187 # postgres-exporter
+        - protocol: TCP
+          port: 9121 # redis-exporter

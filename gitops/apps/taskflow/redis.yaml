@@ -97,10 +97,16 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    # Allow ingress to Redis ONLY from the backend and the Redis exporter.
+    # Effective only because default-deny-datastore-ingress.yaml denies all other
+    # ingress to this pod first.
     - from:
         - podSelector:
             matchLabels:
               app: taskflow-backend
+        - podSelector:
+            matchLabels:
+              app: redis-exporter
       ports:
         - protocol: TCP
           port: 6379

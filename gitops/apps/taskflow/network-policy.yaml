@@ -1,3 +1,7 @@
+# Allows ingress to Postgres ONLY from the backend and the Postgres exporter.
+# This policy is meaningful ONLY because default-deny-datastore-ingress.yaml
+# denies all other ingress to this pod first — on its own it would just be an
+# (redundant) allow rule. Together they enforce: nobody but these two talks to PG.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -14,6 +18,9 @@ spec:
         - podSelector:
             matchLabels:
               app: taskflow-backend
+        - podSelector:
+            matchLabels:
+              app: postgres-exporter
       ports:
         - protocol: TCP
           port: 5432

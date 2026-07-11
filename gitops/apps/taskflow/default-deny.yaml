@@ -1,0 +1,53 @@
+# Default-deny ingress for the data tier.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# Kubernetes / Cilium NetworkPolicy is ALLOW-BY-DEFAULT: an "allow" rule (like the
+# restrict-*-access policies in this folder) only ever ADDS a permitted path — it
+# never removes one. So, before this policy existed, restrict-db-access /
+# restrict-redis-access / restrict-jaeger-access were effectively no-ops: ANY pod
+# in the cluster could already reach Postgres / Redis / Jaeger, because nothing
+# denied the rest. The "restrict" name was misleading.
+#
+# This policy flips that: it denies ALL ingress to the datastore pods, and the
+# restrict-*-access policies then become the ONLY ways in. Together they enforce
+# the project's zero-trust intent (only the backend — plus the metric exporters —
+# may talk to the datastores).
+#
+# SCOPE (deliberate)
+# ------------------
+# This targets ONLY the data-tier pods (postgres-db, redis, jaeger) — NOT
+# frontend/backend. The Cilium Gateway reaches frontend/backend directly, and we
+# intentionally do NOT default-deny those here: doing so would also require
+# allow-listing the Gateway's Envoy proxy, which can't be safely validated without
+# a live cluster. A full-namespace default-deny + explicit Gateway allow is a
+# sensible follow-up once the running cluster can be tested against.
+#
+# EGRESS is intentionally left allow-all. The datastore clients (backend,
+# exporters) reach out via egress, which this policy does not touch.
+#
+# CNI NOTES
+# ---------
+# Cilium treats the local host as a special entity, so this default-deny does NOT
+# block (a) kubelet liveness/readiness/startup probes, nor (b) admin
+# `kubectl port-forward` to these pods (e.g. `kubectl port-forward svc/jaeger-ui
+# 16686:16686`) — both originate from the node, not from another pod. What it DOES
+# block is any other in-cluster pod reaching these ports (lateral movement).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-datastore-ingress
+  namespace: taskflow
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - postgres-db
+          - redis
+          - jaeger
+  policyTypes:
+    - Ingress
+  # No ingress rules => deny all ingress to the selected pods by default.
+  # The restrict-*-access policies below re-open the exact, required paths.

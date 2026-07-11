@@ -153,6 +153,15 @@ As of July 2026, Ubuntu 26.04 LTS is released and the image URL (`https://cloud-
 
 ---
 
+## 🔴 Zero-Trust / Network Isolation
+
+### 21. `restrict-*` NetworkPolicies were no-ops (no default-deny)
+**Files:** `gitops/apps/taskflow/default-deny.yaml` (new), `network-policy.yaml`, `redis.yaml`, `jaeger.yaml`, `kustomization.yaml`
+Kubernetes/Cilium NetworkPolicy is **allow-by-default**: an "allow" rule only ever *adds* a path, never *denies* one. So the existing `restrict-db-access` / `restrict-redis-access` / `restrict-jaeger-access` policies did **not** actually isolate anything — any pod in the cluster could already reach Postgres/Redis/Jaeger. The names were misleading.
+**Fix:** ✅ Fixed (two layers).
+- *Data tier:* `default-deny-datastore-ingress` (denies all ingress to `postgres-db`, `redis`, `jaeger`). The three `restrict-*` policies now become the *only* permitted paths in. `restrict-db-access` / `restrict-redis-access` also allow the `postgres-exporter` / `redis-exporter` pods (otherwise metrics scraping would break). Cilium's host exemption keeps kubelet probes and admin `kubectl port-forward` working.
+- *Full namespace (follow-up):* `namespace-default-deny.yaml` adds `default-deny-all-ingress` (denies ALL ingress to every pod in `taskflow`) plus an explicit allow-list: the Cilium Gateway's Envoy proxy (`kube-system` ns) → `frontend`/`taskflow-backend`:8080, and the monitoring vmagent (`monitoring` ns) → `taskflow-backend`:8080, `postgres-exporter`:9187, `redis-exporter`:9121. The data-tier `default-deny.yaml` is deliberately kept as a safe fallback so deleting `namespace-default-deny.yaml` restores the app while datastore isolation stays. **EGRESS is intentionally still allow-all** — tightening egress (DNS, backend outbound calls) safely needs the live cluster and is a separate follow-up. Rollback: `kubectl -n taskflow delete -f gitops/apps/taskflow/namespace-default-deny.yaml`.
+
 ## Summary Table
 
 | # | Issue | Severity | Effort | File | Status |
@@ -177,3 +186,4 @@ As of July 2026, Ubuntu 26.04 LTS is released and the image URL (`https://cloud-
 | 18 | Ubuntu 26.04 image URL unverified | 🟢 Low | Trivial | proxmox/main.tf | ✅ Verified |
 | 19 | TLS not actually used (cert-manager idle) | 🟡 Med | Medium | gateway.yaml, cert-manager | ✅ Resolved |
 | 20 | Grafana redirects to root domain | 🔴 High | Small | routes.yaml | ✅ Fixed |
+| 21 | restrict-* policies no-ops (no default-deny) | 🔴 High | Small | default-deny.yaml, network-policy.yaml, redis.yaml, jaeger.yaml | ✅ Fixed |

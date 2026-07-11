@@ -8,6 +8,8 @@ resources:
   - frontend.yaml
   - jaeger.yaml
   - network-policy.yaml
+  - default-deny.yaml
+  - namespace-default-deny.yaml
   - postgres-db.yaml
   - postgres-pvc.yaml
   - redis.yaml

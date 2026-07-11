@@ -99,8 +99,11 @@ spec:
     - Ingress
   ingress:
     # Allow ONLY the backend to submit OTLP trace data. The Jaeger UI (16686) is
-    # intentionally NOT exposed externally (no auth in front of it) — reach it via
-    # kubectl port-forward, not the Gateway.
+    # NOT in this list, and default-deny-datastore-ingress.yaml now denies all
+    # other ingress to this pod — so no in-cluster pod can reach the UI. Admin
+    # access still works via `kubectl port-forward svc/jaeger-ui 16686:16686`
+    # because that traffic originates from the node (Cilium host exemption), not
+    # from another pod. The Gateway route for /jaeger was already removed (#2).
     - from:
         - podSelector:
             matchLabels:
