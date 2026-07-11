@@ -129,3 +129,17 @@ spec:
   selector:
     app: postgres-db
   type: ClusterIP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-db-pdb
+  namespace: taskflow
+spec:
+  # With a single-replica database, setting minAvailable: 1 blocks voluntary
+  # evictions (e.g. node drains, k3s upgrades) from accidentally terminating the
+  # database. The administrator must explicitly delete the pod or drain with force.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: postgres-db

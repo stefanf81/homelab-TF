@@ -15,7 +15,7 @@ With single replicas, a node drain or k3s upgrade takes the whole stack down. No
 strictly "low-hanging," but at minimum PostgreSQL (stateful, slow to come back)
 deserves a PDB + comment explaining why it's single-replica.
 **Fix:** Add `PodDisruptionBudget` for `postgres-db` (`minAvailable: 1`) and note
-the single-replica tradeoff in a comment.
+the single-replica tradeoff in a comment. (✅ **Resolved**: Added `PodDisruptionBudget` with `minAvailable: 1` directly to `postgres-db.yaml`)
 
 ### 14. `TLSRoute` CRD installed but unused
 **File:** `gitops/infrastructure/controllers/gateway-api/tlsroute-crd.yaml`
@@ -53,7 +53,7 @@ later resolved — see #19 in the table.
 | 3 | Proxmox insecure TLS default | 🔴 High | Trivial | variables.tf, terraform.tfvars.example | ✅ Documented |
 | 4 | SSH host-key check disabled | 🔴 High | Small | k3s-kubeconfig/main.tf | ✅ Documented |
 | 5 | ~~cert-manager scaffolding dead~~ | — | — | — | ⚠️ Retracted (was wrong) |
-| 6 | No PodDisruptionBudgets | 🟡 Med | Small | (new files) | ⬜ Open |
+| 6 | No PodDisruptionBudgets | 🟡 Med | Small | postgres-db.yaml | ✅ Fixed |
 | 7 | Frontend UID 101 inconsistent | 🟡 Med | Trivial | frontend.yaml | ✅ Commented |
 | 8 | PostgreSQL UID 70 undocumented | 🟡 Med | Trivial | postgres-db.yaml | ✅ Commented |
 | 9 | Redis missing startupProbe | 🟡 Med | Trivial | redis.yaml | ✅ Fixed |
