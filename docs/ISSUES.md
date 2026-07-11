@@ -44,6 +44,14 @@ SSH_OPTS='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 MITM-exposed: the local-exec blindly trusts whatever answers at the VM IP.
 **Fix:** Use a known_hosts file populated from the VM's cloud-init (`/etc/ssh/ssh_host_*_key.pub` echoed at first boot) or pin the host key in Terraform output. For a single-node homelab this is low-risk, but it's a bad pattern to copy forward.
 
+### 20. Grafana redirects to root (`https://paintlab.duckdns.org`) instead of serving UI
+**File:** `gitops/monitoring/platform/routes.yaml`
+```text
+ResolvedRefs=False: BackendNotFound
+```
+The invalid backend was the **VMSingle** Service (originally `victoria-metrics-k8s-stack-vmsingle`, but the operator creates `vmsingle-victoria-metrics-k8s-stack`). A broken backend left the whole HTTPRoute unresolved, so Cilium did not program the Grafana rule and `/grafana` fell through to the frontend catch-all, which redirected it to the root.
+**Fix:** ✅ Fixed. Corrected the backendRef for VMSingle to `vmsingle-victoria-metrics-k8s-stack`.
+
 ---
 
 ## 🟡 Medium Priority (Resilience / Best Practice)
@@ -168,3 +176,4 @@ As of July 2026, Ubuntu 26.04 LTS is released and the image URL (`https://cloud-
 | 17 | No PostgreSQL backup | 🟢 Low | Medium | postgres-*.yaml | ✅ Resolved via Proxmox CSI |
 | 18 | Ubuntu 26.04 image URL unverified | 🟢 Low | Trivial | proxmox/main.tf | ✅ Verified |
 | 19 | TLS not actually used (cert-manager idle) | 🟡 Med | Medium | gateway.yaml, cert-manager | ✅ Resolved |
+| 20 | Grafana redirects to root domain | 🔴 High | Small | routes.yaml | ✅ Fixed |

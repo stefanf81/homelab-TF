@@ -518,9 +518,9 @@ and is **ready the moment the backend emits metrics** — but note the split:
 
 The monitoring UIs are now exposed through the main Cilium Gateway API using zero-config wildcard IP and public DNS routing. See [Gateway Access Guide](GATEWAY_ACCESS_GUIDE.md) for full setup instructions.
 
-- **Grafana:** `http://<EXTERNAL-IP>/grafana`
+- **Grafana:** `https://paintlab.duckdns.org/grafana`
   *(admin login credentials are saved in your local gitignored `grafana.secret`)*
-- **VictoriaMetrics (VMSingle):** `http://<EXTERNAL-IP>/vmsingle`
+- **VictoriaMetrics (VMSingle):** `https://paintlab.duckdns.org/vmsingle`
 
 **What produces metrics today vs. later:**
 - ✅ Node + kubelet (cadvisor) — from the stack itself, immediately. (kube-state-metrics is **disabled by choice** to save ~150–250 MiB RSS; k8s-object dashboards like pod/deployment counts will be blank.)

@@ -1,87 +1,45 @@
-# Cilium Gateway API Access Guide: Zero-Config Hostname and Raw IP Routing
+# Cilium Gateway API Access Guide: Domain Routing
 
-This guide explains how to access your TaskFlow application and monitoring stack directly on your local area network (LAN) without editing your `/etc/hosts` file or configuring custom local DNS records on your workstation.
+This guide explains how to access your TaskFlow application and monitoring stack directly on your network using the configured domain.
 
 ---
 
-## 1. The Wildcard Gateway Discovery
+## 1. Gateway Hostname Routing
 
-Both your application route (`taskflow-route`) and your monitoring route (`monitoring-routes`) are configured without any strict `hostnames:` matches:
+Both your application route (`taskflow-route`) and your monitoring route (`monitoring-routes`) are configured with a strict `hostnames:` match:
 
 ```yaml
 spec:
   parentRefs:
     - name: taskflow-gateway
-  rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /grafana
+  hostnames:
+    - "paintlab.duckdns.org"
 ```
 
-Because the `hostnames` attribute is omitted, the Cilium Gateway behaves as a **wildcard catch-all router**. It routes traffic based *strictly* on path prefixes (`/`, `/api`, `/grafana`, `/vmsingle`), regardless of what domain or Host header is passed in.
-
-This allows you to bypass name-based DNS entirely and use two much simpler, zero-config access patterns.
+Because the `hostnames` attribute is specified, the Cilium Gateway routes traffic based on the combination of the `paintlab.duckdns.org` domain and path prefixes (`/`, `/api`, `/grafana`, `/vmsingle`). It will no longer act as a wildcard catch-all router for arbitrary IPs or domains.
 
 ---
 
-## 2. Option A: Direct Raw IP Access (Easiest)
+## 2. Accessing Your Services
 
-You can access every service directly using the **External LoadBalancer IP** of your Cilium Gateway. 
-
-Because you are using Cilium's L2 Announcement pool, the Gateway does **not** listen on your node's static VM IP (`192.168.50.55`). It listens on a dedicated LoadBalancer IP (usually in the `192.168.50.200–250` range).
-
-### Step 1: Find your Gateway's External IP
-Run this command on your workstation:
-```bash
-kubectl get svc -A | grep -i LoadBalancer
-```
-Look for the `EXTERNAL-IP` (e.g., `192.168.50.200`).
-
-### Step 2: Use the External IP in your browser
-Substitute your actual `<EXTERNAL-IP>` into these URLs:
+You can access every service directly using the **paintlab.duckdns.org** domain, which points to the **External LoadBalancer IP** of your Cilium Gateway.
 
 | Service | Access URL | Description |
 | :--- | :--- | :--- |
-| **TaskFlow Web App** | `http://<EXTERNAL-IP>/` | The Angular 22 Frontend |
-| **TaskFlow API Backend** | `http://<EXTERNAL-IP>/api/...` | The Spring Boot 3.5.3 REST API |
-| **Grafana Metrics UI** | `http://<EXTERNAL-IP>/grafana` | Real-time performance dashboards |
-| **VictoriaMetrics TSDB** | `http://<EXTERNAL-IP>/vmsingle/` | Scraped time-series metrics |
+| **TaskFlow Web App** | `https://paintlab.duckdns.org/` | The Angular 22 Frontend |
+| **TaskFlow API Backend** | `https://paintlab.duckdns.org/api/...` | The Spring Boot 3.5.3 REST API |
+| **Grafana Metrics UI** | `https://paintlab.duckdns.org/grafana` | Real-time performance dashboards |
+| **VictoriaMetrics TSDB** | `https://paintlab.duckdns.org/vmsingle/` | Scraped time-series metrics |
 
 ### 🔒 The Same-Origin CORS Advantage
 In traditional microservice setups, the frontend (e.g. `http://localhost:4200`) makes calls to a different API backend URL (e.g. `http://localhost:8080`), forcing you to manage complex CORS headers and origin policies. 
 
-Because we use **Cilium Unified Gateway Routing**, both `/` (frontend) and `/api` (backend) are served on the **exact same origin/IP** (`192.168.50.55`). The browser performs relative API fetches, treating them as **Same-Origin requests**. **CORS is completely bypassed**, ensuring 100% functional, secure, out-of-the-box operations on raw IPs!
+Because we use **Cilium Unified Gateway Routing**, both `/` (frontend) and `/api` (backend) are served on the **exact same origin** (`paintlab.duckdns.org`). The browser performs relative API fetches, treating them as **Same-Origin requests**. **CORS is completely bypassed**, ensuring 100% functional, secure, out-of-the-box operations on your domain!
 
 ---
 
-## 3. Option B: Wildcard Public DNS (`nip.io` or `sslip.io`)
+## 3. Network Considerations
 
-Some advanced services (like OIDC providers, external webhooks, or browser password managers) refuse to work on raw IP addresses and require a valid, structured domain name.
-
-Instead of editing your `/etc/hosts` file (which only works on your specific machine), you can use free, wildcard public DNS resolvers like **`nip.io`** or **`sslip.io`**. 
-
-These services automatically resolve any domain name containing an IP address back to that IP:
-- `<EXTERNAL-IP>.nip.io` → Resolves directly to your Gateway
-- `<EXTERNAL-IP>.sslip.io` → Resolves directly to your Gateway
-
-### Zero-Config Domain URLs:
-You can use these URLs from **any device on your LAN** (including phones, tablets, or other laptops) without any network configuration:
-
-* **TaskFlow Web App:**
-  👉 `http://<EXTERNAL-IP>.nip.io/`  *(or `sslip.io`)*
-
-* **Grafana Dashboards:**
-  👉 `http://<EXTERNAL-IP>.nip.io/grafana` *(or `sslip.io`)*
-
-* **VictoriaMetrics UI:**
-  👉 `http://<EXTERNAL-IP>.nip.io/vmsingle/` *(or `sslip.io`)*
-
----
-
-## 4. Why this is superior to `/etc/hosts`
-
-1. **Zero Workstation Pollution:** Keeps your Mac/workstation `/etc/hosts` file clean.
-2. **Multi-Device Testing:** You can pull out your mobile phone or tablet, connect to your home Wi-Fi, and open `http://192.168.50.55.nip.io/` immediately to test responsiveness.
-3. **No VPN/DNS Tunneling Hurdles:** Ideal for testing on virtual machines or isolated dev instances that can route to `192.168.50.55` but don't share your host's local hosts file.
-4. **Seamless SSL (Future-Proof):** When we eventually generate TLS certs via cert-manager, we can use HTTP-01 solvers on public subdomains (like `nip.io`) much more easily than on private `.local` domains!
+Since the domain `paintlab.duckdns.org` maps to the external IP of your Cilium load balancer, ensure that:
+1. The domain's DNS resolution points to the gateway IP you receive in your cluster.
+2. If testing locally, your router resolves the public domain to the LAN IP natively (NAT reflection/hairpinning), or you configure your local DNS settings accordingly.
