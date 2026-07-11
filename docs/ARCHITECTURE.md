@@ -516,11 +516,11 @@ and is **ready the moment the backend emits metrics** — but note the split:
 
 **Reaching the UIs:**
 
-The monitoring UIs are now exposed through the main Cilium Gateway API on the `taskflow.local` domain under sub-paths.
+The monitoring UIs are now exposed through the main Cilium Gateway API using zero-config wildcard IP and public DNS routing. See [Gateway Access Guide](GATEWAY_ACCESS_GUIDE.md) for full setup instructions.
 
-- **Grafana:** [http://taskflow.local/grafana](http://taskflow.local/grafana)
-  *(admin login from the SOPS-encrypted grafana-secrets.yaml)*
-- **VictoriaMetrics (VMSingle):** [http://taskflow.local/vmsingle](http://taskflow.local/vmsingle)
+- **Grafana:** `http://<EXTERNAL-IP>/grafana`
+  *(admin login credentials are saved in your local gitignored `grafana.secret`)*
+- **VictoriaMetrics (VMSingle):** `http://<EXTERNAL-IP>/vmsingle`
 
 **What produces metrics today vs. later:**
 - ✅ Node + kubelet (cadvisor) — from the stack itself, immediately. (kube-state-metrics is **disabled by choice** to save ~150–250 MiB RSS; k8s-object dashboards like pod/deployment counts will be blank.)
@@ -528,7 +528,7 @@ The monitoring UIs are now exposed through the main Cilium Gateway API on the `t
 - ⏳ **Backend JVM/HTTP** — requires the app repo to add `micrometer-registry-prometheus` and expose `/actuator/prometheus` (unauthenticated, in-cluster scrape). The VMServiceScrape already exists and is inert until then. See `docs/BACKEND_INTEGRATION_CONTEXT.md`.
 
 **Resource budget (memory-trimmed):** the stack reserves ~1.1 GiB of limit
-(VMSingle 512 Mi cap / 128 Mi req, vmagent 256 Mi, Grafana 128 Mi,
+(VMSingle 512 Mi cap / 128 Mi req, vmagent 256 Mi, Grafana 256 Mi,
 operator 128 Mi, exporters + node-exporter ~0.4 GiB; kube-state-metrics off). VictoriaMetrics runs **3d
 retention** and scrapes at **60s** (not 30s) to keep WAL/RAM low.
 On the 14 GiB node this still leaves the bulk for backend (2 GiB guaranteed) +
