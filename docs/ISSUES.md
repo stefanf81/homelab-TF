@@ -70,3 +70,22 @@ later resolved — see #19 in the table.
 | 20 | Grafana redirects to root domain | 🔴 High | Small | routes.yaml | ✅ Fixed |
 | 21 | restrict-* policies no-ops (no default-deny) | 🔴 High | Small | default-deny.yaml, network-policy.yaml, redis.yaml, jaeger.yaml | ✅ Fixed |
 | 22 | Plaintext HTTP (:80) served, no HTTPS redirect | 🟡 Med | Small | http-redirect.yaml, httproute.yaml, routes.yaml | ✅ Fixed |
+
+---
+
+## 🚀 Future Roadmap & Platform Enhancements
+
+The following high-value architecture, security, and performance enhancements are proposed for future iterations of the TaskFlow platform:
+
+### 1. Stateful Resilience & Backups
+* **Daily Logical PostgreSQL Backups (`CronJob`):** Create a lightweight Kubernetes `CronJob` that performs a daily `pg_dump`, gzips the database, and pushes it to an off-site S3-compatible bucket, local NAS, or MinIO. This adds logical point-in-time recovery on top of the block-level Proxmox CSI snapshots.
+* **Persistent Redis Cache:** Transition the Redis `/data` mount from an ephemeral `emptyDir` to a dedicated Proxmox CSI PVC (e.g., 2Gi) and enable Append-Only File (`appendonly yes`). This prevents cache stampedes on database servers when Redis pods restart or during node drains.
+
+### 2. Deployment Safeguards & CI/CD
+* **Automated Pull Request Validation (GitHub Actions):** Build a `.github/workflows/validate.yml` pipeline that triggers on any push or PR to run OpenTofu formatting (`tofu fmt -check`), configuration validation (`tofu validate`), and dry-run Kustomize templates (`kubectl kustomize gitops/apps/taskflow` and `gitops/monitoring/...`). This prevents syntactically broken configurations from breaking FluxCD reconciliation.
+
+### 3. Edge Gateway & Multiplexing
+* **HTTP/2 Protocol on Cilium Gateway:** Configure `HTTP/2` protocol support on your HTTPS listener in `gateway.yaml` to enable native multiplexing of API requests and SPA chunks, reducing page-load latency.
+
+### 4. Consolidated Observability Logs
+* **Centralized Log Aggregation:** Deploy a lightweight logging agent (e.g., Grafana Loki or VictoriaLogs with Fluent Bit) to scrape container console logs and feed them directly into your existing Grafana dashboard alongside VictoriaMetrics and Jaeger, completing the observability triad.
