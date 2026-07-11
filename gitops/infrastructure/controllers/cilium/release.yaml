@@ -21,8 +21,10 @@ spec:
     ipam:
       mode: "kubernetes"
     kubeProxyReplacement: true
+    devices: "eth0" # Exclude tailscale0 to prevent any eBPF and Tailscale routing conflicts
     bpf:
       masquerade: true # Offload SNAT to eBPF (requires kubeProxyReplacement: true, already set)
+      hostRouting: false # Disable eBPF host routing to prevent routing loops for host-network Envoy proxies in single-node clusters
     securityContext:
       capabilities:
         cleanCiliumState:

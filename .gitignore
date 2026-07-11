@@ -38,6 +38,7 @@ terraform.rc
 # ==============================================================================
 kubeconfig.yaml
 kubeconfig
+kubeconfig.backup
 *.kubeconfig
 secrets.yaml
 *.secret
