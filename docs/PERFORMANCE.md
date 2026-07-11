@@ -40,12 +40,10 @@ There is Jaeger for **traces** but **no VictoriaMetrics, no node-exporter, no ku
 
 **Fix:** Add (at minimum) `victoria-metrics-k8s-stack` via a Flux HelmRelease, enable the Spring Boot Actuator `/actuator/prometheus` endpoint on the backend, and scrape it. This is the prerequisite for confirming 1.1, 2.1, 2.2.
 
-### 1.3 PostgreSQL runs on Longhorn (network storage) (MEDIUM-HIGH)
-**File:** `gitops/apps/taskflow/postgres-pvc.yaml` (`storageClassName: longhorn`)
+### 1.3 ~~PostgreSQL runs on Longhorn (network storage)~~ (RESOLVED)
+**File:** `gitops/apps/taskflow/postgres-pvc.yaml` (`storageClassName: proxmox-csi`)
 
-PostgreSQL is the most I/O-sensitive workload in the stack, yet it sits on Longhorn — which, even single-replica on the same node, routes every read/write through the Longhorn engine process (and its replica sync) rather than straight to the local block device. Expect measurable write-latency and fsync overhead vs. a local disk. On a homelab this is usually acceptable, but it's the first thing to move if the DB feels slow.
-
-**Fix:** Create a `local` StorageClass (Longhorn `storageClass: local` / `retain`, or a `local-storage` hostPath/LV) and pin the Postgres PVC to it. Keep Longhorn for everything else.
+> **Resolved:** PostgreSQL has been migrated from Longhorn to native **Proxmox CSI** storage. Disk space is scaled to `10Gi` and volumes are dynamically provisioned on your Proxmox VE hypervisor with backing snapshots and backups handled natively at the hypervisor layer. This bypasses in-cluster network storage overhead entirely, providing local-SSD-grade performance.
 
 ---
 
@@ -76,7 +74,7 @@ effective_cache_size=1152MB   # but container memory limit is only 1024Mi
 
 `/data` is an `emptyDir` with a clear comment that persistence is intentionally off. That's a legitimate L2-cache choice, **but** on every Redis pod restart (or the node rebooting) the entire cache is lost and the backend falls back to PostgreSQL — a cache stampede that can spike DB latency/CPU until the cache warms. With a single replica there's no warm standby.
 
-**Fix:** Accept it (documented tradeoff) **or** back Redis with a small Longhorn PVC + `appendonly yes` so restartswarm doesn't start fully cold. At minimum, ensure the backend degrades gracefully (it presumably does, since Redis is "L2").
+**Fix:** Accept it (documented tradeoff) **or** back Redis with a small Proxmox CSI PVC + `appendonly yes` so restartswarm doesn't start fully cold. At minimum, ensure the backend degrades gracefully (it presumably does, since Redis is "L2").
 
 ### 2.4 Default connection pool vs `max_connections=30` (LOW-MEDIUM)
 **File:** `gitops/apps/taskflow/postgres-db.yaml` (`max_connections=30`)
@@ -96,7 +94,7 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 | 3.3 | No HTTP/2 at the Gateway | `gateway.yaml` | Cilium Gateway supports it; enables multiplexing for the `/api` calls. |
 | 3.4 | JVM lacks GC logging / `-XX:MaxGCPauseMillis` | `backend.yaml` | Add `-Xlog:gc*:time` + a pause target once metrics exist, to tune G1. |
 | 3.5 | Single replica everywhere | all Deployments | No horizontal headroom; CPU/mem are hard-capped per pod. Add HPA for the backend once metrics exist. |
-| 3.6 | `random_page_cost=1.1` assumes SSD | `postgres-db.yaml` | Reasonable for Longhorn-on-SSD; re-check if you move DB to spinning disk. |
+| 3.6 | `random_page_cost=1.1` assumes SSD | `postgres-db.yaml` | Reasonable for Proxmox-CSI-backed-SSD; re-check if you move DB to spinning disk. |
 
 ---
 
@@ -105,7 +103,7 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 1. **Add VictoriaMetrics/Grafana + Actuator Prometheus** (unblocks measuring everything else).
 2. **Fix the JVM off-heap** (§1.1): run as Guaranteed QoS `requests==limits=2Gi` with a 1 GiB heap, add `-XX:MaxMetaspaceSize` / `-XX:MaxDirectMemorySize`. (Applied; later trimmed from 3Gi/1.5GiB heap to free ~1 GiB on the node.)
 3. **Correct `effective_cache_size`** to ~700 MB (§2.1) and fix the README drift.
-4. **Move Postgres PVC to a local StorageClass** (§1.3) if DB latency is noticeable.
+4. **Postgres PVC has been migrated to high-performance Proxmox CSI** (§1.3).
 5. **Harden Redis** (§2.3) or document the stampede risk prominently.
 6. Re-evaluate pool sizes (§2.4) when you add a second backend replica.
 

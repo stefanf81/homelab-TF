@@ -16,7 +16,7 @@ This guide compiles the complete technical logs, structural adjustments, and tro
 | **Routing Target** | Direct node endpoints | Secure internal **`type: ClusterIP`** services |
 | **Default Hostname** | Host Node IP Address only | **`taskflow.local`** & **Wildcard IP routing** |
 | **Secrets Security** | Checked-in raw YAML files | **SOPS Integration Ready** (with age configuration) |
-| **PostgreSQL persistency** | `1Gi` standard storage | **`10Gi` high-availability (Longhorn-backed)** |
+| **PostgreSQL persistency** | `1Gi` standard storage | **`10Gi` high-availability (Proxmox CSI-backed)** |
 | **Database configuration**| Default Alpine parameters (128MB RAM budget) | **Tuned Engine Parameters (for 1536Mi RAM container limit)** |
 
 ---
@@ -41,15 +41,15 @@ This guide compiles the complete technical logs, structural adjustments, and tro
 * **`cilium/` (New Folder)**:
   * Created `namespace.yaml` (`kube-system`), `repository.yaml` (`https://helm.cilium.io/`), and `release.yaml` declaring a HelmRelease for Cilium `v1.16.1` with native CNI, IPAM (`mode: kubernetes`), `kubeProxyReplacement: true` (eBPF proxy bypass), and **`gatewayAPI.enabled = true`**.
 * **`kustomization.yaml`**:
-  * Wired `gateway-api` and `cilium` to the top of the Kustomize controller deployment list so networking boots before cert-manager and Longhorn.
+  * Wired `gateway-api` and `cilium` to the top of the Kustomize controller deployment list so networking boots before cert-manager and Proxmox CSI.
 
 ### C. GitOps Platform Configs (`gitops/infrastructure/configs/`)
 * **`gatewayclass.yaml` (New File)**:
   * Natively registered the cluster-scoped **`cilium` GatewayClass** to bind incoming gateway manifests to Cilium's background controller (`io.cilium/gateway-controller`).
 * **`kustomization.yaml`**:
   * Registered `gatewayclass.yaml` into the platform configs loop.
-* **`metallb/ipaddresspool.yaml`**:
-  * Aligned the IP pool allocation block directly with your physical homelab subnet: **`192.168.50.200 - 192.168.50.250`**.
+* **`cilium/ippool.yaml`**:
+  * Aligned the Cilium IP pool allocation block directly with your physical homelab subnet: **`192.168.50.200 - 192.168.50.250`**.
 
 ### D. TaskFlow Application Layout (`gitops/apps/taskflow/`)
 * **`gateway.yaml` (New File)**:
@@ -62,7 +62,7 @@ This guide compiles the complete technical logs, structural adjustments, and tro
 * **`backend.yaml` / `frontend.yaml` / `jaeger.yaml`**:
   * Converted all Service resources from insecure `NodePort` mapping to fully protected **`ClusterIP`** structures.
 * **`postgres-pvc.yaml`**:
-  * Scaled storage request limits from `1Gi` to **`10Gi`** and explicitly specified `storageClassName: longhorn`.
+  * Scaled storage request limits from `1Gi` to **`10Gi`** and explicitly specified `storageClassName: proxmox-csi`.
 * **`postgres-db.yaml`**:
   * Injected custom container startup arguments to align PostgreSQL memory and planner operations with its 1536Mi container limit (e.g. `shared_buffers = 256MB`, `effective_cache_size = 768MB`, `work_mem = 8MB`, `max_connections = 30`).
 * **`kustomization.yaml`**:
@@ -126,9 +126,9 @@ Throughout the bootstrap and CNI-swap process, several classic, complex Kubernet
 ### Issue 6: Network Gateway Timeouts (`ERR_CONNECTION_TIMED_OUT`)
 * **Symptom:** Navigating to `http://192.168.1.201` resulted in a connection timeout.
 * **Root Cause:** The cluster IP lease for the gateway load balancer was assigned from the old default placeholder subnet pool (`192.168.1.x`) before Flux synced the updated range. Because your physical homelab workstation router is on the `192.168.50.x` subnet, the workstation had no routing path to `192.168.1.x`, leading to connection drops.
-* **Resolution:** Since Kubernetes and MetalLB never forcibly tear down active network leases, we released the old lease by forcing a recreation of the GatewayClass and Service configurations:
+* **Resolution:** Since Kubernetes and Cilium never forcibly tear down active network leases, we released the old lease by forcing a recreation of the GatewayClass and Service configurations:
   ```bash
   flux reconcile source git flux-system
   flux reconcile kustomization infra-configs
   ```
-  This triggered MetalLB to assign a fresh IP from the correct pool (**`192.168.50.201`**), making the entire application natively routable inside your local network!
+  This triggered Cilium to assign a fresh IP from the correct pool (**`192.168.50.201`**), making the entire application natively routable inside your local network!

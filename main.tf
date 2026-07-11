@@ -1,9 +1,6 @@
 module "proxmox" {
   source = "./modules/proxmox"
 
-  proxmox_endpoint  = var.proxmox_endpoint
-  proxmox_api_token = var.proxmox_api_token
-  proxmox_insecure  = var.proxmox_insecure
   proxmox_node      = var.proxmox_node
   datastore_id      = var.datastore_id
   network_bridge    = var.network_bridge

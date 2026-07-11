@@ -39,7 +39,7 @@ spec:
             # Fewer connections → less per-connection memory pressure.
             - "-c"
             - "max_connections=30"
-            # SSD/Longhorn tuning: planner assumes flash + parallel I/O; longer, smoother checkpoints.
+            # SSD/Proxmox CSI tuning: planner assumes flash + parallel I/O; longer, smoother checkpoints.
             - "-c"
             - "random_page_cost=1.1"
             - "-c"

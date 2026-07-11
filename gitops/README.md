@@ -24,9 +24,9 @@ This is where your Flux CD controllers start scanning. When you bootstrap Flux o
 
 * **Role:** Orchestrates the deployment order using **Kustomization dependency graphs** (`dependsOn`). It ensures platform infrastructure is fully running before application code attempts to deploy.
 * **How it works:**
-  1. Flux reads `clusters/taskflow/infra-controllers.yaml` and deploys the operators (Cilium, Longhorn, cert-manager).
+  1. Flux reads `clusters/taskflow/infra-controllers.yaml` and deploys the operators (Cilium, Proxmox CSI, cert-manager).
   2. Once those are healthy, Flux reads `clusters/taskflow/infra-configs.yaml` to deploy configurations (Cilium IP pools).
-  3. Finally, Flux reads `clusters/taskflow/taskflow.yaml` to deploy your TaskFlow application, guaranteeing the database persistent volumes (Longhorn) and IP allocations (Cilium L2 announcements) are ready to consume.
+  3. Finally, Flux reads `clusters/taskflow/taskflow.yaml` to deploy your TaskFlow application, guaranteeing the database persistent volumes (Proxmox CSI) and IP allocations (Cilium L2 announcements) are ready to consume.
 
 ### 2. `infrastructure/` (The Platform / Systems Layer)
 This layer manages cluster-wide utilities and operators that provide auxiliary services (network, storage, TLS certs) to other workloads in the cluster. It is split into two logical subdirectories to prevent race conditions during deployment:
@@ -34,7 +34,7 @@ This layer manages cluster-wide utilities and operators that provide auxiliary s
 #### A. `infrastructure/controllers/` (CRD and Operator Deployments)
 Contains the system controllers deployed primarily via **HelmReleases**. 
 * **`cilium/`**: Installs Cilium with native L2 announcements (`CiliumLoadBalancerIPPool`) to manage external LoadBalancer IPs.
-* **`longhorn/`**: Installs the distributed block storage system to handle persistent volumes (PVCs). Optimized to run on your single-node Homelab cluster by limiting volume replica checks (`defaultClassReplicaCount: 1`).
+* **`proxmox-csi/`**: Installs the Proxmox CSI driver to dynamically provision high-performance virtual disk storage on your Proxmox VE hypervisor for persistent volumes (PVCs).
 * **`cert-manager/`**: Handles automated provisioning of TLS certificates.
 
 #### B. `infrastructure/configs/` (Controller Instances)

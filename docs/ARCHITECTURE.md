@@ -47,7 +47,7 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 ### 3.1 Runtime
 - **Distribution**: k3s (single-node cluster)
 - **CNI**: Cilium v1.16.1 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
-- **Storage**: Longhorn v1.6.1 (single-replica for single-node homelab)
+- **Storage**: Proxmox CSI (dynamic VM virtual disk provisioning)
 
 ### 3.2 Cilium Configuration (`gitops/infrastructure/controllers/cilium/release.yaml`)
 | Feature | Setting |
@@ -75,7 +75,7 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 flux-system (bootstrap)
     │
     ▼
-infra-controllers (HelmReleases: Cilium, cert-manager, Longhorn, Gateway API)
+infra-controllers (HelmReleases: Cilium, cert-manager, Proxmox CSI, Gateway API)
     │
     ▼
 infra-configs (Cilium IP pool + L2 policy, GatewayClass)
@@ -150,13 +150,13 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
      ┌──────▼──────┐
      │ PostgreSQL  │
      │ (17-alpine, │
-     │  10Gi Longhorn)
+     │  10Gi Proxmox CSI)
      └─────────────┘
 
                   ┌──────────────────────────────────────────────┐
                   │  Monitoring (namespace: monitoring)           │
                   │  VictoriaMetrics ──scrapes──▶ backend:8080    │
-                  │  (TSDB on Longhorn PVC)    /actuator/prometheus│
+                  │  (TSDB on Proxmox CSI PVC) /actuator/prometheus│
                   │  Grafana (admin secret,   postgres-exporter   │
                   │   off public Gateway)    redis-exporter       │
                   └──────────────────────────────────────────────┘
@@ -192,7 +192,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 |----------|-------|
 | Image | `postgres:17-alpine` |
 | Replicas | 1 |
-| Storage | 10 GiB PVC, storageClass: longhorn (ReadWriteOnce) |
+| Storage | 10 GiB PVC, storageClass: proxmox-csi (ReadWriteOnce) |
 | SecurityContext | runAsNonRoot UID/GID 70 (postgres), drop ALL capabilities, fsGroup 70 with OnRootMismatch policy |
 | Tuning | `shared_buffers=384MB`, `effective_cache_size=1152MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `max_connections=30` |
 | SSD tuning | `random_page_cost=1.1`, `effective_io_concurrency=200`, `checkpoint_timeout=900s`, `wal_buffers=16MB`, `max_wal_size=2GB` |
@@ -235,7 +235,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 |-----------|----------------|
 | VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.85.10) in namespace `monitoring` |
 | CRDs | Installed by the chart (VMServiceScrape, VMSingle, …) |
-| Persistence | VictoriaMetrics TSDB on a **Longhorn-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `longhorn`) |
+| Persistence | VictoriaMetrics TSDB on a **Proxmox CSI-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `proxmox-csi`) |
 | Grafana auth | Admin credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana and VictoriaMetrics UIs are routed via the Gateway API (see `routes.yaml`), secured by Grafana's login screen |
 | App metrics | `VMServiceScrape`s in `gitops/monitoring/app` scrape the backend (`/actuator/prometheus`), `postgres-exporter`, and `redis-exporter` |
 | DB/Redis metrics | Side-car exporters (`postgres-exporter.yaml`, `redis-exporter.yaml` in `gitops/apps/taskflow`) — **no backend change required**; they reuse `db-secret` |
@@ -292,7 +292,7 @@ TF/
 │   │   ├── backend.yaml             # Spring Boot deployment + ClusterIP service
 │   │   ├── frontend.yaml            # Angular/nginx deployment + ClusterIP service
 │   │   ├── postgres-db.yaml         # PostgreSQL 17 deployment + ClusterIP service (name: db)
-│   │   ├── postgres-pvc.yaml        # 10Gi Longhorn PVC
+│   │   ├── postgres-pvc.yaml        # 10Gi Proxmox CSI PVC
 │   │   ├── redis.yaml               # Redis 7.2 deployment + ClusterIP service + NetworkPolicy
 │   │   ├── jaeger.yaml              # Jaeger all-in-one + OTLP services + UI service + NetworkPolicy
 │   │   ├── gateway.yaml             # Cilium Gateway (port 80, same-namespace routes)
@@ -304,7 +304,7 @@ TF/
 │   │   ├── controllers/             # HelmRelease + Repository for platform add-ons
 │   │   │   ├── cilium/release.yaml  # Cilium v1.16.1 (eBPF, Gateway API, L2 announcements)
 │   │   │   ├── cert-manager/        # Namespace only (no release yet — no TLS certs configured)
-│   │   │   ├── longhorn/release.yaml# Longhorn v1.6.1 (single-replica optimized)
+│   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
 │   │   │   └── gateway-api/         # Standard Gateway API CRDs + TLSRoute CRD
 │   │   │
 │   │   └── configs/                 # Cilium IP pool, L2 policy, GatewayClass
@@ -318,7 +318,7 @@ TF/
 │       │   ├── gotk-components.yaml  # CRDs + RBAC + namespaces
 │       │   └── gotk-sync.yaml        # GitRepository + Kustomization for flux-system
 │       ├── kustomization.yaml       # References all layers
-│       ├── infra-controllers.yaml   # HelmRelease controllers (Cilium, Longhorn, etc.)
+│       ├── infra-controllers.yaml   # HelmRelease controllers (Cilium, Proxmox CSI, etc.)
 │       ├── infra-configs.yaml       # Cilium configs + GatewayClass
   │       ├── taskflow.yaml            # App layer with SOPS decryption
   │       ├── monitoring.yaml          # VictoriaMetrics + Grafana operator (SOPS-enabled)
@@ -373,7 +373,7 @@ flux reconcile kustomization taskflow-app -n flux-system
 | GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FUTURE_FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` module is planned, not yet created) |
 | Pod Disruption Budgets | Not defined | Add PDBs for backend, frontend, postgres |
 | Horizontal Pod Autoscaler | Single replicas everywhere | HPA for backend based on CPU/memory metrics |
-| Backup strategy | Longhorn snapshots only | Velero or restic-operator for PostgreSQL backups |
+| Backup strategy | Proxmox hypervisor backups | Configure scheduled VM backups at the Proxmox level (using PBS or vzdump) |
 | Monitoring stack | Jaeger traces only | VictoriaMetrics + Grafana scaffolded in `gitops/monitoring/` (see §5.9). **Backend JVM/HTTP metrics need an app-repo change** (`micrometer-registry-prometheus`) — tracked in `docs/BACKEND_INTEGRATION_CONTEXT.md`. DB/Redis metrics already flow via exporters. |
 | cert-manager | Installed (v1.14.4) but idle — no `Certificate`/`ClusterIssuer` or HTTPS Gateway listener yet | Add a `ClusterIssuer` + `Certificate` for `taskflow.local` and an HTTPS listener (see ISSUES.md #19) |
 
@@ -428,7 +428,7 @@ This is the path that actually matters day-to-day:
 The single most important design decision here is: **no SSH provisioners for k3s**. Instead:
 
 - `proxmox_download_file` pulls the Ubuntu 26.04 cloud image into the `local` datastore.
-- `proxmox_virtual_environment_file.cloud_config` builds a **cloud-init snippet** (heredoc from column 0 to avoid YAML-whitespace parsing bugs) that, at first boot, installs kernel tweaks, multipath/iscsi for Longhorn, and **runs the k3s install script** with our exact flags:
+- `proxmox_virtual_environment_file.cloud_config` builds a **cloud-init snippet** (heredoc from column 0 to avoid YAML-whitespace parsing bugs) that, at first boot, installs kernel tweaks, multipath/iscsi storage packages, and **runs the k3s install script** with our exact flags:
   ```
   --flannel-backend=none --disable-network-policy --disable servicelb --disable traefik
   ```
@@ -451,7 +451,7 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
 - **`infra-controllers`** (`gitops/infrastructure/controllers/`) installs the platform via HelmRelease objects:
   - `cilium/release.yaml` — Cilium 1.16.1 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
   - `cert-manager/release.yaml` — cert-manager 1.14.4 (installed, but currently idle — no certs issued yet, see §9/§10.6).
-  - `longhorn/release.yaml` — Longhorn 1.6.1 with `defaultReplicaCount: 1` (single-node safe).
+  - `proxmox-csi/` — Proxmox CSI driver (dynamic storage provisioning of virtual disks with native hypervisor backup integration).
   - `gateway-api/` — the standard Gateway API CRDs.
 - **`infra-configs`** (`gitops/infrastructure/configs/`) applies Cilium's `CiliumLoadBalancerIPPool` (`192.168.50.200–250`), the `CiliumL2AnnouncementPolicy` (which Ethernet interfaces advertise the IP via ARP), and the `GatewayClass` named `cilium`. These **must** come after the controllers, hence the dependency.
 
@@ -489,7 +489,7 @@ Key point: **Services are `ClusterIP` only**. Nothing is exposed except through 
 | Expose a new URL path | `gitops/apps/taskflow/httproute.yaml` | Flux reconciles Gateway |
 | Change the external IP range | `gitops/infrastructure/configs/cilium/ippool.yaml` | `flux reconcile kustomization infra-configs` |
 | Rotate a DB/app secret | `sops edit gitops/apps/taskflow/taskflow-secrets.yaml` | Flux re-decrypts on next sync |
-| Bump Cilium/Longhorn/cert-manager version | the `version:` in the relevant `release.yaml` | Flux upgrades (CRDs `CreateReplace`) |
+| Bump Cilium/Proxmox CSI/cert-manager version | the `version:` in the relevant `release.yaml` | Flux upgrades (CRDs `CreateReplace`) |
 | Change VM size/network | `terraform.tfvars` + `variables.tf` | `make apply` (note: some changes force VM recreate → auto re-fetch kubeconfig) |
 | Add a TLS cert | `gitops/infrastructure/controllers/cert-manager/` + HTTPS listener in `gateway.yaml` | see ISSUES.md #19 |
 | Change VictoriaMetrics retention / storage | `gitops/monitoring/platform/release.yaml` (`vmsingle.spec`, `vmsingle.storage`) | `flux reconcile kustomization monitoring -n flux-system` |
@@ -499,7 +499,7 @@ Key point: **Services are `ClusterIP` only**. Nothing is exposed except through 
 
 1. **CORS** (`configmap.yaml`) lists `http://localhost:4200,http://taskflow.local`. If you change the published hostname, update this or the browser's `/api` calls get CORS-rejected. (This was a live bug — ISSUES.md #1.)
 2. **Jaeger UI is not on the Gateway anymore** — don't re-add a `/jaeger` route without putting auth in front of it.
-3. **Postgres UID is 70 on purpose** — don't "standardize" it to `10001`; the Longhorn volume ownership depends on 70.
+3. **Postgres UID is 70 on purpose** — don't "standardize" it to `10001`; the Postgres volume ownership depends on 70.
 4. **`proxmox_insecure = true`** disables TLS verification to Proxmox. Fine for a self-signed homelab, dangerous anywhere else.
 5. **Ubuntu 26.04 ("Resolute")** is a future release — verify the cloud-image URL in `modules/proxmox/main.tf` actually resolves before `make provision` (ISSUES.md #18).
 6. The whole stack is **single-replica** — there is no HA. A node reboot = full downtime. That's the accepted homelab tradeoff, not a bug.
@@ -510,7 +510,7 @@ Scaffolded in `gitops/monitoring/` (see §5.9). It reconciles independently of t
 and is **ready the moment the backend emits metrics** — but note the split:
 
 - **`monitoring`** Kustomization (`gitops/monitoring/platform`) installs the operator +
-  CRDs + Grafana (SOPS admin secret) + the Longhorn TSDB PVC. Depends on `infra-controllers`.
+  CRDs + Grafana (SOPS admin secret) + the Proxmox CSI TSDB PVC. Depends on `infra-controllers`.
 - **`monitoring-app`** Kustomization (`gitops/monitoring/app`) applies the
   ServiceMonitors. Depends on `monitoring` so the ServiceMonitor CRD already exists.
 

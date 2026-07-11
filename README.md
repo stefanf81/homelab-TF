@@ -9,7 +9,7 @@ managed directly by Terraform.
 - `modules/proxmox` – provisions the VM; cloud-init installs k3s at boot (no SSH provisioner needed for this part, per [Terraform's own guidance](https://developer.hashicorp.com/terraform/language/post-apply-operations) to prefer cloud-init over provisioners)
 - `modules/k3s-kubeconfig` – waits for cloud-init's k3s install to finish, then fetches `kubeconfig.yaml` over SSH
 - `modules/flux-bootstrap` – **planned, not yet created**; a future GitHub-ready Flux bootstrap module (see `gitops/FUTURE_FLUX_BOOTSTRAP.md` for the manual steps)
-- `gitops/` – Flux-style GitOps layout for Cilium L2 announcements, Longhorn, and cert-manager
+- `gitops/` – Flux-style GitOps layout for Cilium L2 announcements, Proxmox CSI, and cert-manager
 
 ## Workflow
 
@@ -124,7 +124,6 @@ To ensure production-grade security, resiliency, and performance on your single-
 
 ### 3. Storage Resiliency & Performance
 * **Proxmox CSI Volume Storage:** The PostgreSQL Database (`postgres-pvc.yaml`) volume mapping is scaled from a restrictive `1Gi` to **`10Gi`** and explicitly bound to the **Proxmox CSI** storage class (`storageClassName: proxmox-csi`). Volume lifecycle, sizing, and disk attachments are dynamically provisioned on your Proxmox node, with backing snapshots and backups handled natively at the hypervisor layer.
-* **Longhorn Single-Node Efficiency:** The Longhorn configuration (`gitops/infrastructure/controllers/longhorn/release.yaml`) has been optimized to limit standard replica counts to 1 (`defaultClassReplicaCount: 1`), keeping volumes healthy on a single-node homelab without warning indicators.
 
 ### 4. Database Engine Performance Tuning
 * **PostgreSQL Engine RAM Tuning:** The database deployment (`postgres-db.yaml`) has been injected with optimized database startup arguments to utilize its 1024Mi RAM container limit effectively, replacing standard, extremely conservative container defaults:
