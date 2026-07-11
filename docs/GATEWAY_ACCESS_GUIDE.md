@@ -27,14 +27,26 @@ This allows you to bypass name-based DNS entirely and use two much simpler, zero
 
 ## 2. Option A: Direct Raw IP Access (Easiest)
 
-You can access every service directly using the static IP address of your Kubernetes node VM (`192.168.50.55`):
+You can access every service directly using the **External LoadBalancer IP** of your Cilium Gateway. 
+
+Because you are using Cilium's L2 Announcement pool, the Gateway does **not** listen on your node's static VM IP (`192.168.50.55`). It listens on a dedicated LoadBalancer IP (usually in the `192.168.50.200–250` range).
+
+### Step 1: Find your Gateway's External IP
+Run this command on your workstation:
+```bash
+kubectl get svc -A | grep -i LoadBalancer
+```
+Look for the `EXTERNAL-IP` (e.g., `192.168.50.200`).
+
+### Step 2: Use the External IP in your browser
+Substitute your actual `<EXTERNAL-IP>` into these URLs:
 
 | Service | Access URL | Description |
 | :--- | :--- | :--- |
-| **TaskFlow Web App** | [http://192.168.50.55/](http://192.168.50.55/) | The Angular 22 Frontend |
-| **TaskFlow API Backend** | [http://192.168.50.55/api/...](http://192.168.50.55/api/) | The Spring Boot 3.5.3 REST API |
-| **Grafana Metrics UI** | [http://192.168.50.55/grafana](http://192.168.50.55/grafana) | Real-time performance dashboards |
-| **VictoriaMetrics TSDB** | [http://192.168.50.55/vmsingle/](http://192.168.50.55/vmsingle/) | Scraped time-series metrics |
+| **TaskFlow Web App** | `http://<EXTERNAL-IP>/` | The Angular 22 Frontend |
+| **TaskFlow API Backend** | `http://<EXTERNAL-IP>/api/...` | The Spring Boot 3.5.3 REST API |
+| **Grafana Metrics UI** | `http://<EXTERNAL-IP>/grafana` | Real-time performance dashboards |
+| **VictoriaMetrics TSDB** | `http://<EXTERNAL-IP>/vmsingle/` | Scraped time-series metrics |
 
 ### 🔒 The Same-Origin CORS Advantage
 In traditional microservice setups, the frontend (e.g. `http://localhost:4200`) makes calls to a different API backend URL (e.g. `http://localhost:8080`), forcing you to manage complex CORS headers and origin policies. 
@@ -50,20 +62,20 @@ Some advanced services (like OIDC providers, external webhooks, or browser passw
 Instead of editing your `/etc/hosts` file (which only works on your specific machine), you can use free, wildcard public DNS resolvers like **`nip.io`** or **`sslip.io`**. 
 
 These services automatically resolve any domain name containing an IP address back to that IP:
-- `192.168.50.55.nip.io` → Resolves directly to `192.168.50.55`
-- `192.168.50.55.sslip.io` → Resolves directly to `192.168.50.55`
+- `<EXTERNAL-IP>.nip.io` → Resolves directly to your Gateway
+- `<EXTERNAL-IP>.sslip.io` → Resolves directly to your Gateway
 
 ### Zero-Config Domain URLs:
 You can use these URLs from **any device on your LAN** (including phones, tablets, or other laptops) without any network configuration:
 
 * **TaskFlow Web App:**
-  👉 [http://192.168.50.55.nip.io/](http://192.168.50.55.nip.io/)  *(or `sslip.io`)*
+  👉 `http://<EXTERNAL-IP>.nip.io/`  *(or `sslip.io`)*
 
 * **Grafana Dashboards:**
-  👉 [http://192.168.50.55.nip.io/grafana](http://192.168.50.55.nip.io/grafana) *(or `sslip.io`)*
+  👉 `http://<EXTERNAL-IP>.nip.io/grafana` *(or `sslip.io`)*
 
 * **VictoriaMetrics UI:**
-  👉 [http://192.168.50.55.nip.io/vmsingle/](http://192.168.50.55.nip.io/vmsingle/) *(or `sslip.io`)*
+  👉 `http://<EXTERNAL-IP>.nip.io/vmsingle/` *(or `sslip.io`)*
 
 ---
 
