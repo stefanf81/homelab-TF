@@ -108,7 +108,7 @@ spec:
         path: /grafana/metrics
       grafana.ini:
         server:
-          domain: jokerlab.dev
+          domain: www.jokerlab.dev
           root_url: "https://%(domain)s/grafana/"
           serve_from_sub_path: true
       sidecar:
