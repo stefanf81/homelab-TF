@@ -96,13 +96,19 @@ spec:
 
     grafana:
       enabled: true
+      persistence:
+        enabled: true
+        storageClassName: proxmox-csi
+        accessModes:
+          - ReadWriteOnce
+        size: 2Gi
       plugins:
         - victoriametrics-metrics-datasource
       serviceMonitor:
         path: /grafana/metrics
       grafana.ini:
         server:
-          domain: paintlab.duckdns.org
+          domain: jokerlab.dev
           root_url: "https://%(domain)s/grafana/"
           serve_from_sub_path: true
       sidecar:

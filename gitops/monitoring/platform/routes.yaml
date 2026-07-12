@@ -10,7 +10,7 @@ spec:
       namespace: taskflow
       sectionName: https # serve only on :443; plaintext :80 is redirected by http-to-https-redirect
   hostnames:
-    - "paintlab.duckdns.org"
+    - "jokerlab.dev"
   rules:
     # Grafana UI
     - matches:

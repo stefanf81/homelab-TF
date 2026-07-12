@@ -19,4 +19,5 @@ resources:
   - httproute.yaml
   - http-redirect.yaml
   - certificate.yaml
+  - cloudflare-ddns.yaml
 

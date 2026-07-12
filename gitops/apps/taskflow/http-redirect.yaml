@@ -24,7 +24,7 @@ spec:
     - name: taskflow-gateway
       sectionName: http # only the plaintext listener
   hostnames:
-    - "paintlab.duckdns.org"
+    - "jokerlab.dev"
   rules:
     - matches:
         - path:
