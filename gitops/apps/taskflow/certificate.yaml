@@ -1,7 +1,7 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: taskflow-jokerlab-cert
+  name: taskflow-jokelab-cert
   namespace: taskflow
 spec:
   secretName: taskflow-tls-secret

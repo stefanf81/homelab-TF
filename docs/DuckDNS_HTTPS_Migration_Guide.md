@@ -54,7 +54,7 @@ During deployment, three major homelab-specific networking roadblocks were encou
 **Resolution**: 
 1.  Waited 2 minutes.
 2.  Verified global propagation using `nslookup jokelab.dev 1.1.1.1` (Cloudflare).
-3.  Deleted the failed certificate (`kubectl delete certificate taskflow-jokerlab-cert -n taskflow`) to clear the cache and break the Flux deadlock, forcing an instant, successful retry.
+3.  Deleted the failed certificate (`kubectl delete certificate taskflow-jokelab-cert -n taskflow`) to clear the cache and break the Flux deadlock, forcing an instant, successful retry.
 
 ### 3.3 "Host is Down" / Wi-Fi Client Isolation
 **Symptom**: The Mac terminal suddenly reported `No route to host` or `Host is down` when pinging `192.168.50.50` (Proxmox), despite having internet access and a `192.168.50.x` IP address.
