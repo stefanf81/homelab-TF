@@ -85,3 +85,21 @@ spec:
           port: 9187 # postgres-exporter
         - protocol: TCP
           port: 9121 # redis-exporter
+---
+# 4) Allow cert-manager HTTP-01 solver pods to receive challenge traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cert-manager-solver
+  namespace: taskflow
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8089
+

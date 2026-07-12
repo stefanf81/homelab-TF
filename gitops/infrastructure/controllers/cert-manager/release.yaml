@@ -20,3 +20,5 @@ spec:
     crds: CreateReplace
   values:
     installCRDs: true
+    extraArgs:
+      - --enable-gateway-api
