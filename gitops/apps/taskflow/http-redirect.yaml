@@ -24,8 +24,8 @@ spec:
     - name: taskflow-gateway
       sectionName: http # only the plaintext listener
   hostnames:
-    - "jokerlab.dev"
-    - "www.jokerlab.dev"
+    - "jokelab.dev"
+    - "www.jokelab.dev"
   rules:
     - matches:
         - path:
@@ -38,7 +38,7 @@ spec:
             port: 443
             statusCode: 301
 ---
-# Redirect HTTPS apex (jokerlab.dev) to HTTPS www (www.jokerlab.dev)
+# Redirect HTTPS apex (jokelab.dev) to HTTPS www (www.jokelab.dev)
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -49,7 +49,7 @@ spec:
     - name: taskflow-gateway
       sectionName: https
   hostnames:
-    - "jokerlab.dev"
+    - "jokelab.dev"
   rules:
     - matches:
         - path:
@@ -58,7 +58,7 @@ spec:
       filters:
         - type: RequestRedirect
           requestRedirect:
-            hostname: "www.jokerlab.dev"
+            hostname: "www.jokelab.dev"
             scheme: https
             port: 443
             statusCode: 301

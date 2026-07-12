@@ -375,7 +375,7 @@ flux reconcile kustomization taskflow-app -n flux-system
 | Horizontal Pod Autoscaler | Single replicas everywhere | HPA for backend based on CPU/memory metrics |
 | Backup strategy | Proxmox hypervisor backups | Configure scheduled VM backups at the Proxmox level (using PBS or vzdump) |
 | Monitoring stack | Jaeger traces only | VictoriaMetrics + Grafana scaffolded in `gitops/monitoring/` (see §5.9). **Backend JVM/HTTP metrics need an app-repo change** (`micrometer-registry-prometheus`) — tracked in `docs/BACKEND_INTEGRATION_CONTEXT.md`. DB/Redis metrics already flow via exporters. |
-| cert-manager | Installed (v1.21.0) | Configured Let's Encrypt HTTP-01 `ClusterIssuer` + `Certificate` for `jokerlab.dev` with an HTTPS Gateway listener |
+| cert-manager | Installed (v1.21.0) | Configured Let's Encrypt HTTP-01 `ClusterIssuer` + `Certificate` for `jokelab.dev` with an HTTPS Gateway listener |
 
 ---
 
@@ -458,7 +458,7 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
 ### 10.5 How the app is exposed (the request path)
 
 ```
-Browser ── https://jokerlab.dev ──▶ (DNS → Public IP → Port Forward → 192.168.50.201, an L2-announced IP)
+Browser ── https://jokelab.dev ──▶ (DNS → Public IP → Port Forward → 192.168.50.201, an L2-announced IP)
                                             │
                                      Cilium Gateway (taskflow-gateway, class: cilium, :80)
                                             │  HTTPRoute taskflow-route (first-match-wins):
@@ -497,7 +497,7 @@ Key point: **Services are `ClusterIP` only**. Nothing is exposed except through 
 
 ### 10.8 Footguns / things that will bite you
 
-1. **CORS** (`configmap.yaml`) lists `http://localhost:4200,https://jokerlab.dev`. If you change the published hostname, update this or the browser's `/api` calls get CORS-rejected. (This was a live bug — ISSUES.md #1.)
+1. **CORS** (`configmap.yaml`) lists `http://localhost:4200,https://jokelab.dev`. If you change the published hostname, update this or the browser's `/api` calls get CORS-rejected. (This was a live bug — ISSUES.md #1.)
 2. **Jaeger UI is not on the Gateway anymore** — don't re-add a `/jaeger` route without putting auth in front of it.
 3. **Postgres UID is 70 on purpose** — don't "standardize" it to `10001`; the Postgres volume ownership depends on 70.
 4. **`proxmox_insecure = true`** disables TLS verification to Proxmox. Fine for a self-signed homelab, dangerous anywhere else.
@@ -518,7 +518,7 @@ and is **ready the moment the backend emits metrics** — but note the split:
 
 The monitoring UIs are now exposed through the main Cilium Gateway API using zero-config wildcard IP and public DNS routing. See [Gateway Access Guide](GATEWAY_ACCESS_GUIDE.md) for full setup instructions.
 
-- **Grafana:** `https://jokerlab.dev/grafana`
+- **Grafana:** `https://jokelab.dev/grafana`
   *(admin login credentials are saved in your local gitignored `grafana.secret`)*
 - **VictoriaMetrics (VMSingle):** Accessed privately via `kubectl port-forward -n monitoring svc/vmsingle-victoria-metrics-k8s-stack 8428:8428` at `http://localhost:8428/vmsingle/`
 

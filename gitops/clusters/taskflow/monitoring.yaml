@@ -1,8 +1,8 @@
 # Monitoring platform: VictoriaMetrics (VMSingle + vmagent) operator and its CRDs.
 #
 # Reach the UIs via the public Gateway:
-#   Grafana:         https://jokerlab.dev/grafana
-#   VictoriaMetrics: https://jokerlab.dev/vmsingle
+#   Grafana:         https://jokelab.dev/grafana
+#   VictoriaMetrics: https://jokelab.dev/vmsingle
 # (Grafana admin login comes from the SOPS-encrypted gitops/monitoring/platform/grafana-secrets.yaml)
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

@@ -6,8 +6,8 @@ metadata:
 spec:
   secretName: taskflow-tls-secret
   dnsNames:
-    - "jokerlab.dev"
-    - "www.jokerlab.dev"
+    - "jokelab.dev"
+    - "www.jokelab.dev"
   issuerRef:
     name: letsencrypt-http01-production
     kind: ClusterIssuer

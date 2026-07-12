@@ -14,7 +14,7 @@ This guide compiles the complete technical logs, structural adjustments, and tro
 | **Routing Layer** | Open `type: NodePort` on host nodes | **Kubernetes Gateway API (eBPF Envoy Proxy)** |
 | **Ports Exposed** | `30042` (Frontend), `30080` (Backend), `31686` (Jaeger) | **Port 80 (Consolidated Path-Based Routing)** |
 | **Routing Target** | Direct node endpoints | Secure internal **`type: ClusterIP`** services |
-| **Default Hostname** | Host Node IP Address only | **`jokerlab.dev`** & **Wildcard IP routing** |
+| **Default Hostname** | Host Node IP Address only | **`jokelab.dev`** & **Wildcard IP routing** |
 | **Secrets Security** | Checked-in raw YAML files | **SOPS Integration Ready** (with age configuration) |
 | **PostgreSQL persistency** | `1Gi` standard storage | **`10Gi` high-availability (Proxmox CSI-backed)** |
 | **Database configuration**| Default Alpine parameters (128MB RAM budget) | **Tuned Engine Parameters (for 1536Mi RAM container limit)** |
