@@ -10,13 +10,13 @@ spec:
       namespace: taskflow
       sectionName: https # serve only on :443; plaintext :80 is redirected by http-to-https-redirect
   hostnames:
-    - "www.jokelab.dev"
+    - "grafana.jokelab.dev"
   rules:
     # Grafana UI
     - matches:
         - path:
             type: PathPrefix
-            value: /grafana
+            value: /
       backendRefs:
         - name: victoria-metrics-k8s-stack-grafana
           port: 80

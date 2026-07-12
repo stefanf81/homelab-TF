@@ -8,6 +8,7 @@ spec:
   dnsNames:
     - "jokelab.dev"
     - "www.jokelab.dev"
+    - "grafana.jokelab.dev"
   issuerRef:
     name: letsencrypt-http01-production
     kind: ClusterIssuer

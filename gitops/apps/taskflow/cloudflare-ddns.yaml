@@ -25,7 +25,7 @@ spec:
                   name: cloudflare-secret
                   key: CLOUDFLARE_API_TOKEN
             - name: DOMAINS
-              value: "jokelab.dev,www.jokelab.dev"
+              value: "jokelab.dev,www.jokelab.dev,grafana.jokelab.dev"
             - name: PROXIED
               value: "false"
           resources:

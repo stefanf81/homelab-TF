@@ -26,6 +26,7 @@ spec:
   hostnames:
     - "jokelab.dev"
     - "www.jokelab.dev"
+    - "grafana.jokelab.dev"
   rules:
     - matches:
         - path:
