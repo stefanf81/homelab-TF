@@ -24,6 +24,9 @@ spec:
     crds: Skip
   values:
     replicaCount: 1
+    # Enable the REST API to receive external events (e.g. Falco alerts)
+    rest:
+      enabled: true
     resources:
       requests:
         cpu: "50m"
@@ -38,6 +41,12 @@ spec:
     # Policy Reporter UI subchart (service: policy-reporter-ui:8080).
     ui:
       enabled: true
+      clusters:
+        - name: homelab
+          host: http://policy-reporter:8080
+          plugins:
+            - name: kyverno
+              host: http://policy-reporter-kyverno-plugin:8080
       resources:
         requests:
           cpu: "50m"
