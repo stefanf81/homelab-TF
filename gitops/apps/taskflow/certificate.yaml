@@ -9,7 +9,6 @@ spec:
     - "jokelab.dev"
     - "www.jokelab.dev"
     - "grafana.jokelab.dev"
-    - "kyverno.jokelab.dev"
   issuerRef:
     name: letsencrypt-http01-production
     kind: ClusterIssuer

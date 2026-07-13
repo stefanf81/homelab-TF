@@ -88,7 +88,7 @@ Kyverno provides Kubernetes-native policy enforcement; Policy Reporter gives it 
 
 * **Controller** — `gitops/infrastructure/controllers/kyverno/` (HelmRelease `kyverno` v3.8.2, single-replica, CRDs owned by the chart). System namespaces (`kube-system`, `flux-system`, `kyverno`, `cert-manager`, `cilium`) are excluded from enforcement.
 * **Policies** — `gitops/apps/kyverno-policies/` holds `ClusterPolicy` resources in **Audit** mode (no blocking yet). Reconciled by the `kyverno-policies` Kustomization, which `dependsOn: infra-controllers` so the CRDs exist before policies apply.
-* **Dashboard** — `gitops/infrastructure/controllers/policy-reporter/` (HelmRelease `policy-reporter` v3.8.1, `ui.enabled` + `plugin.kyverno.enabled`). Its `HTTPRoute` serves `https://kyverno.jokelab.dev` via the shared Cilium Gateway; the TLS cert (`taskflow-jokelab-cert`) carries the `kyverno.jokelab.dev` SAN.
+* **Dashboard** — `gitops/infrastructure/controllers/policy-reporter/` (HelmRelease `policy-reporter` v3.8.1, `ui.enabled` + `plugin.kyverno.enabled`). Its `HTTPRoute` serves `https://kyverno.jokelab.dev` via the shared Cilium Gateway, using the `taskflow-jokelab-cert` cert. **Expose it by adding `kyverno.jokelab.dev` to that cert's `dnsNames` — but only after a DNS record for it exists** (see warning below), otherwise the cert stalls `InProgress` and blocks `taskflow-app`.
 
 **Add a policy:** drop a `ClusterPolicy` YAML into `gitops/apps/kyverno-policies/` and commit — Flux applies it automatically.
 

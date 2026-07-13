@@ -192,13 +192,19 @@ TLS is terminated by the Gateway using `taskflow-tls-secret`, which is issued fr
 `letsencrypt-http01-production` ClusterIssuer.
 
 ### DNS & certificate
-`gitops/apps/taskflow/certificate.yaml` (`taskflow-jokelab-cert`) now carries the
-`kyverno.jokelab.dev` SAN alongside `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`.
+The UI is served with TLS using the **shared** `taskflow-jokelab-cert`
+(`gitops/apps/taskflow/certificate.yaml`), which must carry the `kyverno.jokelab.dev` SAN
+alongside `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`.
 
-**You must create a DNS record** for `kyverno.jokelab.dev` pointing at the Gateway IP
-(`192.168.50.201`, same as `grafana.jokelab.dev`). cert-manager solves the HTTP-01 challenge
-via a temporary HTTPRoute on the Gateway, which requires the hostname to resolve to that IP.
-Until the record exists, the certificate stays `Pending` and the route cannot serve TLS.
+> **Ordering is critical.** A DNS A/CNAME record for `kyverno.jokelab.dev` → Gateway IP
+> (`192.168.50.201`, same as `grafana.jokelab.dev`) **must exist before** the SAN is added.
+> cert-manager solves the Let's Encrypt HTTP-01 challenge by reaching
+> `http://kyverno.jokelab.dev/.well-known/acme-challenge/...` through the Gateway, which
+> requires the hostname to resolve. If the SAN is added while the DNS record is missing, the
+> cert stays `InProgress`, and because `taskflow-app` health-checks that Certificate
+> (`wait: true`), the **main app Kustomization goes `Progressing`/`NotReady`** — which also
+> blocks `policy-reporter` (`dependsOn: taskflow-app`). Create the DNS record first, then add
+> the SAN; re-issuance validates and `taskflow-app` returns to Ready.
 
 ### Authentication caveat
 The Policy Reporter UI is exposed **without authentication**. Anyone able to reach
