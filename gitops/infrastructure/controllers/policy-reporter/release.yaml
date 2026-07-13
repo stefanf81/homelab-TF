@@ -34,23 +34,17 @@ spec:
       limits:
         cpu: "250m"
         memory: "256Mi"
-    # Kyverno plugin enriches the UI with policy descriptions / YAML declarations.
+    # Kyverno and Trivy plugins enrich the UI with descriptions & vulnerability data.
     plugin:
       kyverno:
         enabled: true
       trivy:
         enabled: true
     # Policy Reporter UI subchart (service: policy-reporter-ui:8080).
+    # Leaving ui.clusters omitted allows Helm to generate the single 'default'
+    # cluster secret dynamically containing Kyverno and Trivy plugins safely.
     ui:
       enabled: true
-      clusters:
-        - name: homelab
-          host: http://policy-reporter:8080
-          plugins:
-            - name: kyverno
-              host: http://policy-reporter-kyverno-plugin:8080
-            - name: trivy
-              host: http://policy-reporter-trivy-plugin:8080/vulnr
       resources:
         requests:
           cpu: "50m"
