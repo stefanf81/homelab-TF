@@ -31,7 +31,7 @@ spec:
       vulnerabilityScannerScanOnlyCurrentRevisions: true
       # Continuous monitoring - rescan on schedule
       scanJobTimeout: 5m
-      builtInTrivyServer: true
+      builtInTrivyServer: false
     targetNamespaces: "" # Scan all namespaces
     resources:
       requests:
