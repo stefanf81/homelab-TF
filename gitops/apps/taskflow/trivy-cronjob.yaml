@@ -15,8 +15,8 @@ data:
     trivy plugin install github.com/melmorabity/trivy-plugin-epss
     
     echo "Scanning Kubernetes cluster..."
-    # 'trivy k8s all' scans the whole cluster and exports a JSON report.
-    trivy k8s all --report all --format json -o /shared/report.json || true
+    # 'trivy k8s cluster' scans the whole cluster and exports a JSON report.
+    trivy k8s cluster --report all --format json -o /shared/report.json || true
     
     echo "Enriching with EPSS..."
     # The plugin reads the trivy json from stdin and adds EPSS scores, outputting to stdout
