@@ -22,16 +22,26 @@ spec:
   values:
     trivy:
       ignoreUnfixed: false
+      storageClassEnabled: true
+      storageClassName: proxmox-csi
+      # Limit scan job resources to increase stability/memory limits
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          cpu: 1000m
+          memory: 2Gi
     # Continuously scan workloads
     operator:
       vulnerabilityScannerEnabled: true
       configAuditScannerEnabled: true
       rbacAssessmentScannerEnabled: true
-      exposedSecretScannerEnabled: true
+      exposedSecretScannerEnabled: false # Disable secret scanning to reduce time & cache lock errors
       vulnerabilityScannerScanOnlyCurrentRevisions: true
       # Continuous monitoring - rescan on schedule
       scanJobTimeout: 5m
-      builtInTrivyServer: false
+      builtInTrivyServer: true # Enable built-in server
     targetNamespaces: "" # Scan all namespaces
     resources:
       requests:
