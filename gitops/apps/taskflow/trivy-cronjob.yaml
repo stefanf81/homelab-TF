@@ -20,8 +20,8 @@ data:
     trivy k8s --server http://trivy-service.trivy-system.svc:4954 all --report all --format json -o /shared/report.json || true
     
     echo "Enriching with EPSS..."
-    # The plugin expects the trivy json as an argument and adds EPSS scores
-    trivy epss -o /shared/enriched.json /shared/report.json
+    # The plugin reads the trivy json from stdin and adds EPSS scores, outputting to stdout
+    trivy epss < /shared/report.json > /shared/enriched.json
     
     echo "Scan and enrichment complete."
 
