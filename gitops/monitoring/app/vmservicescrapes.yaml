@@ -71,6 +71,7 @@ metadata:
   name: falco-metrics
   namespace: monitoring
 spec:
+  jobLabel: app.kubernetes.io/name
   namespaceSelector:
     matchNames:
       - falco
