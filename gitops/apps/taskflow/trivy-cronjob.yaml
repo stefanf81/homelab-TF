@@ -11,12 +11,13 @@ data:
     echo "Installing trivy-plugin-epss..."
     trivy plugin install github.com/melmorabity/trivy-plugin-epss
     
-    echo "Scanning Kubernetes cluster..."
-    # 'trivy k8s all' scans the whole cluster.
-    trivy k8s all --report all --format json -o /shared/report.json || true
+    echo "Scanning Kubernetes cluster using the centralized Trivy Server..."
+    # 'trivy k8s all' scans the whole cluster. Connecting to the built-in Trivy Server (port 4954)
+    # avoids downloading the heavy vulnerability database from scratch, saving network bandwidth & time.
+    trivy k8s --server http://trivy-service.trivy-system.svc:4954 all --report all --format json -o /shared/report.json || true
     
     echo "Enriching with EPSS..."
-    # The plugin expects the trivy json as an argument
+    # The plugin expects the trivy json as an argument and adds EPSS scores
     trivy epss --epss-date latest /shared/report.json > /shared/enriched.json
     
     echo "Scan and enrichment complete."
@@ -95,6 +96,9 @@ spec:
   jobTemplate:
     spec:
       template:
+        metadata:
+          labels:
+            app: trivy-epss-scanner
         spec:
           serviceAccountName: trivy-cronjob
           restartPolicy: OnFailure
@@ -107,7 +111,7 @@ spec:
                 defaultMode: 0755
           initContainers:
             - name: trivy-scan
-              image: aquasec/trivy:0.53.0
+              image: aquasec/trivy:0.71.0 # Upgraded from 0.53.0 to match Trivy Operator 0.71.x baseline
               command: ["/scripts/scan.sh"]
               env:
                 - name: TRIVY_CACHE_DIR
@@ -119,7 +123,7 @@ spec:
                   mountPath: /scripts
               resources:
                 requests:
-                  cpu: "200m"
+                  cpu: "250m"
                   memory: "512Mi"
                 limits:
                   cpu: "1000m"
