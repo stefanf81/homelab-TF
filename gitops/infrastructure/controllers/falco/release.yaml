@@ -41,8 +41,7 @@ spec:
     # Enable Falcosidekick to route alerts to Policy Reporter
     falcosidekick:
       enabled: true
-      # Forward security alerts to Policy Reporter core API
-      web:
-        http:
+      config:
+        webhook:
           address: "http://policy-reporter.policy-reporter.svc.cluster.local:8080/v1/falco"
           minimumpriority: "notice"
