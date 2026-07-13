@@ -38,10 +38,10 @@ spec:
     metrics:
       enabled: true
 
-    # Enable Falcosidekick to route alerts to Policy Reporter
+    # Enable Falcosidekick to write native Kubernetes PolicyReports
     falcosidekick:
       enabled: true
       config:
-        webhook:
-          address: "http://policy-reporter.policy-reporter.svc.cluster.local:8080/v1/falco"
+        policyreport:
+          enabled: true
           minimumpriority: "notice"

@@ -31,9 +31,6 @@ spec:
       limits:
         cpu: "250m"
         memory: "256Mi"
-    # Enable the REST API to receive external events (e.g. Falco alerts)
-    rest:
-      enabled: true
     # Kyverno plugin enriches the UI with policy descriptions / YAML declarations.
     plugin:
       kyverno:
