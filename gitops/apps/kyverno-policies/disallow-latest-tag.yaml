@@ -1,0 +1,41 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+  annotations:
+    policies.kyverno.io/title: Disallow Latest Tag
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Flags any container image that uses the mutable :latest tag. Audit-only:
+      reports violations, does not block admission.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-image-tag-not-latest
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+                - ReplicaSet
+                - Job
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kyverno
+                - flux-system
+                - cert-manager
+                - cilium
+      validate:
+        message: "Using the :latest tag is discouraged; pin a specific version."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"

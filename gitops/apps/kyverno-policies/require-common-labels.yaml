@@ -1,0 +1,39 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-common-labels
+  annotations:
+    policies.kyverno.io/title: Require Common Labels
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/description: >-
+      Requires Deployments and StatefulSets to carry the app.kubernetes.io/name
+      and app.kubernetes.io/part-of labels. Audit-only: reports violations,
+      does not block admission.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-app-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+                - StatefulSet
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kyverno
+                - flux-system
+                - cert-manager
+                - cilium
+      validate:
+        message: "Deployments/StatefulSets must have app.kubernetes.io/name and app.kubernetes.io/part-of labels."
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/name: "?*"
+              app.kubernetes.io/part-of: "?*"

@@ -8,3 +8,4 @@ resources:
   - taskflow.yaml
   - monitoring.yaml
   - monitoring-app.yaml
+  - kyverno-policies.yaml
