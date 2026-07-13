@@ -104,7 +104,7 @@ kubectl get clusterpolicy
 kubectl get clusterpolicyreport -A
 ```
 
-> **Security note:** the Policy Reporter UI is exposed **without authentication**. Anyone able to reach `kyverno.jokelab.dev` can view policy reports. Add `ui.basicAuth` (SOPS-encrypted secret) to lock it down. Also, `kyverno.jokelab.dev` must have a DNS record resolving to the Gateway IP or the Let's Encrypt certificate stays `Pending`.
+> **Security note:** the Policy Reporter UI is exposed **without authentication**. Anyone able to reach `kyverno.jokelab.dev` can view policy reports. Add `ui.basicAuth` (SOPS-encrypted secret) to lock it down. Also, the Let's Encrypt certificate requires a DNS record for `kyverno.jokelab.dev` resolving to the Gateway IP — without it the cert stays `Pending`. If the record exists but cert-manager's self-check still times out (hairpin NAT behind a router), add a `hosts` entry in CoreDNS to resolve the domain to the Gateway's internal IP `192.168.50.201` — see `docs/KYVERNO_POLICY_ENGINE.md` §6 for the exact patch.
 
 See `docs/KYVERNO_POLICY_ENGINE.md` for the full reference (CRD gotchas, troubleshooting, rollback).
 

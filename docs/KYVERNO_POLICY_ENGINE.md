@@ -205,6 +205,39 @@ alongside `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`.
 > (`wait: true`), the **main app Kustomization goes `Progressing`/`NotReady`** — which also
 > blocks `policy-reporter` (`dependsOn: taskflow-app`). Create the DNS record first, then add
 > the SAN; re-issuance validates and `taskflow-app` returns to Ready.
+>
+> **Hairpin NAT caveat.** Even when the DNS record exists and resolves to the Gateway's
+> external IP, cert-manager's self-check may **time out** behind a router that doesn't
+> support hairpin NAT (or has it disabled). The cert-manager pod resolves the domain to the
+> **public** IP, sends the GET request, the packet leaves the LAN, and the router can't
+> forward it back to the internal Gateway — so the challenge hangs `pending` with:
+> ```
+> Waiting for HTTP-01 challenge propagation: failed to perform self check GET request
+> 'http://kyverno.jokelab.dev/.well-known/acme-challenge/...':
+> context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+> ```
+> **Fix a — CoreDNS override (permanent, recommended):** Override cluster-internal DNS to
+> resolve the domain directly to the Gateway's internal IP by patching CoreDNS:
+> ```bash
+> kubectl -n kube-system patch configmap coredns --type merge -p '{"data":{"Corefile":".:53 {\n    errors\n    health\n    hosts {\n        192.168.50.201 kyverno.jokelab.dev\n        fallthrough\n    }\n    ready\n    kubernetes cluster.local in-addr.arpa ip6.arpa {\n        pods insecure\n        fallthrough in-addr.arpa ip6.arpa\n    }\n    prometheus :9153\n    forward . /etc/resolv.conf\n    cache 30\n    loop\n    reload\n    loadbalance\n}\n"}}'
+> kubectl -n kube-system rollout restart deploy/coredns
+> ```
+> After ~10s cert-manager retries the challenge, resolves to `192.168.50.201` over LAN, and
+> the challenge completes. Reverts cleanly by removing the `hosts` block from the Corefile.
+>
+> **Fix b — DNS-01 challenge (alternative):** Switch the ClusterIssuer to use DNS-01 with a
+> Cloudflare API token. This avoids HTTP-01 entirely and works through any NAT setup, but
+> requires creating a SOPS-encrypted API token secret and modifying the ClusterIssuer.
+>
+> If the order is already `invalid`, cert-manager will not create a new CertificateRequest
+> on its own — the controller sits on a retry backoff. To force a fresh attempt:
+> ```bash
+> # Nuclear option — delete the Certificate and let Flux recreate it
+> kubectl -n taskflow delete certificate taskflow-jokelab-cert
+> flux -n flux-system reconcile ks taskflow-app
+> ```
+> This resets all issuance state to zero; Flux re-applies the Certificate from Git and a new
+> order is created immediately. See §10 Troubleshooting.
 
 ### Authentication caveat
 The Policy Reporter UI is exposed **without authentication**. Anyone able to reach
@@ -278,7 +311,9 @@ the blast radius. Start with low-risk policies (labels) before `:latest`/securit
 |---|---|
 | `Helm install failed … invalid ownership metadata` on Kyverno | `install.crds: CreateReplace` set on the HelmRelease. Change to `Skip` (§4). |
 | `policy-reporter-ui` HTTPRoute shows `Not Programmed` / no address | The `policy-reporter` namespace is missing from the Gateway `allowedRoutes` selector, or the Gateway (`taskflow-app`) hasn't reconciled yet. |
-| Certificate `taskflow-jokelab-cert` stays `Pending` | `kyverno.jokelab.dev` DNS doesn't resolve to the Gateway IP, or the HTTP-01 solver can't reach it. Verify the DNS record and `kubectl describe certificate -n taskflow`. |
+| Certificate `taskflow-jokelab-cert` stays `InProgress` after adding a new SAN | **Two common causes:** (1) DNS record for the new SAN doesn't exist yet — create it first (§6). (2) DNS exists but cert-manager self-check times out (hairpin NAT) — see next row. |
+| HTTP-01 self-check times out with `context deadline exceeded` | Hairpin NAT: the router can't forward outbound traffic back to the internal Gateway. **Fix:** add a `hosts` entry in CoreDNS to resolve the domain to the internal Gateway IP (`192.168.50.201`) — see §6 for the exact patch. Alternative: switch to DNS-01 with Cloudflare API token. |
+| cert-manager does **not** create a new CertificateRequest after a failed order | The Issuing controller sits on a retry backoff. Deleting the failed CR does **not** reset the timer. **Fix:** delete the Certificate and let Flux recreate it — `kubectl delete certificate -n taskflow taskflow-jokelab-cert && flux -n flux-system reconcile ks taskflow-app`. This resets all issuance state to zero. |
 | `kubectl get clusterpolicyreport -A` returns nothing | Reports are generated asynchronously by the reports controller after its background scan. Wait ~1–2 min; if still empty, `kubectl -n kyverno logs deploy/kyverno-reports-controller`. |
 | Policies don't seem to evaluate `taskflow` | Confirm the policy doesn't `exclude` the `taskflow` namespace, and that `validationFailureAction` is `Audit` (reports only) not erroneously scoped. |
 
