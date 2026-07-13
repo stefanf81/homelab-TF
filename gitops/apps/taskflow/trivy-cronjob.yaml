@@ -39,11 +39,11 @@ data:
             
         print(f"Found {len(vuln_reports.get('items', []))} VulnerabilityReports in cluster.")
         
-        # 2. Download latest EPSS scores from FIRST
+        # 2. Download latest EPSS scores from FIRST (using highly available CloudFront CDN mirror)
         epss_data = {}
         try:
             print("Downloading latest EPSS scores from FIRST...")
-            epss_url = "https://epss.cyber.dhs.gov/epss-csv-latest.gz"
+            epss_url = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
             req = urllib.request.Request(epss_url, headers={"User-Agent": "Mozilla/5.0"})
             
             with urllib.request.urlopen(req) as response:
