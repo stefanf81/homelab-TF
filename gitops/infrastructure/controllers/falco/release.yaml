@@ -38,6 +38,11 @@ spec:
     metrics:
       enabled: true
 
-    # Keep configuration light (disable sidekick unless explicitly needed)
+    # Enable Falcosidekick to route alerts to Policy Reporter
     falcosidekick:
-      enabled: false
+      enabled: true
+      # Forward security alerts to Policy Reporter core API
+      web:
+        http:
+          address: "http://policy-reporter.policy-reporter.svc.cluster.local:8080/v1/falco"
+          minimumpriority: "notice"
