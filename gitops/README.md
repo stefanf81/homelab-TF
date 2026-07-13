@@ -12,9 +12,12 @@ gitops/
 │   └── taskflow/
 ├── infrastructure/             # 2. Platform/System services (Helm charts & System configs)
 │   ├── controllers/
+│   │   ├── kyverno/            #   Kyverno policy engine (HelmRelease; reconciled by infra-controllers)
+│   │   └── policy-reporter/    #   Policy Reporter + UI (own Kustomization; dashboard at kyverno.jokelab.dev)
 │   └── configs/
 ├── apps/                       # 3. User-facing applications (TaskFlow frontend, backend, database)
-│   └── taskflow/
+│   ├── taskflow/
+│   └── kyverno-policies/       #   Example ClusterPolicies (Audit mode); reconciled by kyverno-policies Kustomization
 ├── README.md                   # GitOps directory overview
 └── FLUX_BOOTSTRAP.md    # Instructions for remote Git & Flux CD integration
 ```
@@ -36,6 +39,8 @@ Contains the system controllers deployed primarily via **HelmReleases**.
 * **`cilium/`**: Installs Cilium with native L2 announcements (`CiliumLoadBalancerIPPool`) to manage external LoadBalancer IPs.
 * **`proxmox-csi/`**: Installs the Proxmox CSI driver to dynamically provision high-performance virtual disk storage on your Proxmox VE hypervisor for persistent volumes (PVCs).
 * **`cert-manager/`**: Handles automated provisioning of TLS certificates.
+* **`kyverno/`**: Installs the Kyverno policy engine (admission + background/cleanup/reports controllers). Validates, mutates, and generates Kubernetes resources via `ClusterPolicy` CRs. CRDs are owned by the chart (`crds.install: true`); the Flux `HelmRelease` uses `install.crds: Skip` to avoid a CRD ownership conflict. Reconciled by `infra-controllers`.
+* **`policy-reporter/`**: Installs Policy Reporter + its UI subchart — a read-only web dashboard for Kyverno's `ClusterPolicyReport` objects. Exposed at `https://kyverno.jokelab.dev` through the Cilium Gateway (same pattern as Grafana). Has its **own** cluster Kustomization (`policy-reporter`) that `dependsOn` both `infra-controllers` and `taskflow-app` so the Gateway exists before the HTTPRoute is programmed.
 
 #### B. `infrastructure/configs/` (Controller Instances)
 Contains the actual custom configurations and Custom Resources (CRs) consumed by the controllers installed in the folder above.
@@ -76,6 +81,32 @@ The scaffolded manifests inside this layout include critical performance and net
   ```bash
   sops -e -i gitops/apps/taskflow/taskflow-secrets.yaml
   ```
+
+### 4. Policy Engine & Dashboard (Kyverno + Policy Reporter)
+
+Kyverno provides Kubernetes-native policy enforcement; Policy Reporter gives it a UI.
+
+* **Controller** — `gitops/infrastructure/controllers/kyverno/` (HelmRelease `kyverno` v3.8.2, single-replica, CRDs owned by the chart). System namespaces (`kube-system`, `flux-system`, `kyverno`, `cert-manager`, `cilium`) are excluded from enforcement.
+* **Policies** — `gitops/apps/kyverno-policies/` holds `ClusterPolicy` resources in **Audit** mode (no blocking yet). Reconciled by the `kyverno-policies` Kustomization, which `dependsOn: infra-controllers` so the CRDs exist before policies apply.
+* **Dashboard** — `gitops/infrastructure/controllers/policy-reporter/` (HelmRelease `policy-reporter` v3.8.1, `ui.enabled` + `plugin.kyverno.enabled`). Its `HTTPRoute` serves `https://kyverno.jokelab.dev` via the shared Cilium Gateway; the TLS cert (`taskflow-jokelab-cert`) carries the `kyverno.jokelab.dev` SAN.
+
+**Add a policy:** drop a `ClusterPolicy` YAML into `gitops/apps/kyverno-policies/` and commit — Flux applies it automatically.
+
+**Go to Enforce (carefully):** flip `validationFailureAction: Audit` → `Enforce` in a policy, one at a time. Kyverno's webhook then blocks non-compliant admissions (system namespaces stay excluded).
+
+**Verify:**
+```bash
+flux get kustomizations | grep -E 'infra-controllers|kyverno'
+flux get hr -n kyverno
+flux get hr -n policy-reporter
+kubectl -n kyverno get pods
+kubectl get clusterpolicy
+kubectl get clusterpolicyreport -A
+```
+
+> **Security note:** the Policy Reporter UI is exposed **without authentication**. Anyone able to reach `kyverno.jokelab.dev` can view policy reports. Add `ui.basicAuth` (SOPS-encrypted secret) to lock it down. Also, `kyverno.jokelab.dev` must have a DNS record resolving to the Gateway IP or the Let's Encrypt certificate stays `Pending`.
+
+See `docs/KYVERNO_POLICY_ENGINE.md` for the full reference (CRD gotchas, troubleshooting, rollback).
 
 ## Next step later
 
