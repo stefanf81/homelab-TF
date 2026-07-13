@@ -63,3 +63,22 @@ spec:
       path: /metrics
       interval: 60s
       scheme: http
+---
+# --- Falco Runtime Security ---------------------------------------------------
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: falco-metrics
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - falco
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: falco
+  endpoints:
+    - port: "14223"            # Falco metrics service port
+      path: /metrics
+      interval: 60s
+      scheme: http

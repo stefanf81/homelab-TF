@@ -1,0 +1,43 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: falco
+  namespace: falco
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: falco
+      # Falco chart v9.1.0 -> Falco 0.44.1. Cluster is running Ubuntu 26.04.
+      version: 9.1.0
+      sourceRef:
+        kind: HelmRepository
+        name: falco
+        namespace: falco
+      interval: 12h
+  install:
+    createNamespace: true
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace
+  values:
+    # Use modern eBPF driver which is fully supported on modern kernels (Ubuntu 26.04).
+    driver:
+      kind: modern_ebpf
+
+    # Restrict Falco DaemonSet resource footprint to protect homelab CPU/memory
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1024Mi"
+
+    # Enable Prometheus metrics endpoint (port 14223 by default)
+    metrics:
+      enabled: true
+
+    # Keep configuration light (disable sidekick unless explicitly needed)
+    falcosidekick:
+      enabled: false

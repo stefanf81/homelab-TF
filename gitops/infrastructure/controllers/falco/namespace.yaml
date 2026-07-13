@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: falco
+  labels:
+    # Exempt Falco's own pods from any present/future Pod Security Admission policies.
+    pod-security.kubernetes.io/enforce: privileged
