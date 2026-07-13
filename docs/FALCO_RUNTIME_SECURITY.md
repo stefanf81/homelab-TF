@@ -23,7 +23,7 @@ In this cluster, Falco is deployed as a cluster-wide runtime security system usi
                                   |   Falcosidekick   | (Routes alerts)
                                   +----+-----------+--+
                                        |           |
-       (Directly writes wgpolicyk8s.io |           | (Prometheus Scrape: Port 14223)
+       (Directly writes wgpolicyk8s.io |           | (Prometheus Scrape: Port 8765)
         PolicyReport Custom Resources) |           |
                                        v           v
                           +------------+---+   +---+------------+
@@ -40,7 +40,7 @@ In this cluster, Falco is deployed as a cluster-wide runtime security system usi
 ### Key Integrations
 1. **Runtime Protection:** Falco hooks into the Linux kernel using a **modern eBPF probe** to capture security-relevant system calls.
 2. **Kubernetes-Native Audit (Policy Reporter):** When an alert triggers, **Falcosidekick** generates a standard CNCF `PolicyReport` (wgpolicyk8s.io) directly in the Kubernetes API. The **Policy Reporter UI** observes these reports dynamically and renders them under `https://kyverno.jokelab.dev`.
-3. **Time-Series Monitoring (Grafana):** Falco exposes Prometheus metrics on port `14223`. **VictoriaMetrics** scrapes them using a custom `VMServiceScrape` and routes them to **Grafana** (`https://grafana.jokelab.dev`).
+3. **Time-Series Monitoring (Grafana):** Falco exposes Prometheus metrics on port `8765` (port name `metrics`). **VictoriaMetrics** scrapes them using a custom `VMServiceScrape` and routes them to **Grafana** (`https://grafana.jokelab.dev`).
 
 ---
 
@@ -110,7 +110,7 @@ spec:
         cpu: "1000m"
         memory: "1024Mi"
 
-    # Expose Prometheus metrics (Port 14223)
+    # Expose Prometheus metrics (Port 8765 / port name "metrics")
     metrics:
       enabled: true
 

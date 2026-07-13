@@ -78,7 +78,7 @@ spec:
     matchLabels:
       app.kubernetes.io/name: falco
   endpoints:
-    - port: "14223"            # Falco metrics service port
+    - port: metrics            # Falco metrics service port name (port 8765)
       path: /metrics
       interval: 60s
       scheme: http
