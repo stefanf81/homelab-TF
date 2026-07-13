@@ -8,6 +8,9 @@ data:
     #!/bin/sh
     set -e
     
+    echo "Installing python3 inside Trivy alpine container..."
+    apk add --no-cache python3
+    
     echo "Installing trivy-plugin-epss..."
     trivy plugin install github.com/melmorabity/trivy-plugin-epss
     
