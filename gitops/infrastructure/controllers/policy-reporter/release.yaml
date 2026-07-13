@@ -1,0 +1,47 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: policy-reporter
+  namespace: policy-reporter
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: policy-reporter
+      # Chart v3.8.1 -> Policy Reporter / UI app v3.8.1. Cluster is k8s 1.36.2.
+      version: 3.8.1
+      sourceRef:
+        kind: HelmRepository
+        name: policy-reporter
+        namespace: policy-reporter
+      interval: 12h
+  install:
+    createNamespace: true
+    # PolicyReport CRDs (wgpolicyk8s.io) are already installed by Kyverno.
+    # This chart provides none of its own, so skip CRD handling in Flux.
+    crds: Skip
+  upgrade:
+    crds: Skip
+  values:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "250m"
+        memory: "256Mi"
+    # Kyverno plugin enriches the UI with policy descriptions / YAML declarations.
+    plugin:
+      kyverno:
+        enabled: true
+    # Policy Reporter UI subchart (service: policy-reporter-ui:8080).
+    ui:
+      enabled: true
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "250m"
+          memory: "256Mi"

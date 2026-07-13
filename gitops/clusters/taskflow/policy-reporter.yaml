@@ -1,0 +1,21 @@
+# Policy Reporter + UI: web dashboard for Kyverno ClusterPolicyReports.
+# UI reachable at https://kyverno.jokelab.dev (Cilium Gateway + Let's Encrypt, same pattern as Grafana).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: policy-reporter
+  namespace: flux-system
+spec:
+  # Gateway (taskflow-app) must exist before the HTTPRoute is programmed, and
+  # Kyverno's PolicyReport CRDs must exist before Policy Reporter can read them.
+  dependsOn:
+    - name: infra-controllers
+    - name: taskflow-app
+  interval: 30m
+  path: ./gitops/infrastructure/controllers/policy-reporter
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 10m

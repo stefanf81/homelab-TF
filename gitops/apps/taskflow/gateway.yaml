@@ -22,6 +22,7 @@ spec:
                 values:
                   - taskflow
                   - monitoring
+                  - policy-reporter
     - name: https
       port: 443
       protocol: HTTPS
@@ -41,3 +42,4 @@ spec:
                 values:
                   - taskflow
                   - monitoring
+                  - policy-reporter

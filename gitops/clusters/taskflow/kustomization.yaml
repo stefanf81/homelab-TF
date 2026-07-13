@@ -9,3 +9,4 @@ resources:
   - monitoring.yaml
   - monitoring-app.yaml
   - kyverno-policies.yaml
+  - policy-reporter.yaml
