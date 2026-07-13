@@ -14,10 +14,9 @@ data:
     echo "Installing trivy-plugin-epss..."
     trivy plugin install github.com/melmorabity/trivy-plugin-epss
     
-    echo "Scanning Kubernetes cluster using the centralized Trivy Server..."
-    # 'trivy k8s all' scans the whole cluster. Connecting to the built-in Trivy Server (port 4954)
-    # avoids downloading the heavy vulnerability database from scratch, saving network bandwidth & time.
-    trivy k8s --server http://trivy-service.trivy-system.svc:4954 all --report all --format json -o /shared/report.json || true
+    echo "Scanning Kubernetes cluster..."
+    # 'trivy k8s all' scans the whole cluster and exports a JSON report.
+    trivy k8s all --report all --format json -o /shared/report.json || true
     
     echo "Enriching with EPSS..."
     # The plugin reads the trivy json from stdin and adds EPSS scores, outputting to stdout
