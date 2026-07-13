@@ -47,7 +47,7 @@ spec:
             - name: kyverno
               host: http://policy-reporter-kyverno-plugin:8080
             - name: trivy
-              host: http://policy-reporter-trivy-plugin:8080
+              host: http://policy-reporter-trivy-plugin:8080/vulnr
       resources:
         requests:
           cpu: "50m"
