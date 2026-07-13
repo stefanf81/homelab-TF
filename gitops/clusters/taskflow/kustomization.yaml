@@ -10,3 +10,4 @@ resources:
   - monitoring-app.yaml
   - kyverno-policies.yaml
   - policy-reporter.yaml
+  - trivy-operator.yaml

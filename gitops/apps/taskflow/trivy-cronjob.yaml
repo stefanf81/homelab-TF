@@ -1,0 +1,144 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trivy-epss-scripts
+  namespace: taskflow
+data:
+  scan.sh: |
+    #!/bin/sh
+    set -e
+    
+    echo "Installing trivy-plugin-epss..."
+    trivy plugin install github.com/melmorabity/trivy-plugin-epss
+    
+    echo "Scanning Kubernetes cluster..."
+    # 'trivy k8s all' scans the whole cluster.
+    trivy k8s all --report all --format json -o /shared/report.json || true
+    
+    echo "Enriching with EPSS..."
+    # The plugin expects the trivy json as an argument
+    trivy epss --epss-date latest /shared/report.json > /shared/enriched.json
+    
+    echo "Scan and enrichment complete."
+
+  upload.py: |
+    import sys, json, os
+    import psycopg2
+    
+    print("Uploading report to PostgreSQL...")
+    with open('/shared/enriched.json', 'r') as f:
+        data = f.read()
+    
+    conn = psycopg2.connect(
+        host="db",
+        dbname="taskflow",
+        user="postgres",
+        password=os.environ["POSTGRES_PASSWORD"]
+    )
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE IF NOT EXISTS vulnerability_reports (id serial PRIMARY KEY, report JSONB, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
+    cur.execute("TRUNCATE TABLE vulnerability_reports;")
+    cur.execute("INSERT INTO vulnerability_reports (report) VALUES (%s);", [data])
+    conn.commit()
+    cur.close()
+    conn.close()
+    print("Upload complete.")
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trivy-cronjob
+  namespace: taskflow
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: trivy-cronjob-role
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "nodes", "namespaces", "configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: trivy-cronjob-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: trivy-cronjob-role
+subjects:
+  - kind: ServiceAccount
+    name: trivy-cronjob
+    namespace: taskflow
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: trivy-epss-scanner
+  namespace: taskflow
+spec:
+  schedule: "0 */6 * * *" # Every 6 hours
+  concurrencyPolicy: Replace
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: trivy-cronjob
+          restartPolicy: OnFailure
+          volumes:
+            - name: shared-data
+              emptyDir: {}
+            - name: scripts
+              configMap:
+                name: trivy-epss-scripts
+                defaultMode: 0755
+          initContainers:
+            - name: trivy-scan
+              image: aquasec/trivy:0.53.0
+              command: ["/scripts/scan.sh"]
+              env:
+                - name: TRIVY_CACHE_DIR
+                  value: "/shared/.cache"
+              volumeMounts:
+                - name: shared-data
+                  mountPath: /shared
+                - name: scripts
+                  mountPath: /scripts
+              resources:
+                requests:
+                  cpu: "200m"
+                  memory: "512Mi"
+                limits:
+                  cpu: "1000m"
+                  memory: "2048Mi"
+          containers:
+            - name: postgres-upload
+              image: python:3.11-alpine
+              command:
+                - /bin/sh
+                - -c
+                - "apk add --no-cache postgresql-dev gcc python3-dev musl-dev && pip install psycopg2-binary && python /scripts/upload.py"
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-secret
+                      key: POSTGRES_PASSWORD
+              volumeMounts:
+                - name: shared-data
+                  mountPath: /shared
+                - name: scripts
+                  mountPath: /scripts
