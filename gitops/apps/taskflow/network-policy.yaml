@@ -21,9 +21,6 @@ spec:
         - podSelector:
             matchLabels:
               app: postgres-exporter
-        - podSelector:
-            matchLabels:
-              app: trivy-epss-scanner
       ports:
         - protocol: TCP
           port: 5432

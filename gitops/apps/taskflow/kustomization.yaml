@@ -20,5 +20,4 @@ resources:
   - http-redirect.yaml
   - certificate.yaml
   - cloudflare-ddns.yaml
-  - trivy-cronjob.yaml
 
