@@ -21,7 +21,7 @@ data:
     
     echo "Enriching with EPSS..."
     # The plugin expects the trivy json as an argument and adds EPSS scores
-    trivy epss --epss-date latest /shared/report.json > /shared/enriched.json
+    trivy epss -o /shared/enriched.json /shared/report.json
     
     echo "Scan and enrichment complete."
 
