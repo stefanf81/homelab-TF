@@ -19,7 +19,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: postgres
-          image: postgres:17-alpine
+          image: postgres:17.10-alpine
           imagePullPolicy: IfNotPresent
           args:
             # Memory — trimmed limit to 1024Mi (from 1536Mi) for the memory-constrained
