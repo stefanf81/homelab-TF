@@ -17,11 +17,11 @@ spec:
       # backend's prod profile so Spring finishes active requests before the pod is killed.
       terminationGracePeriodSeconds: 45
       initContainers:
-        # NOTE: intentionally uses the mutable alpine:3.20.3 tag (not a Flux digest pin)
+        # NOTE: intentionally uses the mutable alpine:3.22.0 tag (not a Flux digest pin)
         # because this is a transient init container, not a served image. Pin to a digest
-        # if you want fully hermetic boots: image: alpine:3.20.3@sha256:<digest>
+        # if you want fully hermetic boots: image: alpine:3.22.0@sha256:<digest>
         - name: wait-for-db
-          image: alpine:3.20.3
+          image: alpine:3.22.0
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true

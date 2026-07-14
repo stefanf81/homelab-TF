@@ -8,7 +8,7 @@ spec:
   chart:
     spec:
       chart: trivy-operator
-      version: 0.33.1 # using a recent stable version
+      version: 0.34.0 # using a recent stable version
       sourceRef:
         kind: HelmRepository
         name: aqua
