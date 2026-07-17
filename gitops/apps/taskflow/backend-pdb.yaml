@@ -1,0 +1,14 @@
+# PodDisruptionBudget for the backend. With a single replica, minAvailable: 1 blocks
+# voluntary evictions (node drains, k3s upgrades, Flux-triggered rollouts that would
+# otherwise leave zero replicas) from terminating the pod. The rollout still works: a
+# new pod is scheduled and becomes ready before the old one is evicted.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: taskflow-backend-pdb
+  namespace: taskflow
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: taskflow-backend

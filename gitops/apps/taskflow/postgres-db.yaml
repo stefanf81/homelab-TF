@@ -44,8 +44,12 @@ spec:
             - "-c"
             - "max_parallel_maintenance_workers=2"
             # Fewer connections → less per-connection memory pressure.
+            # Raised 30 → 50: a single backend's Hikari pool is maximum-pool-size=25
+            # (see application-prod.properties), so 25/50 leaves headroom for
+            # psql, Flyway migrations, and the postgres-exporter. Scaling the backend
+            # to a 2nd replica (25×2=50) would otherwise exhaust the old 30 and stall.
             - "-c"
-            - "max_connections=30"
+            - "max_connections=50"
             # SSD/Proxmox CSI tuning: planner assumes flash + parallel I/O; longer, smoother checkpoints.
             - "-c"
             - "random_page_cost=1.1"

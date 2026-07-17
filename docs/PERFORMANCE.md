@@ -96,11 +96,11 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 
 | # | Item | Where | Note |
 |---|------|-------|------|
-| 3.1 | No `wal_compression` / `synchronous_commit` tuning | `postgres-db.yaml` | Enabling `wal_compression=on` reduces WAL I/O on the network-backed volume. |
-| 3.2 | No gzip / `Cache-Control` on nginx | `frontend.yaml` (nginx image) | Angular bundles should be gzipped + immutable-cache headers; otherwise first load is slower. (Can't see the Dockerfile from this repo — verify the prod build + nginx config there.) |
-| 3.3 | No HTTP/2 at the Gateway | `gateway.yaml` | Cilium Gateway supports it; enables multiplexing for the `/api` calls. |
-| 3.4 | JVM lacks GC logging / `-XX:MaxGCPauseMillis` | `backend.yaml` | Add `-Xlog:gc*:time` + a pause target once metrics exist, to tune G1. |
-| 3.5 | Single replica everywhere | all Deployments | No horizontal headroom; CPU/mem are hard-capped per pod. Add HPA for the backend once metrics exist. |
+| 3.1 | `synchronous_commit` tuning | `postgres-db.yaml` | ✅ Applied: `synchronous_commit=off` (no replicas → no durability cost, 5–20× write gain). |
+| 3.2 | gzip / `Cache-Control` on nginx | `frontend` repo `nginx.conf` | ✅ Already done in the app repo: `gzip on; comp_level 6`, `Cache-Control "public"` + `expires 6M` on static assets. |
+| 3.3 | HTTP/2 | `backend.yaml` Service + `gateway` | ✅ Backend `server.http2.enabled=true` (app repo) + `appProtocol: kubernetes.io/h2c` on the backend Service so Cilium Gateway multiplexes to the backend. |
+| 3.4 | JVM GC logging / `-XX:MaxGCPauseMillis` | `backend.yaml` | ✅ Applied: rotated `-Xlog:gc*` + `MaxGCPauseMillis=100`. |
+| 3.5 | Single replica / autoscaling | `backend.yaml` + `backend-hpa.yaml` | ✅ HPA added (CPU 70%, 1–3 replicas). Needs metrics-server for the `metrics.k8s.io` API (not in the VM stack) — see `backend-hpa.yaml` note. PDBs added for backend + frontend. |
 | 3.6 | `random_page_cost=1.1` assumes SSD | `postgres-db.yaml` | Reasonable for Proxmox-CSI-backed-SSD; re-check if you move DB to spinning disk. |
 
 ---
@@ -110,12 +110,64 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 | # | Action | Status |
 |---|--------|--------|
 | 1 | **Monitoring stack** (VictoriaMetrics + Grafana + kube-state-metrics + node-exporter) | ✅ Deployed and collecting metrics |
-| 2 | **Backend `/actuator/prometheus`** — add `micrometer-registry-prometheus` in the app repo | ⏳ Pending (see `BACKEND_INTEGRATION_CONTEXT.md`) |
-| 3 | **JVM off-heap caps** — Guaranteed QoS `2Gi`, `MaxMetaspaceSize=256m`, `MaxDirectMemorySize=512m` | ✅ Applied in `backend.yaml` |
+| 2 | **Backend `/actuator/prometheus`** — `micrometer-registry-prometheus` + exposure + SecurityConfig permit | ✅ Already done in the app repo (see §below) |
+| 3 | **JVM sizing** — single source of truth via `MaxRAMPercentage=50.0` (image), Guaranteed QoS `2Gi` | ✅ Applied — `backend.yaml` JAVA_TOOL_OPTIONS no longer overrides heap/direct; image owns sizing |
 | 4 | **`effective_cache_size`** corrected to 700MB | ✅ Applied in `postgres-db.yaml` |
 | 5 | **Postgres PVC** migrated from Longhorn to Proxmox CSI | ✅ Applied in `postgres-pvc.yaml` |
-| 6 | **Harden Redis** — add persistence PVC or document stampede risk | ⏳ Pending (see §2.3) |
-| 7 | **Re-evaluate pool sizes** when adding a second backend replica | 🔜 Future
+| 6 | **Harden Redis** — add persistence PVC or document stampede risk | ⏳ Pending (see §2.3) — still ephemeral by design |
+| 7 | **Re-evaluate pool sizes** when adding a second backend replica | ✅ `max_connections` raised 30→50 in `postgres-db.yaml`; HPA caps at 3 replicas (25×3=75 > 50, so scale past 2 only with another `max_connections` bump) |
+| 8 | **Redis / Jaeger QoS** — Guaranteed (requests==limits) | ✅ Applied in `redis.yaml` / `jaeger.yaml` |
+| 9 | **Backend startup probe** tightened 20→15 failures | ✅ Applied in `backend.yaml` |
+| 10 | **Scrape intervals** relaxed to 60s for postgres/redis exporters | ✅ Applied in `vmservicescrapes.yaml` |
+| 11 | **Flux image-poll interval** 5m→10m | ✅ Applied in `image-automation.yaml` |
+
+### Note on item 2 (backend metrics) — already implemented in the app repo
+The app repo (`taskflow` / `msx`) already ships everything PERFORMANCE.md originally
+flagged as "pending":
+- `build.gradle`: `io.micrometer:micrometer-registry-prometheus` ✅
+- `application-prod.properties`: `management.endpoints.web.exposure.include=health,info,prometheus` + `prometheus.enabled=true` ✅
+- `SecurityConfig.java`: `.requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll()` ✅
+- `application.properties`: `server.http2.enabled=true` ✅
+
+So the VMServiceScrape in `gitops/monitoring/app` is **live**, not inert.
+
+### Note on item 3 (JVM sizing) — resolution of the TF-vs-image conflict
+The previous config had a **silent bug**: `backend.yaml` set `-Xmx1024m` + `-XX:MaxDirectMemorySize=512m`
+in `JAVA_TOOL_OPTIONS`, while the Dockerfile set `MaxRAMPercentage=75.0` + `MaxDirectMemorySize=256m`.
+Because Dockerfile CMD args win over `JAVA_TOOL_OPTIONS` (JVM "last-wins"), the in-cluster reality was:
+heap = 1GiB (env only source), `MaxDirectMemorySize = 256m` (image won) — so the "512Mi direct"
+comment was wrong, and `MaxRAMPercentage` was dead (ignored when `-Xmx` is set).
+
+Resolution (Option 1, best-practice): the **image owns JVM sizing** via `MaxRAMPercentage=50.0`
+(changed from 75.0 — 75% would give 1.5GiB heap at the 2Gi limit and OOMKilled the pod given
+Netty/Lettuce direct buffers + ~200 thread stacks). The TF `JAVA_TOOL_OPTIONS` keeps only GC
+logging/caps and no longer sets heap or direct memory. See `BACKEND_INTEGRATION_CONTEXT.md` §0/§4
+for the corrected contract.
+
+---
+
+## 5. Quick "before/after" for the highest-impact change (§1.1 / §item 3)
+
+```yaml
+# backend.yaml — JAVA_TOOL_OPTIONS (deployment only adds GC/logging; heap owned by image)
+env:
+  - name: JAVA_TOOL_OPTIONS
+    value: >-
+      -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError
+      -XX:+UseStringDeduplication -XX:+AlwaysPreTouch
+      -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC
+      -XX:MaxMetaspaceSize=256m
+      -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags:filecount=5,filesize=10m
+      -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/dump.hprof
+# Image (Dockerfile) owns heap: -XX:MaxRAMPercentage=50.0  → 1GiB heap at the 2Gi limit
+resources:
+  requests: { cpu: "2000m", memory: "2Gi" }   # Guaranteed QoS
+  limits:   { cpu: "2000m", memory: "2Gi" }
+```
+
+This removes the rigid heap, fixes the silent direct-memory override, and bounds native memory
+so `ExitOnOutOfMemoryError` only triggers on a real leak, not a benign spike.
+
 
 ---
 

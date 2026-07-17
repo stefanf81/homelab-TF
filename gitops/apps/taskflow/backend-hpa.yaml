@@ -1,0 +1,37 @@
+# HorizontalPodAutoscaler for the backend.
+#
+# NOTE: HPA scales on the `metrics.k8s.io` CPU API, which is served by metrics-server.
+# That component is NOT part of the VictoriaMetrics monitoring stack (vmagent scrapes
+# app/DB metrics, not the Kubernetes resource metrics API). If metrics-server is not
+# installed, the HPA will show `<unknown>` and stay at minReplicas — harmless, but
+# ineffective until metrics-server (or a custom-metrics adapter) is added.
+#
+# Until metrics-server exists, this is a ready-to-activate enabler: bump minReplicas to
+# 2 once a 2nd replica is safe (see postgres-db.yaml max_connections=50 headroom).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: taskflow-backend
+  namespace: taskflow
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: taskflow-backend
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    # Scale up promptly under load, scale down slowly to avoid flapping on a tiny node.
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

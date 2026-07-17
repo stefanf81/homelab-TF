@@ -5,7 +5,10 @@ resources:
   - configmap.yaml
   - taskflow-secrets.yaml
   - backend.yaml
+  - backend-hpa.yaml
+  - backend-pdb.yaml
   - frontend.yaml
+  - frontend-pdb.yaml
   - jaeger.yaml
   - network-policy.yaml
   - default-deny.yaml

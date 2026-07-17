@@ -1,0 +1,13 @@
+# PodDisruptionBudget for the frontend. Mirrors the backend PDB: with a single replica,
+# minAvailable: 1 blocks voluntary evictions from leaving zero replicas during node
+# drains / upgrades / rollouts.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: taskflow-frontend-pdb
+  namespace: taskflow
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: taskflow-frontend

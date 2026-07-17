@@ -42,7 +42,9 @@ spec:
   endpoints:
     - port: metrics            # postgres-exporter Service port name
       path: /metrics
-      interval: 30s
+      # DB-level metrics (cache hit ratio, active connections) change slowly; 60s halves
+      # vmagent's scrape load on the single-node cluster versus the default 30s.
+      interval: 60s
       scheme: http
 ---
 # --- Redis exporter ----------------------------------------------------------
@@ -61,7 +63,8 @@ spec:
   endpoints:
     - port: metrics            # redis-exporter Service port name
       path: /metrics
-      interval: 30s
+      # Cache hit rate / memory usage drift slowly; 60s reduces vmagent scrape pressure.
+      interval: 60s
       scheme: http
 ---
 # --- Falco Runtime Security ---------------------------------------------------

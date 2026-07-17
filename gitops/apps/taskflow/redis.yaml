@@ -55,11 +55,14 @@ spec:
             - containerPort: 6379
               name: redis
           resources:
+            # Guaranteed QoS: requests == limits so Redis is never CPU-throttled
+            # under node pressure. A throttled L2 cache would add latency spikes that
+            # stall the backend's hot path; the 512Mi limit still bounds RSS.
             limits:
-              cpu: "1000m"
+              cpu: "500m"
               memory: 512Mi
             requests:
-              cpu: "250m"
+              cpu: "500m"
               memory: 256Mi
           volumeMounts:
             - name: redis-storage

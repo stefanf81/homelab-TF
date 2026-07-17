@@ -15,7 +15,9 @@ metadata:
   namespace: flux-system
 spec:
   image: ghcr.io/stefanf81/taskflow-frontend
-  interval: 5m0s
+  # 10m (was 5m): images are pushed a few times/day at most, so polling ghcr every 5m
+  # only adds registry load. 10m still detects a new :latest digest well within a deploy.
+  interval: 10m0s
   # If the ghcr repos are PRIVATE, create a docker-registry secret and reference it:
   #   kubectl -n flux-system create secret docker-registry ghcr-pull \
   #     --docker-server=ghcr.io --docker-username=<user> --docker-password=<token>
@@ -29,7 +31,7 @@ metadata:
   namespace: flux-system
 spec:
   image: ghcr.io/stefanf81/taskflow-backend
-  interval: 5m0s
+  interval: 10m0s
   # secretRef:
   #   name: ghcr-pull
 ---
@@ -48,7 +50,7 @@ spec:
   policy:
     alphabetical: {}
   digestReflectionPolicy: Always
-  interval: 5m0s
+  interval: 10m0s
 ---
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
@@ -63,7 +65,7 @@ spec:
   policy:
     alphabetical: {}
   digestReflectionPolicy: Always
-  interval: 5m0s
+  interval: 10m0s
 ---
 # Periodically rewrites the `# {"$imagepolicy": ...:digest}` markers in the app
 # manifests (under ./gitops/apps/taskflow) and pushes the change to main.
@@ -73,7 +75,7 @@ metadata:
   name: taskflow-images
   namespace: flux-system
 spec:
-  interval: 5m0s
+  interval: 10m0s
   sourceRef:
     kind: GitRepository
     name: flux-system

@@ -112,30 +112,33 @@ spec:
                 secretKeyRef:
                   name: redis-secret
                   key: REDIS_PASSWORD
-            # Heap 1.5 GB fixed (not container-auto-sized). StringDeduplication is low-risk and
-            # modestly reduces heap for string-heavy workloads.
-            # Off-heap IS now capped (see docs/PERFORMANCE.md #1.1): with -XX:+ExitOnOutOfMemoryError a
-            # single benign off-heap spike would otherwise kill the JVM and restart the pod. Capping
-            # metaspace + direct memory keeps native usage bounded and predictable; the 2Gi Guaranteed
-            # QoS (requests==limits below) gives the full 1Gi heap + ~1G off-heap headroom
-            # (256Mi metaspace + 512Mi direct + ~256Mi for thread stacks/GC).
-            # GC/startup perf: AlwaysPreTouch removes first-touch page faults on the fixed heap,
-            # ParallelRefProcEnabled speeds GC reference processing, DisableExplicitGC blocks
-            # stop-the-world Full GCs triggered by System.gc().
+            # JVM sizing is owned by the IMAGE (Dockerfile): -XX:MaxRAMPercentage=50.0
+            # sizes the heap to 50% of the cgroup limit (1GiB at the 2Gi below), leaving 1GiB
+            # for off-heap (metaspace + Netty/Lettuce direct buffers + thread stacks + GC).
+            # This env block intentionally does NOT set -Xmx/-XX:MaxDirectMemorySize — doing so
+            # would (a) recreate the rigid heap the Dockerfile deliberately replaced with
+            # RAM%, and (b) be partially overridden anyway, since Dockerfile CMD args win over
+            # JAVA_TOOL_OPTIONS for conflicting flags (JVM "last-wins" precedence).
+            # StringDeduplication is low-risk and modestly reduces heap for string-heavy workloads.
+            # Off-heap IS capped in the image (MaxDirectMemorySize=256m, MaxMetaspaceSize=256m):
+            # with -XX:+ExitOnOutOfMemoryError a single benign off-heap spike would otherwise
+            # kill the JVM and restart the pod. Capping keeps native usage bounded/predictable.
+            # GC/startup perf: AlwaysPreTouch removes first-touch page faults, ParallelRefProcEnabled
+            # speeds GC reference processing, DisableExplicitGC blocks Full GCs from System.gc().
             # GC logging to /tmp/gc.log with rotation (5 files × 10 MiB) — readable via
             # `kubectl exec -n taskflow deploy/taskflow-backend -- cat /tmp/gc.log.0`.
             # Heap dumps land in /tmp on OOM; both paths are writable (emptyDir tmp-volume).
             - name: JAVA_TOOL_OPTIONS
-              value: "-Xms1024m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=512m -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags:filecount=5,filesize=10m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/dump.hprof"
+              value: "-XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=256m -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags:filecount=5,filesize=10m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/dump.hprof"
           ports:
             - containerPort: 8080
               name: http
           resources:
             # Guaranteed QoS: requests == limits so the full memory budget is reserved (no
             # eviction under node pressure) and CPU is never throttled. 2Gi total − 1Gi heap
-            # − 256Mi metaspace − 512Mi direct ≈ 256Mi for thread stacks/GC/native libs.
-            # Trimmed from 3Gi→2Gi (heap 1.5→1 GiB) to free ~1 GiB on the 14 GiB node; the
-            # app must not need >1 GiB heap under load or this will OOM.
+            # (MaxRAMPercentage=50.0 in the image) − 256Mi metaspace − 256Mi direct ≈ 1GiB for
+            # thread stacks/GC/native libs. Trimmed from 3Gi→2Gi to free ~1 GiB on the 14 GiB node;
+            # the app must not need >1 GiB heap under load or this will OOM.
             limits:
               cpu: "2000m"
               memory: 2Gi
@@ -149,7 +152,10 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
-            failureThreshold: 20
+            # 15 × 5s = 75s budget. The CDS-trained, AOT-enabled image starts in <30s, so 100s
+            # was excessive and only delayed surfacing a stuck startup. 75s still clears the
+            # Spring context + Flyway migrate before the pod is declared failed.
+            failureThreshold: 15
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
@@ -182,6 +188,10 @@ spec:
   ports:
     - port: 8080
       targetPort: 8080
+      # Advertise HTTP/2 (h2c) to the Cilium Gateway so it multiplexes requests to the
+      # backend over a single connection. The backend already enables server.http2.enabled=true
+      # (application.properties); without this the Gateway would speak HTTP/1.1 upstream.
+      appProtocol: kubernetes.io/h2c
   selector:
     app: taskflow-backend
   type: ClusterIP

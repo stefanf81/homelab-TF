@@ -36,11 +36,14 @@ spec:
             - containerPort: 4318
               name: otlp-http
           resources:
+            # Guaranteed QoS: requests == limits so OTLP trace ingestion is never
+            # CPU-throttled under node pressure (throttling here back-pressures the
+            # backend's trace exporter and adds latency). 256Mi still caps RSS.
             limits:
-              cpu: "500m"
+              cpu: "250m"
               memory: 256Mi
             requests:
-              cpu: "100m"
+              cpu: "250m"
               memory: 128Mi
           startupProbe:
             httpGet:

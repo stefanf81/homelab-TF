@@ -37,7 +37,7 @@ Defined in `gitops/apps/taskflow/backend.yaml`:
 | Liveness/readiness | `GET /actuator/health/liveness` and `/actuator/health/readiness` on 8080 | Probes already use these. Actuator health must stay enabled. |
 | Security context | `runAsNonRoot: true`, `UID/GID 10001`, `readOnlyRootFilesystem: true`, `capabilities.drop: [ALL]` | The image **must** run as 10001 with no writes to the image layer. Mount only `/tmp` (already provided). Log to **stdout/stderr**, not a file. |
 | Env (config) | `SPRING_PROFILES_ACTIVE=prod`, `APP_CORS_ALLOWED_ORIGINS`, secrets via `SPRING_SECURITY_PASSWORD` / `SPRING_DATASOURCE_PASSWORD` / `SPRING_DATA_REDIS_PASSWORD` (and `SPRING_REDIS_PASSWORD`) | Don't hard-code these; they come from ConfigMap/Secret. |
-| JVM heap | Set via `JAVA_TOOL_OPTIONS` env: `-Xms1024m -Xmx1024m ...` (off-heap capped) | **Do not set `-Xmx` in the Dockerfile/entrypoint** — it would be overridden by the env anyway, but keep the image neutral so the deployment stays the source of truth. |
+| JVM heap | Owned by the **image** (`Dockerfile`): `-XX:MaxRAMPercentage=50.0` → 1GiB heap at the 2Gi limit | **Do not set `-Xmx` / `-XX:MaxDirectMemorySize` in `JAVA_TOOL_OPTIONS`** — Dockerfile CMD args win over `JAVA_TOOL_OPTIONS` for conflicting flags (JVM "last-wins"), so an env `-Xmx` would either be ignored (when RAM% is set) or silently override the image's direct-memory cap. The image is the single source of truth for JVM sizing; the deployment env adds only GC logging/caps. |
 | Graceful shutdown | 45s termination grace | Configure `server.shutdown=graceful` so in-flight requests drain on rollout. |
 
 The backend **already** sends traces to Jaeger (OTLP `jaeger:4317`/`4318`) — that
@@ -50,7 +50,7 @@ integration is infra-complete; nothing to do there unless you change the tracing
 ### 2.1 Dependency to add
 
 ```gradle
-// Spring Boot 3.5.3 — Micrometer Prometheus registry + Actuator
+// Spring Boot 4.1.0 — Micrometer Prometheus registry + Actuator
 implementation 'org.springframework.boot:spring-boot-starter-actuator'
 implementation 'io.micrometer:micrometer-registry-prometheus'
 ```
@@ -145,8 +145,10 @@ If that curl returns metrics, the cluster integration is already done.
   `/actuator/prometheus` by default; the VMServiceScrape targets exactly that.
 - **Don't require auth on `/actuator/prometheus`** (see 2.3).
 - **Don't write to the filesystem** outside `/tmp` — the container root FS is read-only.
-- **Don't set JVM heap in the image** — it's owned by `JAVA_TOOL_OPTIONS` in the
-  deployment manifest.
+- **Don't set JVM heap in `JAVA_TOOL_OPTIONS`** — it's owned by the image's
+  `MaxRAMPercentage=50.0`. The deployment env only adds GC logging/caps. (Dockerfile CMD
+  args override `JAVA_TOOL_OPTIONS` for conflicting flags, so an env `-Xmx` is at best ignored
+  and at worst silently overrides the image's direct-memory cap.)
 
 ---
 
