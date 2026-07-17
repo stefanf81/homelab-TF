@@ -458,7 +458,7 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
 ### 10.5 How the app is exposed (the request path)
 
 ```
-Browser ── https://jokelab.dev ──▶ (DNS → Public IP → Port Forward → 192.168.50.201, an L2-announced IP)
+Browser ── https://www.jokelab.dev ──▶ (DNS → Public IP → Port Forward → 192.168.50.201, an L2-announced IP; bare apex `jokelab.dev` 301-redirects to `www`)
                                             │
                                      Cilium Gateway (taskflow-gateway, class: cilium, :80)
                                             │  HTTPRoute taskflow-route (first-match-wins):
@@ -518,7 +518,7 @@ and is **ready the moment the backend emits metrics** — but note the split:
 
 The monitoring UIs are now exposed through the main Cilium Gateway API using zero-config wildcard IP and public DNS routing. See [Gateway Access Guide](GATEWAY_ACCESS_GUIDE.md) for full setup instructions.
 
-- **Grafana:** `https://jokelab.dev/grafana`
+- **Grafana:** `https://grafana.jokelab.dev`
   *(admin login credentials are saved in your local gitignored `grafana.secret`)*
 - **VictoriaMetrics (VMSingle):** Accessed privately via `kubectl port-forward -n monitoring svc/vmsingle-victoria-metrics-k8s-stack 8428:8428` at `http://localhost:8428/vmsingle/`
 

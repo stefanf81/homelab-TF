@@ -6,29 +6,34 @@ This guide explains how to access your TaskFlow application and monitoring stack
 
 ## 1. Gateway Hostname Routing
 
-Both your application route (`taskflow-route`) and your monitoring route (`monitoring-routes`) are configured with a strict `hostnames:` match:
+Your application route and monitoring routes each have a strict `hostnames:` match:
+
+- **`taskflow-route`** — `www.jokelab.dev` (the bare apex `jokelab.dev` 301-redirects to `www`)
+- **`monitoring-routes`** — `grafana.jokelab.dev`
 
 ```yaml
+# taskflow-route (gitops/apps/taskflow/httproute.yaml)
 spec:
   parentRefs:
     - name: taskflow-gateway
+      sectionName: https
   hostnames:
-    - "jokelab.dev"
+    - "www.jokelab.dev"
 ```
 
-Because the `hostnames` attribute is specified, the Cilium Gateway routes traffic based on the combination of the `jokelab.dev` domain and path prefixes (`/`, `/api`, `/grafana`). It will no longer act as a wildcard catch-all router for arbitrary IPs or domains.
+Because hostname-based filtering is active, the Gateway only responds when the client's TLS SNI matches a known hostname. Requests to the Gateway IP without a matching `Host` header will be rejected (no wildcard fallback).
 
 ---
 
 ## 2. Accessing Your Services
 
-You can access every service directly using the **jokelab.dev** domain, which points to the **External LoadBalancer IP** of your Cilium Gateway.
+You can access the services through the Cilium Gateway using the following hostnames:
 
 | Service | Access URL | Description |
 | :--- | :--- | :--- |
-| **TaskFlow Web App** | `https://jokelab.dev/` | The Angular 22 Frontend |
-| **TaskFlow API Backend** | `https://jokelab.dev/api/...` | The Spring Boot 3.5.3 REST API |
-| **Grafana Metrics UI** | `https://jokelab.dev/grafana` | Real-time performance dashboards |
+| **TaskFlow Web App** | `https://www.jokelab.dev/` | The Angular 22 Frontend (bare apex `jokelab.dev` 301-redirects to `www`) |
+| **TaskFlow API Backend** | `https://www.jokelab.dev/api/...` | The Spring Boot 3.5.3 REST API (same origin as frontend) |
+| **Grafana Metrics UI** | `https://grafana.jokelab.dev/` | Real-time performance dashboards |
 | **VictoriaMetrics TSDB** | *(Private)* | Scraped time-series metrics. Accessed securely via `kubectl port-forward -n monitoring svc/vmsingle-victoria-metrics-k8s-stack 8428:8428` at `http://localhost:8428/vmsingle/` |
 
 ### 🔒 The Same-Origin CORS Advantage
