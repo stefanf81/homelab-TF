@@ -16,6 +16,11 @@ spec:
   install:
     createNamespace: true
   values:
+    # Pin the controller image to the latest plugin version (chart default may lag)
+    controller:
+      plugin:
+        image:
+          tag: v0.19.1
     existingConfigSecret: proxmox-csi-config
     storageClass:
       - name: proxmox-csi
