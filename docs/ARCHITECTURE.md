@@ -497,7 +497,7 @@ Key point: **Services are `ClusterIP` only**. Nothing is exposed except through 
 
 ### 10.8 Footguns / things that will bite you
 
-1. **CORS** (`configmap.yaml`) lists `http://localhost:4200,https://jokelab.dev`. If you change the published hostname, update this or the browser's `/api` calls get CORS-rejected. (This was a live bug — ISSUES.md #1.)
+1. **CORS** (`configmap.yaml`) lists `http://localhost:4200,https://jokelab.dev,https://www.jokelab.dev`. The canonical prod access URL is `www.jokelab.dev` (the `taskflow-route` only serves `www`; the bare apex 301-redirects to it). If you change the published hostname, update this list **and** `certificate.yaml`'s `dnsNames` **and** `httproute.yaml`'s `hostnames`, or the browser's `/api` calls get CORS-rejected. (A localhost-only CORS list was a live bug — ISSUES.md #1.)
 2. **Jaeger UI is not on the Gateway anymore** — don't re-add a `/jaeger` route without putting auth in front of it.
 3. **Postgres UID is 70 on purpose** — don't "standardize" it to `10001`; the Postgres volume ownership depends on 70.
 4. **`proxmox_insecure = true`** disables TLS verification to Proxmox. Fine for a self-signed homelab, dangerous anywhere else.

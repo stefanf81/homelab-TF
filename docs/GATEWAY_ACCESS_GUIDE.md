@@ -34,7 +34,9 @@ You can access every service directly using the **jokelab.dev** domain, which po
 ### 🔒 The Same-Origin CORS Advantage
 In traditional microservice setups, the frontend (e.g. `http://localhost:4200`) makes calls to a different API backend URL (e.g. `http://localhost:8080`), forcing you to manage complex CORS headers and origin policies. 
 
-Because we use **Cilium Unified Gateway Routing**, both `/` (frontend) and `/api` (backend) are served on the **exact same origin** (`jokelab.dev`). The browser performs relative API fetches, treating them as **Same-Origin requests**. **CORS is completely bypassed**, ensuring 100% functional, secure, out-of-the-box operations on your domain!
+Because we use **Cilium Unified Gateway Routing**, both `/` (frontend) and `/api` (backend) are served on the **exact same origin** (`www.jokelab.dev`). The browser performs relative API fetches, treating them as **Same-Origin requests**. **CORS is completely bypassed** on the canonical `www` hostname, ensuring 100% functional, secure, out-of-the-box operations.
+
+> **Note on the bare apex `jokelab.dev`:** it is covered by the TLS cert and is listed in `configmap.yaml`'s `APP_CORS_ALLOWED_ORIGINS`, but the live `taskflow-route` only serves `www.jokelab.dev`. A browser hitting `https://jokelab.dev` is 301-redirected to `https://www.jokelab.dev` (see `apex-to-www-redirect`), so the effective page origin is always `www` and `/api` stays same-origin. Keep `jokelab.dev` in the CORS list as a safety net, but treat `www.jokelab.dev` as the canonical access URL.
 
 ---
 
