@@ -1,0 +1,33 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: metrics-server
+  namespace: monitoring
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: metrics-server
+      # Pin to a recent 3.12.x. Bump via `flux reconcile helmrelease metrics-server -n monitoring`.
+      version: 3.12.2
+      sourceRef:
+        kind: HelmRepository
+        name: metrics-server
+        namespace: monitoring
+  # metrics-server must run in kube-system (reads kubelet credentials from there).
+  install:
+    createNamespace: false
+  # Single-node k3s: kubelets serve HTTP (not HTTPS) and use a self-signed cert,
+  # so metrics-server must skip the TLS verify for both kubelet + API server.
+  values:
+    args:
+      - --kubelet-insecure-tls
+      - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi

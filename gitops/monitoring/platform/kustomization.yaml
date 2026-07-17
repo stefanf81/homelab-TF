@@ -6,3 +6,5 @@ resources:
   - grafana-secrets.yaml
   - release.yaml
   - routes.yaml
+  - metrics-server-repository.yaml
+  - metrics-server-release.yaml
