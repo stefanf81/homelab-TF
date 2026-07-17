@@ -144,7 +144,7 @@ spec:
   endpoints:
     - port: metrics                     # Falco metrics service port name (TCP 8765)
       path: /metrics
-      interval: 60s
+      interval: 30s
       scheme: http
 ```
 

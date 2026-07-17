@@ -23,7 +23,7 @@ spec:
   endpoints:
     - port: "8080"               # VMServiceScrape requires port to be a string
       path: /actuator/prometheus
-      interval: 60s
+      interval: 30s
       scheme: http
 ---
 # --- PostgreSQL exporter ------------------------------------------------------
@@ -42,7 +42,7 @@ spec:
   endpoints:
     - port: metrics            # postgres-exporter Service port name
       path: /metrics
-      interval: 60s
+      interval: 30s
       scheme: http
 ---
 # --- Redis exporter ----------------------------------------------------------
@@ -61,7 +61,7 @@ spec:
   endpoints:
     - port: metrics            # redis-exporter Service port name
       path: /metrics
-      interval: 60s
+      interval: 30s
       scheme: http
 ---
 # --- Falco Runtime Security ---------------------------------------------------
@@ -81,5 +81,5 @@ spec:
   endpoints:
     - port: metrics            # Falco metrics service port name (port 8765)
       path: /metrics
-      interval: 60s
+      interval: 30s
       scheme: http

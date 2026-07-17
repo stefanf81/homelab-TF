@@ -92,8 +92,11 @@ spec:
             # GC/startup perf: AlwaysPreTouch removes first-touch page faults on the fixed heap,
             # ParallelRefProcEnabled speeds GC reference processing, DisableExplicitGC blocks
             # stop-the-world Full GCs triggered by System.gc().
+            # GC logging to /tmp/gc.log with rotation (5 files × 10 MiB) — readable via
+            # `kubectl exec -n taskflow deploy/taskflow-backend -- cat /tmp/gc.log.0`.
+            # Heap dumps land in /tmp on OOM; both paths are writable (emptyDir tmp-volume).
             - name: JAVA_TOOL_OPTIONS
-              value: "-Xms1024m -Xmx1024m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=512m"
+              value: "-Xms1024m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=512m -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags:filecount=5,filesize=10m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/dump.hprof"
           ports:
             - containerPort: 8080
               name: http

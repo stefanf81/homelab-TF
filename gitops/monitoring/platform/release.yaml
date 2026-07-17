@@ -22,15 +22,39 @@ spec:
     # Trimmed stack for a 14 GiB single-node homelab. Replaces Prometheus with
     # the dramatically lighter VictoriaMetrics (VMSingle + vmagent).
     # ---------------------------------------------------------------------
-    # Disable unneeded components
+    # Disable unneeded components; keep kube-state-metrics + node-exporter
+    # for workload and host observability.
     vmalert:
       enabled: false
     alertmanager:
       enabled: false
     kube-state-metrics:
-      # Disabled to save ~150–250 MiB RSS. Re-enable (enabled: true) if you want
-      # k8s-object dashboards (pods/deployments counts) back.
-      enabled: false
+      enabled: true
+      # Homelab-sized resource budget — kube-state-metrics is extremely lean.
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 256Mi
+
+    # Node Exporter — host-level CPU/memory/disk/network metrics from every node.
+    # On a single-node cluster this is one pod, negligible overhead.
+    prometheus-node-exporter:
+      enabled: true
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+      # Skip pseudo-filesystems that produce no useful metrics
+      extraArgs:
+        - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+        - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|erofs|sysfs|tracefs)$
+
     # Disable control-plane scraping (irrelevant on k3s / single-node)
     kubeControllerManager:
       enabled: false

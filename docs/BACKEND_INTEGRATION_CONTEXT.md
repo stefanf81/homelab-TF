@@ -112,7 +112,7 @@ The VMServiceScrape is **already defined** in the infra repo at
 ```yaml
 - port: "8080"
   path: /actuator/prometheus
-  interval: 60s
+  interval: 30s
   scheme: http
 selector: { matchLabels: { app: taskflow-backend } }   # matches the backend Service
 ```

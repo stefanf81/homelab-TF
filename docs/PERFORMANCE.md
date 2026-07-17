@@ -1,6 +1,6 @@
 # TaskFlow — Performance Analysis
 
-> **Scope note:** The cluster was unreachable during this review (`kubeconfig` → connection refused), so this is **static analysis** of the manifests + reasoning about runtime behavior. Several findings (especially the JVM off-heap and PostgreSQL planner behavior) are *likelihood* assessments that should be confirmed with real metrics. The single biggest gap (see #1) is that **there are no metrics at all**, so today you cannot actually measure any of this.
+> **Scope note:** The initial review was static analysis (cluster unreachable). Since then the cluster is live and several findings have been resolved. The monitoring stack (VictoriaMetrics + Grafana + kube-state-metrics + node-exporter) is now fully deployed. The remaining blind spot — the backend's `/actuator/prometheus` endpoint — needs `micrometer-registry-prometheus` added in the app repo (see `BACKEND_INTEGRATION_CONTEXT.md`). Once that ships, every finding below becomes measurable.
 
 ---
 
@@ -33,12 +33,19 @@ resources:
   (Heap 1 GiB + metaspace 256 MiB + direct 512 MiB ≈ 1.75 GiB, comfortably under 2 GiB, leaving ~256 MiB for thread stacks/GC. Trimmed from 3Gi/1.5GiB heap to free ~1 GiB on the 14 GiB node.)
 - The README already admits metaspace/direct caps were "intentionally omitted until measured" — but with `ExitOnOutOfMemoryError` on, *unmeasured* means *unprotected*. Cap them now.
 
-### 1.2 No observability → you are tuning blind (HIGH)
-**Files:** whole repo (nothing for metrics)
+### 1.2 ~~No observability → you are tuning blind~~ (RESOLVED — infra side)
+**Files:** `gitops/monitoring/platform/release.yaml` (VictoriaMetrics stack), `gitops/monitoring/app/vmservicescrapes.yaml` (app scrapes)
 
-There is Jaeger for **traces** but **no VictoriaMetrics, no node-exporter, no kube-state-metrics, no Grafana, no Spring Boot Actuator Prometheus endpoint wired**. You cannot see CPU saturation, GC pause times, heap/off-heap usage, DB query latency, cache hit rate, or disk I/O. Every other item below is a guess until this exists.
-
-**Fix:** Add (at minimum) `victoria-metrics-k8s-stack` via a Flux HelmRelease, enable the Spring Boot Actuator `/actuator/prometheus` endpoint on the backend, and scrape it. This is the prerequisite for confirming 1.1, 2.1, 2.2.
+> **Resolved (infrastructure):** The monitoring stack is deployed and collecting cluster-wide metrics:
+> - **VictoriaMetrics** (VMSingle + vmagent) — replaces Prometheus, ~⅓ the RAM
+> - **Grafana** — dashboards queryable at `https://grafana.jokelab.dev`
+> - **kube-state-metrics** — pod/Deployment/replica/namespace resource metrics
+> - **node-exporter** — host-level CPU/memory/disk/network per node
+> - **PostgreSQL exporter** — DB query latency, active connections, cache hit ratio
+> - **Redis exporter** — cache hit rate, memory usage, evictions
+> - **Falco** — runtime security event metrics
+>
+> **Remaining gap (backend app repo):** The backend's `/actuator/prometheus` is still INERT — no `micrometer-registry-prometheus` dependency in the app build. Until that ships, you cannot see JVM GC, heap, HTTP request latencies, or DB pool metrics from the backend. See `docs/BACKEND_INTEGRATION_CONTEXT.md` for the exact 3-line change required. This is the single prerequisite for confirming items 1.1, 2.1, 2.2 with real data.
 
 ### 1.3 ~~PostgreSQL runs on Longhorn (network storage)~~ (RESOLVED)
 **File:** `gitops/apps/taskflow/postgres-pvc.yaml` (`storageClassName: proxmox-csi`)
@@ -98,14 +105,17 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 
 ---
 
-## 4. Recommended order of operations
+## 4. Status of recommended actions
 
-1. **Add VictoriaMetrics/Grafana + Actuator Prometheus** (unblocks measuring everything else).
-2. **Fix the JVM off-heap** (§1.1): run as Guaranteed QoS `requests==limits=2Gi` with a 1 GiB heap, add `-XX:MaxMetaspaceSize` / `-XX:MaxDirectMemorySize`. (Applied; later trimmed from 3Gi/1.5GiB heap to free ~1 GiB on the node.)
-3. **Correct `effective_cache_size`** to ~700 MB (§2.1) and fix the README drift.
-4. **Postgres PVC has been migrated to high-performance Proxmox CSI** (§1.3).
-5. **Harden Redis** (§2.3) or document the stampede risk prominently.
-6. Re-evaluate pool sizes (§2.4) when you add a second backend replica.
+| # | Action | Status |
+|---|--------|--------|
+| 1 | **Monitoring stack** (VictoriaMetrics + Grafana + kube-state-metrics + node-exporter) | ✅ Deployed and collecting metrics |
+| 2 | **Backend `/actuator/prometheus`** — add `micrometer-registry-prometheus` in the app repo | ⏳ Pending (see `BACKEND_INTEGRATION_CONTEXT.md`) |
+| 3 | **JVM off-heap caps** — Guaranteed QoS `2Gi`, `MaxMetaspaceSize=256m`, `MaxDirectMemorySize=512m` | ✅ Applied in `backend.yaml` |
+| 4 | **`effective_cache_size`** corrected to 700MB | ✅ Applied in `postgres-db.yaml` |
+| 5 | **Postgres PVC** migrated from Longhorn to Proxmox CSI | ✅ Applied in `postgres-pvc.yaml` |
+| 6 | **Harden Redis** — add persistence PVC or document stampede risk | ⏳ Pending (see §2.3) |
+| 7 | **Re-evaluate pool sizes** when adding a second backend replica | 🔜 Future
 
 ---
 

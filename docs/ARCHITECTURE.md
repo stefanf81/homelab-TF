@@ -530,7 +530,7 @@ The monitoring UIs are now exposed through the main Cilium Gateway API using zer
 **Resource budget (memory-trimmed):** the stack reserves ~1.1 GiB of limit
 (VMSingle 512 Mi cap / 128 Mi req, vmagent 256 Mi, Grafana 256 Mi,
 operator 128 Mi, exporters + node-exporter ~0.4 GiB; kube-state-metrics off). VictoriaMetrics runs **3d
-retention** and scrapes at **60s** (not 30s) to keep WAL/RAM low.
+retention** and scrapes at **30s** for higher-resolution dashboards.
 On the 14 GiB node this still leaves the bulk for backend (2 GiB guaranteed) +
 Postgres (1 GiB limit) + Redis + Jaeger; if it's still tight, the biggest single
 lever is the backend JVM (already trimmed to 1 GiB heap / 2 GiB QoS) or disabling
