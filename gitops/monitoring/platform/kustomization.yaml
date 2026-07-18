@@ -8,3 +8,4 @@ resources:
   - routes.yaml
   - metrics-server-repository.yaml
   - metrics-server-release.yaml
+  - metrics-server-rbac.yaml
