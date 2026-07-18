@@ -62,3 +62,23 @@ subjects:
   - kind: ServiceAccount
     name: metrics-server
     namespace: monitoring
+---
+# Bind the metrics-server SA to the built-in system:auth-delegator ClusterRole.
+# This grants the ability to create SubjectAccessReview and TokenReview
+# resources, which the aggregated API server needs for authorization delegation.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: metrics-server-auth-delegator
+  labels:
+    app.kubernetes.io/name: metrics-server
+    app.kubernetes.io/instance: metrics-server
+    app.kubernetes.io/part-of: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: metrics-server
+    namespace: monitoring
