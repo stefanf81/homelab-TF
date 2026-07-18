@@ -1,15 +1,20 @@
-# Fix: grant metrics-server SA access to the extension-apiserver-authentication ConfigMap in
-# kube-system. The metrics-server aggregated API server reads this ConfigMap during startup
-# to configure authentication delegation. Without this, it panics and enters CrashLoopBackOff.
+# Explicit RBAC for metrics-server.
 #
-# While the Helm chart (3.12.2+) creates a ClusterRole + RoleBinding for this, in some
-# clusters (especially k3s) the binding may not take effect. This explicit ClusterRole +
-# ClusterRoleBinding provides a reliable safety net.
+# The Helm chart (3.12.2+) should create these via rbac.create=true, but in this
+# k3s cluster the chart-generated ClusterRole/ClusterRoleBinding/RoleBinding are
+# not taking effect — the metrics-server SA gets "forbidden" on every resource it
+# needs (configmaps, pods, nodes, namespaces). These explicit resources provide a
+# reliable safety net so the metrics-server can start and function correctly.
+#
+# Resources required by the metrics-server aggregated API server:
+#   - nodes/metrics (get)        — scrape metrics from kubelets
+#   - pods, nodes, namespaces,
+#     configmaps (get/list/watch) — discover targets and read auth config
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: metrics-server-extension-apiserver-authentication-reader
+  name: metrics-server-core
   labels:
     app.kubernetes.io/name: metrics-server
     app.kubernetes.io/instance: metrics-server
@@ -18,9 +23,24 @@ rules:
   - apiGroups:
       - ""
     resources:
+      - pods
+      - nodes
+      - namespaces
       - configmaps
-    resourceNames:
-      - extension-apiserver-authentication
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - nodes/metrics
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - nodes/stats
     verbs:
       - get
       - list
@@ -29,7 +49,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: metrics-server-extension-apiserver-authentication-reader
+  name: metrics-server-core
   labels:
     app.kubernetes.io/name: metrics-server
     app.kubernetes.io/instance: metrics-server
@@ -37,7 +57,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: metrics-server-extension-apiserver-authentication-reader
+  name: metrics-server-core
 subjects:
   - kind: ServiceAccount
     name: metrics-server
