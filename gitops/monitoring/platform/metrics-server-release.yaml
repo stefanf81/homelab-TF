@@ -23,6 +23,10 @@ spec:
     args:
       - --kubelet-insecure-tls
       - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+      # v0.8.x requires configmaps RBAC in kube-system; tolerate lookup failure on
+      # single-node k3s where the extension-apiserver-authentication RoleBinding
+      # may not be updated by the Helm upgrade.
+      - --authentication-tolerate-lookup-failure
     replicas: 1
     resources:
       requests:

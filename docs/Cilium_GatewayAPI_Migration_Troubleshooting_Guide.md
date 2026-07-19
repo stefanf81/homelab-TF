@@ -2,7 +2,7 @@
 
 This guide compiles the complete technical logs, structural adjustments, and troubleshooting steps executed on **July 9, 2026**, during the migration of the TaskFlow Homelab cluster from legacy networking (Flannel + open NodePorts) to a modern, high-performance, kernel-level **Cilium (eBPF) CNI & Kubernetes Gateway API** architecture.
 
-> **Status update:** Following this migration, external IP allocation was moved off **MetalLB** to **native Cilium L2 announcements** (`CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy` under `gitops/infrastructure/configs/cilium/`). The MetalLB references below reflect the intermediate state *during* the July 9 migration and are now superseded by Cilium L2 announcements.
+> **Status update:** Following this migration, external IP allocation was moved off **MetalLB** to **native Cilium L2 announcements** (`CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy` under `gitops/infrastructure/configs/cilium/`). The MetalLB references below reflect the intermediate state *during* the July 9 migration and are now superseded by Cilium L2 announcements. Additionally, the `/jaeger` Gateway route mentioned in §D below was **subsequently removed** for security (Jaeger UI has no auth) — see `ISSUES.md` #2 and `httproute.yaml`.
 
 ---
 

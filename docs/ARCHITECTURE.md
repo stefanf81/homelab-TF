@@ -101,6 +101,9 @@ taskflow-app                     monitoring (VictoriaMetrics + Grafana operator 
 | `taskflow-app` | `./gitops/apps/taskflow` | 10m | ✅ | ✅ | 5m | infra-configs |
 | `monitoring` | `./gitops/monitoring/platform` | 30m | ✅ | ✅ | 10m | infra-controllers |
 | `monitoring-app` | `./gitops/monitoring/app` | 30m | ✅ | ✅ | 10m | monitoring |
+| `kyverno-policies` | `./gitops/apps/kyverno-policies` | 30m | ✅ | ✅ | 5m | infra-controllers |
+| `policy-reporter` | `./gitops/infrastructure/controllers/policy-reporter` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app |
+| `trivy-operator` | `./gitops/infrastructure/controllers/trivy-operator` | 30m | ✅ | ✅ | 5m | infra-controllers |
 
 ### 4.3 Image Automation (Digest Pinning)
 ```
@@ -168,12 +171,12 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 |----------|-------|
 | Image | `ghcr.io/stefanf81/taskflow-backend:latest` (digest-pinned by Flux) |
 | Replicas | 1 |
-| JVM Heap | Fixed 1 GB (`-Xms1024m -Xmx1024m`) |
+| JVM Heap | Fixed 1 GiB — owned by the **image** via `-XX:MaxRAMPercentage=50.0` (not by the deployment's `JAVA_TOOL_OPTIONS`, which sets only GC logging/caps) |
 | GC | G1 with StringDedup, AlwaysPreTouch, ParallelRefProc, DisableExplicitGC |
 | OOM Policy | `-XX:+ExitOnOutOfMemoryError` (fail fast) |
 | Resources | CPU: 2 cores (req=limit), Memory: 2Gi (Guaranteed QoS, req==limit) |
 | SecurityContext | readOnlyRootFS, runAsNonRoot UID/GID 10001, drop ALL capabilities |
-| Init Container | `alpine:3.22.0` — waits for DB (port 5432) + Redis (port 6379) via nc |
+| Init Container | `alpine:3.24.1` — waits for DB (port 5432) + Redis (port 6379) via nc |
 | Probes | Startup: `/actuator/health/liveness`, Liveness: same, Readiness: `/actuator/health/readiness` |
 | Termination Grace Period | 45s (for Spring graceful shutdown) |
 
@@ -194,14 +197,14 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 | Replicas | 1 |
 | Storage | 10 GiB PVC, storageClass: proxmox-csi (ReadWriteOnce) |
 | SecurityContext | runAsNonRoot UID/GID 70 (postgres), drop ALL capabilities, fsGroup 70 with OnRootMismatch policy |
-| Tuning | `shared_buffers=384MB`, `effective_cache_size=700MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `max_connections=30`, `max_parallel_maintenance_workers=2` (PG17 compact-radix-tree VACUUM: up to ~20x less index memory, parallel maintenance) |
+| Tuning | `shared_buffers=384MB`, `effective_cache_size=700MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `max_connections=50`, `max_parallel_maintenance_workers=2` (PG17 compact-radix-tree VACUUM: up to ~20x less index memory, parallel maintenance) |
 | SSD tuning | `random_page_cost=1.1`, `effective_io_concurrency=200`, `checkpoint_timeout=300s`, `wal_buffers=16MB`, `max_wal_size=2GB` |
 | Resources | CPU: 500m–2 cores, Memory: 768–1024 MiB |
 
 ### 5.5 Redis Deployment (`gitops/apps/taskflow/redis.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `redis:7.4-alpine` |
+| Image | `redis:7.4.9-alpine` |
 | Replicas | 1 |
 | Storage | emptyDir (ephemeral, no persistence) |
 | Memory Guard | `--maxmemory 384mb`, `allkeys-lru`, lazyfree eviction, 10 samples |
@@ -210,27 +213,30 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.6 Jaeger Deployment (`gitops/apps/taskflow/jaeger.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `jaegertracing/all-in-one:1.69.0` |
+| Image | `jaegertracing/all-in-one:1.76.0` |
 | Replicas | 1 |
 | Memory Guard | `--memory.max-traces=5000` (caps in-memory store) |
 | Ports | UI: 16686, OTLP-gRPC: 4317, OTLP-HTTP: 4318 |
 | Resources | CPU: 100m–500 m, Memory: 128–256 MiB |
 
-### 5.7 Network Policies (`gitops/apps/taskflow/network-policy.yaml`)
+### 5.7 Cloudflare DDNS (`gitops/apps/taskflow/cloudflare-ddns.yaml`)
+Keeps the `jokelab.dev`, `www.jokelab.dev`, and `grafana.jokelab.dev` DNS A records synced to the Gateway's external IP (`192.168.50.201`). Uses the `favonia/cloudflare-ddns` image with a SOPS-encrypted Cloudflare API token.
+
+### 5.8 Network Policies (`gitops/apps/taskflow/network-policy.yaml`)
 | Target | Allowed From | Port(s) | Protocol |
 |--------|-------------|---------|----------|
 | postgres-db | pods with `app: taskflow-backend` | 5432 | TCP |
 | redis | pods with `app: taskflow-backend` | 6379 | TCP |
 | jaeger | pods with `app: taskflow-backend` | 4317, 4318 (OTLP) + 16686 (UI) | TCP |
 
-### 5.8 Gateway & Routing (`gateway.yaml` + `httproute.yaml`)
+### 5.9 Gateway & Routing (`gateway.yaml` + `httproute.yaml`)
 - **Gateway**: `taskflow-gateway`, class: `cilium`, port 80/443 (HTTP/HTTPS), allowed routes restricted to approved namespaces (`taskflow`, `monitoring`)
 - **HTTPRoute rules** (order matters — first match wins):
 1. `/api` → backend:8080 (backendRequest timeout: 10s)
 2. `/` → frontend:8080 (catch-all default)
 - *Jaeger UI is intentionally NOT exposed through the Gateway (no auth in front of it); reach it via `kubectl port-forward` — see §10.6.*
 
-### 5.9 Monitoring Stack (`gitops/monitoring/`)
+### 5.10 Monitoring Stack (`gitops/monitoring/`)
 | Component | Implementation |
 |-----------|----------------|
 | VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.86.0) in namespace `monitoring` |
@@ -247,7 +253,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 
 | Control | Implementation |
 |---------|---------------|
-| Zero-trust networking | Cilium network policies restrict all inter-service access; only backend can reach DB/Redis/Jaeger |
+| Zero-trust networking | Cilium network policies restrict all inter-service access; only backend can reach DB/Redis/Jaeger. A namespace-level default-deny (`namespace-default-deny.yaml`) blocks ALL ingress to the `taskflow` namespace by default, then selectively re-opens only the Gateway (Envoy) and monitoring scrapes |
 | Pod security | All containers: `readOnlyRootFilesystem`, `allowPrivilegeEscalation=false`, drop ALL capabilities, runAsNonRoot |
 | Secrets encryption | SOPS age-encrypted (`*-secrets.yaml`), decrypted by Flux at reconciliation time only |
 | Image pinning | Flux image automation rewrites `:latest` to `@sha256:<digest>` — immutable references in Git |
@@ -297,7 +303,15 @@ TF/
 │   │   ├── jaeger.yaml              # Jaeger all-in-one + OTLP services + UI service + NetworkPolicy
 │   │   ├── gateway.yaml             # Cilium Gateway (port 80/443, restricted namespace routes)
 │   │   ├── httproute.yaml           # /api→backend, /*→frontend (Jaeger UI NOT exposed)
+│   │   ├── http-redirect.yaml       # HTTP→HTTPS 301 redirect + apex→www redirect
 │   │   ├── network-policy.yaml      # DB access restriction (backend-only ingress)
+│   │   ├── default-deny.yaml        # Default-deny ingress for data tier (postgres, redis, jaeger)
+│   │   ├── namespace-default-deny.yaml  # Full-namespace default-deny + Gateway/monitoring allow-lists
+│   │   ├── backend-hpa.yaml         # HPA ready-to-activate (needs metrics-server)
+│   │   ├── backend-pdb.yaml         # PodDisruptionBudget (minAvailable: 1)
+│   │   ├── frontend-pdb.yaml        # PodDisruptionBudget (minAvailable: 1)
+│   │   ├── certificate.yaml         # Let's Encrypt TLS cert for jokelab.dev + subdomains
+│   │   ├── cloudflare-ddns.yaml     # Dynamic DNS updater for Cloudflare
 │   │   └── kustomization.yaml       # Resource ordering
 │   │
 │   ├── infrastructure/
@@ -305,7 +319,11 @@ TF/
 │   │   │   ├── cilium/release.yaml  # Cilium v1.19.5 (eBPF, Gateway API, L2 announcements)
 │   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.0) with Let's Encrypt certificate automation
 │   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
-│   │   │   └── gateway-api/         # Standard Gateway API CRDs + TLSRoute CRD
+│   │   │   ├── gateway-api/         # Standard Gateway API CRDs + TLSRoute CRD
+│   │   │   ├── kyverno/             # Kyverno policy engine (v3.8.2)
+│   │   │   ├── falco/               # Falco runtime security (v9.1.0 chart, modern eBPF)
+│   │   │   ├── policy-reporter/     # Policy Reporter + UI dashboard
+│   │   │   └── trivy-operator/      # Trivy vulnerability scanner operator
 │   │   │
 │   │   └── configs/                 # Cilium IP pool, L2 policy, GatewayClass
 │   │       ├── cilium/ippool.yaml           # 192.168.50.200–250
@@ -323,6 +341,9 @@ TF/
   │       ├── taskflow.yaml            # App layer with SOPS decryption
   │       ├── monitoring.yaml          # VictoriaMetrics + Grafana operator (SOPS-enabled)
   │       ├── monitoring-app.yaml      # App VMServiceScrapes (depends on monitoring)
+  │       ├── kyverno-policies.yaml    # Kyverno ClusterPolicies (dependsOn infra-controllers)
+  │       ├── policy-reporter.yaml     # Policy Reporter + UI (dependsOn infra-controllers + taskflow-app)
+  │       ├── trivy-operator.yaml      # Trivy vulnerability scanner (dependsOn infra-controllers)
   │       └── image-automation.yaml    # ImageRepository + ImagePolicy + ImageUpdateAutomation
   │
   │   ├── monitoring/                  # Observability stack (NEW)
@@ -371,8 +392,8 @@ flux reconcile kustomization taskflow-app -n flux-system
 | TLS/HTTPS | Fully configured (HTTPS on port 443) | cert-manager HelmRelease + Let's Encrypt certificates + HTTPS Gateway listener are fully active |
 | Multi-node HA | Single k3s node | Add worker nodes via additional Proxmox VMs |
 | GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` module is planned, not yet created) |
-| Pod Disruption Budgets | Not defined | Add PDBs for backend, frontend, postgres |
-| Horizontal Pod Autoscaler | Single replicas everywhere | HPA for backend based on CPU/memory metrics |
+| Pod Disruption Budgets | ✅ Resolved | PDBs added for backend (`backend-pdb.yaml`), frontend (`frontend-pdb.yaml`), and postgres (`postgres-db.yaml`) — all `minAvailable: 1` |
+| Horizontal Pod Autoscaler | Ready-to-activate enabler | HPA exists (`backend-hpa.yaml`, CPU 70%, 1–3 replicas) but requires `metrics-server` for the `metrics.k8s.io` API — not yet installed |
 | Backup strategy | Proxmox hypervisor backups | Configure scheduled VM backups at the Proxmox level (using PBS or vzdump) |
 | Monitoring stack | Jaeger traces only | VictoriaMetrics + Grafana scaffolded in `gitops/monitoring/` (see §5.9). **Backend JVM/HTTP metrics need an app-repo change** (`micrometer-registry-prometheus`) — tracked in `docs/BACKEND_INTEGRATION_CONTEXT.md`. DB/Redis metrics already flow via exporters. |
 | cert-manager | Installed (v1.21.0) | Configured Let's Encrypt HTTP-01 `ClusterIssuer` + `Certificate` for `jokelab.dev` with an HTTPS Gateway listener |
@@ -410,7 +431,7 @@ This is the path that actually matters day-to-day:
         │
 4. Flux ImageUpdateAutomation rewrites the marker line in
    gitops/apps/taskflow/backend.yaml:
-     image: ...:latest # {"$imagepolicy": "flux-system:taskflow-backend:digest"}
+     image: ...:latest # {"$imagepolicy": "flux-system:taskflow-backend"}
    → image: ...:latest@sha256:<newdigest>
    and COMMITS it back to main (auth: fluxcdbot)
         │

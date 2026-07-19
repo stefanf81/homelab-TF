@@ -158,7 +158,120 @@ image:
   digest: sha256:…                      # {"$imagepolicy": "flux-system:policy:digest"}
 ```
 
-### 7.3 Verify the pipeline end-to-end
+### 7.4 Troubleshooting: image automation stuck or controllers missing
+
+**Symptom:** A new `:latest` is pushed to ghcr.io but the cluster never rolls out.
+The `ImageUpdateAutomation` shows `GitOperationFailed`, or the controller pods
+don't exist:
+
+```bash
+kubectl -n flux-system get pods -l app.kubernetes.io/component=image-reflector-controller
+# No resources found
+```
+
+**Root cause:** The image automation controllers (`image-reflector-controller` and
+`image-automation-controller`) are **not** installed by `flux bootstrap` — they
+require the `--components-extra` flag. If someone re-bootstraps Flux or the
+controllers are otherwise removed, the automation breaks silently. Existing
+`ImageRepository`/`ImagePolicy`/`ImageUpdateAutomation` resources can also get
+stuck in a terminating state with finalizers (`DeletionTimestamp` set) because
+the missing controllers can never process the finalizer cleanup.
+
+**Full diagnostic checklist:**
+
+```bash
+# 1. Are the controller pods running?
+kubectl -n flux-system get pods -l app.kubernetes.io/component=image-reflector-controller
+kubectl -n flux-system get pods -l app.kubernetes.io/component=image-automation-controller
+
+# 2. Are the image CRDs installed?
+kubectl api-resources --api-group=image.toolkit.fluxcd.io
+
+# 3. Are resources stuck terminating?
+kubectl -n flux-system get imagerepository,imagepolicy,imageupdateautomation \
+  -o jsonpath='{range .items[*]}{.metadata.name}{" deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{end}'
+
+# 4. Does the ImageRepository scan succeed?
+kubectl -n flux-system get imagerepository taskflow-backend \
+  -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}'
+
+# 5. Does the ImageUpdateAutomation push succeed?
+kubectl -n flux-system get imageupdateautomation taskflow-images \
+  -o jsonpath='{.status.conditions[?(@.type=="Ready")]}' | jq .
+
+# 6. Is the Git credential valid?
+kubectl -n flux-system get gitrepository flux-system \
+  -o jsonpath='{.status.conditions[?(@.type=="Ready")]}' | jq .
+```
+
+**Fix — install missing controllers:**
+
+```bash
+# Extract only the image-controller manifests from a full Flux install export:
+flux install \
+  --components-extra=image-reflector-controller,image-automation-controller \
+  --export > /tmp/flux-image-controllers.yaml
+
+# Filter to just the image-reflector and image-automation resources
+python3 -c "
+import yaml
+with open('/tmp/flux-image-controllers.yaml') as f:
+    docs = list(yaml.safe_load_all(f))
+keep = [d for d in docs if d and ('image-reflector' in yaml.dump(d) or 'image-automation' in yaml.dump(d))]
+with open('/tmp/flux-image-only.yaml', 'w') as f:
+    yaml.dump_all(keep, f)
+"
+
+kubectl apply -f /tmp/flux-image-only.yaml
+```
+
+**Fix — unstick terminating resources (only needed if resources have
+`deletionTimestamp` set):**
+
+```bash
+# Patch away the finalizer so the resource can be garbage-collected
+kubectl -n flux-system patch <resource-type>/<resource-name> \
+  -p '{"metadata":{"finalizers":[]}}' --type=merge
+
+# Flux Kustomization will recreate it from Git
+kubectl -n flux-system annotate kustomization/taskflow-app \
+  fluxcd.io/reconcileAt=$(date +%Y-%m-%dT%H:%M:%S%z) --overwrite
+```
+
+**Fix — force a full end-to-end cycle after controllers are up:**
+
+```bash
+# 1. Force the app kustomization to recreate automation resources
+kubectl -n flux-system annotate kustomization/taskflow-app \
+  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+
+# 2. Wait for ImageRepository then force an immediate ghcr.io scan
+kubectl -n flux-system wait --for=condition=Ready imagerepository/taskflow-backend --timeout=60s
+kubectl -n flux-system annotate imagerepository/taskflow-backend \
+  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+kubectl -n flux-system annotate imagerepository/taskflow-frontend \
+  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+
+# 3. Check what digest the ImagePolicy resolved
+kubectl -n flux-system get imagepolicy taskflow-backend \
+  -o jsonpath='{.status.latestImage}'
+
+# 4. Force the ImageUpdateAutomation to commit the new digest to Git
+kubectl -n flux-system annotate imageupdateautomation/taskflow-images \
+  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+
+# 5. Check that the commit succeeded
+kubectl -n flux-system describe imageupdateautomation taskflow-images
+
+# 6. Force the app kustomization to pull the new Git commit and roll out pods
+kubectl -n flux-system annotate kustomization/taskflow-app \
+  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+
+# 7. Watch the new pods start
+kubectl -n taskflow get pods -w
+```
+
+### 7.5 Verify the pipeline end-to-end
 
 ```bash
 # 1. Automation succeeds (no GitOperationFailed)

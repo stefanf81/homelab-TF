@@ -29,8 +29,8 @@ brew install sops age
 # Install age
 sudo apt update && sudo apt install -y age
 
-# Install sops
-sudo curl -Lo /usr/local/bin/sops https://github.com/getsops/sops/releases/download/v3.9.0/sops-v3.9.0.linux.amd64
+# Install sops (check https://github.com/getsops/sops/releases for the latest release)
+sudo curl -Lo /usr/local/bin/sops https://github.com/getsops/sops/releases/download/v3.13.3/sops-v3.13.3.linux.amd64
 sudo chmod +x /usr/local/bin/sops
 ```
 

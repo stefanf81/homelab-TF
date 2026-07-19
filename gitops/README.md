@@ -13,7 +13,9 @@ gitops/
 ├── infrastructure/             # 2. Platform/System services (Helm charts & System configs)
 │   ├── controllers/
 │   │   ├── kyverno/            #   Kyverno policy engine (HelmRelease; reconciled by infra-controllers)
-│   │   └── policy-reporter/    #   Policy Reporter + UI (own Kustomization; dashboard at kyverno.jokelab.dev)
+│   │   ├── policy-reporter/    #   Policy Reporter + UI (own Kustomization; dashboard at kyverno.jokelab.dev)
+│   │   ├── falco/              #   Falco runtime security (modern eBPF, PolicyReport integration)
+│   │   └── trivy-operator/     #   Trivy vulnerability scanner (own Kustomization; dependsOn infra-controllers)
 │   └── configs/
 ├── apps/                       # 3. User-facing applications (TaskFlow frontend, backend, database)
 │   ├── taskflow/
@@ -41,6 +43,8 @@ Contains the system controllers deployed primarily via **HelmReleases**.
 * **`cert-manager/`**: Handles automated provisioning of TLS certificates.
 * **`kyverno/`**: Installs the Kyverno policy engine (admission + background/cleanup/reports controllers). Validates, mutates, and generates Kubernetes resources via `ClusterPolicy` CRs. CRDs are owned by the chart (`crds.install: true`); the Flux `HelmRelease` uses `install.crds: Skip` to avoid a CRD ownership conflict. Reconciled by `infra-controllers`.
 * **`policy-reporter/`**: Installs Policy Reporter + its UI subchart — a read-only web dashboard for Kyverno's `ClusterPolicyReport` objects. Exposed at `https://kyverno.jokelab.dev` through the Cilium Gateway (same pattern as Grafana). Has its **own** cluster Kustomization (`policy-reporter`) that `dependsOn` both `infra-controllers` and `taskflow-app` so the Gateway exists before the HTTPRoute is programmed.
+* **`falco/`**: Installs Falco runtime security as a DaemonSet with modern eBPF driver. Uses Falcosidekick to write native Kubernetes `PolicyReport` CRDs visible in the Policy Reporter UI. Exposes Prometheus metrics on port 8765 for VictoriaMetrics scraping.
+* **`trivy-operator/`**: Installs the Trivy vulnerability scanner operator. Scans container images in the cluster for CVEs and produces vulnerability reports. Has its **own** cluster Kustomization (`trivy-operator`) that `dependsOn` `infra-controllers`.
 
 #### B. `infrastructure/configs/` (Controller Instances)
 Contains the actual custom configurations and Custom Resources (CRs) consumed by the controllers installed in the folder above.
@@ -54,11 +58,18 @@ This layer houses user-facing workloads and microservices. Workloads here are ke
 This folder represents your **TaskFlow** application (Angular 22, Spring Boot 3.5.3, PostgreSQL 17, Redis 7.2, and Jaeger).
 * **`backend.yaml`**: Configures the JVM Spring Boot 3.5.3 server with preflight checks (`wait-for-db` init-container) and a fixed 1.5 GB heap with G1GC tuning (`JAVA_TOOL_OPTIONS`). The container image uses the mutable `:latest` tag, which Flux pins to its current `sha256` digest via the `# {"$imagepolicy": ...}` marker (see `../FLUX_BOOTSTRAP.md` §7 — the Git source must be writable and the marker must be the *basic* form, not `:digest`).
 * **`frontend.yaml`**: Configures the Angular 22 client packaged with Nginx, utilizing custom emptyDirs to secure a `readOnlyRootFilesystem`. Same Flux digest-pin behavior as the backend.
-* **`postgres-db.yaml` & `postgres-pvc.yaml`**: Configures the database storage. *Optimized:* Postgres now runs tuned caching params (`shared_buffers=384MB`, `effective_cache_size=700MB`, `work_mem=8MB`, `max_connections=30`) within its 1024Mi RAM limit, and storage is scaled to `10Gi` backed by the dynamic `proxmox-csi` storage engine.
+* **`postgres-db.yaml` & `postgres-pvc.yaml`**: Configures the database storage. *Optimized:* Postgres now runs tuned caching params (`shared_buffers=384MB`, `effective_cache_size=700MB`, `work_mem=8MB`, `max_connections=50`) within its 1024Mi RAM limit, and storage is scaled to `10Gi` backed by the dynamic `proxmox-csi` storage engine.
 * **`redis.yaml`**: Configures the caching layer. *Optimized:* capped at `--maxmemory 384mb` with `allkeys-lru` eviction to avoid OOM-kill cache loss (ephemeral `emptyDir`, no persistence).
 * **`jaeger.yaml`**: Configures Jaeger All-in-One telemetry for OTLP trace collection.
-* **`network-policy.yaml`**: Enforces strict network-level isolation (e.g., restricting PostgreSQL & Redis ingress ports to the backend container).
-* **`kustomization.yaml`**: Aggregates all these resources into a single manifest compilation unit for Flux.
+*   **`network-policy.yaml`**: Enforces strict network-level isolation (e.g., restricting PostgreSQL & Redis ingress ports to the backend container).
+*   **`default-deny.yaml`**: Default-deny ingress for the data tier (postgres, redis, jaeger) — flips the allow-by-default baseline so `restrict-*` policies actually enforce.
+*   **`namespace-default-deny.yaml`**: Extends default-deny to the **entire** `taskflow` namespace, then selectively re-opens the Cilium Gateway (Envoy) and monitoring scrapes. Implements full zero-trust networking.
+*   **`backend-hpa.yaml`**: HorizontalPodAutoscaler ready to activate (CPU 70%, 1–3 replicas); requires `metrics-server` for the `metrics.k8s.io` API.
+*   **`backend-pdb.yaml`** & **`frontend-pdb.yaml`**: PodDisruptionBudgets (`minAvailable: 1`) blocking voluntary evictions for single-replica workloads.
+*   **`certificate.yaml`**: Let's Encrypt TLS certificate for `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`, and `kyverno.jokelab.dev`.
+*   **`http-redirect.yaml`**: HTTP→HTTPS 301 redirect (port 80 → 443) and bare apex `jokelab.dev` → `www.jokelab.dev` redirect.
+*   **`cloudflare-ddns.yaml`**: Dynamic DNS updater keeping DuckDNS A records synced to the Gateway IP.
+*   **`kustomization.yaml`**: Aggregates all these resources into a single manifest compilation unit for Flux.
 
 ## Pre-baked Optimizations inside GitOps
 
@@ -66,7 +77,7 @@ The scaffolded manifests inside this layout include critical performance and net
 
 ### 1. Database & Storage Scaling (`apps/taskflow/`)
 * **Proxmox CSI Storage Association:** `postgres-pvc.yaml` is configured with `storageClassName: proxmox-csi` and scaled to `10Gi` of high-performance virtual disk storage, mapped directly to VM 900 via the node's `instance-id` annotation.
-* **PostgreSQL Engine Tuning:** `postgres-db.yaml` utilizes container launch variables to tune buffers, cache sizes, and connection limits within its 1024Mi RAM limit (e.g. `shared_buffers=384MB`, `effective_cache_size=700MB`, `work_mem=8MB`, `max_connections=30`).
+* **PostgreSQL Engine Tuning:** `postgres-db.yaml` utilizes container launch variables to tune buffers, cache sizes, and connection limits within its 1024Mi RAM limit (e.g. `shared_buffers=384MB`, `effective_cache_size=700MB`, `work_mem=8MB`, `max_connections=50`).
 
 ### 2. Modern Kubernetes Gateway API with Cilium (`apps/taskflow/`)
 * **Cilium CNI & Gateway API Operator:** Deployed under `infrastructure/controllers/cilium/`. The core Gateway API schemas are fully managed under `infrastructure/controllers/gateway-api/` using a **local-vendored** copy of the official `v1.2.1` standard installation release. This ensures Flux CD performs dry-run validations with 100% compliance, preventing any schema version conflicts or ownership clashes with K3s's built-in platform installers.

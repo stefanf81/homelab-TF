@@ -82,9 +82,9 @@ effective_cache_size=1152MB   # but container memory limit is only 1024Mi
 `/data` is an `emptyDir` with a clear comment that persistence is intentionally off. That's a legitimate L2-cache choice, **but** on every Redis pod restart (or the node rebooting) the entire cache is lost and the backend falls back to PostgreSQL — a cache stampede that can spike DB latency/CPU until the cache warms. With a single replica there's no warm standby.
 
 **Fix:** Accept it (documented tradeoff) **or** back Redis with a small Proxmox CSI PVC + `appendonly yes` so restartswarm doesn't start fully cold. At minimum, ensure the backend degrades gracefully (it presumably does, since Redis is "L2").
+### 2.4 Default connection pool vs `max_connections=50` (LOW-MEDIUM)
 
-### 2.4 Default connection pool vs `max_connections=30` (LOW-MEDIUM)
-**File:** `gitops/apps/taskflow/postgres-db.yaml` (`max_connections=30`)
+**File:** `gitops/apps/taskflow/postgres-db.yaml` (`max_connections=50`)
 
 Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's fine (10 of 30). But if the backend scales to 3+ replicas, `3 × 10 = 30` exhausts `max_connections` with zero headroom for `psql`/migrations/admin. 
 
@@ -169,23 +169,3 @@ This removes the rigid heap, fixes the silent direct-memory override, and bounds
 so `ExitOnOutOfMemoryError` only triggers on a real leak, not a benign spike.
 
 
----
-
-## 5. Quick "before/after" for the highest-impact change (§1.1)
-
-```yaml
-# backend.yaml — container section (proposed)
-env:
-  - name: JAVA_TOOL_OPTIONS
-    value: >-
-      -Xms1024m -Xmx1024m
-      -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError
-      -XX:+UseStringDeduplication -XX:+AlwaysPreTouch
-      -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC
-      -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=512m
-resources:
-  requests: { cpu: "2000m", memory: "2Gi" }   # Guaranteed QoS
-  limits:   { cpu: "2000m", memory: "2Gi" }
-```
-
-This removes the 512 MiB off-heap trap, stops CPU throttling, and bounds native memory so `ExitOnOutOfMemoryError` only triggers on a real leak, not a benign spike.
