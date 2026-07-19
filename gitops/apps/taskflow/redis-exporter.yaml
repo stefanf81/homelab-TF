@@ -21,7 +21,7 @@ spec:
       containers:
         - name: redis-exporter
           # Pin a specific tag; rotate to a @sha256 digest for full hermeticity.
-          image: oliver006/redis_exporter:v1.86.0
+          image: oliver006/redis_exporter:v1.87.0
           args:
             - "--redis.addr=redis:6379"
           env:
