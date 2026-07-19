@@ -61,7 +61,7 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: metrics-server
-    namespace: monitoring
+    namespace: kube-system
 ---
 # Bind the metrics-server SA to the built-in system:auth-delegator ClusterRole.
 # This grants the ability to create SubjectAccessReview and TokenReview
@@ -81,4 +81,27 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: metrics-server
-    namespace: monitoring
+    namespace: kube-system
+---
+# RoleBinding in kube-system to read the extension-apiserver-authentication ConfigMap.
+# This ConfigMap is auto-created by kube-apiserver and contains the requestheader
+# client CA data that the aggregated API server needs to load. The built-in
+# extension-apiserver-authentication-reader Role is created by the API server
+# bootstrap process.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: metrics-server-auth-reader
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: metrics-server
+    app.kubernetes.io/instance: metrics-server
+    app.kubernetes.io/part-of: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+  - kind: ServiceAccount
+    name: metrics-server
+    namespace: kube-system
