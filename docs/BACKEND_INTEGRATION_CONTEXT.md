@@ -32,7 +32,7 @@ Defined in `gitops/apps/taskflow/backend.yaml`:
 
 | Concern | Expectation | Why it matters to you |
 |---------|-------------|----------------------|
-| Image | `ghcr.io/stefanf81/taskflow-backend:latest`, digest-pinned by Flux | Push `:latest`; Flux rewrites to `@sha256:`. No manifest change needed for a deploy. |
+| Image | `ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend:latest`, digest-pinned by Flux | Push `:latest`; Flux rewrites to `@sha256:`. No manifest change needed for a deploy. |
 | Listening port | **8080** (ContainerPort `http`) | Gateway routes `/api` → `backend:8080`. Don't change. |
 | Liveness/readiness | `GET /actuator/health/liveness` and `/actuator/health/readiness` on 8080 | Probes already use these. Actuator health must stay enabled. |
 | Security context | `runAsNonRoot: true`, `UID/GID 10001`, `readOnlyRootFilesystem: true`, `capabilities.drop: [ALL]` | The image **must** run as 10001 with no writes to the image layer. Mount only `/tmp` (already provided). Log to **stdout/stderr**, not a file. |

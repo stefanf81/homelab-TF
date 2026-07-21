@@ -19,7 +19,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: postgres
-          image: postgres:17.10-alpine
+          image: postgres:18.4-alpine
           imagePullPolicy: IfNotPresent
           args:
             # Memory — trimmed limit to 1024Mi (from 1536Mi) for the memory-constrained
@@ -91,7 +91,7 @@ spec:
             - name: POSTGRES_USER
               value: postgres
             - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
+              value: /var/lib/postgresql/18/data/pgdata
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -112,8 +112,7 @@ spec:
               memory: 1024Mi
           volumeMounts:
             - name: postgres-storage
-              mountPath: /var/lib/postgresql/data
-              subPath: postgres-data
+              mountPath: /var/lib/postgresql
           startupProbe:
             exec:
               command: ["pg_isready", "-U", "postgres"]

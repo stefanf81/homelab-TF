@@ -143,11 +143,11 @@ kubectl -n taskflow get deployment taskflow-backend \
 **Fix — basic marker (correct for Deployments):**
 ```yaml
 # gitops/apps/taskflow/backend.yaml
-image: ghcr.io/stefanf81/taskflow-backend:latest # {"$imagepolicy": "flux-system:taskflow-backend"}
+image: ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend:latest # {"$imagepolicy": "flux-system:taskflow-backend"}
 # gitops/apps/taskflow/frontend.yaml
-image: ghcr.io/stefanf81/taskflow-frontend:latest # {"$imagepolicy": "flux-system:taskflow-frontend"}
+image: ghcr.io/stefanf81/taskflow-enterprise/taskflow-frontend:latest # {"$imagepolicy": "flux-system:taskflow-frontend"}
 ```
-Flux then emits `ghcr.io/stefanf81/taskflow-backend:latest@sha256:<digest>`.
+Flux then emits `ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend:latest@sha256:<digest>`.
 
 **Correct form for HelmRelease** (separate fields) is the only place `:digest`
 belongs:
@@ -316,5 +316,5 @@ kubectl -n taskflow get pods -l 'app in (taskflow-backend,taskflow-frontend)' -o
 ```
 
 Expected: `conditions` shows `reason: Succeeded`, deployment images look like
-`ghcr.io/stefanf81/taskflow-backend:latest@sha256:…`, and a `fluxcdbot` commit
+`ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend:latest@sha256:…`, and a `fluxcdbot` commit
 (`chore: automated TaskFlow image update`) appears on `main`.

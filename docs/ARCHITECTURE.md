@@ -107,7 +107,7 @@ taskflow-app                     monitoring (VictoriaMetrics + Grafana operator 
 
 ### 4.3 Image Automation (Digest Pinning)
 ```
-ImageRepository (ghcr.io/stefanf81/taskflow-frontend, interval: 5m)
+ImageRepository (ghcr.io/stefanf81/taskflow-enterprise/taskflow-frontend, interval: 5m)
     │
     ▼
 ImagePolicy (filter: ^latest$, digestReflectionPolicy: Always)
@@ -169,7 +169,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.2 Backend Deployment (`gitops/apps/taskflow/backend.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `ghcr.io/stefanf81/taskflow-backend:latest` (digest-pinned by Flux) |
+| Image | `ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend:latest` (digest-pinned by Flux) |
 | Replicas | 1 |
 | JVM Heap | Fixed 1 GiB — owned by the **image** via `-XX:MaxRAMPercentage=50.0` (not by the deployment's `JAVA_TOOL_OPTIONS`, which sets only GC logging/caps) |
 | GC | G1 with StringDedup, AlwaysPreTouch, ParallelRefProc, DisableExplicitGC |
@@ -183,7 +183,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.3 Frontend Deployment (`gitops/apps/taskflow/frontend.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `ghcr.io/stefanf81/taskflow-frontend:latest` (digest-pinned by Flux) |
+| Image | `ghcr.io/stefanf81/taskflow-enterprise/taskflow-frontend:latest` (digest-pinned by Flux) |
 | Replicas | 1 |
 | Resources | CPU: 100–500 m, Memory: 128–256 MiB |
 | SecurityContext | readOnlyRootFS, runAsNonRoot UID/GID 101 (nginx user), drop ALL capabilities |
@@ -422,7 +422,7 @@ They only meet at **one file**: `kubeconfig.yaml` (written by Half A, consumed b
 This is the path that actually matters day-to-day:
 
 ```
-1. You push a new :latest image to ghcr.io/stefanf81/taskflow-backend
+1. You push a new :latest image to ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend
         │
 2. Flux ImageRepository (gitops/clusters/taskflow/image-automation.yaml)
    polls ghcr every 5m, sees :latest moved to a new sha256 digest

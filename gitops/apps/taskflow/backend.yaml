@@ -37,7 +37,7 @@ spec:
           # digestReflectionPolicy: Always). The marker below makes Flux rewrite this
           # line to repo:latest@sha256:<digest> whenever a new :latest is pushed,
           # committing the exact digest to Git -> auditable, automatic rollout.
-          image: ghcr.io/stefanf81/taskflow-backend:latest@sha256:f87c7ca04141e4a2c52910ad2267bb78ef32980541ed474e2a41863da18f4a7c # {"$imagepolicy": "flux-system:taskflow-backend"}
+          image: ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend:latest@sha256:f87c7ca04141e4a2c52910ad2267bb78ef32980541ed474e2a41863da18f4a7c # {"$imagepolicy": "flux-system:taskflow-backend"}
           imagePullPolicy: IfNotPresent
           securityContext:
             readOnlyRootFilesystem: true
@@ -112,33 +112,46 @@ spec:
                 secretKeyRef:
                   name: redis-secret
                   key: REDIS_PASSWORD
-            # JVM sizing is owned by the IMAGE (Dockerfile): -XX:MaxRAMPercentage=50.0
-            # sizes the heap to 50% of the cgroup limit (1GiB at the 2Gi below), leaving 1GiB
-            # for off-heap (metaspace + Netty/Lettuce direct buffers + thread stacks + GC).
-            # This env block intentionally does NOT set -Xmx/-XX:MaxDirectMemorySize — doing so
-            # would (a) recreate the rigid heap the Dockerfile deliberately replaced with
-            # RAM%, and (b) be partially overridden anyway, since Dockerfile CMD args win over
-            # JAVA_TOOL_OPTIONS for conflicting flags (JVM "last-wins" precedence).
-            # StringDeduplication is low-risk and modestly reduces heap for string-heavy workloads.
-            # Off-heap IS capped in the image (MaxDirectMemorySize=256m, MaxMetaspaceSize=256m):
-            # with -XX:+ExitOnOutOfMemoryError a single benign off-heap spike would otherwise
-            # kill the JVM and restart the pod. Capping keeps native usage bounded/predictable.
-            # GC/startup perf: AlwaysPreTouch removes first-touch page faults, ParallelRefProcEnabled
-            # speeds GC reference processing, DisableExplicitGC blocks Full GCs from System.gc().
-            # GC logging to /tmp/gc.log with rotation (5 files × 10 MiB) — readable via
-            # `kubectl exec -n taskflow deploy/taskflow-backend -- cat /tmp/gc.log.0`.
-            # Heap dumps land in /tmp on OOM; both paths are writable (emptyDir tmp-volume).
+            # JVM sizing is owned by the DEPLOYMENT (this JAVA_TOOL_OPTIONS), not the
+            # image CMD. The image deliberately carries only environment-invariant flags
+            # (AOT, CDS archive, ExitOnOOM) — setting sizing flags in the CMD would
+            # silently win over this env (JVM "last-wins" precedence for non-sticky
+            # flags) and recreate the precedence bug where this block was a no-op.
+            #
+            # Heap: -XX:MaxRAMPercentage=50.0 sizes the heap to 50% of the 2Gi cgroup
+            # limit = 1 GiB, leaving ~1 GiB for off-heap (metaspace + Netty/Lettuce
+            # direct buffers + thread stacks + GC + native). 50% (not 75%) is deliberate:
+            # this workload uses Lettuce + OpenTelemetry direct buffers plus ~200 Tomcat
+            # thread stacks, and 75% historically OOMKilled the 2 Gi pod under load.
+            #
+            # Off-heap caps: MaxDirectMemorySize=256m caps Netty/Lettuce/OTLP direct
+            # buffers. MaxMetaspaceSize=256m caps class-metadata growth. With
+            # ExitOnOutOfMemoryError, capping native usage keeps a benign off-heap spike
+            # from killing the JVM and triggering a needless pod restart.
+            #
+            # Behavioral tuning:
+            #  - UseG1GC + MaxGCPauseMillis=100: latency-bounded GC for request/response.
+            #  - AlwaysPreTouch: commits the heap at startup (steady-state trade-off —
+            #    eliminates first-touch page faults at the cost of slower pod boot).
+            #  - UseStringDeduplication: modest heap reduction for string-heavy workloads.
+            #  - ParallelRefProcEnabled: speeds GC reference processing.
+            #  - DisableExplicitGC: blocks Full GCs triggered by System.gc() calls.
+            #  - GC logging to /tmp/gc.log with rotation (5 files × 10 MiB) — readable via
+            #    `kubectl exec -n taskflow deploy/taskflow-backend -- cat /tmp/gc.log.0`.
+            #  - HeapDumpOnOutOfMemoryError + HeapDumpPath=/tmp/dump.hprof: post-mortem
+            #    dump on OOM (both paths are writable thanks to the emptyDir tmp-volume).
             - name: JAVA_TOOL_OPTIONS
-              value: "-XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=256m -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags:filecount=5,filesize=10m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/dump.hprof"
+              value: "-XX:+UseG1GC -XX:MaxRAMPercentage=50.0 -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxDirectMemorySize=256m -XX:MaxMetaspaceSize=256m -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags:filecount=5,filesize=10m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/dump.hprof"
           ports:
             - containerPort: 8080
               name: http
           resources:
             # Guaranteed QoS: requests == limits so the full memory budget is reserved (no
             # eviction under node pressure) and CPU is never throttled. 2Gi total − 1Gi heap
-            # (MaxRAMPercentage=50.0 in the image) − 256Mi metaspace − 256Mi direct ≈ 1GiB for
-            # thread stacks/GC/native libs. Trimmed from 3Gi→2Gi to free ~1 GiB on the 14 GiB node;
-            # the app must not need >1 GiB heap under load or this will OOM.
+            # (MaxRAMPercentage=50.0 in JAVA_TOOL_OPTIONS — see env block above) − 256Mi
+            # metaspace − 256Mi direct ≈ 1GiB for thread stacks/GC/native libs. Trimmed from
+            # 3Gi→2Gi to free ~1 GiB on the 14 GiB node; the app must not need >1 GiB heap
+            # under load or this will OOM.
             limits:
               cpu: "2000m"
               memory: 2Gi
