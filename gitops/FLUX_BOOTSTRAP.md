@@ -271,7 +271,37 @@ kubectl -n flux-system annotate kustomization/taskflow-app \
 kubectl -n taskflow get pods -w
 ```
 
-### 7.5 Verify the pipeline end-to-end
+### 7.5 Quick reference: force an immediate image update cycle
+
+In normal operation the automation runs every 10 minutes. When you've just
+pushed a new `:latest` to ghcr.io and don't want to wait, run these:
+
+```bash
+# 1. Force scan ghcr.io for new digests
+kubectl -n flux-system annotate imagerepository/taskflow-backend \
+  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+kubectl -n flux-system annotate imagerepository/taskflow-frontend \
+  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+
+# 2. Check if a new digest was found
+kubectl -n flux-system get imagepolicy taskflow-backend \
+  -o jsonpath='{.status.latestImage}'
+kubectl -n flux-system get imagepolicy taskflow-frontend \
+  -o jsonpath='{.status.latestImage}'
+
+# 3. Commit the new digest to Git
+kubectl -n flux-system annotate imageupdateautomation/taskflow-images \
+  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+
+# 4. Roll out the new commit to the cluster
+kubectl -n flux-system annotate kustomization/taskflow-app \
+  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+
+# 5. Watch pods restart
+kubectl -n taskflow get pods -w
+```
+
+### 7.6 Verify the pipeline end-to-end
 
 ```bash
 # 1. Automation succeeds (no GitOperationFailed)

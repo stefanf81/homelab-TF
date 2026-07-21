@@ -45,6 +45,10 @@ spec:
     # cluster secret dynamically containing Kyverno and Trivy plugins safely.
     ui:
       enabled: true
+      oauth:
+        enabled: true
+        callbackUrl: https://kyverno.jokelab.dev/callback
+        secretRef: policy-reporter-github-oauth
       resources:
         requests:
           cpu: "50m"

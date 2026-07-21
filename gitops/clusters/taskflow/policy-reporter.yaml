@@ -19,3 +19,8 @@ spec:
     name: flux-system
   wait: true
   timeout: 10m
+  # Decrypt the SOPS-encrypted GitHub OAuth secret (reuses the same age key as monitoring).
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
