@@ -47,6 +47,7 @@ spec:
       enabled: true
       oauth:
         enabled: true
+        provider: github
         callbackUrl: https://kyverno.jokelab.dev/callback
         secretRef: policy-reporter-github-oauth
       resources:
