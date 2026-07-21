@@ -14,7 +14,7 @@ metadata:
   name: taskflow-frontend
   namespace: flux-system
 spec:
-  image: ghcr.io/stefanf81/taskflow-enterprise/taskflow-frontend
+  image: ghcr.io/stefanf81/taskflow-frontend
   # 10m (was 5m): images are pushed a few times/day at most, so polling ghcr every 5m
   # only adds registry load. 10m still detects a new :latest digest well within a deploy.
   interval: 10m0s
@@ -30,7 +30,7 @@ metadata:
   name: taskflow-backend
   namespace: flux-system
 spec:
-  image: ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend
+  image: ghcr.io/stefanf81/taskflow-backend
   interval: 10m0s
   # secretRef:
   #   name: ghcr-pull
