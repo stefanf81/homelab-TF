@@ -8,7 +8,9 @@ spec:
   chart:
     spec:
       chart: kyverno
-      # Kyverno chart v3 → Kyverno 1.14.x. Cluster is k8s 1.36.2 (supported).
+      # Chart v3.8.2 ships Kyverno v1.18.2 (latest, July 2026).
+      # CVE fixes included: CVE-2026-22772, CVE-2026-24686, CVE-2026-4789.
+      # Cluster is k8s 1.36.2 (supported, k8s >= 1.25 required).
       version: 3.8.2
       sourceRef:
         kind: HelmRepository
