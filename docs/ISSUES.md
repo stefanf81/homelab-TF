@@ -17,13 +17,6 @@ deserves a PDB + comment explaining why it's single-replica.
 **Fix:** Add `PodDisruptionBudget` for `postgres-db` (`minAvailable: 1`) and note
 the single-replica tradeoff in a comment. (✅ **Resolved**: Added `PodDisruptionBudget` with `minAvailable: 1` directly to `postgres-db.yaml`)
 
-### 14. `TLSRoute` CRD installed but unused
-**File:** `gitops/infrastructure/controllers/gateway-api/tlsroute-crd.yaml`
-Installed "for future TLS support" but there's no HTTPS listener on the Gateway yet.
-Harmless, but dead config.
-**Fix:** Either add an HTTPS listener + cert-manager `Certificate`, or remove the
-TLSRoute CRD until needed.
-
 ### 15. Frontend probes hit `/` rather than a health endpoint
 **File:** `gitops/apps/taskflow/frontend.yaml`
 All three probes use `path: /`. If the SPA ever returns 200 for a 404 page (common
@@ -61,7 +54,7 @@ later resolved — see #19 in the table.
 | 11 | OpenTofu/Terraform naming mix | 🟢 Low | Trivial | Makefile | ✅ Resolved |
 | 12 | diagnose.sh hardcoded macOS path | 🟢 Low | Trivial | diagnose.sh | ✅ Fixed |
 | 13 | No namespace LimitRange/Quota | 🟢 Low | Small | namespace.yaml | ✅ Fixed |
-| 14 | Unused TLSRoute CRD | 🟢 Low | Trivial | gateway-api | ⬜ Open |
+| 14 | Unused TLSRoute CRD | 🟢 Low | Trivial | gateway-api | ✅ Resolved (HTTPS listener & cert active) |
 | 15 | Frontend probes on `/` | 🟢 Low | Small | frontend.yaml | ⬜ Open |
 | 16 | SOPS key rotation undocumented | 🟢 Low | Trivial | .sops.yaml | ✅ Fixed |
 | 17 | No PostgreSQL backup | 🟢 Low | Medium | postgres-*.yaml | ✅ Resolved via Proxmox CSI |

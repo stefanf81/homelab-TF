@@ -100,7 +100,7 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 | 3.2 | gzip / `Cache-Control` on nginx | `frontend` repo `nginx.conf` | ✅ Already done in the app repo: `gzip on; comp_level 6`, `Cache-Control "public"` + `expires 6M` on static assets. |
 | 3.3 | HTTP/2 | `backend.yaml` Service + `gateway` | ✅ Backend `server.http2.enabled=true` (app repo) + `appProtocol: kubernetes.io/h2c` on the backend Service so Cilium Gateway multiplexes to the backend. |
 | 3.4 | JVM GC logging / `-XX:MaxGCPauseMillis` | `backend.yaml` | ✅ Applied: rotated `-Xlog:gc*` + `MaxGCPauseMillis=100`. |
-| 3.5 | Single replica / autoscaling | `backend.yaml` + `backend-hpa.yaml` | ✅ HPA added (CPU 70%, 1–3 replicas). Needs metrics-server for the `metrics.k8s.io` API (not in the VM stack) — see `backend-hpa.yaml` note. PDBs added for backend + frontend. |
+| 3.5 | Single replica / autoscaling | `backend.yaml` + `backend-hpa.yaml` | ✅ HPA added (CPU 70%, 1–3 replicas). Powered by `metrics-server` (installed in `gitops/monitoring/platform/metrics-server-release.yaml`) for the `metrics.k8s.io` API. PDBs added for backend + frontend. |
 | 3.6 | `random_page_cost=1.1` assumes SSD | `postgres-db.yaml` | Reasonable for Proxmox-CSI-backed-SSD; re-check if you move DB to spinning disk. |
 
 ---

@@ -1,207 +1,186 @@
-# Homelab OpenTofu
+# TaskFlow Homelab — OpenTofu & Flux CD
 
-Single-root OpenTofu project for provisioning a Proxmox VM and bootstrapping k3s.
-Cluster add-ons are now scaffolded for GitOps under `gitops/` rather than being
-managed directly by Terraform.
+Single-root OpenTofu project for provisioning a Proxmox VE VM and bootstrapping k3s.
+Cluster workloads and platform controllers are managed declaratively through GitOps (`gitops/`) using Flux CD v2.
 
-## Layout
+---
 
-- `modules/proxmox` – provisions the VM; cloud-init installs k3s at boot (no SSH provisioner needed for this part, per [Terraform's own guidance](https://developer.hashicorp.com/terraform/language/post-apply-operations) to prefer cloud-init over provisioners)
-- `modules/k3s-kubeconfig` – waits for cloud-init's k3s install to finish, then fetches `kubeconfig.yaml` over SSH
-- `modules/flux-bootstrap` – **planned, not yet created**; a future GitHub-ready Flux bootstrap module (see `gitops/FLUX_BOOTSTRAP.md` for the manual steps)
-- `gitops/` – Flux-style GitOps layout for Cilium L2 announcements, Proxmox CSI, and cert-manager
+## 🛠 Prerequisites
 
-## Workflow
+Before starting bring-up from scratch, ensure the following CLI tools are installed on your workstation:
 
-Use the Makefile to enforce the correct sequence:
+- **IaC & Automation:** [OpenTofu](https://opentofu.org/) (≥ 1.8.0), `make`
+- **Kubernetes Management:** `kubectl`, [Flux CLI](https://fluxcd.io/flux/cmd/) (≥ 2.x), [Cilium CLI](https://github.com/cilium/cilium-cli)
+- **Secrets Management:** [SOPS](https://github.com/getsops/sops) (≥ v3.9), [age](https://github.com/FiloSottile/age)
+
+You also need access to a **Proxmox VE 8.x** host with an API token (with VM creation, Datastore, and Network privileges).
+
+---
+
+## 📁 Repository Layout
+
+- `modules/proxmox` – Provisions the Ubuntu 26.04 VM; cloud-init installs k3s at boot (no SSH provisioners, per OpenTofu best practice).
+- `modules/k3s-kubeconfig` – SSHs into the node once cloud-init finishes, fetches `/etc/rancher/k3s/k3s.yaml`, and writes a local `kubeconfig.yaml`.
+- `gitops/` – Declarative Flux v2 manifests:
+  - `gitops/infrastructure/controllers` – Cilium v1.19.6, cert-manager, Proxmox CSI, Kyverno, Falco, Policy Reporter, Trivy Operator.
+  - `gitops/infrastructure/configs` – Cilium L2 announcement policy (`192.168.50.200-250`), `GatewayClass`.
+  - `gitops/apps/taskflow` – Spring Boot 3.5.3 backend, Angular 22 frontend, PostgreSQL 17, Redis 8.8, Jaeger.
+  - `gitops/monitoring` – VictoriaMetrics TSDB + Grafana operator stack + metrics-server.
+  - `gitops/clusters/taskflow` – Cluster root Kustomizations.
+
+---
+
+## 🚀 Bring-Up Workflow (Fresh Proxmox → Production Cluster)
+
+Follow these exact steps to provision the VM and bootstrap the entire GitOps stack from scratch.
+
+### 1️⃣ Configure Infrastructure Variables (`terraform.tfvars`)
+
+Copy the example configuration and fill in your Proxmox credentials, networking, and SSH keys:
+
+```bash
+cp terraform.tfvars.example terraform.tfvars
+```
+
+Edit `terraform.tfvars`:
+```hcl
+proxmox_endpoint  = "https://192.168.50.50:8006/"
+proxmox_api_token = "root@pam!token_id=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+proxmox_node      = "homelab"
+datastore_id      = "local-lvm"
+network_bridge    = "vmbr0"
+ssh_public_key    = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."
+ip_address        = "192.168.50.55/24"
+gateway           = "192.168.50.1"
+k3s_token         = "a-secure-cluster-token-here"
+```
+
+### 2️⃣ Provision the Proxmox VM & Fetch `kubeconfig`
+
+Initialize OpenTofu (utilizes project-local plugin caching in `.terraform/providers-cache`) and apply the configuration:
 
 ```bash
 make init
 make apply
 ```
 
-If you want to run phases manually:
-
+*Or run manually step-by-step:*
 ```bash
-make provision   # create the VM (k3s installs itself via cloud-init)
-make kubeconfig  # wait for k3s + fetch kubeconfig.yaml
+make provision   # Provisions VM; cloud-init installs k3s on boot
+make kubeconfig  # Waits for k3s boot to finish and fetches kubeconfig.yaml
 ```
 
-## Fresh Proxmox → current cluster bootstrap
-
-This is the intended bring-up order for a brand-new Proxmox VM and a fresh k3s
-cluster that ends in the current GitOps layout.
-
-### 1) Provision the VM and fetch kubeconfig
-
-```bash
-make init
-make provision
-make kubeconfig
-```
-
-### 2) Install the Cilium CLI on your workstation
-
-macOS example:
-
-```bash
-CILIUM_CLI_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)
-CLI_ARCH=arm64
-curl -L --fail --remote-name-all \
-  https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-darwin-${CLI_ARCH}.tar.gz{,.sha256sum}
-shasum -a 256 -c cilium-darwin-${CLI_ARCH}.tar.gz.sha256sum
-sudo tar xzvfC cilium-darwin-${CLI_ARCH}.tar.gz /usr/local/bin
-rm cilium-darwin-${CLI_ARCH}.tar.gz{,.sha256sum}
-```
-
-### 3) Install Cilium on the k3s cluster
-
-This repo disables k3s Flannel, so Cilium is installed on top of a CNI-free
-cluster:
-
+Export `KUBECONFIG` for the session:
 ```bash
 export KUBECONFIG=$PWD/kubeconfig.yaml
-cilium install --version 1.19.5
+kubectl get nodes
+```
+
+### 3️⃣ Bootstrap Cilium CNI (v1.19.6)
+
+Because k3s is installed with `--flannel-backend=none` (CNI-free), the node remains `NotReady` until Cilium is installed:
+
+```bash
+# Install Cilium CLI if not already installed (macOS example)
+CILIUM_CLI_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)
+curl -L --fail --remote-name-all "https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-darwin-arm64.tar.gz"{,.sha256sum}
+shasum -a 256 -c cilium-darwin-arm64.tar.gz.sha256sum
+sudo tar xzvfC cilium-darwin-arm64.tar.gz /usr/local/bin
+rm cilium-darwin-arm64.tar.gz{,.sha256sum}
+
+# Bootstrap Cilium onto the cluster
+cilium install --version 1.19.6
 cilium status --wait
 ```
 
-If the node is still NotReady or Cilium stalls, check the Cilium pods/logs and
-fix networking before continuing.
+### 4️⃣ Seed SOPS Age Private Key in Cluster
 
-### 4) Seed the Flux SOPS age key once
+Flux decrypts age-encrypted secret files (`*-secrets.yaml`) using a Kubernetes secret named `sops-age` in the `flux-system` namespace.
 
-Flux decrypts `*-secrets.yaml` using the `sops-age` secret in `flux-system`.
-Seed it once before first reconciliation:
-
+If using the existing repository key (`key.txt` in project root):
 ```bash
 kubectl create secret generic sops-age -n flux-system \
   --from-file=age.agekey=key.txt
 ```
 
-### 5) Bootstrap Flux and reconcile
+> **Note for new environments:** If generating your own age key (`age-keygen -o key.txt`), update the public recipient key in `.sops.yaml` and re-encrypt all `*-secrets.yaml` files via `sops -e -i <file>` before committing to your remote Git repository.
 
-`gotk-components.yaml` / `gotk-sync.yaml` already live under
-`gitops/clusters/taskflow/flux-system/`.
+### 5️⃣ Bootstrap Flux CD & Reconcile All Layers
+
+Apply the Flux sync manifests and force initial reconciliation across all platform layers:
 
 ```bash
+# Apply Flux CRDs and Git sync components
 kubectl apply -k gitops/clusters/taskflow/flux-system
+
+# Reconcile Git repository source
 flux reconcile source git flux-system
+
+# Reconcile platform and application layers
 flux reconcile kustomization flux-system
 flux reconcile kustomization infra-controllers -n flux-system
 flux reconcile kustomization infra-configs -n flux-system
 flux reconcile kustomization taskflow-app -n flux-system
+flux reconcile kustomization monitoring -n flux-system
+flux reconcile kustomization monitoring-app -n flux-system
+flux reconcile kustomization kyverno-policies -n flux-system
+flux reconcile kustomization policy-reporter -n flux-system
+flux reconcile kustomization trivy-operator -n flux-system
 ```
 
-### 6) Verify the app stack
+### 6️⃣ (Optional) Configure CoreDNS Local Override (Hairpin NAT Workaround)
+
+If your home router blocks LAN hairpin NAT (sending requests to public IP `jokelab.dev` from inside the LAN), patch k3s CoreDNS so `cert-manager` self-checks and local clients resolve domains directly to the Gateway IP (`192.168.50.201`):
 
 ```bash
-kubectl get pods -A
-kubectl get gateway,httproute -n taskflow
-kubectl get secret -n taskflow db-secret backend-secret
+kubectl -n kube-system patch configmap coredns --type merge -p '{"data":{"Corefile":".:53 {\n    errors\n    health\n    hosts {\n        192.168.50.201 jokelab.dev www.jokelab.dev grafana.jokelab.dev kyverno.jokelab.dev\n        fallthrough\n    }\n    ready\n    kubernetes cluster.local in-addr.arpa ip6.arpa {\n        pods insecure\n        fallthrough in-addr.arpa ip6.arpa\n    }\n    prometheus :9153\n    forward . /etc/resolv.conf\n    cache 30\n    loop\n    reload\n    loadbalance\n}\n"}}'
+kubectl -n kube-system rollout restart deploy/coredns
 ```
 
-## Why it's still phased
+### 7️⃣ Verify Cluster & Application Health
 
-k3s installation no longer needs an SSH provisioner — it happens automatically
-at boot via cloud-init, same as the rest of the OS tuning. The kubeconfig file still only exists once cloud-init has finished
-running on the VM. So `modules/k3s-kubeconfig` remains as a small bridge that
-waits for that file and downloads it — everything else is boot-time, not
-apply-time-scripted.
+```bash
+# Check all pods across the cluster
+kubectl get pods -A
 
-## Built-in Enterprise Optimizations
+# Check Gateway and HTTPRoute status
+kubectl get gateway,httproute -A
 
-To ensure production-grade security, resiliency, and performance on your single-node Homelab, several key optimizations are pre-baked into this project:
+# Verify application secrets are decrypted
+kubectl get secret -n taskflow db-secret taskflow-secrets
+```
+
+Access services via Cilium Gateway:
+- **TaskFlow Web App:** `https://www.jokelab.dev/`
+- **Grafana Observability:** `https://grafana.jokelab.dev/`
+- **Policy Reporter UI:** `https://kyverno.jokelab.dev/`
+
+---
+
+## 🛡 Built-in Enterprise Architecture & Optimizations
+
+To ensure production-grade security, resiliency, and performance on a single-node homelab, several optimizations are built into this repository:
 
 ### 1. Control Plane & Provisioning Stability
-* **Reconstruction-Aware Kubeconfig Sync:** The `fetch_kubeconfig` module is linked to the Proxmox VM instance ID trigger. If you destroy or rebuild the VM, OpenTofu detects the change in VM ID and automatically triggers a re-fetch of the kubeconfig, avoiding stale certificate errors.
-* **Syntax-Safe Cloud-Init Snippets:** Cloud-init user-data heredocs are defined from column 0 of line 1 to prevent silent whitespace parsing errors, securing predictable boot-time system configurations.
+* **Reconstruction-Aware Kubeconfig Sync:** The `fetch_kubeconfig` module is linked to the Proxmox VM instance ID. Rebuilding the VM automatically re-fetches the `kubeconfig.yaml`, avoiding stale SSH/TLS certificate errors.
+* **Syntax-Safe Cloud-Init:** Heredocs in `modules/proxmox/main.tf` start at column 0 to prevent YAML whitespace parsing failures.
 
-### 2. Cilium CNI, Network Security & Gateway API (Consolidated)
-* **High-Performance CNI (Cilium):** Disabled K3s's default flannel CNI (`--flannel-backend=none`) and default network policies (`--disable-network-policy`) inside `modules/proxmox/main.tf` to let **Cilium v1.19.5** serve as the single, high-performance CNI and security engine.
-* **Modern Kubernetes Gateway API:** Deployed the standard Gateway API CRDs (`gateway-api`) and enabled Cilium's built-in Gateway API controller. Traffic is routed using standard, modern `Gateway` and `HTTPRoute` resources rather than legacy Ingress.
-* **Consolidated Hostname Routing:** The TaskFlow app and monitoring stack are exposed securely. They can be accessed directly via `https://jokelab.dev/` or `https://jokelab.dev/grafana` using the `jokelab.dev` domain. See [Gateway Access Guide](docs/GATEWAY_ACCESS_GUIDE.md) for full instructions. (Jaeger UI is **intentionally not** exposed through the Gateway — reach it via `kubectl port-forward`, see ISSUES.md #2.)
-* **ServiceLB Deconfliction:** K3s's built-in, low-performance `ServiceLB` is disabled (`--disable servicelb`), and **Cilium L2 announcements** (`CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy`) handle IP pool allocations matching your homelab subnet (`192.168.50.200 - 192.168.50.250`).
+### 2. Cilium CNI, Network Security & Gateway API
+* **High-Performance eBPF CNI:** Flannel and k3s network policies are disabled (`--flannel-backend=none --disable-network-policy`) to let **Cilium v1.19.6** handle eBPF routing, SNAT masquerading, and network security policies.
+* **Kubernetes Gateway API:** Deployed standard Gateway API CRDs (`gateway-api`) and enabled Cilium's Gateway API controller (`gatewayAPI.enabled = true`).
+* **ServiceLB Deconfliction & L2 Announcements:** K3s ServiceLB is disabled (`--disable servicelb`). Cilium L2 announcements (`CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy`) advertise gateway IP `192.168.50.201`.
+* **Zero-Trust Network Policies:** Ingress to database/cache tiers (`postgres-db`, `redis`, `jaeger`) is restricted strictly to backend pods.
 
-### 3. Storage Resiliency & Performance
-* **Proxmox CSI Volume Storage:** The PostgreSQL Database (`postgres-pvc.yaml`) volume mapping is scaled from a restrictive `1Gi` to **`10Gi`** and explicitly bound to the **Proxmox CSI** storage class (`storageClassName: proxmox-csi`). Volume lifecycle, sizing, and disk attachments are dynamically provisioned on your Proxmox node, with backing snapshots and backups handled natively at the hypervisor layer.
+### 3. Storage Resiliency & Database Performance
+* **Proxmox CSI Storage:** PostgreSQL PVC (`postgres-pvc.yaml`) uses **10Gi** storage on the `proxmox-csi` StorageClass, enabling dynamic disk attachments and hypervisor-level backups.
+* **PostgreSQL RAM Tuning:** `shared_buffers = 384MB`, `effective_cache_size = 700MB`, `work_mem = 8MB`, `maintenance_work_mem = 64MB`, `max_connections = 30`.
+* **Redis Cache Protection:** Ephemeral L2 cache running with `--maxmemory 384mb` and `--maxmemory-policy allkeys-lru`.
+* **JVM Heap & Off-Heap Guard:** Spring Boot backend uses `MaxRAMPercentage=50.0` (1 GiB heap at 2 GiB limit) with bounded off-heap (`MaxMetaspaceSize=256m`) and Guaranteed QoS (`requests == limits = 2Gi`).
 
-### 4. Database Engine Performance Tuning
-* **PostgreSQL Engine RAM Tuning:** The database deployment (`postgres-db.yaml`) has been injected with optimized database startup arguments to utilize its 1024Mi RAM container limit effectively, replacing standard, extremely conservative container defaults:
-  * `shared_buffers = 384MB` (optimizes memory-resident caching; matches the container's 1024Mi cap)
-  * `effective_cache_size = 700MB` (planner hint for cached data; was overstated at 1152MB — see docs/PERFORMANCE.md #2.1)
-  * `work_mem = 8MB` (faster complex sorting/aggregation; kept modest to bound concurrent memory use)
-  * `maintenance_work_mem = 64MB` (faster index rebuilds/VACUUM)
-  * `max_parallel_maintenance_workers = 2` (PostgreSQL 17's compact radix-tree VACUUM index memory structure uses up to ~20x less memory, so multiple VACUUM / CREATE INDEX workers run in parallel and finish faster — the zero-config win unlocked by the PG17 engine upgrade)
-  * `max_connections = 30` (prevents connection overhead bloat; sized for a single-node homelab backend)
-* **Redis Cache Memory Guard:** The Redis deployment (`redis.yaml`) runs with `--maxmemory 384mb` and `--maxmemory-policy allkeys-lru`, capping memory well under its 512Mi container limit so the cache evicts LRU keys under pressure instead of being OOM-killed (which would drop the whole cache and stampede PostgreSQL). Redis is an ephemeral L2 cache on an `emptyDir`; no RDB/AOF persistence is configured.
-* **JVM Heap & GC Tuning:** The backend (`backend.yaml`) sets `JAVA_TOOL_OPTIONS` to a fixed 1 GB heap (`-Xms1024m -Xmx1024m`), the G1 garbage collector, fail-fast on OOM (`-XX:+ExitOnOutOfMemoryError`), `-XX:+UseStringDeduplication`, and **bounded off-heap** (`-XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=512m`) so a benign native-memory spike can't trip `ExitOnOutOfMemoryError` and restart the pod (see docs/PERFORMANCE.md #1.1). The pod runs as **Guaranteed QoS** (`requests == limits = 2Gi` CPU/memory) so the full budget is reserved and CPU is never throttled.
-
-### 5. GitOps Secrets Protection
-* **SOPS Integration Ready:** A standard `.sops.yaml` configuration is located at the root of the project to facilitate secure, encrypted secrets workflow in Flux. This allows encrypting `gitops/apps/taskflow/taskflow-secrets.yaml` natively.
-
-## Preflight checklist
-
-Before your first real deploy, verify these three items:
-
-1. Create a remote Git repository and wire Flux bootstrap to it.
-2. Replace or verify the Cilium IP pool range in `gitops/infrastructure/configs/cilium/ippool.yaml` (pre-configured for your 192.168.50.x network).
-3. Run a test deploy of the Proxmox + cloud-init bootstrap path and confirm:
-   - VM boots successfully
-   - k3s installs on boot
-   - `kubeconfig.yaml` is fetched successfully
-   - SSH access works
-
-## Provider Plugin Cache
-
-To avoid re-downloading provider binaries (the `bpg/proxmox` provider alone is
-tens of MB, and they can reach hundreds of MB) on every `init`/`plan`/`apply`/
-`destroy`, this project points OpenTofu at a shared, project-local plugin cache
-via `TF_PLUGIN_CACHE_DIR` (set in the `Makefile`).
-
-- Cache location: `$(ROOT)/.terraform/providers-cache` (under `.terraform/`, so
-  it is already excluded from version control).
-- OpenTofu populates and reuses the cache automatically — the first `tofu init`
-  downloads into the cache, subsequent runs link from it (instant).
-- The directory is created for you by the `ensure-cache` step that every `tofu`
-  target depends on, so you never have to create it manually.
-
-### Useful targets
+### 4. Provider Plugin Cache
+OpenTofu is configured via `Makefile` to use project-local plugin caching (`.terraform/providers-cache`), avoiding re-downloading large provider binaries (`bpg/proxmox`) on every run.
 
 ```bash
-make cache        # show cache path and current on-disk size
-make cache-clean  # wipe cached provider binaries (re-downloaded on next init)
+make cache        # Show cache size
+make cache-clean  # Wipe cached provider binaries
 ```
-
-### Using the cache outside `make`
-
-The cache is only wired in for `make` targets. To get the same behavior when
-running `tofu` directly, either export the variable in your shell:
-
-```bash
-export TF_PLUGIN_CACHE_DIR="$PWD/.terraform/providers-cache"
-```
-
-…or create a project-local CLI config file (e.g. `tofu.tfrc`) with:
-
-```hcl
-plugin_cache_dir = ".terraform/providers-cache"
-```
-
-and point OpenTofu at it:
-
-```bash
-export TF_CLI_CONFIG_FILE="$PWD/tofu.tfrc"
-```
-
-> Note: the cache directory must not be one of OpenTofu's implied filesystem
-> mirror directories (`terraform.d/plugins`); `.terraform/providers-cache` is safe.
-
-## Notes
-
-- The kubeconfig is written to `kubeconfig_path` (default `./kubeconfig.yaml`).
-- `k3s_token` and `docker_hub_mirror` are consumed by `modules/proxmox` and
-  baked into the VM's cloud-init user-data.
-- The `gitops/` directory is local scaffolding for now. Once you create a remote
-  Git repository, push that directory there and then bootstrap Flux against it
-  manually — the `modules/flux-bootstrap` Terraform module is **planned but not yet
-  created** (see `gitops/FLUX_BOOTSTRAP.md` for the exact steps).

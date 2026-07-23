@@ -46,7 +46,7 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 
 ### 3.1 Runtime
 - **Distribution**: k3s (single-node cluster)
-- **CNI**: Cilium v1.19.5 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
+- **CNI**: Cilium v1.19.6 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
 - **Storage**: Proxmox CSI (dynamic VM virtual disk provisioning)
 
 ### 3.2 Cilium Configuration (`gitops/infrastructure/controllers/cilium/release.yaml`)
@@ -239,7 +239,7 @@ Keeps the `jokelab.dev`, `www.jokelab.dev`, and `grafana.jokelab.dev` DNS A reco
 ### 5.10 Monitoring Stack (`gitops/monitoring/`)
 | Component | Implementation |
 |-----------|----------------|
-| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.86.0) in namespace `monitoring` |
+| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.87.0) in namespace `monitoring` |
 | CRDs | Installed by the chart (VMServiceScrape, VMSingle, …) |
 | Persistence | VictoriaMetrics TSDB on a **Proxmox CSI-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `proxmox-csi`) |
 | Grafana auth | Admin credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana UI is routed via the Gateway API (see `routes.yaml`), secured by Grafana's login screen; VictoriaMetrics UI is kept strictly internal and accessed via port-forwarding |
@@ -307,7 +307,7 @@ TF/
 │   │   ├── network-policy.yaml      # DB access restriction (backend-only ingress)
 │   │   ├── default-deny.yaml        # Default-deny ingress for data tier (postgres, redis, jaeger)
 │   │   ├── namespace-default-deny.yaml  # Full-namespace default-deny + Gateway/monitoring allow-lists
-│   │   ├── backend-hpa.yaml         # HPA ready-to-activate (needs metrics-server)
+│   │   ├── backend-hpa.yaml         # HPA ready-to-activate (powered by metrics-server)
 │   │   ├── backend-pdb.yaml         # PodDisruptionBudget (minAvailable: 1)
 │   │   ├── frontend-pdb.yaml        # PodDisruptionBudget (minAvailable: 1)
 │   │   ├── certificate.yaml         # Let's Encrypt TLS cert for jokelab.dev + subdomains
@@ -316,11 +316,11 @@ TF/
 │   │
 │   ├── infrastructure/
 │   │   ├── controllers/             # HelmRelease + Repository for platform add-ons
-│   │   │   ├── cilium/release.yaml  # Cilium v1.19.5 (eBPF, Gateway API, L2 announcements)
+│   │   │   ├── cilium/release.yaml  # Cilium v1.19.6 (eBPF, Gateway API, L2 announcements)
 │   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.0) with Let's Encrypt certificate automation
 │   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
 │   │   │   ├── gateway-api/         # Standard Gateway API CRDs + TLSRoute CRD
-│   │   │   ├── kyverno/             # Kyverno policy engine (v3.8.2)
+│   │   │   ├── kyverno/             # Kyverno policy engine (v3.8.2 / Kyverno v1.18.2)
 │   │   │   ├── falco/               # Falco runtime security (v9.1.0 chart, modern eBPF)
 │   │   │   ├── policy-reporter/     # Policy Reporter + UI dashboard
 │   │   │   └── trivy-operator/      # Trivy vulnerability scanner operator
@@ -346,12 +346,16 @@ TF/
   │       ├── trivy-operator.yaml      # Trivy vulnerability scanner (dependsOn infra-controllers)
   │       └── image-automation.yaml    # ImageRepository + ImagePolicy + ImageUpdateAutomation
   │
-  │   ├── monitoring/                  # Observability stack (NEW)
+  │   ├── monitoring/                  # Observability stack
   │   │   ├── platform/                # Operator + CRDs + storage + Grafana secret
   │   │   │   ├── namespace.yaml       # monitoring namespace
   │   │   │   ├── repository.yaml      # victoriametrics HelmRepository
   │   │   │   ├── grafana-secrets.yaml # SOPS-encrypted Grafana admin (age-encrypted)
   │   │   │   ├── release.yaml         # victoria-metrics-k8s-stack HelmRelease (tuned)
+  │   │   │   ├── routes.yaml          # HTTPRoute for Grafana
+  │   │   │   ├── metrics-server-release.yaml  # metrics-server HelmRelease
+  │   │   │   ├── metrics-server-repository.yaml # metrics-server HelmRepository
+  │   │   │   ├── metrics-server-rbac.yaml       # metrics-server RBAC
   │   │   │   └── kustomization.yaml
   │   │   └── app/                     # VMServiceScrapes (applied after CRDs exist)
   │   │       ├── vmservicescrapes.yaml # backend / postgres-exporter / redis-exporter
@@ -393,7 +397,7 @@ flux reconcile kustomization taskflow-app -n flux-system
 | Multi-node HA | Single k3s node | Add worker nodes via additional Proxmox VMs |
 | GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` module is planned, not yet created) |
 | Pod Disruption Budgets | ✅ Resolved | PDBs added for backend (`backend-pdb.yaml`), frontend (`frontend-pdb.yaml`), and postgres (`postgres-db.yaml`) — all `minAvailable: 1` |
-| Horizontal Pod Autoscaler | Ready-to-activate enabler | HPA exists (`backend-hpa.yaml`, CPU 70%, 1–3 replicas) but requires `metrics-server` for the `metrics.k8s.io` API — not yet installed |
+| Horizontal Pod Autoscaler | ✅ Resolved | HPA exists (`backend-hpa.yaml`, CPU 70%, 1–3 replicas) and `metrics-server` is installed (`metrics-server-release.yaml`) for the `metrics.k8s.io` API |
 | Backup strategy | Proxmox hypervisor backups | Configure scheduled VM backups at the Proxmox level (using PBS or vzdump) |
 | Monitoring stack | Jaeger traces only | VictoriaMetrics + Grafana scaffolded in `gitops/monitoring/` (see §5.9). **Backend JVM/HTTP metrics need an app-repo change** (`micrometer-registry-prometheus`) — tracked in `docs/BACKEND_INTEGRATION_CONTEXT.md`. DB/Redis metrics already flow via exporters. |
 | cert-manager | Installed (v1.21.0) | Configured Let's Encrypt HTTP-01 `ClusterIssuer` + `Certificate` for `jokelab.dev` with an HTTPS Gateway listener |
@@ -544,7 +548,7 @@ The monitoring UIs are now exposed through the main Cilium Gateway API using zer
 - **VictoriaMetrics (VMSingle):** Accessed privately via `kubectl port-forward -n monitoring svc/vmsingle-victoria-metrics-k8s-stack 8428:8428` at `http://localhost:8428/vmsingle/`
 
 **What produces metrics today vs. later:**
-- ✅ Node + kubelet (cadvisor) — from the stack itself, immediately. (kube-state-metrics is **disabled by choice** to save ~150–250 MiB RSS; k8s-object dashboards like pod/deployment counts will be blank.)
+- ✅ Node + kubelet (cadvisor) + kube-state-metrics — from the stack itself, providing workload and host metrics.
 - ✅ PostgreSQL + Redis — via the `postgres-exporter` / `redis-exporter` side-cars in `gitops/apps/taskflow` (no backend change).
 - ⏳ **Backend JVM/HTTP** — requires the app repo to add `micrometer-registry-prometheus` and expose `/actuator/prometheus` (unauthenticated, in-cluster scrape). The VMServiceScrape already exists and is inert until then. See `docs/BACKEND_INTEGRATION_CONTEXT.md`.
 

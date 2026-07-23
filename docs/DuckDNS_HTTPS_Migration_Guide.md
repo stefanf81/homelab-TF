@@ -1,5 +1,7 @@
 # DuckDNS & HTTPS Public Exposure Guide
 
+> **Status update:** While this document records the July 11, 2026 migration to public HTTPS, dynamic DNS management was subsequently migrated from **DuckDNS** to **Cloudflare DDNS** (`gitops/apps/taskflow/cloudflare-ddns.yaml`), which continuously syncs the DNS A records for `jokelab.dev`, `www.jokelab.dev`, and `grafana.jokelab.dev` to the Gateway's external LoadBalancer IP (`192.168.50.201`).
+
 This document serves as the historical record and operational runbook for the July 11, 2026 migration of the TaskFlow cluster to a secure, public-facing HTTPS architecture using **DuckDNS**, **Let's Encrypt (HTTP-01)**, and the **Cilium Gateway API**.
 
 ---
