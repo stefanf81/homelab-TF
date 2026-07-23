@@ -15,11 +15,17 @@ spec:
     spec:
       containers:
         - name: jaeger
-          image: jaegertracing/all-in-one:1.76.0
+          image: jaegertracing/jaeger:2.20.0
           imagePullPolicy: IfNotPresent
+          env:
+            # v2 built-in all-in-one config uses ${env:JAEGER_LISTEN_HOST:-localhost}
+            # for all endpoints. Setting this to 0.0.0.0 binds OTLP, UI, healthcheck,
+            # and all other ports to the pod's network interface (was localhost).
+            - name: JAEGER_LISTEN_HOST
+              value: "0.0.0.0"
           args:
             # Cap retained spans so the in-memory store can't exhaust the 256Mi limit under trace load.
-            - "--memory.max-traces=5000"
+            - "--set=extensions.jaeger_storage.backends.some_storage.memory.max_traces=5000"
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
@@ -29,6 +35,8 @@ spec:
               drop:
                 - ALL
           ports:
+            - containerPort: 13133
+              name: health
             - containerPort: 16686
               name: ui
             - containerPort: 4317
@@ -47,22 +55,22 @@ spec:
               memory: 128Mi
           startupProbe:
             httpGet:
-              path: /
-              port: 16686
+              path: /healthz
+              port: health
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 30
           livenessProbe:
             httpGet:
-              path: /
-              port: 16686
+              path: /healthz
+              port: health
             periodSeconds: 15
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /
-              port: 16686
+              path: /healthz
+              port: health
             periodSeconds: 10
             failureThreshold: 2
 ---
