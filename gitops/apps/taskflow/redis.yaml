@@ -15,7 +15,12 @@ spec:
     spec:
       containers:
         - name: redis
-          image: redis:7.4.9-alpine
+          # Redis 8.8 — major upgrade from 7.4. Redis 8 integrates previously
+          # separate modules (search, JSON, time series, probabilistic) into the
+          # core binary, but we use the standard redis-server CMD (not redis-full.conf),
+          # so none of those modules load and the cache behavior is identical to 7.x.
+          # License: RSALv2 / SSPLv1 / AGPLv3 (tri-licensed).
+          image: redis:8.8.0-alpine
           imagePullPolicy: IfNotPresent
           args:
             # Cap memory to leave headroom for Redis overhead; evict LRU keys on pressure.
@@ -30,6 +35,23 @@ spec:
             - "yes"
             - "--maxmemory-samples"
             - "10"
+            # Redis 8 I/O threading — parallelise socket reads/writes and protocol
+            # parsing across 2 background threads. The 8.0 rewrite is substantially
+            # lighter than the 7.x implementation; even with 500m CPU this improves
+            # throughput during eviction bursts by keeping the main thread free.
+            - "--io-threads"
+            - "2"
+            # Guard against client-connection memory blowup. Caps the combined output
+            # buffers of all connected clients (Lettuce + redis_exporter) at 5% of
+            # maxmemory (~19 MB here). Exceeding the cap drops the greediest connection
+            # rather than OOM-killing the pod.
+            - "--maxmemory-clients"
+            - "5%"
+            # Expiry-scan CPU budget. 1 = default (balanced). Lower reduces CPU stolen
+            # from the backend at the cost of stale keys lingering slightly longer.
+            # Raise to 4 only if TTL-based key buildup is observed.
+            - "--active-expire-effort"
+            - "1"
             - "--requirepass"
             - "$(REDIS_PASSWORD)"
           env:

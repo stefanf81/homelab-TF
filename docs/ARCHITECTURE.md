@@ -204,7 +204,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.5 Redis Deployment (`gitops/apps/taskflow/redis.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `redis:7.4.9-alpine` |
+| Image | `redis:8.8.0-alpine` |
 | Replicas | 1 |
 | Storage | emptyDir (ephemeral, no persistence) |
 | Memory Guard | `--maxmemory 384mb`, `allkeys-lru`, lazyfree eviction, 10 samples |
@@ -299,7 +299,7 @@ TF/
 │   │   ├── frontend.yaml            # Angular/nginx deployment + ClusterIP service
 │   │   ├── postgres-db.yaml         # PostgreSQL 17 deployment + ClusterIP service (name: db)
 │   │   ├── postgres-pvc.yaml        # 10Gi Proxmox CSI PVC
-│   │   ├── redis.yaml               # Redis 7.4 deployment + ClusterIP service + NetworkPolicy
+│   │   ├── redis.yaml               # Redis 8.8 deployment + ClusterIP service + NetworkPolicy
 │   │   ├── jaeger.yaml              # Jaeger all-in-one + OTLP services + UI service + NetworkPolicy
 │   │   ├── gateway.yaml             # Cilium Gateway (port 80/443, restricted namespace routes)
 │   │   ├── httproute.yaml           # /api→backend, /*→frontend (Jaeger UI NOT exposed)
