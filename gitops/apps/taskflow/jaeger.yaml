@@ -55,7 +55,7 @@ spec:
               memory: 128Mi
           startupProbe:
             httpGet:
-              path: /healthz
+              path: /status
               port: health
             initialDelaySeconds: 5
             periodSeconds: 5
@@ -63,13 +63,13 @@ spec:
             failureThreshold: 30
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /status
               port: health
             periodSeconds: 15
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /status
               port: health
             periodSeconds: 10
             failureThreshold: 2

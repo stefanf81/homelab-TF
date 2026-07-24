@@ -213,9 +213,9 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.6 Jaeger Deployment (`gitops/apps/taskflow/jaeger.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `jaegertracing/all-in-one:1.76.0` |
+| Image | `jaegertracing/jaeger:2.20.0` |
 | Replicas | 1 |
-| Memory Guard | `--memory.max-traces=5000` (caps in-memory store) |
+| Memory Guard | `--set=extensions.jaeger_storage.backends.some_storage.memory.max_traces=5000` |
 | Ports | UI: 16686, OTLP-gRPC: 4317, OTLP-HTTP: 4318 |
 | Resources | CPU: 100m–500 m, Memory: 128–256 MiB |
 
