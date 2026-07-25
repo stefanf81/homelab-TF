@@ -14,7 +14,7 @@ spec:
         kind: HelmRepository
         name: metrics-server
         namespace: monitoring
-  # metrics-server must run in kube-system (reads kubelet credentials from there).
+  # metrics-server runs in monitoring namespace (reads extension-apiserver-authentication from kube-system).
   install:
     createNamespace: false
   # Single-node k3s: kubelets serve HTTP (not HTTPS) and use a self-signed cert,
