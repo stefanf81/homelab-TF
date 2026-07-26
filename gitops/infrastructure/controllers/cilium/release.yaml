@@ -23,7 +23,7 @@ spec:
     kubeProxyReplacement: true
     devices: "eth0" # Exclude tailscale0 to prevent any eBPF and Tailscale routing conflicts
     bpf:
-      masquerade: true # Offload SNAT to eBPF (requires kubeProxyReplacement: true, already set)
+      masquerade: false # Disabled: BPF masquerade SNATs Envoy→pod upstream connections which breaks conntrack matching for ingress-identity flows on single-node clusters. Pod internet egress falls back to iptables MASQUERADE via k3s.
     securityContext:
       capabilities:
         cleanCiliumState:
