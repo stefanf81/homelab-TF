@@ -20,7 +20,7 @@ spec:
           # core binary, but we use the standard redis-server CMD (not redis-full.conf),
           # so none of those modules load and the cache behavior is identical to 7.x.
           # License: RSALv2 / SSPLv1 / AGPLv3 (tri-licensed).
-          image: redis:8.8.0-alpine
+          image: redis:8.8.1-alpine
           imagePullPolicy: IfNotPresent
           args:
             # Cap memory to leave headroom for Redis overhead; evict LRU keys on pressure.
