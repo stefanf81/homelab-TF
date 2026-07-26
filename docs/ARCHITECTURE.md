@@ -107,7 +107,7 @@ taskflow-app                     monitoring (VictoriaMetrics + Grafana operator 
 
 ### 4.3 Image Automation (Digest Pinning)
 ```
-ImageRepository (ghcr.io/stefanf81/taskflow-enterprise/taskflow-frontend, interval: 5m)
+ImageRepository (ghcr.io/stefanf81/taskflow-frontend, interval: 10m)
     │
     ▼
 ImagePolicy (filter: ^latest$, digestReflectionPolicy: Always)
@@ -141,7 +141,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
               │   Backend   │  │  Jaeger  │  │   Frontend  │
               │ (Spring Boot│  │(all-in-1)│  │ (Angular +  │
               │  3.5.3,     │  │          │  │  nginx)     │
-              │  JVM 1.5GB) │  └────┬─────┘  └─────────────┘
+              │  JVM 1GiB) │  └────┬─────┘  └─────────────┘
     └──────┬──────┘         │
            │                │
     ┌──────▼──────┐   ┌────▼─────┐
@@ -151,9 +151,9 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
     └──────┬──────┘
            │
      ┌──────▼──────┐
-     │ PostgreSQL  │
-     │ (17-alpine, │
-     │  10Gi Proxmox CSI)
+      │ PostgreSQL  │
+      │ (18.4-alpine,│
+      │  10Gi Proxmox CSI)
      └─────────────┘
 
                   ┌──────────────────────────────────────────────┐
@@ -169,7 +169,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.2 Backend Deployment (`gitops/apps/taskflow/backend.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend:latest` (digest-pinned by Flux) |
+| Image | `ghcr.io/stefanf81/taskflow-backend:latest` (digest-pinned by Flux) |
 | Replicas | 1 |
 | JVM Heap | Fixed 1 GiB — owned by the **image** via `-XX:MaxRAMPercentage=50.0` (not by the deployment's `JAVA_TOOL_OPTIONS`, which sets only GC logging/caps) |
 | GC | G1 with StringDedup, AlwaysPreTouch, ParallelRefProc, DisableExplicitGC |
@@ -183,7 +183,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.3 Frontend Deployment (`gitops/apps/taskflow/frontend.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `ghcr.io/stefanf81/taskflow-enterprise/taskflow-frontend:latest` (digest-pinned by Flux) |
+| Image | `ghcr.io/stefanf81/taskflow-frontend:latest` (digest-pinned by Flux) |
 | Replicas | 1 |
 | Resources | CPU: 100–500 m, Memory: 128–256 MiB |
 | SecurityContext | readOnlyRootFS, runAsNonRoot UID/GID 101 (nginx user), drop ALL capabilities |
@@ -377,7 +377,7 @@ make cache-clean   # Wipe cached providers
 
 ### Cluster Diagnostics
 ```bash
-./diagnose.sh      # Writes comprehensive diagnostics to diagnostics.log
+# (diagnose.sh was removed; use kubectl commands from §8.2 instead)
 ```
 
 ### Flux Reconciliation (manual override)
@@ -395,7 +395,7 @@ flux reconcile kustomization taskflow-app -n flux-system
 |------|-------------|------|
 | TLS/HTTPS | Fully configured (HTTPS on port 443) | cert-manager HelmRelease + Let's Encrypt certificates + HTTPS Gateway listener are fully active |
 | Multi-node HA | Single k3s node | Add worker nodes via additional Proxmox VMs |
-| GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` module is planned, not yet created) |
+| GitOps remote repo | ✅ Resolved — `https://github.com/stefanf81/homelab-TF` | Flux bootstrapped via `kubectl apply -k gitops/clusters/taskflow/flux-system` |
 | Pod Disruption Budgets | ✅ Resolved | PDBs added for backend (`backend-pdb.yaml`), frontend (`frontend-pdb.yaml`), and postgres (`postgres-db.yaml`) — all `minAvailable: 1` |
 | Horizontal Pod Autoscaler | ✅ Resolved | HPA exists (`backend-hpa.yaml`, CPU 70%, 1–3 replicas) and `metrics-server` is installed (`metrics-server-release.yaml`) for the `metrics.k8s.io` API |
 | Backup strategy | Proxmox hypervisor backups | Configure scheduled VM backups at the Proxmox level (using PBS or vzdump) |
@@ -426,7 +426,7 @@ They only meet at **one file**: `kubeconfig.yaml` (written by Half A, consumed b
 This is the path that actually matters day-to-day:
 
 ```
-1. You push a new :latest image to ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend
+1. You push a new :latest image to ghcr.io/stefanf81/taskflow-backend
         │
 2. Flux ImageRepository (gitops/clusters/taskflow/image-automation.yaml)
    polls ghcr every 5m, sees :latest moved to a new sha256 digest

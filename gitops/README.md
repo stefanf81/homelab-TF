@@ -1,8 +1,8 @@
 # GitOps Layout
 
-This directory is intended to become the future Git repository that Flux will reconcile from.
+This directory is the GitOps source that Flux CD reconciles against. The remote Git repository is `https://github.com/stefanf81/homelab-TF`; Flux is bootstrapped and actively syncing all Kustomizations from here.
 
-Right now it only exists locally. Once you create a remote Git repository (for example on GitHub), you can copy or push this directory there and then bootstrap Flux against it manually (see `./FLUX_BOOTSTRAP.md`). Note: the Terraform `modules/flux-bootstrap` module is **planned but not yet created**.
+See `./FLUX_BOOTSTRAP.md` for bootstrap instructions from scratch.
 
 ## Directory Structure & Architecture
 
@@ -68,7 +68,7 @@ This folder represents your **TaskFlow** application (Angular 22, Spring Boot 3.
 *   **`backend-pdb.yaml`** & **`frontend-pdb.yaml`**: PodDisruptionBudgets (`minAvailable: 1`) blocking voluntary evictions for single-replica workloads.
 *   **`certificate.yaml`**: Let's Encrypt TLS certificate for `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`, and `kyverno.jokelab.dev`.
 *   **`http-redirect.yaml`**: HTTP→HTTPS 301 redirect (port 80 → 443) and bare apex `jokelab.dev` → `www.jokelab.dev` redirect.
-*   **`cloudflare-ddns.yaml`**: Dynamic DNS updater keeping DuckDNS A records synced to the Gateway IP.
+*   **`cloudflare-ddns.yaml`**: Dynamic DNS updater keeping Cloudflare A records synced to the Gateway IP.
 *   **`kustomization.yaml`**: Aggregates all these resources into a single manifest compilation unit for Flux.
 
 ## Pre-baked Optimizations inside GitOps
@@ -119,9 +119,6 @@ kubectl get clusterpolicyreport -A
 
 See `docs/KYVERNO_POLICY_ENGINE.md` for the full reference (CRD gotchas, troubleshooting, rollback).
 
-## Next step later
+## Bootstrap reference
 
-1. Create a remote repository.
-2. Push this `gitops/` directory into it.
-3. Follow `./FLUX_BOOTSTRAP.md`.
-4. Bootstrap Flux manually per `./FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` Terraform module is planned but not yet created).
+The repo is already bootstrapped and syncing. For a full bootstrap from scratch, follow `./FLUX_BOOTSTRAP.md`.
