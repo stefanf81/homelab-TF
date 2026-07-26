@@ -24,7 +24,7 @@ spec:
     devices: "eth0" # Exclude tailscale0 to prevent any eBPF and Tailscale routing conflicts
     bpf:
       masquerade: true # Offload SNAT to eBPF (requires kubeProxyReplacement: true, already set)
-      hostRouting: true # Required for Cilium Gateway API: Envoy (running in host netns on 127.0.0.1:15058) needs eBPF host routing to deliver SYN-ACKs back to pod veth pairs during L7 proxy redirect. Setting this to false breaks Gateway traffic with a "SYN sent, no SYN-ACK returned" signature (confirmed via tcpdump on the pod veth).
+      hostRouting: false # Disable eBPF host routing to prevent routing loops for host-network Envoy proxies in single-node clusters
     securityContext:
       capabilities:
         cleanCiliumState:
