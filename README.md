@@ -9,7 +9,7 @@ Cluster workloads and platform controllers are managed declaratively through Git
 
 Before starting bring-up from scratch, ensure the following CLI tools are installed on your workstation:
 
-- **IaC & Automation:** [OpenTofu](https://opentofu.org/) (≥ 1.8.0), `make`
+- **IaC & Automation:** [OpenTofu](https://opentofu.org/) (~> 1.12.0), `make`
 - **Kubernetes Management:** `kubectl`, [Flux CLI](https://fluxcd.io/flux/cmd/) (≥ 2.x), [Cilium CLI](https://github.com/cilium/cilium-cli)
 - **Secrets Management:** [SOPS](https://github.com/getsops/sops) (≥ v3.9), [age](https://github.com/FiloSottile/age)
 

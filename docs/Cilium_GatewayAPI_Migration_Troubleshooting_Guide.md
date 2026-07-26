@@ -10,7 +10,7 @@ This guide compiles the complete technical logs, structural adjustments, and tro
 
 | Feature | Legacy State | Modern Optimized State |
 | :--- | :--- | :--- |
-| **CNI (Network Engine)** | Flannel (Standard iptables encapsulation) | **Cilium v1.19.5 (eBPF-native routing)** |
+| **CNI (Network Engine)** | Flannel (Standard iptables encapsulation) | **Cilium v1.19.6 (eBPF-native routing)** |
 | **Routing Layer** | Open `type: NodePort` on host nodes | **Kubernetes Gateway API (eBPF Envoy Proxy)** |
 | **Ports Exposed** | `30042` (Frontend), `30080` (Backend), `31686` (Jaeger) | **Port 80 (Consolidated Path-Based Routing)** |
 | **Routing Target** | Direct node endpoints | Secure internal **`type: ClusterIP`** services |
@@ -39,7 +39,7 @@ This guide compiles the complete technical logs, structural adjustments, and tro
   * **`tlsroute-crd.yaml`**: Local-vendored copy of the Gateway API `v1.2.1` experimental `TLSRoute` Custom Resource Definition (essential for Cilium Gateway initialization).
   * **`kustomization.yaml`**: Created to group and apply the local-vendored assets.
 * **`cilium/` (New Folder)**:
-  * Created `namespace.yaml` (`kube-system`), `repository.yaml` (`https://helm.cilium.io/`), and `release.yaml` declaring a HelmRelease for Cilium `v1.19.5` with native CNI, IPAM (`mode: kubernetes`), `kubeProxyReplacement: true` (eBPF proxy bypass), and **`gatewayAPI.enabled = true`**.
+  * Created `namespace.yaml` (`kube-system`), `repository.yaml` (`https://helm.cilium.io/`), and `release.yaml` declaring a HelmRelease for Cilium `v1.19.6` with native CNI, IPAM (`mode: kubernetes`), `kubeProxyReplacement: true` (eBPF proxy bypass), and **`gatewayAPI.enabled = true`**.
 * **`kustomization.yaml`**:
   * Wired `gateway-api` and `cilium` to the top of the Kustomize controller deployment list so networking boots before cert-manager and Proxmox CSI.
 

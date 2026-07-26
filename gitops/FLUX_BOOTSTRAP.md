@@ -23,7 +23,7 @@ The VM boots k3s without Flannel, so Cilium must be installed on top.
 
 ```bash
 export KUBECONFIG=$PWD/kubeconfig.yaml
-cilium install --version 1.19.5
+cilium install --version 1.19.6
 cilium status --wait
 ```
 

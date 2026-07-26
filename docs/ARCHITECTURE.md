@@ -11,7 +11,7 @@ TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE,
 ### 2.1 Provisioning Stack
 | Component | Tool / Version | Purpose |
 |-----------|---------------|---------|
-| IaC Engine | OpenTofu ≥ 1.8.0 | VM provisioning & kubeconfig fetch |
+| IaC Engine | OpenTofu ~> 1.12.0 | VM provisioning & kubeconfig fetch |
 | Provider | `bpg/proxmox` v0.111.1 | Proxmox VE API integration |
 | Cloud Image | Ubuntu 26.04 (Resolute) cloud-init | k3s host OS |
 | Orchestration | Makefile (`make init`, `make apply`) | Enforces correct provisioning sequence |
@@ -269,7 +269,7 @@ Keeps the `jokelab.dev`, `www.jokelab.dev`, and `grafana.jokelab.dev` DNS A reco
 ```
 TF/
 ├── main.tf                          # Root: proxmox + k3s-kubeconfig modules
-├── providers.tf                     # bpg/proxmox v0.111.1, >= 1.8.0
+├── providers.tf                     # bpg/proxmox v0.111.1, ~> 1.12.0
 ├── variables.tf                     # All input vars (VM specs, SSH key, k3s token)
 ├── Makefile                         # OpenTofu workflow with plugin cache
 ├── .gitignore                       # State files, secrets, kubeconfig, keys
@@ -474,7 +474,7 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
 ```
 
 - **`infra-controllers`** (`gitops/infrastructure/controllers/`) installs the platform via HelmRelease objects:
-  - `cilium/release.yaml` — Cilium 1.19.5 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
+  - `cilium/release.yaml` — Cilium 1.19.6 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
   - `cert-manager/release.yaml` — cert-manager 1.21.0 (fully active, managing TLS certificates).
   - `proxmox-csi/` — Proxmox CSI driver (dynamic storage provisioning of virtual disks with native hypervisor backup integration).
   - `gateway-api/` — the standard Gateway API CRDs.
