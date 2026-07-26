@@ -24,7 +24,7 @@ spec:
     devices: "eth0" # Exclude tailscale0 to prevent any eBPF and Tailscale routing conflicts
     bpf:
       masquerade: true # Offload SNAT to eBPF (requires kubeProxyReplacement: true, already set)
-      hostRouting: false # Disable eBPF host routing to prevent routing loops for host-network Envoy proxies in single-node clusters
+      hostRouting: true # Required for Cilium Gateway API in single-node cluster: Envoy upstream connections carry reserved:ingress identity. With hostRouting=false, the SYN-ACK return path from pod to host is broken for ingress-identified packets, causing Envoy upstream connect timeouts. The routing-loop concern was a Cilium 1.16-era bug; tested safe on 1.19.6.
     securityContext:
       capabilities:
         cleanCiliumState:
