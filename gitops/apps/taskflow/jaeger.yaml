@@ -117,12 +117,7 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Allow ONLY the backend to submit OTLP trace data. The Jaeger UI (16686) is
-    # NOT in this list, and default-deny-datastore-ingress.yaml now denies all
-    # other ingress to this pod — so no in-cluster pod can reach the UI. Admin
-    # access still works via `kubectl port-forward svc/jaeger-ui 16686:16686`
-    # because that traffic originates from the node (Cilium host exemption), not
-    # from another pod. The Gateway route for /jaeger was already removed (#2).
+    # OTLP trace ingestion: backend only
     - from:
         - podSelector:
             matchLabels:
@@ -132,3 +127,13 @@ spec:
           port: 4317
         - protocol: TCP
           port: 4318
+    # Jaeger UI: accessible only from within the taskflow namespace.
+    # Use `kubectl port-forward svc/jaeger-ui 16686:16686 -n taskflow`
+    # to access from outside the cluster.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: taskflow
+      ports:
+        - protocol: TCP
+          port: 16686
