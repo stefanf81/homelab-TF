@@ -29,7 +29,7 @@ spec:
     - Ingress
   # no ingress rules => deny all ingress
 ---
-# 2) Allow the Cilium Gateway (Envoy proxy carries the reserved:ingress identity)
+# 2) Allow the Cilium Gateway (Envoy proxy carries reserved:ingress or reserved:host identity)
 #    to reach the public workloads on their serving port.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -45,10 +45,9 @@ spec:
           - taskflow-frontend
           - taskflow-backend
   ingress:
-    - fromEndpoints:
-        - matchExpressions:
-            - key: reserved:ingress
-              operator: Exists
+    - fromEntities:
+        - ingress
+        - host
       toPorts:
         - ports:
             - port: "8080"
