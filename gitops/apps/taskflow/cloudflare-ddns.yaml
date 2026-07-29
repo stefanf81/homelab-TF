@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: cloudflare-ddns
-          image: favonia/cloudflare-ddns:1.16.2
+          image: favonia/cloudflare-ddns:1.17.0
           env:
             - name: CF_API_TOKEN
               valueFrom:
