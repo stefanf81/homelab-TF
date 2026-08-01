@@ -57,10 +57,11 @@ k3s_token         = "a-secure-cluster-token-here"
 
 ### 2️⃣ Provision the Proxmox VM & Fetch `kubeconfig`
 
-Initialize OpenTofu (utilizes project-local plugin caching in `.terraform/providers-cache`) and apply the configuration:
+Initialize OpenTofu (utilizes project-local plugin caching in `.terraform/providers-cache`), run a non-mutating preview, then apply the configuration:
 
 ```bash
 make init
+make plan    # Pure dry-run; does not provision the VM or fetch kubeconfig
 make apply
 ```
 

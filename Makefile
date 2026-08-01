@@ -29,9 +29,12 @@ ensure-cache:
 init: ensure-cache
 	tofu -chdir=$(ROOT) init
 
-plan: ensure-cache provision
+# Non-mutating OpenTofu preview. Use `make provision` or `make apply` to change infrastructure.
+plan: ensure-cache
 	tofu -chdir=$(ROOT) plan
 
+# Convenience bring-up target: applies the Proxmox VM and kubeconfig sync targets.
+# Run `tofu -chdir=$(ROOT) apply` directly when a full root-module apply is required.
 apply: ensure-cache provision kubeconfig
 	@true
 

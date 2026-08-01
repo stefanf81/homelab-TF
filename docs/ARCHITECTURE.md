@@ -141,7 +141,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
               │   Backend   │  │  Jaeger  │  │   Frontend  │
               │ (Spring Boot│  │(all-in-1)│  │ (Angular +  │
               │  3.5.3,     │  │          │  │  nginx)     │
-              │  JVM 1.5GB) │  └────┬─────┘  └─────────────┘
+              │  JVM 1GiB)  │  └────┬─────┘  └─────────────┘
     └──────┬──────┘         │
            │                │
     ┌──────▼──────┐   ┌────▼─────┐

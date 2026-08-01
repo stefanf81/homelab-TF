@@ -1,8 +1,7 @@
 # Monitoring platform: VictoriaMetrics (VMSingle + vmagent) operator and its CRDs.
 #
-# Reach the UIs via the public Gateway:
-#   Grafana:         https://jokelab.dev/grafana
-#   VictoriaMetrics: https://jokelab.dev/vmsingle
+# Grafana is available via the public Gateway at https://grafana.jokelab.dev/.
+# VMSingle has no public HTTPRoute; access it from inside the cluster or with port-forwarding.
 # (Grafana admin login comes from the SOPS-encrypted gitops/monitoring/platform/grafana-secrets.yaml)
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -11,9 +10,11 @@ metadata:
   namespace: flux-system
 spec:
   # CRDs (VMServiceScrape, VMSingle, ...) must exist before the app-layer
-  # VMServiceScrapes in gitops/monitoring/app are applied.
+  # VMServiceScrapes in gitops/monitoring/app are applied. The platform HTTPRoute also
+  # targets taskflow-gateway, so wait for taskflow-app before programming that route.
   dependsOn:
     - name: infra-controllers
+    - name: taskflow-app
   interval: 30m
   path: ./gitops/monitoring/platform
   prune: true

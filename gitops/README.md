@@ -56,7 +56,7 @@ This layer houses user-facing workloads and microservices. Workloads here are ke
 
 #### `apps/taskflow/`
 This folder represents your **TaskFlow** application (Angular 22, Spring Boot 3.5.3, PostgreSQL 18, Redis 8.8, and Jaeger).
-* **`backend.yaml`**: Configures the JVM Spring Boot 3.5.3 server with preflight checks (`wait-for-db` init-container) and a fixed 1.5 GB heap with G1GC tuning (`JAVA_TOOL_OPTIONS`). The container image uses the mutable `:latest` tag, which Flux pins to its current `sha256` digest via the `# {"$imagepolicy": ...}` marker (see `../FLUX_BOOTSTRAP.md` §7 — the Git source must be writable and the marker must be the *basic* form, not `:digest`).
+* **`backend.yaml`**: Configures the JVM Spring Boot 3.5.3 server with preflight checks (`wait-for-db` init-container) and a 1 GiB heap (`MaxRAMPercentage=50.0` of its 2 GiB cgroup limit) with G1GC tuning (`JAVA_TOOL_OPTIONS`). The container image uses the mutable `:latest` tag, which Flux pins to its current `sha256` digest via the `# {"$imagepolicy": ...}` marker (see `../FLUX_BOOTSTRAP.md` §7 — the Git source must be writable and the marker must be the *basic* form, not `:digest`).
 * **`frontend.yaml`**: Configures the Angular 22 client packaged with Nginx, utilizing custom emptyDirs to secure a `readOnlyRootFilesystem`. Same Flux digest-pin behavior as the backend.
 * **`postgres-db.yaml` & `postgres-pvc.yaml`**: Configures the database storage. *Optimized:* Postgres now runs tuned caching params (`shared_buffers=384MB`, `effective_cache_size=700MB`, `work_mem=8MB`, `max_connections=50`) within its 1024Mi RAM limit, and storage is scaled to `10Gi` backed by the dynamic `proxmox-csi` storage engine.
 * **`redis.yaml`**: Configures the caching layer. *Optimized:* capped at `--maxmemory 384mb` with `allkeys-lru` eviction to avoid OOM-kill cache loss (ephemeral `emptyDir`, no persistence).
@@ -68,7 +68,7 @@ This folder represents your **TaskFlow** application (Angular 22, Spring Boot 3.
 *   **`backend-pdb.yaml`** & **`frontend-pdb.yaml`**: PodDisruptionBudgets (`minAvailable: 1`) blocking voluntary evictions for single-replica workloads.
 *   **`certificate.yaml`**: Let's Encrypt TLS certificate for `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`, and `kyverno.jokelab.dev`.
 *   **`http-redirect.yaml`**: HTTP→HTTPS 301 redirect (port 80 → 443) and bare apex `jokelab.dev` → `www.jokelab.dev` redirect.
-*   **`cloudflare-ddns.yaml`**: Dynamic DNS updater keeping DuckDNS A records synced to the Gateway IP.
+*   **`cloudflare-ddns.yaml`**: Cloudflare DDNS updater keeping the TaskFlow, Grafana, and Policy Reporter host records synced to the public endpoint.
 *   **`kustomization.yaml`**: Aggregates all these resources into a single manifest compilation unit for Flux.
 
 ## Pre-baked Optimizations inside GitOps
@@ -81,9 +81,9 @@ The scaffolded manifests inside this layout include critical performance and net
 
 ### 2. Modern Kubernetes Gateway API with Cilium (`apps/taskflow/`)
 * **Cilium CNI & Gateway API Operator:** Deployed under `infrastructure/controllers/cilium/`. The core Gateway API schemas are fully managed under `infrastructure/controllers/gateway-api/` using a **local-vendored** copy of the official `v1.2.1` standard installation release. This ensures Flux CD performs dry-run validations with 100% compliance, preventing any schema version conflicts or ownership clashes with K3s's built-in platform installers.
-* **Unified Gateway & Wildcard IP Routing (`gateway.yaml` & `httproute.yaml`):** The TaskFlow app is securely routed using Cilium-native Gateway API rules. Because the HTTPRoute is wildcard-routed, all traffic can be accessed directly using the Gateway's External IP (e.g. `http://<EXTERNAL-IP>/`) on standard port `80` without editing `/etc/hosts`:
-  * `http://<EXTERNAL-IP>/` maps to the TaskFlow Angular Frontend
-  * `http://<EXTERNAL-IP>/api` maps to the Spring Boot Backend API
+* **Unified Gateway & Hostname Routing (`gateway.yaml` & `httproute.yaml`):** The TaskFlow app is securely routed through Cilium-native Gateway API rules scoped to `www.jokelab.dev` on the HTTPS listener. Plain HTTP is redirected to HTTPS:
+  * `https://www.jokelab.dev/` maps to the TaskFlow Angular Frontend
+  * `https://www.jokelab.dev/api` maps to the Spring Boot Backend API
   * Jaeger UI is **not** exposed via the Gateway (no auth in front of it) — reach it with `kubectl port-forward -n taskflow svc/jaeger-ui 16686:16686`
 * **Secure ClusterIP Services:** The backend, frontend, and jaeger Services are configured as internal-only `type: ClusterIP` rather than open `NodePort` resources. All incoming physical traffic is safely parsed and authenticated by the Cilium Gateway controller first.
 
@@ -99,7 +99,7 @@ Kyverno provides Kubernetes-native policy enforcement; Policy Reporter gives it 
 
 * **Controller** — `gitops/infrastructure/controllers/kyverno/` (HelmRelease `kyverno` v3.8.2, single-replica, CRDs owned by the chart). System namespaces (`kube-system`, `flux-system`, `kyverno`, `cert-manager`, `cilium`) are excluded from enforcement.
 * **Policies** — `gitops/apps/kyverno-policies/` holds `ClusterPolicy` resources in **Audit** mode (no blocking yet). Reconciled by the `kyverno-policies` Kustomization, which `dependsOn: infra-controllers` so the CRDs exist before policies apply.
-* **Dashboard** — `gitops/infrastructure/controllers/policy-reporter/` (HelmRelease `policy-reporter` v3.8.1, `ui.enabled` + `plugin.kyverno.enabled`). Its `HTTPRoute` serves `https://kyverno.jokelab.dev` via the shared Cilium Gateway, using the `taskflow-jokelab-cert` cert. **Expose it by adding `kyverno.jokelab.dev` to that cert's `dnsNames` — but only after a DNS record for it exists** (see warning below), otherwise the cert stalls `InProgress` and blocks `taskflow-app`.
+* **Dashboard** — `gitops/infrastructure/controllers/policy-reporter/` (HelmRelease `policy-reporter` v3.8.1, `ui.enabled` + `plugin.kyverno.enabled`). Its `HTTPRoute` serves `https://kyverno.jokelab.dev` via the shared Cilium Gateway, using the `taskflow-jokelab-cert` certificate, whose `dnsNames` already include `kyverno.jokelab.dev`. Ensure the hostname has a public DNS record before certificate issuance or renewal.
 
 **Add a policy:** drop a `ClusterPolicy` YAML into `gitops/apps/kyverno-policies/` and commit — Flux applies it automatically.
 
