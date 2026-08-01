@@ -31,7 +31,7 @@ correctly) or rely on nginx's `/nginx_status`.
 ### 5. ~~cert-manager namespace exists but is never installed~~ — RETRACTED
 Correction: `gitops/infrastructure/controllers/cert-manager/` contains a full
 `namespace.yaml` + `repository.yaml` (jetstack) + `release.yaml` (cert-manager
-v1.21.0), and it *is* referenced by the controllers Kustomization. cert-manager
+v1.21.1), and it *is* referenced by the controllers Kustomization. cert-manager
 installs correctly. The original gap (no `Certificate`/ClusterIssuer wired) was
 later resolved — see #19 in the table.
 
@@ -55,7 +55,7 @@ later resolved — see #19 in the table.
 | 12 | diagnose.sh hardcoded macOS path | 🟢 Low | Trivial | diagnose.sh | ✅ Fixed |
 | 13 | No namespace LimitRange/Quota | 🟢 Low | Small | namespace.yaml | ✅ Fixed |
 | 14 | Unused TLSRoute CRD | 🟢 Low | Trivial | gateway-api | ✅ Resolved (HTTPS listener & cert active) |
-| 15 | Frontend probes on `/` | 🟢 Low | Small | frontend.yaml | ⬜ Open |
+| 15 | Frontend probes on `/` | 🟡 Med | Small | frontend.yaml | ⬜ Open |
 | 16 | SOPS key rotation undocumented | 🟢 Low | Trivial | .sops.yaml | ✅ Fixed |
 | 17 | No PostgreSQL backup | 🟢 Low | Medium | postgres-*.yaml | ✅ Resolved via Proxmox CSI |
 | 18 | Ubuntu 26.04 image URL unverified | 🟢 Low | Trivial | proxmox/main.tf | ✅ Verified |

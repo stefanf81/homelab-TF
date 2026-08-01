@@ -1,13 +1,14 @@
 # HorizontalPodAutoscaler for the backend.
 #
 # NOTE: HPA scales on the `metrics.k8s.io` CPU API, which is served by metrics-server.
-# That component is NOT part of the VictoriaMetrics monitoring stack (vmagent scrapes
-# app/DB metrics, not the Kubernetes resource metrics API). If metrics-server is not
-# installed, the HPA will show `<unknown>` and stay at minReplicas — harmless, but
-# ineffective until metrics-server (or a custom-metrics adapter) is added.
+# metrics-server IS deployed via gitops/monitoring/platform/metrics-server-release.yaml
+# (chart 3.13.1) — it lives outside the VictoriaMetrics stack on purpose, because
+# vmagent scrapes app/DB metrics, not the Kubernetes resource metrics API. With
+# metrics-server present, this HPA is live and scales on CPU at 70% utilization.
 #
-# Until metrics-server exists, this is a ready-to-activate enabler: bump minReplicas to
-# 2 once a 2nd replica is safe (see postgres-db.yaml max_connections=50 headroom).
+# minReplicas stays at 1: bump to 2 once a 2nd replica is safe (see postgres-db.yaml
+# max_connections=50 headroom). Scale-down is deliberately slow (300s stabilization)
+# to avoid flapping on the single-node cluster.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
