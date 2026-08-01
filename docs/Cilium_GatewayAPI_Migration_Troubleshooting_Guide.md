@@ -17,7 +17,7 @@ This guide compiles the complete technical logs, structural adjustments, and tro
 | **Default Hostname** | Host Node IP Address only | **`jokelab.dev`** & **Wildcard IP routing** |
 | **Secrets Security** | Checked-in raw YAML files | **SOPS Integration Ready** (with age configuration) |
 | **PostgreSQL persistency** | `1Gi` standard storage | **`10Gi` high-availability (Proxmox CSI-backed)** |
-| **Database configuration**| Default Alpine parameters (128MB RAM budget) | **Tuned Engine Parameters (for 1536Mi RAM container limit)** |
+| **Database configuration**| Default Alpine parameters (128MB RAM budget) | **Tuned Engine Parameters (for 1024Mi RAM container limit)** |
 
 ---
 
@@ -64,7 +64,7 @@ This guide compiles the complete technical logs, structural adjustments, and tro
 * **`postgres-pvc.yaml`**:
   * Scaled storage request limits from `1Gi` to **`10Gi`** and explicitly specified `storageClassName: proxmox-csi`.
 * **`postgres-db.yaml`**:
-  * Injected custom container startup arguments to align PostgreSQL memory and planner operations with its 1536Mi container limit (e.g. `shared_buffers = 256MB`, `effective_cache_size = 768MB`, `work_mem = 8MB`, `max_connections = 30`).
+  * Injected custom container startup arguments to align PostgreSQL memory and planner operations with its 1024Mi container limit (e.g. `shared_buffers = 384MB`, `effective_cache_size = 700MB`, `work_mem = 8MB`, `maintenance_work_mem = 64MB`, `max_connections = 50`).
 * **`kustomization.yaml`**:
   * Registered `gateway.yaml` and `httproute.yaml` into the application lifecycle.
 

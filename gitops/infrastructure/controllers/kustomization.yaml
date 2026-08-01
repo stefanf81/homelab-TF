@@ -1,5 +1,10 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# Note: policy-reporter and trivy-operator are intentionally NOT listed here.
+# They are reconciled by their own cluster-root Kustomizations
+# (gitops/clusters/taskflow/policy-reporter.yaml, trivy-operator.yaml):
+# policy-reporter additionally depends on taskflow-app (its Gateway/HTTPRoute),
+# so it cannot be wired into this controller batch.
 resources:
   - gateway-api
   - cilium

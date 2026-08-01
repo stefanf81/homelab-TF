@@ -50,7 +50,7 @@ integration is infra-complete; nothing to do there unless you change the tracing
 ### 2.1 Dependency to add
 
 ```gradle
-// Spring Boot 4.1.0 — Micrometer Prometheus registry + Actuator
+// Spring Boot 3.5.3 — Micrometer Prometheus registry + Actuator
 implementation 'org.springframework.boot:spring-boot-starter-actuator'
 implementation 'io.micrometer:micrometer-registry-prometheus'
 ```

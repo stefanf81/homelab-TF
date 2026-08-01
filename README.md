@@ -24,7 +24,7 @@ You also need access to a **Proxmox VE 8.x** host with an API token (with VM cre
 - `gitops/` – Declarative Flux v2 manifests:
   - `gitops/infrastructure/controllers` – Cilium v1.19.6, cert-manager, Proxmox CSI, Kyverno, Falco, Policy Reporter, Trivy Operator.
   - `gitops/infrastructure/configs` – Cilium L2 announcement policy (`192.168.50.200-250`), `GatewayClass`.
-  - `gitops/apps/taskflow` – Spring Boot 3.5.3 backend, Angular 22 frontend, PostgreSQL 17, Redis 8.8, Jaeger.
+  - `gitops/apps/taskflow` – Spring Boot 3.5.3 backend, Angular 22 frontend, PostgreSQL 18, Redis 8.8, Jaeger.
   - `gitops/monitoring` – VictoriaMetrics TSDB + Grafana operator stack + metrics-server.
   - `gitops/clusters/taskflow` – Cluster root Kustomizations.
 
@@ -173,7 +173,7 @@ To ensure production-grade security, resiliency, and performance on a single-nod
 
 ### 3. Storage Resiliency & Database Performance
 * **Proxmox CSI Storage:** PostgreSQL PVC (`postgres-pvc.yaml`) uses **10Gi** storage on the `proxmox-csi` StorageClass, enabling dynamic disk attachments and hypervisor-level backups.
-* **PostgreSQL RAM Tuning:** `shared_buffers = 384MB`, `effective_cache_size = 700MB`, `work_mem = 8MB`, `maintenance_work_mem = 64MB`, `max_connections = 30`.
+* **PostgreSQL RAM Tuning:** `shared_buffers = 384MB`, `effective_cache_size = 700MB`, `work_mem = 8MB`, `maintenance_work_mem = 64MB`, `max_connections = 50`.
 * **Redis Cache Protection:** Ephemeral L2 cache running with `--maxmemory 384mb` and `--maxmemory-policy allkeys-lru`.
 * **JVM Heap & Off-Heap Guard:** Spring Boot backend uses `MaxRAMPercentage=50.0` (1 GiB heap at 2 GiB limit) with bounded off-heap (`MaxMetaspaceSize=256m`) and Guaranteed QoS (`requests == limits = 2Gi`).
 
