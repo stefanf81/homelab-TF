@@ -41,6 +41,8 @@ spec:
     # Enable Falcosidekick to write native Kubernetes PolicyReports
     falcosidekick:
       enabled: true
+      image:
+        tag: 2.34.1
       config:
         policyreport:
           enabled: true

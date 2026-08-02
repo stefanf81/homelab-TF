@@ -110,6 +110,8 @@ spec:
             memory: 256Mi
 
     victoria-metrics-operator:
+      image:
+        tag: v0.74.0
       resources:
         requests:
           cpu: 50m
@@ -120,6 +122,8 @@ spec:
 
     grafana:
       enabled: true
+      image:
+        tag: 13.1.1
       persistence:
         enabled: true
         storageClassName: proxmox-csi

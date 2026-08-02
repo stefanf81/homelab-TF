@@ -15,12 +15,12 @@ spec:
     spec:
       containers:
         - name: redis
-          # Redis 8.8 — major upgrade from 7.4. Redis 8 integrates previously
+          # Redis 8.10 — major upgrade from 7.4. Redis 8 integrates previously
           # separate modules (search, JSON, time series, probabilistic) into the
           # core binary, but we use the standard redis-server CMD (not redis-full.conf),
           # so none of those modules load and the cache behavior is identical to 7.x.
           # License: RSALv2 / SSPLv1 / AGPLv3 (tri-licensed).
-          image: redis:8.8.0-alpine
+          image: redis:8.10.0-alpine
           imagePullPolicy: IfNotPresent
           args:
             # Cap memory to leave headroom for Redis overhead; evict LRU keys on pressure.

@@ -8,7 +8,7 @@ spec:
   chart:
     spec:
       chart: metrics-server
-      # Pin to a recent 3.13.x. Bump via `flux reconcile helmrelease metrics-server -n monitoring`.
+      # Pin the chart while overriding the Metrics Server image version explicitly.
       version: 3.13.1
       sourceRef:
         kind: HelmRepository
@@ -20,10 +20,12 @@ spec:
   # Single-node k3s: kubelets serve HTTP (not HTTPS) and use a self-signed cert,
   # so metrics-server must skip the TLS verify for both kubelet + API server.
   values:
+    image:
+      tag: v0.9.0
     args:
       - --kubelet-insecure-tls
       - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
-      # v0.8.x requires configmaps RBAC in kube-system; tolerate lookup failure on
+      # v0.9.x requires configmaps RBAC in kube-system; tolerate lookup failure on
       # single-node k3s where the extension-apiserver-authentication RoleBinding
       # may not be updated by the Helm upgrade.
       - --authentication-tolerate-lookup-failure
