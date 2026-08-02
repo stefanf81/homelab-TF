@@ -42,16 +42,10 @@ spec:
     service:
       name: kube-dns
       clusterIP: 10.43.0.10
-      annotations:
-        prometheus.io/port: "9153"
-        prometheus.io/scrape: "true"
 
     prometheus:
       service:
         enabled: true
-        annotations:
-          prometheus.io/port: "9153"
-          prometheus.io/scrape: "true"
 
     nodeSelector:
       kubernetes.io/os: linux
