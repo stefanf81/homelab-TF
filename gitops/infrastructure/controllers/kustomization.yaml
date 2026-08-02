@@ -9,6 +9,7 @@ resources:
   - gateway-api
   - cilium
   - cert-manager
+  - coredns
   - proxmox-csi
   - kyverno
   - falco

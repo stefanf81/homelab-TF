@@ -1,0 +1,111 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: coredns
+  namespace: kube-system
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: coredns
+      version: 1.47.0
+      sourceRef:
+        kind: HelmRepository
+        name: coredns
+        namespace: kube-system
+  install:
+    createNamespace: false
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    image:
+      repository: coredns/coredns
+      tag: 1.14.6
+      pullPolicy: IfNotPresent
+
+    replicaCount: 1
+    priorityClassName: system-cluster-critical
+    k8sAppLabelOverride: kube-dns
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 70Mi
+      limits:
+        memory: 170Mi
+
+    serviceAccount:
+      create: true
+      name: coredns
+
+    service:
+      name: kube-dns
+      clusterIP: 10.43.0.10
+      annotations:
+        prometheus.io/port: "9153"
+        prometheus.io/scrape: "true"
+
+    prometheus:
+      service:
+        enabled: true
+        annotations:
+          prometheus.io/port: "9153"
+          prometheus.io/scrape: "true"
+
+    nodeSelector:
+      kubernetes.io/os: linux
+
+    tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+
+    topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            k8s-app: kube-dns
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+      - labelSelector:
+          matchLabels:
+            k8s-app: kube-dns
+        maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway
+
+    servers:
+      - zones:
+          - zone: .
+            use_tcp: true
+        port: 53
+        plugins:
+          - name: errors
+          - name: health
+            configBlock: |-
+              lameduck 10s
+          - name: ready
+          - name: hosts
+            configBlock: |-
+              192.168.50.55 ubuntu
+              192.168.50.201 jokelab.dev www.jokelab.dev grafana.jokelab.dev kyverno.jokelab.dev
+              ttl 60
+              reload 15s
+              fallthrough
+          - name: kubernetes
+            parameters: cluster.local in-addr.arpa ip6.arpa
+            configBlock: |-
+              pods insecure
+              fallthrough in-addr.arpa ip6.arpa
+          - name: prometheus
+            parameters: 0.0.0.0:9153
+          - name: cache
+            parameters: 30
+          - name: loop
+          - name: reload
+          - name: loadbalance
+          - name: forward
+            parameters: . /etc/resolv.conf

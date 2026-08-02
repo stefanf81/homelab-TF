@@ -129,13 +129,32 @@ flux reconcile kustomization policy-reporter -n flux-system
 flux reconcile kustomization trivy-operator -n flux-system
 ```
 
-### 6️⃣ (Optional) Configure CoreDNS Local Override (Hairpin NAT Workaround)
+### 6️⃣ CoreDNS Management
 
-If your home router blocks LAN hairpin NAT (sending requests to public IP `jokelab.dev` from inside the LAN), patch k3s CoreDNS so `cert-manager` self-checks and local clients resolve domains directly to the Gateway IP (`192.168.50.201`):
+CoreDNS is managed by Flux in `gitops/infrastructure/controllers/coredns/`. The
+configuration includes the LAN hairpin-NAT overrides for `jokelab.dev` and the
+Gateway hostnames. Do not patch the live CoreDNS ConfigMap; update the HelmRelease
+and commit the change instead.
+
+For an existing node, migrate from the packaged K3s addon during a maintenance
+window. The `--disable coredns` setting in `modules/proxmox/main.tf` applies to new
+nodes only. On an existing node, disable the packaged addon, then immediately
+reconcile Flux so the GitOps-managed release takes ownership:
 
 ```bash
-kubectl -n kube-system patch configmap coredns --type merge -p '{"data":{"Corefile":".:53 {\n    errors\n    health\n    hosts {\n        192.168.50.201 jokelab.dev www.jokelab.dev grafana.jokelab.dev kyverno.jokelab.dev\n        fallthrough\n    }\n    ready\n    kubernetes cluster.local in-addr.arpa ip6.arpa {\n        pods insecure\n        fallthrough in-addr.arpa ip6.arpa\n    }\n    prometheus :9153\n    forward . /etc/resolv.conf\n    cache 30\n    loop\n    reload\n    loadbalance\n}\n"}}'
-kubectl -n kube-system rollout restart deploy/coredns
+sudoedit /etc/rancher/k3s/config.yaml
+sudo systemctl restart k3s
+flux reconcile kustomization infra-controllers -n flux-system
+kubectl -n kube-system rollout status deployment/coredns --timeout=5m
+kubectl -n kube-system get svc kube-dns
+kubectl -n kube-system get endpointslice -l k8s-app=kube-dns
+```
+
+Preserve the existing settings and add this YAML to the K3s config:
+
+```yaml
+disable:
+  - coredns
 ```
 
 ### 7️⃣ Verify Cluster & Application Health
