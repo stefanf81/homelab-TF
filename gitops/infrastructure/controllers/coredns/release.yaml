@@ -47,6 +47,8 @@ spec:
     service:
       name: kube-dns
       clusterIP: 10.43.0.10
+      selector:
+        k8s-app: kube-dns
 
     prometheus:
       service:
