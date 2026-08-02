@@ -28,6 +28,11 @@ spec:
     priorityClassName: system-cluster-critical
     k8sAppLabelOverride: kube-dns
 
+    deployment:
+      selector:
+        matchLabels:
+          k8s-app: kube-dns
+
     resources:
       requests:
         cpu: 100m
