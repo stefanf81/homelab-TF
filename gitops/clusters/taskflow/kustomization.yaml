@@ -12,3 +12,4 @@ resources:
   - kyverno-policies.yaml
   - policy-reporter.yaml
   - trivy-operator.yaml
+  - hubble-ui.yaml

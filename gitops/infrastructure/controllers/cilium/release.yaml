@@ -35,3 +35,17 @@ spec:
       enabled: true # Enable the Gateway API controller inside Cilium
     l2announcements:
       enabled: true
+    hubble:
+      enabled: true
+      relay:
+        enabled: true
+      ui:
+        enabled: true
+      metrics:
+        enabled:
+          - dns
+          - drop
+          - tcp
+          - flow
+          - icmp
+          - http

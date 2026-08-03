@@ -92,7 +92,7 @@ spec:
           - name: hosts
             configBlock: |-
               192.168.50.55 ubuntu
-              192.168.50.201 jokelab.dev www.jokelab.dev grafana.jokelab.dev kyverno.jokelab.dev
+              192.168.50.201 jokelab.dev www.jokelab.dev grafana.jokelab.dev kyverno.jokelab.dev hubble.jokelab.dev
               ttl 60
               reload 15s
               fallthrough

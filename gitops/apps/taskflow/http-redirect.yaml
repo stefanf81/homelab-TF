@@ -28,6 +28,7 @@ spec:
     - "www.jokelab.dev"
     - "grafana.jokelab.dev"
     - "kyverno.jokelab.dev"
+    - "hubble.jokelab.dev"
   rules:
     - matches:
         - path:

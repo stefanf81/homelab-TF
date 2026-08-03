@@ -23,6 +23,7 @@ spec:
                   - taskflow
                   - monitoring
                   - policy-reporter
+                  - hubble-ui
     - name: https
       port: 443
       protocol: HTTPS
@@ -43,3 +44,4 @@ spec:
                   - taskflow
                   - monitoring
                   - policy-reporter
+                  - hubble-ui

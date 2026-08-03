@@ -1,0 +1,19 @@
+# Allow Cilium Gateway to reach the oauth2-proxy service in hubble-ui namespace.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-gateway-to-hubble-ui
+  namespace: hubble-ui
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: oauth2-proxy
+  ingress:
+    - fromEndpoints:
+        - matchExpressions:
+            - key: reserved:ingress
+              operator: Exists
+      toPorts:
+        - ports:
+            - port: "4180"
+              protocol: TCP

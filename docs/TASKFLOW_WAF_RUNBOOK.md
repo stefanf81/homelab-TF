@@ -8,6 +8,7 @@
 - Both WAFs start with `SecRuleEngine DetectionOnly` and paranoia level 1.
 - Loki runs as one monolithic replica in `monitoring` with 30-day retention.
 - Alloy collects only pods labelled as Taskflow WAFs and sends them to Loki.
+- Grafana dashboard at `https://grafana.jokelab.dev/d/taskflow-waf`.
 
 ## Build the WAF image
 
@@ -15,19 +16,27 @@ The repository intentionally contains only the Dockerfile, not a CI workflow.
 Build and publish the image manually:
 
 ```bash
-docker build \
+# Build for linux/amd64 (k3s node architecture)
+docker build --platform linux/amd64 \
   -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0 \
   gitops/images/taskflow-caddy-coraza
 
+# Authenticate to GHCR (requires write:packages scope)
+echo $(gh auth token) | docker login ghcr.io -u stefanf81 --password-stdin
+
+# Push the image
 docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0
 
-docker run --rm \
-  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0 \
-  list-modules | grep 'http.handlers.waf'
+# Get digest for pinning
+docker inspect --format='{{index .RepoDigests 0}}' \
+  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0
 ```
 
 Replace the image reference in both WAF Deployments with the digest returned by
-`docker buildx imagetools inspect` before relying on the deployment in production.
+`docker inspect` before relying on the deployment in production.
+
+**Important**: The image MUST be built for `linux/amd64` — the k3s node is amd64,
+not arm64 (even if your development machine is Apple Silicon).
 
 ## Reconcile
 
@@ -118,3 +127,235 @@ the Helm release.
 - Coraza audit parts exclude request headers and bodies.
 - Caddy access logs redact credentials and selected sensitive query parameters.
 - Loki and Alloy have no Gateway, LoadBalancer, or public route.
+
+---
+
+## Troubleshooting
+
+### Image Pull Errors
+
+#### `401 Unauthorized` on image pull
+
+**Cause**: The `ghcr-pull-secret` doesn't exist or contains invalid credentials.
+
+**Fix**:
+```bash
+# Create the secret with a PAT that has write:packages scope
+kubectl create secret docker-registry ghcr-pull-secret \
+  --namespace=taskflow \
+  --docker-server=ghcr.io \
+  --docker-username=stefanf81 \
+  --docker-password="ghp_YOUR_PAT_HERE"
+
+# Delete stuck pods to retry
+kubectl delete pods -n taskflow -l app.kubernetes.io/component=waf
+```
+
+#### `403 Forbidden` on blob fetch
+
+**Cause**: The PAT lacks `read:packages` scope, or the image doesn't exist at that digest.
+
+**Fix**: Use a PAT with `write:packages` scope (includes read). Verify the image exists:
+```bash
+curl -s -o /dev/null -w "%{http_code}" \
+  -H "Authorization: Bearer $(gh auth token)" \
+  https://ghcr.io/v2/stefanf81/taskflow-caddy-coraza/manifests/<digest>
+```
+
+#### `no match for platform in manifest: not found`
+
+**Cause**: Image was built for arm64 (Apple Silicon) but k3s node is amd64.
+
+**Fix**: Rebuild for the correct platform:
+```bash
+docker build --platform linux/amd64 \
+  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0 \
+  gitops/images/taskflow-caddy-coraza
+docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0
+# Update digest in frontend-waf.yaml and backend-waf.yaml
+```
+
+#### `gh auth token` returns empty password for docker login
+
+**Cause**: `gh auth token` returns a `gho_` OAuth token, not a PAT. The `gho_` token may not have GHCR scopes.
+
+**Fix**: Use a PAT directly:
+```bash
+export GITHUB_TOKEN="ghp_YOUR_PAT_HERE"
+echo $GITHUB_TOKEN | docker login ghcr.io -u stefanf81 --password-stdin
+```
+
+### Container Runtime Errors
+
+#### `exec /usr/bin/caddy: operation not permitted`
+
+**Cause**: The Caddy binary has file capabilities (`cap_net_bind_service`) set by `xcaddy build`. With `allowPrivilegeEscalation: false`, the kernel blocks execution of capability-enhanced binaries for non-root users.
+
+**Fix**: Strip file capabilities in the Dockerfile:
+```dockerfile
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+RUN setcap -r /usr/bin/caddy 2>/dev/null || true
+```
+
+#### `container has runAsNonRoot and image has non-numeric user (caddy)`
+
+**Cause**: The security context has `runAsNonRoot: true` but no `runAsUser` specified. Kubernetes can't verify the numeric UID.
+
+**Fix**: Add `runAsUser: 100` (caddy user UID) to the security context:
+```yaml
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 100
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+```
+
+#### `CreateContainerConfigError`
+
+**Cause**: Usually a ConfigMap reference issue or volume mount mismatch.
+
+**Fix**:
+1. Check events: `kubectl describe pod <pod-name> -n taskflow`
+2. Verify ConfigMap exists: `kubectl get cm -n taskflow | grep waf`
+3. Verify keys match volume mount items
+
+### Flux Reconciliation Issues
+
+#### Kustomization stuck in "Reconciliation in progress"
+
+**Cause**: Dependency chain not satisfied, or health checks failing.
+
+**Fix**:
+```bash
+# Check dependency status
+flux get kustomizations -n flux-system
+
+# Force reconcile from root
+flux reconcile kustomization flux-system -n flux-system --with-source
+sleep 10
+flux reconcile kustomization infra-configs -n flux-system
+sleep 10
+flux reconcile kustomization taskflow-app -n flux-system --with-source
+```
+
+#### SOPS decryption fails
+
+**Cause**: `sops-age` secret missing or age key doesn't match.
+
+**Fix**:
+```bash
+kubectl get secret sops-age -n flux-system
+# Verify the key matches .sops.yaml recipients
+```
+
+### Logging Issues
+
+#### No logs in Loki
+
+**Cause**: Alloy not collecting, or Loki not receiving.
+
+**Fix**:
+```bash
+# Check Alloy is running
+kubectl get pods -n monitoring | grep alloy
+
+# Check Alloy config
+kubectl get cm alloy -n monitoring -o jsonpath='{.data.config\.alloy}'
+
+# Check Alloy logs
+kubectl logs -n monitoring deploy/alloy -c alloy | tail -20
+
+# Test Loki connectivity
+kubectl run loki-query --image=curlimages/curl --rm -i --restart=Never -n monitoring -- \
+  curl -s 'http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/labels'
+```
+
+#### Grafana dashboard shows no data
+
+**Cause**: Loki datasource not provisioned, or dashboard not loaded.
+
+**Fix**:
+```bash
+# Check datasource ConfigMap exists
+kubectl get cm -n monitoring -l grafana_datasource
+
+# Check dashboard ConfigMap exists
+kubectl get cm -n monitoring -l grafana_dashboard
+
+# Check sidecar loaded them
+kubectl logs deployment/victoria-metrics-k8s-stack-grafana -n monitoring -c grafana-sc-datasources | grep loki
+kubectl logs deployment/victoria-metrics-k8s-stack-grafana -n monitoring -c grafana-sc-dashboard | grep taskflow
+```
+
+#### Caddy access logs but no Coraza audit logs
+
+**Cause**: The `/waf-healthz` endpoint bypasses the WAF (handled before `coraza_waf` directive). Only real app traffic triggers Coraza rules.
+
+**Fix**: Send actual traffic to the app endpoints, not just health checks. Coraza audit logs are generated when CRS rules match (or when `SecAuditEngine` is `On`).
+
+### Network Policy Issues
+
+#### Pod stuck in `ContainerCreating`
+
+**Cause**: CiliumNetworkPolicy blocking traffic.
+
+**Fix**:
+```bash
+# Check policy status
+kubectl get ciliumnetworkpolicy -n taskflow
+
+# Verify policies are VALID
+kubectl get ciliumnetworkpolicy -n taskflow -o custom-columns="NAME:.metadata.name,VALID:.status.conditions[?(@.type=='Valid')].status"
+
+# Check Cilium agent logs
+kubectl logs -n kube-system -l k8s-app=cilium | grep -i "policy\|denied"
+```
+
+---
+
+## Known Issues
+
+### GHCR PAT Rotation
+
+The `ghcr-pull-secret` is created manually with `kubectl create secret`. It's not
+managed by GitOps. When the PAT expires:
+
+1. Create a new PAT with `write:packages` scope at https://github.com/settings/tokens
+2. Recreate the secret:
+   ```bash
+   kubectl delete secret ghcr-pull-secret -n taskflow
+   kubectl create secret docker-registry ghcr-pull-secret \
+     --namespace=taskflow \
+     --docker-server=ghcr.io \
+     --docker-username=stefanf81 \
+     --docker-password="ghp_NEW_TOKEN"
+   ```
+3. Consider using Sealed Secrets or External Secrets Operator for proper GitOps management.
+
+### Sealed Secrets Helm Repo 404
+
+The `sealed-secrets` Helm repository returns 404 on `helm repo update`. This is
+non-blocking but should be investigated if you want to use Sealed Secrets for
+secret management.
+
+### Coraza Audit Log Parts
+
+Current setting: `AFZ` (header, forensic info, end marker). This excludes request
+bodies and headers for privacy. If you need full request inspection for debugging,
+temporarily add parts `BC` (request headers + body) but be aware of sensitive data
+in logs.
+
+---
+
+## Reference Links
+
+- [Coraza WAF Documentation](https://coraza.io/docs/)
+- [OWASP CRS Documentation](https://coreruleset.org/docs/)
+- [Caddy Documentation](https://caddyserver.com/docs/)
+- [Grafana Loki Documentation](https://grafana.com/docs/loki/)
+- [Grafana Alloy Documentation](https://grafana.com/docs/alloy/)
+- [Coraza-Caddy GitHub](https://github.com/corazawaf/coraza-caddy)
+- [OWASP CRS Tuning Guide](https://coreruleset.org/docs/usage-tuning/)
