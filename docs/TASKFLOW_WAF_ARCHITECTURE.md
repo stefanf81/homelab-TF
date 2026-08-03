@@ -82,7 +82,7 @@ Internet → Cloudflare DNS → Port Forward → 192.168.50.201 (L2 announcement
 The custom Caddy+Coraza image is built manually and pushed to GHCR:
 
 - **Repository**: `ghcr.io/stefanf81/taskflow-caddy-coraza`
-- **Tag**: `2.11.4-coraza2.5.0`
+- **Tag**: `2.11.4-coraza2.5.0-r1`
 - **Dockerfile**: `gitops/images/taskflow-caddy-coraza/Dockerfile`
 - **Platform**: `linux/amd64` (k3s node architecture)
 - **Digest**: Pinned in both WAF Deployments
@@ -91,17 +91,17 @@ The custom Caddy+Coraza image is built manually and pushed to GHCR:
 
 ```bash
 docker build --platform linux/amd64 \
-  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0 \
+  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0-r1 \
   gitops/images/taskflow-caddy-coraza/
 
 # Authenticate to GHCR (requires write:packages scope)
 echo $(gh auth token) | docker login ghcr.io -u stefanf81 --password-stdin
 
-docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0
+docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0-r1
 
 # Get digest for pinning
 docker inspect --format='{{index .RepoDigests 0}}' \
-  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0
+  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0-r1
 ```
 
 ### Image Build Details
@@ -136,6 +136,7 @@ Each WAF ConfigMap contains:
 |-----|---------|
 | `Caddyfile` | Main configuration with inline Coraza directives |
 | `*-exclusions.conf` | CRS exclusion rules (initially empty) |
+| `audit-redactor.sh` | Sanitizes Coraza audit JSON before it reaches stdout |
 
 ### Volume Mounts
 
@@ -146,6 +147,7 @@ Each WAF ConfigMap contains:
 | `/data` | emptyDir | Caddy data storage |
 | `/config` | emptyDir | Caddy runtime config |
 | `/tmp` | emptyDir | Temporary files |
+| `/var/run/coraza` | emptyDir | Named pipe carrying raw Coraza audit records to the redactor |
 
 ### Image Pull Secret
 
@@ -184,8 +186,8 @@ directives `
     SecRequestBodyAccess On              # Body inspection
     SecResponseBodyAccess Off            # Response buffering off
     SecAuditEngine RelevantOnly          # Audit logging
-    SecAuditLog /dev/stdout              # Audit to stdout (JSON)
-    SecAuditLogParts AFZ                 # Audit log parts
+    SecAuditLog /var/run/coraza/audit.pipe # Private audit pipe (JSON)
+    SecAuditLogParts ABFHZ               # Includes matched-rule metadata
     SecRequestBodyLimit 10485760         # 10 MB max body
     SecRequestBodyNoFilesLimit 1048576   # 1 MB max non-file body
 
@@ -211,7 +213,9 @@ directives `
 
 ### Audit Log Parts
 
-Current: **AFZ** (header, forensic info, end marker). Excludes request body and headers for privacy.
+Current: **ABFHZ** (request headers, response headers, matched-rule metadata, end
+marker). It excludes request bodies. The audit-log redactor sidecar removes inbound
+credential headers and sensitive query parameter values before writing JSON to stdout.
 
 | Part | Content |
 |------|---------|
@@ -225,7 +229,7 @@ Current: **AFZ** (header, forensic info, end marker). Excludes request body and 
 
 ### Alloy Configuration
 
-Alloy discovers WAF pods in the `taskflow` namespace using Kubernetes service discovery. Caddy access logs and Coraza audit records share the WAF container's stdout, so a `loki.process` pipeline runs only on records containing `"transaction"`.
+Alloy discovers WAF pods in the `taskflow` namespace using Kubernetes service discovery. Caddy access logs and redacted Coraza audit records share pod stdout, so a `loki.process` pipeline runs only on records containing `"transaction"`.
 
 The pipeline extracts `method` from the transaction JSON and the first matched CRS `rule_id` from Coraza's `messages[]` array. Both are bounded values and are stored as Loki labels. Client IPs, URIs, transaction IDs, and other request-specific values remain in the log body and are parsed at query time to avoid high-cardinality labels.
 

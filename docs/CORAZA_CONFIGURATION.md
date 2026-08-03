@@ -23,9 +23,9 @@ directives `
     SecRequestBodyAccess On              #    Body processing
     SecResponseBodyAccess Off            #    Response buffering (off)
     SecAuditEngine RelevantOnly          #    Audit logging
-    SecAuditLog /dev/stdout              #    Audit log destination
+    SecAuditLog /var/run/coraza/audit.pipe #  Private audit-log pipe
     SecAuditLogFormat JSON               #    JSON audit records
-    SecAuditLogParts AFZ                 #    What goes into the audit log
+    SecAuditLogParts ABFHZ               #    Rule-match metadata plus request/response headers
     SecRequestBodyLimit 10485760         #    Max request body (10 MB)
     SecRequestBodyNoFilesLimit 1048576   #    Max body without files (1 MB)
 
@@ -74,7 +74,7 @@ Configured by `SecAuditLogParts`. Each letter adds a section:
 | E | Request body after rules |
 | F | Response headers |
 | G | Response body |
-| H | Audit log trailer (additional metadata) |
+| H | Audit log trailer, including matched-rule messages and metadata |
 | I | Compact request body (multipart) |
 | J | Uploaded file information |
 | K | Matched rule IDs |
@@ -93,7 +93,12 @@ Configured by `SecAuditLogParts`. Each letter adds a section:
 | Y | Response body inspection notes |
 | Z | End of audit log entry |
 
-Current setting: **`AFZ`** — header, forensic info, end marker. Excludes request body and headers for privacy.
+Current setting: **`ABFHZ`** — includes request and response headers plus the `H`
+rule-match metadata. Request bodies remain excluded. Coraza writes these records to a
+shared named pipe; the `audit-log-redactor` sidecar removes inbound `Authorization`,
+`Proxy-Authorization`, and `Cookie` headers and sensitive query parameters before
+emitting JSON to stdout for Alloy. Raw audit records are neither persisted nor sent to
+container stdout.
 
 ## SecAuditEngine
 
@@ -191,7 +196,7 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
     {job="coraza-waf", application="taskflow-frontend"} |= "\"messages\""
     ```
    A `transaction` without `messages[]` is a relevant audited response, not a CRS match.
-3. Identify false positives from the audit log fields:
+3. Identify false positives from the sanitized audit log fields:
    - `rule_id`: which CRS rule matched
    - `variable_name`: which input triggered it (e.g., `ARGS:message`)
    - `matched_data`: the actual payload
@@ -200,11 +205,20 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
    ```
    ruby -ryaml -e 'puts YAML.load_file(ARGV[0]).fetch("data").fetch("Caddyfile")' \
      gitops/apps/taskflow/frontend-waf.yaml | \
-     docker run --rm -i taskflow-caddy-coraza:2.11.4-coraza2.5.0 \
+      docker run --rm -i ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0-r1 \
      caddy validate --config /dev/stdin --adapter caddyfile
    ```
 6. Reconcile and replay the test request. Confirm the false positive is gone and the rule still fires on other inputs.
 7. Once clean, switch `SecRuleEngine` to `On` and repeat the replay tests.
+
+## Client IP Forwarding
+
+The WAF receives requests only from the Cilium Gateway. Its Caddy global options trust
+private proxy ranges, parse `X-Forwarded-For` from right to left, and use only that
+header to resolve `{client_ip}`. The WAF passes `{client_ip}` upstream as `X-Real-IP`.
+The HTTPRoute attaches application traffic exclusively to the HTTPS Gateway listener,
+so each WAF explicitly passes `X-Forwarded-Proto: https` upstream. Do not widen the
+trusted proxy ranges without also tightening the WAF ingress policy.
 
 ## Documentation Links
 

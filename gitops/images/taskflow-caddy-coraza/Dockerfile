@@ -16,7 +16,8 @@ COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 
 RUN setcap -r /usr/bin/caddy 2>/dev/null || true
 
-RUN addgroup -S caddy \
+RUN apk add --no-cache jq \
+    && addgroup -S caddy \
     && adduser -S -G caddy caddy \
     && chown -R caddy:caddy /data /config
 
