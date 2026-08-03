@@ -79,11 +79,23 @@ kubectl port-forward -n kube-system svc/hubble-relay 4244:80
 
 ## GitHub OAuth App
 
-- **Application name**: `Hubble UI (jokelab.dev)`
+- **Application name**: `Hubble UI`
 - **Homepage URL**: `https://hubble.jokelab.dev`
-- **Callback URL**: `https://hubble.jokelab.dev/callback`
-- **Organization**: `stefanf81` (restricted to org members)
-- **Client ID**: stored in `hubble-ui-github-oauth` secret (SOPS-encrypted)
+- **Callback URL**: `https://hubble.jokelab.dev/oauth2/callback`
+- **Client ID and client secret**: stored in the SOPS-encrypted `hubble-ui-github-oauth` Secret
+
+### Authentication Comparison
+
+Kyverno Policy Reporter and Hubble UI both use GitHub OAuth Apps, but their OAuth
+servers differ. Policy Reporter implements OAuth itself and uses `/callback`.
+Hubble UI is protected by oauth2-proxy, which owns the `/oauth2/callback` endpoint.
+Each needs its own GitHub OAuth App and exact callback URL.
+
+The oauth2-proxy Helm chart reads credentials from `config.existingSecret`. The
+Secret must use its required keys: `client-id`, `client-secret`, and `cookie-secret`.
+The Flux `hubble-ui` Kustomization decrypts this Secret with the `sops-age` key
+before applying it. Supplying values through the chart's `env` field is ineffective:
+the chart-generated credential environment variables take precedence.
 
 ## Local CLI Setup
 
@@ -181,8 +193,8 @@ spec:
 # Reconcile Cilium (enables Hubble)
 flux reconcile helmrelease cilium -n kube-system --force
 
-# Reconcile hubble-ui stack
-flux reconcile kustomization infra-controllers -n flux-system --with-source
+# Reconcile and decrypt the hubble-ui stack
+flux reconcile kustomization hubble-ui -n flux-system --with-source
 
 # Force reconcile oauth2-proxy
 flux reconcile helmrelease hubble-ui-oauth2-proxy -n hubble-ui --force
@@ -206,6 +218,34 @@ configFile: |-
   provider = "github"
   email_domains = ["*"]
   ...
+```
+
+### GitHub returns 404 from `/login/oauth/authorize`
+
+**Cause**: oauth2-proxy is sending an unrecognized client ID. The common cause is
+letting the Helm chart generate its own placeholder Secret instead of configuring
+`config.existingSecret`.
+
+**Fix**:
+1. Confirm the GitHub OAuth App callback is exactly `https://hubble.jokelab.dev/oauth2/callback`.
+2. Confirm the deployment reads `hubble-ui-github-oauth:client-id`:
+   ```bash
+   kubectl get deploy hubble-ui-oauth2-proxy -n hubble-ui \
+     -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}{"="}{.valueFrom.secretKeyRef.name}{":"}{.valueFrom.secretKeyRef.key}{"\n"}{end}'
+   ```
+3. Confirm startup logs show the registered Client ID:
+   ```bash
+   kubectl logs -n hubble-ui deploy/hubble-ui-oauth2-proxy --tail=20
+   ```
+
+### Cookie secret is rejected
+
+**Cause**: oauth2-proxy requires a literal 16, 24, or 32-byte cookie secret.
+
+**Fix**: Generate and SOPS-encrypt a 32-character value, then restart the proxy:
+```bash
+openssl rand -hex 16
+kubectl delete pod -n hubble-ui -l app.kubernetes.io/name=oauth2-proxy
 ```
 
 ### Hubble UI shows "No flows"
@@ -243,7 +283,7 @@ curl -s -L https://github.com/cilium/hubble/releases/latest/download/hubble-darw
 **Cause**: Cookie domain mismatch or callback URL incorrect.
 
 **Fix**: Verify:
-- GitHub OAuth App callback URL is exactly `https://hubble.jokelab.dev/callback`
+- GitHub OAuth App callback URL is exactly `https://hubble.jokelab.dev/oauth2/callback`
 - oauth2-proxy `cookie_domains = [".jokelab.dev"]`
 - Browser is accessing `https://hubble.jokelab.dev` (not `http`)
 
@@ -258,8 +298,6 @@ sudo sh -c 'echo "192.168.50.201 hubble.jokelab.dev" >> /etc/hosts'
 
 ## Security Notes
 
-- OAuth restricted to GitHub organization `stefanf81`
-- Only org members can authenticate
 - Cookie is secure-only (HTTPS)
 - Cookie domain scoped to `.jokelab.dev`
 - oauth2-proxy runs with read-only root filesystem
