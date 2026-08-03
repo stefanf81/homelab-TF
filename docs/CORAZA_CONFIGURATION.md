@@ -214,11 +214,11 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
 ## Client IP Forwarding
 
 The WAF receives requests only from the Cilium Gateway. Its Caddy global options trust
-private proxy ranges, parse `X-Forwarded-For` from right to left, and use only that
+the K3s Pod CIDR (`10.42.0.0/16`), parse `X-Forwarded-For` from right to left, and use only that
 header to resolve `{client_ip}`. The WAF passes `{client_ip}` upstream as `X-Real-IP`.
 The HTTPRoute attaches application traffic exclusively to the HTTPS Gateway listener,
 so each WAF explicitly passes `X-Forwarded-Proto: https` upstream. Do not widen the
-trusted proxy ranges without also tightening the WAF ingress policy.
+trusted proxy CIDR without also tightening the WAF ingress policy.
 
 ## Documentation Links
 

@@ -15,7 +15,7 @@ data:
         auto_https off
         order coraza_waf first
         servers {
-            trusted_proxies static private_ranges
+            trusted_proxies static 10.42.0.0/16
             trusted_proxies_strict
             client_ip_headers X-Forwarded-For
         }

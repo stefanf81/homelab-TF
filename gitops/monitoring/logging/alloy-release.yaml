@@ -111,11 +111,11 @@ spec:
                  }
                }
 
-               // Coraza stores rule metadata in messages[]. Loki skips JSON arrays,
-               // so extract the first matching CRS rule ID from the raw record.
-               stage.regex {
-                 expression = "\"messages\":\\[\\{.*?\"data\":\\{.*?\"id\":(?P<rule_id>[0-9]+)"
-               }
+                // Coraza stores matches in messages[].error_message; Loki skips arrays,
+                // so extract the first matching CRS rule ID from the raw record.
+                stage.regex {
+                  expression = "\"messages\":\\[.*?\\[id [^0-9]*(?P<rule_id>[0-9]+)"
+                }
 
                // Both values are bounded: HTTP methods and installed CRS rule IDs.
                // Request URIs and client IPs remain in the log body to avoid

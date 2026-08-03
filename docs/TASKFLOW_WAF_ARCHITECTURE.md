@@ -309,7 +309,7 @@ loki.process "coraza_audit" {
     }
 
     stage.regex {
-      expression = `"messages":\[\{.*?"data":\{.*?"id":(?P<rule_id>[0-9]+)`
+      expression = `"messages":\[.*?\[id [^0-9]*(?P<rule_id>[0-9]+)`
     }
 
     stage.labels {
