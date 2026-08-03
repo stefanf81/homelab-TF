@@ -112,7 +112,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: waf
-          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0@sha256:88fa8ca058bd3b94f9bce45d83b3271a22ac53eb429fe778e46633dc99094596
+          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0@sha256:4d193dab862588a5a6cf7a30dc70e9c1311a9cc05790489799fb8863251bbdf7
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
