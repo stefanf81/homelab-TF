@@ -69,14 +69,43 @@ kubectl run curl-test --rm -it --restart=Never --image=curlimages/curl -- \
   curl -i http://taskflow-backend-waf.taskflow.svc.cluster.local:8080/api
 ```
 
-Use a harmless detection request against a real backend path only after confirming
-that the path is safe. DetectionOnly must return the upstream response rather than
-block it:
+Use the public route to exercise representative CRS rule families. These payloads
+are inert query parameters; run them only against the Taskflow WAF. DetectionOnly
+must return the upstream response rather than block it (the unauthenticated API
+currently returns `401`):
 
 ```bash
-kubectl run curl-test --rm -it --restart=Never --image=curlimages/curl -- \
-  curl -i 'http://taskflow-backend-waf.taskflow.svc.cluster.local:8080/api?test=1%20UNION%20SELECT%201'
+curl --silent --show-error --max-time 15 --get \
+  --data-urlencode 'q=1 UNION SELECT 1' \
+  --output /dev/null --write-out 'sqli %{http_code}\n' \
+  'https://www.jokelab.dev/api'
+
+curl --silent --show-error --max-time 15 --get \
+  --data-urlencode 'q=<script>alert(1)</script>' \
+  --output /dev/null --write-out 'xss %{http_code}\n' \
+  'https://www.jokelab.dev/api'
+
+curl --silent --show-error --max-time 15 --get \
+  --data-urlencode 'file=../../../../etc/passwd' \
+  --output /dev/null --write-out 'traversal %{http_code}\n' \
+  'https://www.jokelab.dev/api'
+
+curl --silent --show-error --max-time 15 --get \
+  --data-urlencode 'q=; cat /etc/passwd' \
+  --output /dev/null --write-out 'command %{http_code}\n' \
+  'https://www.jokelab.dev/api'
+
+curl --silent --show-error --max-time 15 \
+  --user-agent 'sqlmap/1.8.12#stable (https://sqlmap.org)' \
+  --output /dev/null --write-out 'scanner %{http_code}\n' \
+  'https://www.jokelab.dev/api'
 ```
+
+The verified matches are SQL injection (`942100`, `942190`, `942360`), XSS
+(`941100`, `941110`, `941160`, `941390`), path traversal (`930100`, `930110`,
+`930120`), command execution (`932160`), and scanner detection (`913100`). A
+single payload can match multiple CRS rules, including `949110` anomaly-score
+evaluation.
 
 Inspect logs separately:
 
@@ -313,6 +342,15 @@ kubectl logs deployment/victoria-metrics-k8s-stack-grafana -n monitoring -c graf
 **Cause**: `SecAuditEngine RelevantOnly` also audits relevant response statuses. These records contain `transaction` but no `messages` array, so they are audit events rather than WAF rule detections.
 
 **Fix**: Use `{job="coraza-waf"} |= "\"messages\""` to view actual matched rules. After deploying the Alloy pipeline, verify that a new detection also has `method` and `rule_id` labels in Grafana Explore. Historic records will not gain those labels.
+
+#### Detection category slices show `Value #A`, `Value #B`, or similar
+
+**Cause**: Grafana pie charts name instant-query result fields by reference ID unless
+the dashboard supplies display-name overrides.
+
+**Fix**: Reconcile `monitoring-logging` from a revision containing the Taskflow WAF
+dashboard overrides. The pie slices are named SQL injection, Cross-site scripting,
+Path traversal, and Command injection.
 
 ### Network Policy Issues
 

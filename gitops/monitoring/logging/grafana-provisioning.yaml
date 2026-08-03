@@ -205,3 +205,117 @@ data:
         }
       ]
     }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskflow-access-logs-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: taskflow-access-logs
+    app.kubernetes.io/component: logging
+    app.kubernetes.io/part-of: taskflow-observability
+data:
+  taskflow-access-logs.json: |
+    {
+      "uid": "taskflow-access-logs",
+      "title": "Taskflow Access Logs",
+      "description": "Caddy access-log activity for normal Taskflow traffic. Coraza audit records and WAF detections are shown separately on the Taskflow WAF dashboard.",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {"from": "now-6h", "to": "now"},
+      "templating": {
+        "list": [
+          {
+            "name": "application",
+            "label": "Application",
+            "type": "query",
+            "datasource": {"type": "loki", "uid": "loki"},
+            "query": "label_values({job=\"coraza-waf\", container=\"waf\"}, application)",
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": true,
+            "refresh": 2
+          },
+          {
+            "name": "pod",
+            "label": "Pod",
+            "type": "query",
+            "datasource": {"type": "loki", "uid": "loki"},
+            "query": "label_values({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}, pod)",
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": true,
+            "refresh": 2
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "text",
+          "title": "Scope",
+          "gridPos": {"x": 0, "y": 0, "w": 24, "h": 3},
+          "options": {"mode": "markdown", "content": "Shows Caddy access logs from the `waf` container and excludes `/waf-healthz` probes. URIs and credential headers are redacted before Loki ingestion. Access-log client IP is the Cilium Gateway source, not the original visitor IP; use Coraza audit records when a resolved client IP is required."}
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "Requests by application",
+          "gridPos": {"x": 0, "y": 3, "w": 12, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | request_uri != \"/waf-healthz\" | request_uri=~\".+\" [5m]))", "legendFormat": "{{application}}"}],
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "Responses by status",
+          "gridPos": {"x": 12, "y": 3, "w": 12, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum by (status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | request_uri != \"/waf-healthz\" | status=~\".+\" [5m]))", "legendFormat": "{{status}}"}],
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "Requests by HTTP method",
+          "gridPos": {"x": 0, "y": 11, "w": 12, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum by (request_method) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | request_uri != \"/waf-healthz\" | request_method=~\".+\" [5m]))", "legendFormat": "{{request_method}}"}],
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 5,
+          "type": "bargauge",
+          "title": "Top request URIs",
+          "description": "URIs are sanitized by Caddy before storage. This is a query-time aggregation, so URI values are not Loki labels.",
+          "gridPos": {"x": 12, "y": 11, "w": 12, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "topk(10, sum by (request_uri) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | request_uri != \"/waf-healthz\" | request_uri=~\".+\" [$__range])))", "legendFormat": "{{request_uri}}", "instant": true}],
+          "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": false},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 6,
+          "type": "table",
+          "title": "Request outcomes",
+          "gridPos": {"x": 0, "y": 19, "w": 8, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum by (application, status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | request_uri != \"/waf-healthz\" | status=~\".+\" [$__range]))", "instant": true}],
+          "options": {"showHeader": true},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 7,
+          "type": "logs",
+          "title": "Recent access logs",
+          "gridPos": {"x": 8, "y": 19, "w": 16, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | request_uri != \"/waf-healthz\" | request_uri=~\".+\" | line_format `{{.status}} {{.request_method}} {{.request_uri}} duration={{.duration}}s`"}],
+          "options": {"showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLines": true, "prettifyLogMessage": false, "enableLogDetails": true}
+        }
+      ]
+    }

@@ -175,16 +175,15 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
 
 | Rule ID Range | Attack Type |
 |---------------|-------------|
-| 900-949 | Scanner detection, bot detection |
+| 913 | Scanner detection |
 | 920-929 | Protocol enforcement (HTTP methods, headers) |
 | 930-931 | Path traversal |
 | 932-934 | Remote command execution |
-| 940-949 | SQL injection |
-| 941-941 | XSS (cross-site scripting) |
-| 942-942 | SQL injection (detailed) |
-| 943-943 | Session fixation |
-| 944-944 | Java attack detection |
-| 949-949 | Inbound attack score blocking |
+| 941 | XSS (cross-site scripting) |
+| 942 | SQL injection |
+| 943 | Session fixation |
+| 944 | Java attack detection |
+| 949 | Inbound attack-score evaluation |
 | 950-959 | Outbound attack detection |
 | 959-959 | Outbound attack score blocking |
 

@@ -111,9 +111,10 @@ The Dockerfile uses a multi-stage build:
 1. **Builder stage**: Uses `caddy:2.11.4-builder-alpine` to compile Caddy with the Coraza WAF plugin via `xcaddy`
 2. **Runtime stage**: Based on `caddy:2.11.4-alpine`, copies the compiled binary
 3. **Key steps**:
-   - `setcap -r /usr/bin/caddy` — strips file capabilities (required for `allowPrivilegeEscalation: false`)
-   - Creates `caddy` user (UID 100) for non-root execution
-   - Exposes port 8080
+    - `setcap -r /usr/bin/caddy` — strips file capabilities (required for `allowPrivilegeEscalation: false`)
+    - Creates `caddy` user (UID 100) for non-root execution
+    - Adds `jq`, used by the audit-log redactor sidecar
+    - Exposes port 8080
 
 ## Kubernetes Resources
 
@@ -349,7 +350,7 @@ loki.write "local" {
 | `application` | `taskflow-frontend` or `taskflow-backend` |
 | `namespace` | `taskflow` |
 | `pod` | Pod name |
-| `container` | `waf` |
+| `container` | `waf` for Caddy access logs; `audit-log-redactor` for Coraza audit logs |
 | `cluster` | `homelab` |
 | `source` | `coraza` |
 | `method` | HTTP request method from a Coraza audit transaction |
@@ -384,12 +385,12 @@ datasources:
 | WAF audit events | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf"} |= "\"transaction\"" [5m]))` |
 | WAF rule detections | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf"} |= "\"messages\"" [5m]))` |
 | Top triggered CRS rules | bar gauge | Loki | `topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[${__range}])))` |
-| Detection categories | pie chart | Loki | SQLi, XSS, path traversal, and command injection rule-ID ranges |
+| Detection categories | pie chart | Loki | Named SQL injection (`94[0-9]{4}`), Cross-site scripting (`941[0-9]{3}`), Path traversal (`93[0-1][0-9]{3}`), and Command injection (`93[2-4][0-9]{3}`) slices |
 | Detections by HTTP method | timeseries | Loki | `sum by (method) (count_over_time({job="coraza-waf", method=~".+"} |= "\"messages\"" [5m]))` |
 | Top source IPs | table | Loki | `topk(10, sum by (transaction_client_ip) (count_over_time({job="coraza-waf"} |= "\"messages\"" | json [${__range}])))` |
 | Recent WAF detections | logs | Loki | `{job="coraza-waf"} |= "\"messages\"" | json | line_format ...` |
-| SQL injection detections | timeseries | Loki | `... |= "\"messages\"" |~ "\"id\":94[0-9]{4}" [5m]` |
-| XSS, command injection, path traversal | timeseries | Loki | `... |= "\"messages\"" |~ "\"id\":941[0-9]{3}|\"id\":93[0-4][0-9]{3}" [5m]` |
+| SQL injection detections | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf", rule_id=~"94[0-9]{4}"}[5m]))` |
+| XSS, command injection, path traversal | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf", rule_id=~"941[0-9]{3}|93[0-4][0-9]{3}"}[5m]))` |
 | WAF pod CPU | timeseries | VictoriaMetrics | `rate(container_cpu_usage_seconds_total{...}[5m])` |
 | WAF pod memory | timeseries | VictoriaMetrics | `container_memory_working_set_bytes{...}` |
 | WAF pod restarts | timeseries | VictoriaMetrics | `increase(kube_pod_container_status_restarts_total{...}[1h])` |
@@ -401,6 +402,22 @@ datasources:
 | Variable | Type | Values |
 |----------|------|--------|
 | `application` | query | `label_values({job="coraza-waf"}, application)` — filters by `taskflow-frontend` / `taskflow-backend` |
+
+### Access Logs Dashboard
+
+**Dashboard**: "Taskflow Access Logs" (`/d/taskflow-access-logs`)
+
+This dashboard uses only Caddy access logs from `container="waf"`; it excludes
+`/waf-healthz` probes and keeps normal traffic separate from Coraza audit records.
+It provides request volume by application, response status and method trends, top
+sanitized request URIs, request outcomes, and recent access logs. Filters are
+available for `application` and `pod`; `namespace` is fixed to `taskflow` and
+`container` is fixed to `waf`.
+
+Access-log `client_ip` is currently the Cilium Gateway source, not the original
+visitor IP. The dashboard intentionally does not present it as visitor identity.
+Resolved client IP is available only in Coraza audit records for `RelevantOnly`
+transactions.
 
 ### Access
 
@@ -637,7 +654,7 @@ kubectl logs -n monitoring deploy/alloy -c alloy
 | `gitops/monitoring/logging/repositories.yaml` | HelmRepos for Loki and Alloy |
 | `gitops/monitoring/logging/loki-release.yaml` | Loki HelmRelease |
 | `gitops/monitoring/logging/alloy-release.yaml` | Alloy HelmRelease with log collection |
-| `gitops/monitoring/logging/grafana-provisioning.yaml` | Loki datasource + dashboard |
+| `gitops/monitoring/logging/grafana-provisioning.yaml` | Loki datasource + WAF and access-log dashboards |
 | `gitops/monitoring/logging/vmservicescrapes.yaml` | VMServiceScrape for Loki/Alloy metrics |
 | `gitops/clusters/taskflow/monitoring-logging.yaml` | Flux Kustomization for logging stack |
 | `docs/TASKFLOW_WAF_RUNBOOK.md` | Operational runbook |
