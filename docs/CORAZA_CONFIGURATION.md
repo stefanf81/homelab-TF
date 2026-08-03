@@ -187,9 +187,10 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
 
 1. Run in `DetectionOnly` mode.
 2. Query audit logs for detections:
-   ```
-   {job="coraza-waf", application="taskflow-frontend"} |= "\"transaction\""
-   ```
+    ```
+    {job="coraza-waf", application="taskflow-frontend"} |= "\"messages\""
+    ```
+   A `transaction` without `messages[]` is a relevant audited response, not a CRS match.
 3. Identify false positives from the audit log fields:
    - `rule_id`: which CRS rule matched
    - `variable_name`: which input triggered it (e.g., `ARGS:message`)

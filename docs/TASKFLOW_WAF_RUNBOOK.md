@@ -91,6 +91,16 @@ In Grafana Explore, select the `Loki` datasource and query:
 ```logql
 {job="coraza-waf", application="taskflow-frontend"}
 {job="coraza-waf", application="taskflow-backend"}
+
+# Only audit records containing a matched Coraza rule.
+# This excludes relevant HTTP responses such as 401s that Coraza audits without a match.
+{job="coraza-waf"} |= "\"messages\""
+
+# Top rule IDs and source IPs over the selected period.
+topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[1h])))
+topk(10, sum by (transaction_client_ip) (
+  count_over_time({job="coraza-waf"} |= "\"messages\"" | json [1h])
+))
 ```
 
 ## Blocking rollout
@@ -295,6 +305,12 @@ kubectl logs deployment/victoria-metrics-k8s-stack-grafana -n monitoring -c graf
 **Cause**: The `/waf-healthz` endpoint bypasses the WAF (handled before `coraza_waf` directive). Only real app traffic triggers Coraza rules.
 
 **Fix**: Send actual traffic to the app endpoints, not just health checks. Coraza audit logs are generated when CRS rules match (or when `SecAuditEngine` is `On`).
+
+#### Audit events appear, but detection panels are empty
+
+**Cause**: `SecAuditEngine RelevantOnly` also audits relevant response statuses. These records contain `transaction` but no `messages` array, so they are audit events rather than WAF rule detections.
+
+**Fix**: Use `{job="coraza-waf"} |= "\"messages\""` to view actual matched rules. After deploying the Alloy pipeline, verify that a new detection also has `method` and `rule_id` labels in Grafana Explore. Historic records will not gain those labels.
 
 ### Network Policy Issues
 

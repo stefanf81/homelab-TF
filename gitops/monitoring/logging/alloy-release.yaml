@@ -92,10 +92,42 @@ spec:
             }
           }
 
-          loki.source.kubernetes "taskflow_wafs" {
-            targets = discovery.relabel.taskflow_wafs.output
-            forward_to = [loki.write.local.receiver]
-          }
+           loki.source.kubernetes "taskflow_wafs" {
+             targets = discovery.relabel.taskflow_wafs.output
+             forward_to = [loki.process.coraza_audit.receiver]
+           }
+
+           loki.process "coraza_audit" {
+             forward_to = [loki.write.local.receiver]
+
+             // Caddy access logs and Coraza audit records share stdout. Process only
+             // audit records so Caddy's unrelated JSON fields never become labels.
+             stage.match {
+               selector = "{job=\"coraza-waf\"} |= \"\\\"transaction\\\"\""
+
+               stage.json {
+                 expressions = {
+                   method = "transaction.request.method",
+                 }
+               }
+
+               // Coraza stores rule metadata in messages[]. Loki skips JSON arrays,
+               // so extract the first matching CRS rule ID from the raw record.
+               stage.regex {
+                 expression = "\"messages\":\\[\\{.*?\"data\":\\{.*?\"id\":(?P<rule_id>[0-9]+)"
+               }
+
+               // Both values are bounded: HTTP methods and installed CRS rule IDs.
+               // Request URIs and client IPs remain in the log body to avoid
+               // high-cardinality Loki labels.
+               stage.labels {
+                 values = {
+                   method  = "method",
+                   rule_id = "rule_id",
+                 }
+               }
+             }
+           }
 
           loki.write "local" {
             endpoint {

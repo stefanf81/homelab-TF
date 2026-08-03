@@ -37,7 +37,7 @@ data:
       "title": "Taskflow WAF",
       "description": "Coraza and Caddy telemetry for the Taskflow frontend and backend WAFs.",
       "schemaVersion": 39,
-      "version": 1,
+      "version": 2,
       "refresh": "30s",
       "time": {"from": "now-6h", "to": "now"},
       "templating": {
@@ -60,7 +60,8 @@ data:
           "id": 1,
           "type": "timeseries",
           "title": "WAF audit events",
-          "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+          "description": "All Coraza audit records. Relevant HTTP responses can be audited without a matched WAF rule.",
+          "gridPos": {"x": 0, "y": 0, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"transaction\\\"\" [5m]))", "legendFormat": "{{application}}"}],
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
@@ -68,73 +69,128 @@ data:
         {
           "id": 2,
           "type": "timeseries",
-          "title": "SQL injection family detections",
-          "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+          "title": "WAF rule detections",
+          "description": "Audit records that contain Coraza messages[] rule matches; excludes relevant responses without a WAF detection.",
+          "gridPos": {"x": 8, "y": 0, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"transaction\\\"\" |= \"942\" [5m]))", "legendFormat": "{{application}}"}],
+          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" [5m]))", "legendFormat": "{{application}}"}],
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
         {
           "id": 3,
-          "type": "timeseries",
-          "title": "XSS, command injection, and path traversal",
-          "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+          "type": "bargauge",
+          "title": "Top triggered CRS rules",
+          "description": "The rule_id label is added by Alloy for newly ingested Coraza audit records.",
+          "gridPos": {"x": 16, "y": 0, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [
-            {"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"transaction\\\"\" |~ \"941|932|930|931\" [5m]))", "legendFormat": "{{application}}"}
-          ],
-          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+          "targets": [{"refId": "A", "expr": "topk(10, sum by (rule_id) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\".+\"}[${__range}])) )", "legendFormat": "{{rule_id}}", "instant": true}],
+          "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": false},
+          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}}, "overrides": []}
         },
         {
           "id": 4,
-          "type": "logs",
-          "title": "Recent WAF events",
-          "gridPos": {"x": 12, "y": 8, "w": 12, "h": 16},
+          "type": "piechart",
+          "title": "Detection categories",
+          "gridPos": {"x": 0, "y": 8, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"transaction\\\"\""}],
-          "options": {"showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLines": false, "prettifyLogMessage": true, "enableLogDetails": true}
+          "targets": [
+            {"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |~ \"\\\"id\\\":94[0-9]{4}\" [$__range]))", "legendFormat": "SQL injection", "instant": true},
+            {"refId": "B", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |~ \"\\\"id\\\":941[0-9]{3}\" [$__range]))", "legendFormat": "Cross-site scripting", "instant": true},
+            {"refId": "C", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |~ \"\\\"id\\\":93[0-1][0-9]{3}\" [$__range]))", "legendFormat": "Path traversal", "instant": true},
+            {"refId": "D", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |~ \"\\\"id\\\":93[2-4][0-9]{3}\" [$__range]))", "legendFormat": "Command injection", "instant": true}
+          ],
+          "options": {"displayLabels": ["name", "percent"], "legend": {"displayMode": "list", "placement": "right", "showLegend": true}, "pieType": "donut", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "tooltip": {"mode": "single", "sort": "none"}},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
         {
           "id": 5,
           "type": "timeseries",
-          "title": "WAF pod CPU",
+          "title": "Detections by HTTP method",
+          "gridPos": {"x": 8, "y": 8, "w": 8, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum by (method) (count_over_time({job=\"coraza-waf\", application=~\"$application\", method=~\".+\"} |= \"\\\"messages\\\"\" [5m]))", "legendFormat": "{{method}}"}],
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 6,
+          "type": "table",
+          "title": "Top source IPs",
+          "description": "Client IP is parsed at query time, so it is not indexed as a Loki label.",
+          "gridPos": {"x": 0, "y": 16, "w": 8, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "topk(10, sum by (transaction_client_ip) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json [$__range])))", "instant": true}],
+          "options": {"showHeader": true},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 7,
+          "type": "logs",
+          "title": "Recent WAF detections",
+          "description": "Formatted audit records that contain a matched Coraza rule. Open a row for the unmodified JSON evidence.",
+          "gridPos": {"x": 8, "y": 16, "w": 16, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json | line_format `{{.transaction_request_method}} {{.transaction_request_uri}} [rule={{.rule_id}}] ip={{.transaction_client_ip}}`"}],
+          "options": {"showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLines": true, "prettifyLogMessage": false, "enableLogDetails": true}
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "SQL injection family detections",
           "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |~ \"\\\"id\\\":94[0-9]{4}\" [5m]))", "legendFormat": "{{application}}"}],
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "XSS, command injection, and path traversal",
+          "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |~ \"\\\"id\\\":941[0-9]{3}|\\\"id\\\":93[0-4][0-9]{3}\" [5m]))", "legendFormat": "{{application}}"}],
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 10,
+          "type": "timeseries",
+          "title": "WAF pod CPU",
+          "gridPos": {"x": 0, "y": 32, "w": 12, "h": 8},
           "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
           "targets": [{"refId": "A", "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\", container=\"waf\"}[5m]))", "legendFormat": "{{pod}}"}],
           "fieldConfig": {"defaults": {"unit": "cores"}, "overrides": []}
         },
         {
-          "id": 6,
+          "id": 11,
           "type": "timeseries",
           "title": "WAF pod memory",
-          "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+          "gridPos": {"x": 12, "y": 32, "w": 12, "h": 8},
           "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
           "targets": [{"refId": "A", "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\", container=\"waf\"})", "legendFormat": "{{pod}}"}],
           "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []}
         },
         {
-          "id": 7,
+          "id": 12,
           "type": "timeseries",
           "title": "WAF pod restarts",
-          "gridPos": {"x": 0, "y": 32, "w": 12, "h": 8},
+          "gridPos": {"x": 0, "y": 40, "w": 12, "h": 8},
           "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
           "targets": [{"refId": "A", "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\"}[1h]))", "legendFormat": "{{pod}}"}],
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
         {
-          "id": 8,
+          "id": 13,
           "type": "stat",
           "title": "Loki ingester append timeouts",
-          "gridPos": {"x": 12, "y": 32, "w": 6, "h": 8},
+          "gridPos": {"x": 12, "y": 40, "w": 6, "h": 8},
           "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
           "targets": [{"refId": "A", "expr": "sum(rate(loki_distributor_ingester_append_timeouts_total[5m]))"}],
           "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}}, "overrides": []}
         },
         {
-          "id": 9,
+          "id": 14,
           "type": "stat",
           "title": "Alloy forwarding errors",
-          "gridPos": {"x": 18, "y": 32, "w": 6, "h": 8},
+          "gridPos": {"x": 18, "y": 40, "w": 6, "h": 8},
           "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
           "targets": [{"refId": "A", "expr": "sum(rate(loki_write_dropped_bytes_total[5m]))"}],
           "fieldConfig": {"defaults": {"unit": "Bps", "color": {"mode": "thresholds"}}, "overrides": []}

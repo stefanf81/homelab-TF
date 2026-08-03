@@ -225,7 +225,13 @@ Current: **AFZ** (header, forensic info, end marker). Excludes request body and 
 
 ### Alloy Configuration
 
-Alloy discovers WAF pods in the `taskflow` namespace using Kubernetes service discovery:
+Alloy discovers WAF pods in the `taskflow` namespace using Kubernetes service discovery. Caddy access logs and Coraza audit records share the WAF container's stdout, so a `loki.process` pipeline runs only on records containing `"transaction"`.
+
+The pipeline extracts `method` from the transaction JSON and the first matched CRS `rule_id` from Coraza's `messages[]` array. Both are bounded values and are stored as Loki labels. Client IPs, URIs, transaction IDs, and other request-specific values remain in the log body and are parsed at query time to avoid high-cardinality labels.
+
+Loki's `json` parser skips arrays, so `messages[]` cannot be fully flattened with LogQL. The raw JSON audit record is retained for investigation; dashboard detection queries require `"messages"` and therefore exclude relevant HTTP responses that did not trigger a WAF rule.
+
+Alloy configuration:
 
 ```alloy
 discovery.kubernetes "pods" {
@@ -283,7 +289,32 @@ discovery.relabel "taskflow_wafs" {
 
 loki.source.kubernetes "taskflow_wafs" {
   targets = discovery.relabel.taskflow_wafs.output
+  forward_to = [loki.process.coraza_audit.receiver]
+}
+
+loki.process "coraza_audit" {
   forward_to = [loki.write.local.receiver]
+
+  stage.match {
+    selector = "{job=\"coraza-waf\"} |= \"\\\"transaction\\\"\""
+
+    stage.json {
+      expressions = {
+        method = "transaction.request.method",
+      }
+    }
+
+    stage.regex {
+      expression = `"messages":\[\{.*?"data":\{.*?"id":(?P<rule_id>[0-9]+)`
+    }
+
+    stage.labels {
+      values = {
+        method  = "method",
+        rule_id = "rule_id",
+      }
+    }
+  }
 }
 
 loki.write "local" {
@@ -317,6 +348,10 @@ loki.write "local" {
 | `container` | `waf` |
 | `cluster` | `homelab` |
 | `source` | `coraza` |
+| `method` | HTTP request method from a Coraza audit transaction |
+| `rule_id` | First matched CRS rule ID, present only when the audit record has `messages[]` |
+
+`client_ip`, `uri`, and transaction identifiers are deliberately not Loki labels. Use `| json` in LogQL to extract them for an individual query or a bounded aggregation.
 
 ### Grafana Datasource
 
@@ -343,9 +378,14 @@ datasources:
 | Panel | Type | Data Source | Query |
 |-------|------|-------------|-------|
 | WAF audit events | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf"} |= "\"transaction\"" [5m]))` |
-| SQL injection detections | timeseries | Loki | `... |= "942" [5m]` |
-| XSS, command injection, path traversal | timeseries | Loki | `... |~ "941|932|930|931" [5m]` |
-| Recent WAF events | logs | Loki | `{job="coraza-waf"} |= "\"transaction\""` |
+| WAF rule detections | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf"} |= "\"messages\"" [5m]))` |
+| Top triggered CRS rules | bar gauge | Loki | `topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[${__range}])))` |
+| Detection categories | pie chart | Loki | SQLi, XSS, path traversal, and command injection rule-ID ranges |
+| Detections by HTTP method | timeseries | Loki | `sum by (method) (count_over_time({job="coraza-waf", method=~".+"} |= "\"messages\"" [5m]))` |
+| Top source IPs | table | Loki | `topk(10, sum by (transaction_client_ip) (count_over_time({job="coraza-waf"} |= "\"messages\"" | json [${__range}])))` |
+| Recent WAF detections | logs | Loki | `{job="coraza-waf"} |= "\"messages\"" | json | line_format ...` |
+| SQL injection detections | timeseries | Loki | `... |= "\"messages\"" |~ "\"id\":94[0-9]{4}" [5m]` |
+| XSS, command injection, path traversal | timeseries | Loki | `... |= "\"messages\"" |~ "\"id\":941[0-9]{3}|\"id\":93[0-4][0-9]{3}" [5m]` |
 | WAF pod CPU | timeseries | VictoriaMetrics | `rate(container_cpu_usage_seconds_total{...}[5m])` |
 | WAF pod memory | timeseries | VictoriaMetrics | `container_memory_working_set_bytes{...}` |
 | WAF pod restarts | timeseries | VictoriaMetrics | `increase(kube_pod_container_status_restarts_total{...}[1h])` |
@@ -378,11 +418,22 @@ datasources:
 # Coraza audit events only (excluding health probes)
 {job="coraza-waf"} |= "\"transaction\""
 
+# Actual rule detections only (excludes relevant HTTP responses without a rule match)
+{job="coraza-waf"} |= "\"messages\""
+
+# Top matched CRS rules (newly ingested records after the Alloy pipeline rollout)
+topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[1h])))
+
+# Client IPs with the most detections; parsed at query time, not indexed
+topk(10, sum by (transaction_client_ip) (
+  count_over_time({job="coraza-waf"} |= "\"messages\"" | json [1h])
+))
+
 # SQL injection detections
-{job="coraza-waf"} |= "\"transaction\"" |= "942"
+{job="coraza-waf"} |= "\"messages\"" |~ "\"id\":94[0-9]{4}"
 
 # XSS detections
-{job="coraza-waf"} |= "\"transaction\"" |= "941"
+{job="coraza-waf"} |= "\"messages\"" |~ "\"id\":941[0-9]{3}"
 ```
 
 ## Caddy Access Logs
