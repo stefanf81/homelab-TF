@@ -108,6 +108,8 @@ spec:
         app.kubernetes.io/protects: taskflow-backend
     spec:
       terminationGracePeriodSeconds: 45
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: waf
           image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0@sha256:88fa8ca058bd3b94f9bce45d83b3271a22ac53eb429fe778e46633dc99094596
