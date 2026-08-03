@@ -21,17 +21,18 @@ spec:
   values:
     replicaCount: 1
     config:
-      configFile: |-
-        provider = "github"
-        github_org = "stefanf81"
-        upstreams = ["http://hubble-ui.kube-system.svc.cluster.local:80"]
-        http_address = "0.0.0.0:4180"
-        cookie_secure = true
-        cookie_domains = [".jokelab.dev"]
-        whitelist_domains = [".jokelab.dev"]
-        reverse_proxy = true
-        set_xauthrequest = true
-        skip_provider_button = true
+        configFile: |-
+          provider = "github"
+          github_org = "stefanf81"
+          upstreams = ["http://hubble-ui.kube-system.svc.cluster.local:80"]
+          http_address = "0.0.0.0:4180"
+          cookie_secure = true
+          cookie_domains = [".jokelab.dev"]
+          whitelist_domains = [".jokelab.dev"]
+          reverse_proxy = true
+          set_xauthrequest = true
+          skip_provider_button = true
+          email_domains = ["*"]
     env:
       - name: OAUTH2_PROXY_CLIENT_ID
         valueFrom:
