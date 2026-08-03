@@ -94,10 +94,10 @@ data:
           "gridPos": {"x": 0, "y": 8, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [
-            {"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |~ \"\\\"id\\\":94[0-9]{4}\" [$__range]))", "legendFormat": "SQL injection", "instant": true},
-            {"refId": "B", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |~ \"\\\"id\\\":941[0-9]{3}\" [$__range]))", "legendFormat": "Cross-site scripting", "instant": true},
-            {"refId": "C", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |~ \"\\\"id\\\":93[0-1][0-9]{3}\" [$__range]))", "legendFormat": "Path traversal", "instant": true},
-            {"refId": "D", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |~ \"\\\"id\\\":93[2-4][0-9]{3}\" [$__range]))", "legendFormat": "Command injection", "instant": true}
+            {"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"94[0-9]{4}\"}[$__range]))", "legendFormat": "SQL injection", "instant": true},
+            {"refId": "B", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"941[0-9]{3}\"}[$__range]))", "legendFormat": "Cross-site scripting", "instant": true},
+            {"refId": "C", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"93[0-1][0-9]{3}\"}[$__range]))", "legendFormat": "Path traversal", "instant": true},
+            {"refId": "D", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"93[2-4][0-9]{3}\"}[$__range]))", "legendFormat": "Command injection", "instant": true}
           ],
           "options": {"displayLabels": ["name", "percent"], "legend": {"displayMode": "list", "placement": "right", "showLegend": true}, "pieType": "donut", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "tooltip": {"mode": "single", "sort": "none"}},
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
@@ -138,7 +138,7 @@ data:
           "title": "SQL injection family detections",
           "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |~ \"\\\"id\\\":94[0-9]{4}\" [5m]))", "legendFormat": "{{application}}"}],
+          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"94[0-9]{4}\"}[5m]))", "legendFormat": "{{application}}"}],
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
         {
@@ -147,7 +147,7 @@ data:
           "title": "XSS, command injection, and path traversal",
           "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |~ \"\\\"id\\\":941[0-9]{3}|\\\"id\\\":93[0-4][0-9]{3}\" [5m]))", "legendFormat": "{{application}}"}],
+          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"941[0-9]{3}|93[0-4][0-9]{3}\"}[5m]))", "legendFormat": "{{application}}"}],
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
         {
