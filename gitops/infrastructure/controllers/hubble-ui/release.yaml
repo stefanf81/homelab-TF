@@ -21,33 +21,19 @@ spec:
   values:
     replicaCount: 1
     config:
-        configFile: |-
-          provider = "github"
-          upstreams = ["http://hubble-ui.kube-system.svc.cluster.local:80"]
-          http_address = "0.0.0.0:4180"
-          cookie_secure = false
+      existingSecret: hubble-ui-github-oauth
+      configFile: |-
+        provider = "github"
+        redirect_url = "https://hubble.jokelab.dev/oauth2/callback"
+        upstreams = ["http://hubble-ui.kube-system.svc.cluster.local:80"]
+        http_address = "0.0.0.0:4180"
+        cookie_secure = true
           cookie_domains = [".jokelab.dev"]
           whitelist_domains = [".jokelab.dev"]
           reverse_proxy = true
           set_xauthrequest = true
           email_domains = ["*"]
           scope = "user:email read:org"
-    env:
-      - name: OAUTH2_PROXY_CLIENT_ID
-        valueFrom:
-          secretKeyRef:
-            name: hubble-ui-github-oauth
-            key: clientId
-      - name: OAUTH2_PROXY_CLIENT_SECRET
-        valueFrom:
-          secretKeyRef:
-            name: hubble-ui-github-oauth
-            key: clientSecret
-      - name: OAUTH2_PROXY_COOKIE_SECRET
-        valueFrom:
-          secretKeyRef:
-            name: hubble-ui-github-oauth
-            key: cookieSecret
     ingress:
       enabled: false
     resources:
