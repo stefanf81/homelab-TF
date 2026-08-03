@@ -18,7 +18,7 @@ spec:
       timeouts:
         backendRequest: "10s" # Fail fast for hung backend calls instead of exhausting gateway connections
       backendRefs:
-        - name: backend
+        - name: taskflow-backend-waf
           port: 8080
 
     # Jaeger UI is intentionally NOT exposed through the Gateway: there is no auth in front
@@ -34,5 +34,5 @@ spec:
             type: PathPrefix
             value: /
       backendRefs:
-        - name: frontend
+        - name: taskflow-frontend-waf
           port: 8080

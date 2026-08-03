@@ -1,0 +1,196 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskflow-backend-waf-config
+  namespace: taskflow
+  labels:
+    app.kubernetes.io/name: taskflow-backend-waf
+    app.kubernetes.io/component: waf
+    app.kubernetes.io/part-of: taskflow
+    app.kubernetes.io/protects: taskflow-backend
+data:
+  Caddyfile: |
+    {
+        admin off
+        auto_https off
+        order coraza_waf first
+    }
+
+    :8080 {
+        log {
+            output stdout
+            format filter {
+                request>uri query {
+                    replace access_token REDACTED
+                    replace refresh_token REDACTED
+                    replace id_token REDACTED
+                    replace code REDACTED
+                    replace state REDACTED
+                    replace password REDACTED
+                    replace secret REDACTED
+                }
+                request>headers>Authorization delete
+                request>headers>Proxy-Authorization delete
+                request>headers>Cookie delete
+            }
+        }
+
+        handle /waf-healthz {
+            respond "healthy" 200
+        }
+
+        handle {
+            coraza_waf {
+                load_owasp_crs
+
+                directives `
+                    Include @coraza.conf-recommended
+                    Include @crs-setup.conf.example
+                    Include /etc/coraza/backend-exclusions.conf
+
+                    SecRuleEngine DetectionOnly
+                    SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.paranoia_level=1"
+
+                    SecRequestBodyAccess On
+                    SecResponseBodyAccess Off
+                    SecAuditEngine RelevantOnly
+                    SecAuditLog /dev/stdout
+                    SecAuditLogFormat JSON
+                    SecAuditLogParts AFZ
+
+                    SecRequestBodyLimit 10485760
+                    SecRequestBodyNoFilesLimit 1048576
+
+                    Include @owasp_crs/*.conf
+                `
+            }
+
+            reverse_proxy http://backend.taskflow.svc.cluster.local:8080 {
+                transport http {
+                    versions 1.1
+                }
+                header_up Host {http.request.host}
+                header_up X-Real-IP {http.request.remote.host}
+            }
+        }
+    }
+  backend-exclusions.conf: |
+    # No backend CRS exclusions are configured initially.
+    # Add only request-scoped exclusions after observing a legitimate false positive.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskflow-backend-waf
+  namespace: taskflow
+  labels:
+    app.kubernetes.io/name: taskflow-backend-waf
+    app.kubernetes.io/component: waf
+    app.kubernetes.io/part-of: taskflow
+    app.kubernetes.io/protects: taskflow-backend
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: taskflow-backend-waf
+  template:
+    metadata:
+      labels:
+        app: taskflow-backend-waf
+        app.kubernetes.io/name: taskflow-backend-waf
+        app.kubernetes.io/component: waf
+        app.kubernetes.io/part-of: taskflow
+        app.kubernetes.io/protects: taskflow-backend
+    spec:
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: waf
+          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0@sha256:88fa8ca058bd3b94f9bce45d83b3271a22ac53eb429fe778e46633dc99094596
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: caddy-config
+              mountPath: /etc/caddy
+              readOnly: true
+            - name: coraza-config
+              mountPath: /etc/coraza
+              readOnly: true
+            - name: caddy-data
+              mountPath: /data
+            - name: caddy-runtime-config
+              mountPath: /config
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /waf-healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /waf-healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 750m
+              memory: 768Mi
+      volumes:
+        - name: caddy-config
+          configMap:
+            name: taskflow-backend-waf-config
+            items:
+              - key: Caddyfile
+                path: Caddyfile
+        - name: coraza-config
+          configMap:
+            name: taskflow-backend-waf-config
+            items:
+              - key: backend-exclusions.conf
+                path: backend-exclusions.conf
+        - name: caddy-data
+          emptyDir: {}
+        - name: caddy-runtime-config
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskflow-backend-waf
+  namespace: taskflow
+  labels:
+    app.kubernetes.io/name: taskflow-backend-waf
+    app.kubernetes.io/component: waf
+    app.kubernetes.io/part-of: taskflow
+    app.kubernetes.io/protects: taskflow-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: taskflow-backend-waf
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

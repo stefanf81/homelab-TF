@@ -30,11 +30,11 @@ spec:
   # no ingress rules => deny all ingress
 ---
 # 2) Allow the Cilium Gateway (Envoy proxy carries the reserved:ingress identity)
-#    to reach the public workloads on their serving port.
+#    to reach only the dedicated WAF workloads on their serving port.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: allow-gateway-to-app
+  name: allow-gateway-to-waf
   namespace: taskflow
 spec:
   endpointSelector:
@@ -42,8 +42,8 @@ spec:
       - key: app
         operator: In
         values:
-          - taskflow-frontend
-          - taskflow-backend
+          - taskflow-frontend-waf
+          - taskflow-backend-waf
   ingress:
     - fromEndpoints:
         - matchExpressions:
@@ -54,7 +54,104 @@ spec:
             - port: "8080"
               protocol: TCP
 ---
-# 3) Allow the monitoring stack (VictoriaMetrics vmagent, in `monitoring`) to
+# 3) Keep the two WAF egress paths isolated from one another and from unrelated
+#    workloads. DNS is the only additional egress required by Caddy.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: isolate-taskflow-frontend-waf
+  namespace: taskflow
+spec:
+  endpointSelector:
+    matchLabels:
+      app: taskflow-frontend-waf
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: taskflow-frontend
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            "k8s:k8s-app": kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+---
+# 4) The backend WAF has its own egress allow-list and cannot reach the frontend.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: isolate-taskflow-backend-waf
+  namespace: taskflow
+spec:
+  endpointSelector:
+    matchLabels:
+      app: taskflow-backend-waf
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: taskflow-backend
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            "k8s:k8s-app": kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+---
+# 5) The original applications accept public traffic only from their matching WAF.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-frontend-waf-to-frontend
+  namespace: taskflow
+spec:
+  endpointSelector:
+    matchLabels:
+      app: taskflow-frontend
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: taskflow-frontend-waf
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+# 6) The backend application accepts public traffic only from its matching WAF.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-backend-waf-to-backend
+  namespace: taskflow
+spec:
+  endpointSelector:
+    matchLabels:
+      app: taskflow-backend
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: taskflow-backend-waf
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+# 7) Allow the monitoring stack (VictoriaMetrics vmagent, in `monitoring`) to
 #    scrape the metrics endpoints. Without this, Postgres/Redis (and the inert
 #    backend) metrics go dark.
 apiVersion: networking.k8s.io/v1
@@ -86,7 +183,7 @@ spec:
         - protocol: TCP
           port: 9121 # redis-exporter
 ---
-# 4) Allow cert-manager HTTP-01 solver pods to receive challenge traffic
+# 8) Allow cert-manager HTTP-01 solver pods to receive challenge traffic
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -102,4 +199,3 @@ spec:
     - ports:
         - protocol: TCP
           port: 8089
-

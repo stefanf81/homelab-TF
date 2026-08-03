@@ -1,0 +1,143 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskflow-waf-loki-datasource
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+    app.kubernetes.io/name: loki
+    app.kubernetes.io/component: logging
+    app.kubernetes.io/part-of: taskflow-observability
+data:
+  loki-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        uid: loki
+        type: loki
+        access: proxy
+        url: http://loki-gateway.monitoring.svc.cluster.local
+        isDefault: false
+        editable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskflow-waf-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: taskflow-waf
+    app.kubernetes.io/component: logging
+    app.kubernetes.io/part-of: taskflow-observability
+data:
+  taskflow-waf.json: |
+    {
+      "uid": "taskflow-waf",
+      "title": "Taskflow WAF",
+      "description": "Coraza and Caddy telemetry for the Taskflow frontend and backend WAFs.",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {"from": "now-6h", "to": "now"},
+      "templating": {
+        "list": [
+          {
+            "name": "application",
+            "label": "Application",
+            "type": "query",
+            "datasource": {"type": "loki", "uid": "loki"},
+            "query": "label_values({job=\"coraza-waf\"}, application)",
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": true,
+            "refresh": 2
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "WAF audit events",
+          "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"transaction\\\"\" [5m]))", "legendFormat": "{{application}}"}],
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "SQL injection family detections",
+          "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"transaction\\\"\" |= \"942\" [5m]))", "legendFormat": "{{application}}"}],
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "XSS, command injection, and path traversal",
+          "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [
+            {"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"transaction\\\"\" |~ \"941|932|930|931\" [5m]))", "legendFormat": "{{application}}"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 4,
+          "type": "logs",
+          "title": "Recent WAF events",
+          "gridPos": {"x": 12, "y": 8, "w": 12, "h": 16},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"transaction\\\"\""}],
+          "options": {"showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLines": false, "prettifyLogMessage": true, "enableLogDetails": true}
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "WAF pod CPU",
+          "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\", container=\"waf\"}[5m]))", "legendFormat": "{{pod}}"}],
+          "fieldConfig": {"defaults": {"unit": "cores"}, "overrides": []}
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "WAF pod memory",
+          "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\", container=\"waf\"})", "legendFormat": "{{pod}}"}],
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []}
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "WAF pod restarts",
+          "gridPos": {"x": 0, "y": 32, "w": 12, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\"}[1h]))", "legendFormat": "{{pod}}"}],
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 8,
+          "type": "stat",
+          "title": "Loki ingester append timeouts",
+          "gridPos": {"x": 12, "y": 32, "w": 6, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum(rate(loki_distributor_ingester_append_timeouts_total[5m]))"}],
+          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}}, "overrides": []}
+        },
+        {
+          "id": 9,
+          "type": "stat",
+          "title": "Alloy forwarding errors",
+          "gridPos": {"x": 18, "y": 32, "w": 6, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum(rate(loki_write_dropped_bytes_total[5m]))"}],
+          "fieldConfig": {"defaults": {"unit": "Bps", "color": {"mode": "thresholds"}}, "overrides": []}
+        }
+      ]
+    }

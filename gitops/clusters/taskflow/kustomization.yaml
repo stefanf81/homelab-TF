@@ -7,6 +7,7 @@ resources:
   - image-automation.yaml
   - taskflow.yaml
   - monitoring.yaml
+  - monitoring-logging.yaml
   - monitoring-app.yaml
   - kyverno-policies.yaml
   - policy-reporter.yaml

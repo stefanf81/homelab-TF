@@ -5,9 +5,11 @@ resources:
   - configmap.yaml
   - taskflow-secrets.yaml
   - backend.yaml
+  - backend-waf.yaml
   - backend-hpa.yaml
   - backend-pdb.yaml
   - frontend.yaml
+  - frontend-waf.yaml
   - frontend-pdb.yaml
   - jaeger.yaml
   - network-policy.yaml
@@ -23,4 +25,3 @@ resources:
   - http-redirect.yaml
   - certificate.yaml
   - cloudflare-ddns.yaml
-
