@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: jaeger
   namespace: taskflow
+  labels:
+    app.kubernetes.io/name: jaeger
+    app.kubernetes.io/part-of: taskflow
 spec:
   replicas: 1
   selector:

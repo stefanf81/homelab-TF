@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: taskflow-backend
   namespace: taskflow
+  labels:
+    app.kubernetes.io/name: taskflow-backend
+    app.kubernetes.io/part-of: taskflow
 spec:
   replicas: 1
   selector:

@@ -7,9 +7,9 @@ metadata:
     policies.kyverno.io/category: Best Practices
     policies.kyverno.io/severity: low
     policies.kyverno.io/description: >-
-      Requires Deployments and StatefulSets to carry the app.kubernetes.io/name
-      and app.kubernetes.io/part-of labels. Audit-only: reports violations,
-      does not block admission.
+      Requires TaskFlow Deployments and StatefulSets to carry the
+      app.kubernetes.io/name and app.kubernetes.io/part-of labels. Audit-only:
+      reports violations, does not block admission.
 spec:
   validationFailureAction: Audit
   background: true
@@ -21,15 +21,8 @@ spec:
               kinds:
                 - Deployment
                 - StatefulSet
-      exclude:
-        any:
-          - resources:
               namespaces:
-                - kube-system
-                - kyverno
-                - flux-system
-                - cert-manager
-                - cilium
+                - taskflow
       validate:
         message: "Deployments/StatefulSets must have app.kubernetes.io/name and app.kubernetes.io/part-of labels."
         pattern:

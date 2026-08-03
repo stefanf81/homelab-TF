@@ -17,12 +17,11 @@ deserves a PDB + comment explaining why it's single-replica.
 **Fix:** Add `PodDisruptionBudget` for `postgres-db` (`minAvailable: 1`) and note
 the single-replica tradeoff in a comment. (✅ **Resolved**: Added `PodDisruptionBudget` with `minAvailable: 1` directly to `postgres-db.yaml`)
 
-### 15. Frontend probes hit `/` rather than a health endpoint
+### 15. ~~Frontend probes hit `/` rather than a health endpoint~~
 **File:** `gitops/apps/taskflow/frontend.yaml`
-All three probes use `path: /`. If the SPA ever returns 200 for a 404 page (common
-with client-side routing), the pod looks "ready" even when broken.
-**Fix:** Probe a real health path (e.g. `/healthz` or a static asset that 404s
-correctly) or rely on nginx's `/nginx_status`.
+All three probes now use the concrete `/index.html` asset instead of `/`. This
+avoids treating a client-side SPA fallback response as proof that nginx is
+serving the expected application bundle. **Status:** Resolved.
 
 ---
 
@@ -55,7 +54,7 @@ later resolved — see #19 in the table.
 | 12 | diagnose.sh hardcoded macOS path | 🟢 Low | Trivial | diagnose.sh | ✅ Fixed |
 | 13 | No namespace LimitRange/Quota | 🟢 Low | Small | namespace.yaml | ✅ Fixed |
 | 14 | Unused TLSRoute CRD | 🟢 Low | Trivial | gateway-api | ✅ Resolved (HTTPS listener & cert active) |
-| 15 | Frontend probes on `/` | 🟡 Med | Small | frontend.yaml | ⬜ Open |
+| 15 | Frontend probes on `/` | 🟡 Med | Small | frontend.yaml | ✅ Fixed |
 | 16 | SOPS key rotation undocumented | 🟢 Low | Trivial | .sops.yaml | ✅ Fixed |
 | 17 | No PostgreSQL backup | 🟢 Low | Medium | postgres-*.yaml | ✅ Resolved via Proxmox CSI |
 | 18 | Ubuntu 26.04 image URL unverified | 🟢 Low | Trivial | proxmox/main.tf | ✅ Verified |

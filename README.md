@@ -22,9 +22,9 @@ You also need access to a **Proxmox VE 8.x** host with an API token (with VM cre
 - `modules/proxmox` – Provisions the Ubuntu 26.04 VM; cloud-init installs k3s at boot (no SSH provisioners, per OpenTofu best practice).
 - `modules/k3s-kubeconfig` – SSHs into the node once cloud-init finishes, fetches `/etc/rancher/k3s/k3s.yaml`, and writes a local `kubeconfig.yaml`.
 - `gitops/` – Declarative Flux v2 manifests:
-  - `gitops/infrastructure/controllers` – Cilium v1.19.6, cert-manager, Proxmox CSI, Kyverno, Falco, Policy Reporter, Trivy Operator.
+  - `gitops/infrastructure/controllers` – Cilium v1.20.0, cert-manager, Proxmox CSI, Kyverno, Falco, Policy Reporter, Trivy Operator.
   - `gitops/infrastructure/configs` – Cilium L2 announcement policy (`192.168.50.200-250`), `GatewayClass`.
-  - `gitops/apps/taskflow` – Spring Boot 3.5.3 backend, Angular 22 frontend, PostgreSQL 18, Redis 8.8, Jaeger.
+  - `gitops/apps/taskflow` – Spring Boot 3.5.3 backend, Angular 22 frontend, PostgreSQL 18, Redis 8.10, Jaeger.
   - `gitops/monitoring` – VictoriaMetrics TSDB + Grafana operator stack + metrics-server.
   - `gitops/clusters/taskflow` – Cluster root Kustomizations.
 
@@ -77,7 +77,7 @@ export KUBECONFIG=$PWD/kubeconfig.yaml
 kubectl get nodes
 ```
 
-### 3️⃣ Bootstrap Cilium CNI (v1.19.6)
+### 3️⃣ Bootstrap Cilium CNI (v1.20.0)
 
 Because k3s is installed with `--flannel-backend=none` (CNI-free), the node remains `NotReady` until Cilium is installed:
 
@@ -90,7 +90,7 @@ sudo tar xzvfC cilium-darwin-arm64.tar.gz /usr/local/bin
 rm cilium-darwin-arm64.tar.gz{,.sha256sum}
 
 # Bootstrap Cilium onto the cluster
-cilium install --version 1.19.6
+cilium install --version 1.20.0
 cilium status --wait
 ```
 
@@ -186,7 +186,7 @@ To ensure production-grade security, resiliency, and performance on a single-nod
 * **Syntax-Safe Cloud-Init:** Heredocs in `modules/proxmox/main.tf` start at column 0 to prevent YAML whitespace parsing failures.
 
 ### 2. Cilium CNI, Network Security & Gateway API
-* **High-Performance eBPF CNI:** Flannel and k3s network policies are disabled (`--flannel-backend=none --disable-network-policy`) to let **Cilium v1.19.6** handle eBPF routing, SNAT masquerading, and network security policies.
+* **High-Performance eBPF CNI:** Flannel and k3s network policies are disabled (`--flannel-backend=none --disable-network-policy`) to let **Cilium v1.20.0** handle eBPF routing, SNAT masquerading, and network security policies.
 * **Kubernetes Gateway API:** Deployed standard Gateway API CRDs (`gateway-api`) and enabled Cilium's Gateway API controller (`gatewayAPI.enabled = true`).
 * **ServiceLB Deconfliction & L2 Announcements:** K3s ServiceLB is disabled (`--disable servicelb`). Cilium L2 announcements (`CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy`) advertise gateway IP `192.168.50.201`.
 * **Zero-Trust Network Policies:** Ingress to database/cache tiers (`postgres-db`, `redis`, `jaeger`) is restricted strictly to backend pods.

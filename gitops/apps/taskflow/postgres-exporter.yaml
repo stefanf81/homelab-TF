@@ -9,6 +9,8 @@ metadata:
   namespace: taskflow
   labels:
     app: postgres-exporter
+    app.kubernetes.io/name: postgres-exporter
+    app.kubernetes.io/part-of: taskflow
 spec:
   replicas: 1
   selector:

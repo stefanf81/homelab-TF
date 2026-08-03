@@ -10,7 +10,7 @@ This guide compiles the complete technical logs, structural adjustments, and tro
 
 | Feature | Legacy State | Modern Optimized State |
 | :--- | :--- | :--- |
-| **CNI (Network Engine)** | Flannel (Standard iptables encapsulation) | **Cilium v1.19.5 (eBPF-native routing)** |
+| **CNI (Network Engine)** | Flannel (Standard iptables encapsulation) | **Cilium v1.20.0 (eBPF-native routing)** |
 | **Routing Layer** | Open `type: NodePort` on host nodes | **Kubernetes Gateway API (eBPF Envoy Proxy)** |
 | **Ports Exposed** | `30042` (Frontend), `30080` (Backend), `31686` (Jaeger) | **Port 80 (Consolidated Path-Based Routing)** |
 | **Routing Target** | Direct node endpoints | Secure internal **`type: ClusterIP`** services |

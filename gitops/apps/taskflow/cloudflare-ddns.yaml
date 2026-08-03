@@ -5,6 +5,8 @@ metadata:
   namespace: taskflow
   labels:
     app: cloudflare-ddns
+    app.kubernetes.io/name: cloudflare-ddns
+    app.kubernetes.io/part-of: taskflow
 spec:
   replicas: 1
   selector:

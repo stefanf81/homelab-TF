@@ -7,8 +7,8 @@ metadata:
     policies.kyverno.io/category: Best Practices
     policies.kyverno.io/severity: medium
     policies.kyverno.io/description: >-
-      Flags any container image that uses the mutable :latest tag. Audit-only:
-      reports violations, does not block admission.
+      Flags running Pods that use the mutable :latest tag. Audit-only: reports
+      violations, does not block admission.
 spec:
   validationFailureAction: Audit
   background: true
@@ -19,11 +19,6 @@ spec:
           - resources:
               kinds:
                 - Pod
-                - Deployment
-                - StatefulSet
-                - DaemonSet
-                - ReplicaSet
-                - Job
       exclude:
         any:
           - resources:

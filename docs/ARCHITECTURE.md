@@ -46,7 +46,7 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 
 ### 3.1 Runtime
 - **Distribution**: k3s (single-node cluster)
-- **CNI**: Cilium v1.19.6 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
+- **CNI**: Cilium v1.20.0 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
 - **Storage**: Proxmox CSI (dynamic VM virtual disk provisioning)
 
 ### 3.2 Cilium Configuration (`gitops/infrastructure/controllers/cilium/release.yaml`)
@@ -204,7 +204,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.5 Redis Deployment (`gitops/apps/taskflow/redis.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `redis:8.8.0-alpine` |
+| Image | `redis:8.10.0-alpine` |
 | Replicas | 1 |
 | Storage | emptyDir (ephemeral, no persistence) |
 | Memory Guard | `--maxmemory 384mb`, `allkeys-lru`, lazyfree eviction, 10 samples |
@@ -299,7 +299,7 @@ TF/
 │   │   ├── frontend.yaml            # Angular/nginx deployment + ClusterIP service
 │   │   ├── postgres-db.yaml         # PostgreSQL 18 deployment + ClusterIP service (name: db)
 │   │   ├── postgres-pvc.yaml        # 10Gi Proxmox CSI PVC
-│   │   ├── redis.yaml               # Redis 8.8 deployment + ClusterIP service + NetworkPolicy
+│   │   ├── redis.yaml               # Redis 8.10 deployment + ClusterIP service + NetworkPolicy
 │   │   ├── jaeger.yaml              # Jaeger all-in-one + OTLP services + UI service + NetworkPolicy
 │   │   ├── gateway.yaml             # Cilium Gateway (port 80/443, restricted namespace routes)
 │   │   ├── httproute.yaml           # /api→backend, /*→frontend (Jaeger UI NOT exposed)
@@ -316,7 +316,7 @@ TF/
 │   │
 │   ├── infrastructure/
 │   │   ├── controllers/             # HelmRelease + Repository for platform add-ons
-│   │   │   ├── cilium/release.yaml  # Cilium v1.19.6 (eBPF, Gateway API, L2 announcements)
+│   │   │   ├── cilium/release.yaml  # Cilium v1.20.0 (eBPF, Gateway API, L2 announcements)
 │   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.0) with Let's Encrypt certificate automation
 │   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
 │   │   │   ├── gateway-api/         # Standard Gateway API CRDs + TLSRoute CRD

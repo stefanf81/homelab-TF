@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: postgres-db
   namespace: taskflow
+  labels:
+    app.kubernetes.io/name: postgres-db
+    app.kubernetes.io/part-of: taskflow
 spec:
   replicas: 1
   selector:
