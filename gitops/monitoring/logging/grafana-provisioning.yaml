@@ -100,7 +100,15 @@ data:
             {"refId": "D", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"93[2-4][0-9]{3}\"}[$__range]))", "legendFormat": "Command injection", "instant": true}
           ],
           "options": {"displayLabels": ["name", "percent"], "legend": {"displayMode": "list", "placement": "right", "showLegend": true}, "pieType": "donut", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "tooltip": {"mode": "single", "sort": "none"}},
-          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+          "fieldConfig": {
+            "defaults": {"unit": "short"},
+            "overrides": [
+              {"matcher": {"id": "byName", "options": "Value #A"}, "properties": [{"id": "displayName", "value": "SQL injection"}]},
+              {"matcher": {"id": "byName", "options": "Value #B"}, "properties": [{"id": "displayName", "value": "Cross-site scripting"}]},
+              {"matcher": {"id": "byName", "options": "Value #C"}, "properties": [{"id": "displayName", "value": "Path traversal"}]},
+              {"matcher": {"id": "byName", "options": "Value #D"}, "properties": [{"id": "displayName", "value": "Command injection"}]}
+            ]
+          }
         },
         {
           "id": 5,
