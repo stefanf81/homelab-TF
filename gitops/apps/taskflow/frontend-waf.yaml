@@ -155,7 +155,7 @@ spec:
       initContainers:
         - name: create-audit-pipe
           image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0-r1@sha256:4266cd64d3d5204a05709f8770ba10de52a78e2f93e8d7740c24bfde916dffd8
-          command: ["/bin/sh", "-c", "mkfifo /var/run/coraza/audit.pipe && chown 100:100 /var/run/coraza/audit.pipe"]
+          command: ["/bin/sh", "-c", "if [ ! -p /var/run/coraza/audit.pipe ]; then rm -f /var/run/coraza/audit.pipe && mkfifo /var/run/coraza/audit.pipe; fi && chown 100:100 /var/run/coraza/audit.pipe"]
           securityContext:
             runAsNonRoot: false
             runAsUser: 0
