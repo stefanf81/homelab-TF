@@ -14,6 +14,8 @@ FROM caddy:${CADDY_VERSION}-alpine
 
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 
+RUN setcap -r /usr/bin/caddy 2>/dev/null || true
+
 RUN addgroup -S caddy \
     && adduser -S -G caddy caddy \
     && chown -R caddy:caddy /data /config
