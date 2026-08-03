@@ -4,6 +4,9 @@ metadata:
   name: hubble-ui
   namespace: flux-system
 spec:
+  dependsOn:
+    - name: infra-controllers
+    - name: taskflow-app
   interval: 10m
   retryInterval: 1m
   timeout: 5m
@@ -12,3 +15,8 @@ spec:
     name: flux-system
   path: ./gitops/infrastructure/controllers/hubble-ui
   prune: true
+  wait: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
