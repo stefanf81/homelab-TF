@@ -213,8 +213,8 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
 ## Client IP Forwarding
 
 The WAF receives requests only from the Cilium Gateway. Its Caddy global options trust
-the K3s Pod CIDR (`10.42.0.0/16`), parse `X-Forwarded-For` from right to left, and use only that
-header to resolve `{client_ip}`. Each WAF writes that resolved value as `client_ip` in
+the K3s Pod CIDR (`10.42.0.0/16`), prefer Cloudflare's `CF-Connecting-IP`, and fall back to
+right-to-left `X-Forwarded-For` parsing to resolve `{client_ip}`. Each WAF writes that resolved value as `client_ip` in
 the Caddy access log before Coraza executes, including blocked requests. The WAF also
 passes `{client_ip}` upstream as `X-Real-IP`.
 The HTTPRoute attaches application traffic exclusively to the HTTPS Gateway listener,

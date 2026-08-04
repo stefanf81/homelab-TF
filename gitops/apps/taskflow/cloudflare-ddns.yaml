@@ -29,7 +29,7 @@ spec:
             - name: DOMAINS
               value: "jokelab.dev,www.jokelab.dev,grafana.jokelab.dev,kyverno.jokelab.dev,hubble.jokelab.dev"
             - name: PROXIED
-              value: "false"
+              value: "true"
           resources:
             requests:
               memory: "16Mi"
