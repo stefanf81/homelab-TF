@@ -414,10 +414,12 @@ sanitized request URIs, request outcomes, and recent access logs. Filters are
 available for `application` and `pod`; `namespace` is fixed to `taskflow` and
 `container` is fixed to `waf`.
 
-Access-log `client_ip` is currently the Cilium Gateway source, not the original
-visitor IP. The dashboard intentionally does not present it as visitor identity.
-Resolved client IP is available only in Coraza audit records for `RelevantOnly`
-transactions.
+Each WAF uses `log_append <client_ip {client_ip}` before `coraza_waf`, so Caddy
+access logs include the resolved visitor IP even when Coraza blocks the request.
+The value is derived only from `X-Forwarded-For` received from the trusted Cilium
+Gateway Pod CIDR. It is parsed at query time and is not a Loki label. Coraza audit
+records continue to expose the same value as `transaction_client_ip` for
+`RelevantOnly` transactions.
 
 ### Access
 
@@ -448,6 +450,13 @@ topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[1h]
 # Client IPs with the most detections; parsed at query time, not indexed
 topk(10, sum by (transaction_client_ip) (
   count_over_time({job="coraza-waf"} |= "\"messages\"" | json [1h])
+))
+
+# Client IPs across all Caddy access logs, including requests that do not produce
+# a Coraza audit event.
+topk(10, sum by (client_ip) (
+  count_over_time({job="coraza-waf", container="waf"} | json | __error__="" |
+    client_ip != "" [1h])
 ))
 
 # SQL injection detections

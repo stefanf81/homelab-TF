@@ -223,7 +223,7 @@ data:
       "title": "Taskflow Access Logs",
       "description": "Caddy access-log activity for normal Taskflow traffic. Coraza audit records and WAF detections are shown separately on the Taskflow WAF dashboard.",
       "schemaVersion": 39,
-      "version": 1,
+      "version": 2,
       "refresh": "30s",
       "time": {"from": "now-6h", "to": "now"},
       "templating": {
@@ -258,7 +258,7 @@ data:
           "type": "text",
           "title": "Scope",
           "gridPos": {"x": 0, "y": 0, "w": 24, "h": 3},
-          "options": {"mode": "markdown", "content": "Shows Caddy access logs from the `waf` container and excludes `/waf-healthz` probes. URIs and credential headers are redacted before Loki ingestion. Access-log client IP is the Cilium Gateway source, not the original visitor IP; use Coraza audit records when a resolved client IP is required."}
+          "options": {"mode": "markdown", "content": "Shows Caddy access logs from the `waf` container and excludes `/waf-healthz` probes. URIs and credential headers are redacted before Loki ingestion. `client_ip` is Caddy's resolved visitor address from `X-Forwarded-For`; it is parsed at query time and is not a Loki label."}
         },
         {
           "id": 2,
@@ -310,11 +310,22 @@ data:
         },
         {
           "id": 7,
+          "type": "table",
+          "title": "Top client IPs",
+          "description": "Resolved visitor IPs from Caddy access logs. Parsed at query time to avoid a high-cardinality Loki label.",
+          "gridPos": {"x": 8, "y": 19, "w": 8, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip != \"\" [$__range])))", "instant": true}],
+          "options": {"showHeader": true},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 8,
           "type": "logs",
           "title": "Recent access logs",
-          "gridPos": {"x": 8, "y": 19, "w": 16, "h": 8},
+          "gridPos": {"x": 16, "y": 19, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | request_uri != \"/waf-healthz\" | request_uri=~\".+\" | line_format `{{.status}} {{.request_method}} {{.request_uri}} duration={{.duration}}s`"}],
+          "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri=~\".+\" | line_format `{{.status}} {{.request_method}} {{.request_uri}} ip={{.client_ip}} duration={{.duration}}s`"}],
           "options": {"showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLines": true, "prettifyLogMessage": false, "enableLogDetails": true}
         }
       ]
