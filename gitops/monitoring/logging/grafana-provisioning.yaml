@@ -37,7 +37,7 @@ data:
       "title": "Taskflow WAF",
       "description": "Coraza and Caddy telemetry for the Taskflow frontend and backend WAFs.",
       "schemaVersion": 39,
-      "version": 2,
+      "version": 3,
       "refresh": "30s",
       "time": {"from": "now-6h", "to": "now"},
       "templating": {
@@ -118,6 +118,30 @@ data:
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [{"refId": "A", "expr": "sum by (method) (count_over_time({job=\"coraza-waf\", application=~\"$application\", method=~\".+\"} |= \"\\\"messages\\\"\" [5m]))", "legendFormat": "{{method}}"}],
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 15,
+          "type": "piechart",
+          "title": "Detections by paranoia level",
+          "description": "OWASP CRS rule matches grouped by paranoia level tag. PL2+ rules are detections that would have been ignored on PL1.",
+          "gridPos": {"x": 16, "y": 8, "w": 8, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [
+            {"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |= \"paranoia-level/1\" [$__range]))", "legendFormat": "PL 1 (Standard)", "instant": true},
+            {"refId": "B", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |= \"paranoia-level/2\" [$__range]))", "legendFormat": "PL 2 (Elevated)", "instant": true},
+            {"refId": "C", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |= \"paranoia-level/3\" [$__range]))", "legendFormat": "PL 3 (High)", "instant": true},
+            {"refId": "D", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |= \"paranoia-level/4\" [$__range]))", "legendFormat": "PL 4 (Extreme)", "instant": true}
+          ],
+          "options": {"displayLabels": ["name", "percent"], "legend": {"displayMode": "list", "placement": "right", "showLegend": true}, "pieType": "donut", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "tooltip": {"mode": "single", "sort": "none"}},
+          "fieldConfig": {
+            "defaults": {"unit": "short"},
+            "overrides": [
+              {"matcher": {"id": "byName", "options": "Value #A"}, "properties": [{"id": "displayName", "value": "PL 1 (Standard)"}]},
+              {"matcher": {"id": "byName", "options": "Value #B"}, "properties": [{"id": "displayName", "value": "PL 2 (Elevated)"}]},
+              {"matcher": {"id": "byName", "options": "Value #C"}, "properties": [{"id": "displayName", "value": "PL 3 (High)"}]},
+              {"matcher": {"id": "byName", "options": "Value #D"}, "properties": [{"id": "displayName", "value": "PL 4 (Extreme)"}]}
+            ]
+          }
         },
         {
           "id": 6,

@@ -56,8 +56,8 @@ data:
                     Include @crs-setup.conf.example
                     Include /etc/coraza/backend-exclusions.conf
 
-                    SecRuleEngine DetectionOnly
-                    SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.paranoia_level=1"
+                    SecRuleEngine On
+                    SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.paranoia_level=2"
 
                     SecRequestBodyAccess On
                     SecResponseBodyAccess Off

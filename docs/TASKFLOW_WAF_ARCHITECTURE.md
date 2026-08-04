@@ -387,6 +387,7 @@ datasources:
 | Top triggered CRS rules | bar gauge | Loki | `topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[${__range}])))` |
 | Detection categories | pie chart | Loki | Named SQL injection (`94[0-9]{4}`), Cross-site scripting (`941[0-9]{3}`), Path traversal (`93[0-1][0-9]{3}`), and Command injection (`93[2-4][0-9]{3}`) slices |
 | Detections by HTTP method | timeseries | Loki | `sum by (method) (count_over_time({job="coraza-waf", method=~".+"} |= "\"messages\"" [5m]))` |
+| Detections by paranoia level | pie chart | Loki | Grouped by `paranoia-level/1`, `paranoia-level/2`, `paranoia-level/3`, and `paranoia-level/4` tags |
 | Top source IPs | table | Loki | `topk(10, sum by (transaction_client_ip) (count_over_time({job="coraza-waf"} |= "\"messages\"" | json [${__range}])))` |
 | Recent WAF detections | logs | Loki | `{job="coraza-waf"} |= "\"messages\"" | json | line_format ...` |
 | SQL injection detections | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf", rule_id=~"94[0-9]{4}"}[5m]))` |
@@ -464,6 +465,9 @@ topk(10, sum by (client_ip) (
 
 # XSS detections
 {job="coraza-waf"} |= "\"messages\"" |~ "\"id\":941[0-9]{3}"
+
+# Detections introduced by paranoia level 2 (rules ignored on PL 1)
+{job="coraza-waf"} |= "\"messages\"" |= "paranoia-level/2"
 ```
 
 ## Caddy Access Logs
