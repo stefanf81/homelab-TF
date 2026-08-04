@@ -389,7 +389,7 @@ datasources:
 | Detections by HTTP method | timeseries | Loki | `sum by (method) (count_over_time({job="coraza-waf", method=~".+"} |= "\"messages\"" [5m]))` |
 | Detections by paranoia level | pie chart | Loki | Grouped by `paranoia-level/1`, `paranoia-level/2`, `paranoia-level/3`, and `paranoia-level/4` tags |
 | Top source IPs | table | Loki | `topk(10, sum by (transaction_client_ip) (count_over_time({job="coraza-waf"} |= "\"messages\"" | json [${__range}])))` |
-| Recent WAF detections | logs | Loki | `{job="coraza-waf"} |= "\"messages\"" | json | line_format ...` |
+| Recent WAF detections | logs | Loki | `{job="coraza-waf"} |= "\"messages\"" | json | regexp ... | line_format "{{.transaction_request_method}} {{.transaction_request_uri}} [rule={{.rule_id}}: {{.rule_msg}}] ip={{.transaction_client_ip}}"` |
 | SQL injection detections | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf", rule_id=~"94[0-9]{4}"}[5m]))` |
 | XSS, command injection, path traversal | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf", rule_id=~"941[0-9]{3}|93[0-4][0-9]{3}"}[5m]))` |
 | WAF block rate | stat | Loki | `(sum(count_over_time({job="coraza-waf"} |= "\"is_interrupted\":true" [$__range])) / sum(count_over_time({job="coraza-waf"} |= "\"messages\"" [$__range]))) * 100` |
