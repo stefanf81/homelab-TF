@@ -13,7 +13,7 @@ data:
     {
         admin off
         auto_https off
-        # Log the resolved client address before Coraza can interrupt a blocked request.
+        order coraza_waf first
         order log_append before coraza_waf
         servers {
             trusted_proxies static 10.42.0.0/16
