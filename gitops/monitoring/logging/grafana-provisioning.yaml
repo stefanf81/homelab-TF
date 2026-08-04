@@ -37,7 +37,7 @@ data:
       "title": "Taskflow WAF",
       "description": "Coraza and Caddy telemetry for the Taskflow frontend and backend WAFs.",
       "schemaVersion": 39,
-      "version": 3,
+      "version": 4,
       "refresh": "30s",
       "time": {"from": "now-6h", "to": "now"},
       "templating": {
@@ -183,10 +183,52 @@ data:
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
         {
+          "id": 16,
+          "type": "stat",
+          "title": "WAF block rate",
+          "description": "Percentage of detected threats that resulted in an active block (403 Forbidden).",
+          "gridPos": {"x": 0, "y": 32, "w": 8, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "(sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"is_interrupted\\\":true\" [$__range])) / sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" [$__range]))) * 100"}],
+          "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "thresholds"}}, "overrides": []}
+        },
+        {
+          "id": 17,
+          "type": "table",
+          "title": "Top targeted URIs",
+          "description": "Request URIs triggering the highest volume of WAF rule matches.",
+          "gridPos": {"x": 8, "y": 32, "w": 8, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "topk(10, sum by (transaction_request_uri) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json [$__range])))", "instant": true}],
+          "options": {"showHeader": true},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 18,
+          "type": "table",
+          "title": "Top attacking user agents",
+          "description": "User-Agents sending traffic that triggers WAF rules.",
+          "gridPos": {"x": 16, "y": 32, "w": 8, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "topk(10, sum by (user_agent) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json | user_agent := transaction_request_headers_user_agent [$__range])))", "instant": true}],
+          "options": {"showHeader": true},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 19,
+          "type": "timeseries",
+          "title": "WAF inspection latency (p95)",
+          "description": "95th percentile Coraza rule processing duration in milliseconds extracted from audit log stopwatch metadata.",
+          "gridPos": {"x": 0, "y": 40, "w": 24, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "quantile_over_time(0.95, {job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"stopwatch\\\"\" | regexp \"combined=(?P<waf_latency_ns>[0-9]+)\" | unwrap waf_latency_ns / 1000000 [$__interval])"}],
+          "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []}
+        },
+        {
           "id": 10,
           "type": "timeseries",
           "title": "WAF pod CPU",
-          "gridPos": {"x": 0, "y": 32, "w": 12, "h": 8},
+          "gridPos": {"x": 0, "y": 48, "w": 12, "h": 8},
           "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
           "targets": [{"refId": "A", "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\", container=\"waf\"}[5m]))", "legendFormat": "{{pod}}"}],
           "fieldConfig": {"defaults": {"unit": "cores"}, "overrides": []}
@@ -195,7 +237,7 @@ data:
           "id": 11,
           "type": "timeseries",
           "title": "WAF pod memory",
-          "gridPos": {"x": 12, "y": 32, "w": 12, "h": 8},
+          "gridPos": {"x": 12, "y": 48, "w": 12, "h": 8},
           "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
           "targets": [{"refId": "A", "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\", container=\"waf\"})", "legendFormat": "{{pod}}"}],
           "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []}
@@ -204,7 +246,7 @@ data:
           "id": 12,
           "type": "timeseries",
           "title": "WAF pod restarts",
-          "gridPos": {"x": 0, "y": 40, "w": 12, "h": 8},
+          "gridPos": {"x": 0, "y": 56, "w": 12, "h": 8},
           "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
           "targets": [{"refId": "A", "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\"}[1h]))", "legendFormat": "{{pod}}"}],
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
@@ -213,7 +255,7 @@ data:
           "id": 13,
           "type": "stat",
           "title": "Loki ingester append timeouts",
-          "gridPos": {"x": 12, "y": 40, "w": 6, "h": 8},
+          "gridPos": {"x": 12, "y": 56, "w": 6, "h": 8},
           "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
           "targets": [{"refId": "A", "expr": "sum(rate(loki_distributor_ingester_append_timeouts_total[5m]))"}],
           "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}}, "overrides": []}
@@ -222,7 +264,7 @@ data:
           "id": 14,
           "type": "stat",
           "title": "Alloy forwarding errors",
-          "gridPos": {"x": 18, "y": 40, "w": 6, "h": 8},
+          "gridPos": {"x": 18, "y": 56, "w": 6, "h": 8},
           "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
           "targets": [{"refId": "A", "expr": "sum(rate(loki_write_dropped_bytes_total[5m]))"}],
           "fieldConfig": {"defaults": {"unit": "Bps", "color": {"mode": "thresholds"}}, "overrides": []}

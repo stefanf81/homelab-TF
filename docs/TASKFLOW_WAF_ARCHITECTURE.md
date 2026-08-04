@@ -392,6 +392,10 @@ datasources:
 | Recent WAF detections | logs | Loki | `{job="coraza-waf"} |= "\"messages\"" | json | line_format ...` |
 | SQL injection detections | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf", rule_id=~"94[0-9]{4}"}[5m]))` |
 | XSS, command injection, path traversal | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf", rule_id=~"941[0-9]{3}|93[0-4][0-9]{3}"}[5m]))` |
+| WAF block rate | stat | Loki | `(sum(count_over_time({job="coraza-waf"} |= "\"is_interrupted\":true" [$__range])) / sum(count_over_time({job="coraza-waf"} |= "\"messages\"" [$__range]))) * 100` |
+| Top targeted URIs | table | Loki | `topk(10, sum by (transaction_request_uri) (count_over_time({job="coraza-waf"} |= "\"messages\"" | json [$__range])))` |
+| Top attacking user agents | table | Loki | `topk(10, sum by (user_agent) (count_over_time({job="coraza-waf"} |= "\"messages\"" | json | user_agent := transaction_request_headers_user_agent [$__range])))` |
+| WAF inspection latency (p95) | timeseries | Loki | `quantile_over_time(0.95, {job="coraza-waf"} |= "\"stopwatch\"" | regexp "combined=(?P<waf_latency_ns>[0-9]+)" | unwrap waf_latency_ns / 1000000 [$__interval])` |
 | WAF pod CPU | timeseries | VictoriaMetrics | `rate(container_cpu_usage_seconds_total{...}[5m])` |
 | WAF pod memory | timeseries | VictoriaMetrics | `container_memory_working_set_bytes{...}` |
 | WAF pod restarts | timeseries | VictoriaMetrics | `increase(kube_pod_container_status_restarts_total{...}[1h])` |
