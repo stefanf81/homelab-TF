@@ -8,8 +8,8 @@ spec:
   chart:
     spec:
       chart: policy-reporter
-      # Chart v3.8.1 -> Policy Reporter / UI app v3.8.1. Cluster is k8s 1.36.2.
-      version: 3.8.1
+      # Chart v3.9.1 -> Policy Reporter / UI app v3.9.0. Cluster is k8s 1.36.2.
+      version: 3.9.1
       sourceRef:
         kind: HelmRepository
         name: policy-reporter
