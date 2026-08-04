@@ -19,7 +19,7 @@ With `load_owasp_crs`, the connector merges the embedded CRS filesystem with the
 directives `
     Include @coraza.conf-recommended     # 1. Coraza recommended base config
     SecRuleEngine On                     # 2. Engine mode (active blocking)
-    SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.paranoia_level=2" # Paranoia level 2
+    SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=2" # Paranoia level 2
     SecRequestBodyAccess On              #    Body processing
     SecResponseBodyAccess Off            #    Response buffering (off)
     SecAuditEngine RelevantOnly          #    Audit logging
@@ -49,7 +49,7 @@ Change mode in the `directives` block of the relevant WAF ConfigMap.
 Set via `SecAction` inside the `directives` block:
 
 ```
-SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.paranoia_level=2"
+SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=2"
 ```
 
 | Level | Description |

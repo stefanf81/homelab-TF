@@ -57,7 +57,7 @@ data:
                     Include /etc/coraza/backend-exclusions.conf
 
                     SecRuleEngine On
-                    SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.paranoia_level=2"
+                    SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=2"
 
                     SecRequestBodyAccess On
                     SecResponseBodyAccess Off
