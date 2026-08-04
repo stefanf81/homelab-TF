@@ -19,7 +19,7 @@ This file records the investigation and remediation performed on 2026-07-26 afte
 | Taskflow pods | ✅ all `1/1 Running` | but pod→pod and host→pod reachability was broken |
 | Mac (`/etc/hosts: 192.168.50.201 → jokelab.dev`) | ❌ `No route to host` 0 ms | because nothing on the LAN answered ARP for `.201` (Cilium L2-announce off) |
 
-External / cellular traffic was also dead (router `80/443` port-forward → `192.168.50.201` had no listener), confirming a **global** outage rather than a client-only Wi-Fi / VPN isolation (guide `DuckDNS_HTTPS_Migration_Guide.md` §3.3/§3.4).
+External / cellular traffic was also dead (router `80/443` port-forward → `192.168.50.201` had no listener), confirming a **global** outage rather than a client-only Wi-Fi / VPN isolation (guide [`archive/DuckDNS_HTTPS_Migration_Guide.md`](archive/DuckDNS_HTTPS_Migration_Guide.md) §3.3/§3.4).
 
 ---
 
@@ -154,7 +154,7 @@ Cilium's `bpf_sock_addr` / `bpf_sock_ops` cgroup BPF programs, attached at root 
    If still 503, try a real `cilium-dbg cleanup --all-state` from inside the agent pod (cleans conntrack + BPF maps), then restart. If still failing, a **Proxmox VM reboot** would clear all kernel BPF state in one shot — likely worth trying if upstream ACK still fails after a clean restart.
 3. **Hypothesis-2 (Cilium 1.19.6 datapath bug that 7cc295b state doesn't avoid):** the user's commit `a5ce9fb` notes 1.16.1 was last-known-working. The 1.16.1 downgrade hit "Gateway endpoint errors" in commit `022be3e`, but in the cluster's now-clean state that may not recur — worth a clean retry of pinning `release.yaml` to `1.16.1` with the existing TLSRoute `v1alpha2` patch (commits `9ce5ac4` / ea8ee06).
 4. **Hypothesis-3 (single-node + EnvoyhostNetwork-on-eth0 + Tailscale routing-loop artefact):** the user already narrowed `devices: eth0` (exclude `tailscale0`) per commit `43588c7`. Consider testing whether disabling Tailscale on the K3s VM briefly (so it can't affect the routing table during a single request) changes the trace pattern.
-5. **Re-enable the Mac `/etc/hosts` testing only after the gateway serves a 200/302 internally**, then resolve the `No route to host` 0 ms (guide `DuckDNS_HTTPS_Migration_Guide.md` §3.3 / §3.4).
+5. **Re-enable the Mac `/etc/hosts` testing only after the gateway serves a 200/302 internally**, then resolve the `No route to host` 0 ms (guide [`archive/DuckDNS_HTTPS_Migration_Guide.md`](archive/DuckDNS_HTTPS_Migration_Guide.md) §3.3 / §3.4).
 6. **Keep `backup/pre-revert-20260726` for at least one month** — it preserves today's debugging history; don't delete.
 7. **If recovery is urgent and the user accepts downtime:** consider bypassing the Envoy gateway entirely and exposing the frontend via a NodePort or a Cilium L4 (non-L7) LoadBalancer service as a temporary bridge while the L7LB regression is worked out.
 
