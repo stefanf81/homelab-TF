@@ -8,7 +8,7 @@ spec:
   chart:
     spec:
       chart: proxmox-csi-plugin
-      version: 0.5.9
+      version: 0.5.10
       sourceRef:
         kind: HelmRepository
         name: proxmox-csi
@@ -20,7 +20,7 @@ spec:
     controller:
       plugin:
         image:
-          tag: v0.19.1
+          tag: v0.20.0
     existingConfigSecret: proxmox-csi-config
     storageClass:
       - name: proxmox-csi

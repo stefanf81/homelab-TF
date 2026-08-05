@@ -112,8 +112,9 @@ spec:
     victoria-metrics-operator:
       image:
         # Keep the image aligned with the operator chart bundled by stack 0.88.0
-        # (chart 0.67.2). Newer images watch CRDs not shipped by that chart.
-        tag: v0.74.0
+        # (chart 0.67.2). v0.74.1 only adds a VLDistributed validation webhook
+        # (bugfix) — no new watched CRDs, safe to bump.
+        tag: v0.74.1
       resources:
         requests:
           cpu: 50m
@@ -125,7 +126,7 @@ spec:
     grafana:
       enabled: true
       image:
-        tag: 13.1.1
+        tag: 13.1.2
       persistence:
         enabled: true
         storageClassName: proxmox-csi
