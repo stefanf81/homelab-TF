@@ -56,7 +56,7 @@ spec:
       scanNodeCollectorLimit: 1
     compliance:
       failEntriesLimit: 10
-      reportType: summary
+      reportType: all
       cron: "0 */6 * * *"
       specs:
         - k8s-nsa-1.0
