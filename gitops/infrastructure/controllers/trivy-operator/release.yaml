@@ -24,7 +24,6 @@ spec:
       ignoreUnfixed: false
       storageClassEnabled: true
       storageClassName: proxmox-csi
-      # Limit scan job resources to increase stability/memory limits (Trivy scan job container resources)
       resources:
         requests:
           cpu: 250m
@@ -32,7 +31,6 @@ spec:
         limits:
           cpu: "1"
           memory: 2Gi
-    # Alternative naming pattern for scanJob resources depending on exact chart version
     scanJob:
       resources:
         requests:
@@ -41,20 +39,33 @@ spec:
         limits:
           cpu: "1"
           memory: 2Gi
-    # Continuously scan workloads
     operator:
       vulnerabilityScannerEnabled: true
-      configAuditScannerEnabled: false # Disabled to minimize resource consumption and avoid OOMs
-      rbacAssessmentScannerEnabled: false # Disabled to minimize resource consumption and avoid OOMs
-      exposedSecretScannerEnabled: false # Disable secret scanning to reduce time & cache lock errors
+      sbomGenerationEnabled: true
+      configAuditScannerEnabled: true
+      configAuditScannerScanOnlyCurrentRevisions: true
+      rbacAssessmentScannerEnabled: true
+      infraAssessmentScannerEnabled: true
+      exposedSecretScannerEnabled: true
+      clusterComplianceEnabled: true
       vulnerabilityScannerScanOnlyCurrentRevisions: true
-      # Continuous monitoring - rescan on schedule
       scanJobTimeout: 5m
-      builtInTrivyServer: true # Enable built-in server
-      # Reduce scan concurrency to exactly 1 to avoid resource contention and cache locks on single node
+      builtInTrivyServer: true
       scanJobsConcurrentLimit: 1
       concurrentScanJobsLimit: 1
-    targetNamespaces: "" # Scan all namespaces
+      scanNodeCollectorLimit: 1
+    compliance:
+      failEntriesLimit: 10
+      reportType: summary
+      cron: "0 */6 * * *"
+      specs:
+        - k8s-nsa-1.0
+        - k8s-cis-1.23
+        - k8s-pss-baseline-0.1
+        - k8s-pss-restricted-0.1
+    trivyOperator:
+      reportRecordFailedChecksOnly: true
+    targetNamespaces: ""
     resources:
       requests:
         cpu: 100m

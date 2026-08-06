@@ -5,4 +5,5 @@ resources:
   - loki-release.yaml
   - alloy-release.yaml
   - grafana-provisioning.yaml
+  - trivy-dashboard.yaml
   - vmservicescrapes.yaml

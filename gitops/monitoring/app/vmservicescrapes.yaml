@@ -86,3 +86,25 @@ spec:
       path: /metrics
       interval: 30s
       scheme: http
+---
+# --- Trivy Operator -----------------------------------------------------------
+# Trivy exposes scan, compliance, and controller metrics on its operator service.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: trivy-operator
+  namespace: monitoring
+spec:
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames:
+      - trivy-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: trivy-operator
+      app.kubernetes.io/name: trivy-operator
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 60s
+      scheme: http
