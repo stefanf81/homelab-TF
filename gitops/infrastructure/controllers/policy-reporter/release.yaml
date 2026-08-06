@@ -45,6 +45,49 @@ spec:
     # cluster secret dynamically containing Kyverno and Trivy plugins safely.
     ui:
       enabled: true
+      sources:
+        - name: Trivy Vulnerability
+          type: severity
+          exceptions: false
+          excludes:
+            results:
+              - pass
+              - skip
+        - name: Trivy ConfigAudit
+          type: severity
+          exceptions: false
+          excludes:
+            results:
+              - pass
+              - skip
+        - name: Trivy RbacAssessment
+          type: severity
+          exceptions: false
+          excludes:
+            results:
+              - pass
+              - skip
+        - name: Trivy ExposedSecrets
+          type: severity
+          exceptions: false
+          excludes:
+            results:
+              - pass
+              - skip
+        - name: Trivy Compliance
+          type: severity
+          exceptions: false
+          excludes:
+            results:
+              - pass
+              - skip
+        - name: Trivy InfraAssessment
+          type: severity
+          exceptions: false
+          excludes:
+            results:
+              - pass
+              - skip
       oauth:
         enabled: true
         provider: github
