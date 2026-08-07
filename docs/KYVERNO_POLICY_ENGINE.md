@@ -7,7 +7,9 @@ the short notes in `gitops/README.md`.
 - **Kyverno** — Kubernetes-native policy engine (validate / mutate / generate) driven by
   `ClusterPolicy` custom resources. Acts as a mutating + validating admission webhook.
 - **Policy Reporter** — a read-only web dashboard that visualises the `ClusterPolicyReport`
-  / `PolicyReport` objects Kyverno produces. Exposed at `https://kyverno.jokelab.dev`.
+  / `PolicyReport` objects produced by **Kyverno**, **Trivy** (via the
+  `trivy-operator-polr-adapter`), and **Falco**. Exposed at `https://kyverno.jokelab.dev`
+  (protected by GitHub OAuth).
 
 Both are managed entirely through Git; nothing is applied imperatively.
 
@@ -24,10 +26,13 @@ gitops/
 │   │   ├── release.yaml             # HelmRelease kyverno v3.8.2, single-replica, crds: Skip
 │   │   └── kustomization.yaml
 │   └── policy-reporter/             # Policy Reporter + UI (its OWN cluster Kustomization)
-│       ├── namespace.yaml           # policy-reporter ns
-│       ├── repository.yaml          # HelmRepository policy-reporter @ https://kyverno.github.io/policy-reporter
-│       ├── release.yaml             # HelmRelease policy-reporter v3.8.1, ui+kyverno plugin, crds: Skip
-│       ├── route.yaml               # HTTPRoute -> policy-reporter-ui:8080 on taskflow-gateway (:443)
+│       ├── namespace.yaml                # policy-reporter ns
+│       ├── repository.yaml               # HelmRepository policy-reporter @ https://kyverno.github.io/policy-reporter
+│       ├── trivy-adapter-repository.yaml # HelmRepository trivy-operator-polr-adapter @ https://fjogeleit.github.io/trivy-operator-polr-adapter
+│       ├── policy-reporter-secrets.yaml  # SOPS-encrypted GitHub OAuth secret (policy-reporter-github-oauth)
+│       ├── release.yaml                  # HelmRelease policy-reporter v3.9.1, ui + kyverno & trivy plugins, OAuth, 6 Trivy UI sources, crds: Skip
+│       ├── trivy-adapter-release.yaml    # HelmRelease trivy-operator-polr-adapter v0.11.5 (Trivy CRDs -> PolicyReports)
+│       ├── route.yaml                    # HTTPRoute -> policy-reporter-ui:8080 on taskflow-gateway (:443)
 │       └── kustomization.yaml
 ├── apps/
 │   └── kyverno-policies/            # Example ClusterPolicies (Audit mode)
@@ -149,10 +154,38 @@ Policy Reporter dashboard — a clean end-to-end proof the pipeline works.
 
 ### Install
 - Chart: `policy-reporter/policy-reporter` from `https://kyverno.github.io/policy-reporter`
-- Pinned: **3.8.1**
+- Pinned: **3.9.1** (ships Policy Reporter + UI app **3.9.0**)
 - Values: `ui.enabled: true` (UI subchart, service `policy-reporter-ui:8080`),
-  `plugin.kyverno.enabled: true` (enriches the UI with policy descriptions/YAML),
-  `install.crds: Skip`.
+  `plugin.kyverno.enabled: true` + `plugin.trivy.enabled: true` (enrich the UI with
+  policy descriptions/YAML and Trivy vulnerability details), `ui.oauth` (GitHub OAuth,
+  see below), `ui.sources` (six Trivy sources, see below), `install.crds: Skip`.
+
+### Trivy Plugin & Adapter
+Two components surface Trivy results in the UI:
+
+1. **`plugin.trivy.enabled: true`** — the Policy Reporter **Trivy plugin** watches the
+   `aquasecurity.github.io` report CRDs Trivy Operator produces (`VulnerabilityReport`,
+   `ConfigAuditReport`, `RbacAssessmentReport`, `ExposedSecretReport`, ...). Policy Reporter
+   then emits its WAF-like `policy` metrics (`policy_report_info`, `policy_report_result`,
+   ...) so findings also appear in the main Policy Reporter metrics.
+2. **`trivy-operator-polr-adapter`** (HelmRelease `trivy-operator-polr-adapter` v0.11.5,
+   chart from `https://fjogeleit.github.io/trivy-operator-polr-adapter`) — converts the
+   Trivy CRDs into vanilla `wgpolicyk8s.io/v1alpha2` `PolicyReport` /
+   `ClusterPolicyReport` objects, so they are visible directly in the UI's **report
+   list**. All adapters are enabled (vulnerability, config-audit, RBAC, exposed-secret,
+   compliance, infra-assessment, cluster variants).
+   
+> **Why both?** The UI report list reads `wgpolicyk8s.io` reports. Trivy does **not**
+> write those natively — hence the adapter. Without the adapter the report list stays
+> Kyverno/Falco-only; without the plugin the `policy` Prometheus metrics stay
+> Kyverno-only. See `docs/TRIVY_SECURITY_SCANNING.md` §6 for what each Trivy report type
+> maps to.
+
+> **Compliance detail caveat:** the adapter's compliance adapter requires the Trivy
+> operator to emit **detailed** compliance reports. The HelmRelease is configured with
+> `compliance.reportType: all` (detailed) — if that is switched back to `summary`, no
+> `ClusterComplianceReport`-derived PolicyReports will be created (the summary reports do
+> not carry per-check results).
 
 Policy Reporter reads the `wgpolicyk8s.io` `PolicyReport` / `ClusterPolicyReport` CRDs that
 **Kyverno already installs** (`crds.groups.wgpolicyk8s` is enabled by default in the Kyverno
@@ -239,14 +272,22 @@ alongside `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`.
 > This resets all issuance state to zero; Flux re-applies the Certificate from Git and a new
 > order is created immediately. See §10 Troubleshooting.
 
-### Authentication caveat
-The Policy Reporter UI is exposed **without authentication**. Anyone able to reach
-`kyverno.jokelab.dev` can view policy reports. For a homelab this is usually acceptable, but
-to align with the project's zero-trust stance you can enable basic auth:
+### Authentication (GitHub OAuth)
+The Policy Reporter UI is protected by **GitHub OAuth** (`ui.oauth.enabled: true`):
 
-- Create a SOPS-encrypted secret (same pattern as `gitops/monitoring/platform/grafana-secrets.yaml`)
-  holding `username` / `password`.
-- Set `ui.basicAuth.secretRef` (or `basicAuth`) in the `policy-reporter` `release.yaml`.
+- `provider: github` with `callbackUrl: https://kyverno.jokelab.dev/callback`
+- Credentials (`clientId` / `clientSecret`) live in the
+  SOPS-encrypted `policy-reporter-github-oauth` Secret
+  (`gitops/infrastructure/controllers/policy-reporter/policy-reporter-secrets.yaml`),
+  decrypted by Flux at reconciliation time only.
+- Once signed in, access can be further scoped via policy-reporter's UI oauth options
+  (e.g. restricted GitHub organizations/users) in `ui.oauth` values of the HelmRelease.
+- To rotate the GitHub app credentials, edit the secret, re-encrypt
+  (`sops -e -i gitops/infrastructure/controllers/policy-reporter/policy-reporter-secrets.yaml`),
+  commit; Flux re-applies it (the UI deployment reads it on next reconcile).
+
+If you prefer no OAuth, you can instead disable `ui.oauth.enabled` and optionally use
+`ui.basicAuth` (SOPS-encrypted `username` / `password`).
 
 ---
 
@@ -262,7 +303,7 @@ flux get hr -n policy-reporter
 
 # Pods
 kubectl -n kyverno get pods            # 4 controllers, 1/1
-kubectl -n policy-reporter get pods    # policy-reporter + policy-reporter-ui
+kubectl -n policy-reporter get pods    # policy-reporter, policy-reporter-ui, policy-reporter-trivy-plugin, trivy-operator-polr-adapter
 
 # CRDs (Kyverno-owned)
 kubectl get crds | grep kyverno
