@@ -8,7 +8,7 @@ spec:
   chart:
     spec:
       chart: victoria-metrics-k8s-stack
-      version: 0.88.0
+      version: 0.90.0
       sourceRef:
         kind: HelmRepository
         name: victoriametrics
@@ -111,7 +111,7 @@ spec:
 
     victoria-metrics-operator:
       image:
-        # Keep the image aligned with the operator chart bundled by stack 0.88.0
+        # Keep the image aligned with the operator chart bundled by stack 0.90.0
         # (chart 0.67.2). v0.74.1 only adds a VLDistributed validation webhook
         # (bugfix) — no new watched CRDs, safe to bump.
         tag: v0.74.1
@@ -126,7 +126,7 @@ spec:
     grafana:
       enabled: true
       image:
-        tag: 13.1.2
+        tag: 13.1.3
       persistence:
         enabled: true
         storageClassName: proxmox-csi
