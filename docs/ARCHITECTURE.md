@@ -68,14 +68,16 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 
 ---
 
-## 4. GitOps Layer (Flux CD v2.9.2)
+## 4. GitOps Layer (Flux CD v2.9.3)
 
 ### 4.1 Kustomization Dependency Chain
 ```
 flux-system (bootstrap)
     │
     ▼
-infra-controllers (HelmReleases: Cilium, cert-manager, Proxmox CSI, Gateway API)
+infra-controllers (HelmReleases: Cilium, cert-manager, Proxmox CSI, Gateway API,
+                    CoreDNS, Kyverno, Falco, Policy Reporter, Trivy Operator,
+                    Hubble UI oauth2-proxy)
     │
     ▼
 infra-configs (Cilium IP pool + L2 policy, GatewayClass)
@@ -84,8 +86,8 @@ infra-configs (Cilium IP pool + L2 policy, GatewayClass)
 taskflow-app                     monitoring (VictoriaMetrics + Grafana operator + CRDs;
 (SOPS-decrypted app manifests)    SOPS-decrypted Grafana admin secret)
     │                                  │
-    │                                  ▼
-    │                       monitoring-app (VMServiceScrapes for taskflow services)
+    │                                  ├──▶ monitoring-app (VMServiceScrapes for taskflow services)
+    │                                  └──▶ monitoring-logging (Alloy + Loki for WAF audit logs)
     ▼
 (image automation commits new digests)
 ```
@@ -99,15 +101,17 @@ taskflow-app                     monitoring (VictoriaMetrics + Grafana operator 
 | `infra-controllers` | `./gitops/infrastructure/controllers` | 30m | ✅ | ✅ | 10m | — |
 | `infra-configs` | `./gitops/infrastructure/configs` | 30m | ✅ | ✅ | 10m | infra-controllers |
 | `taskflow-app` | `./gitops/apps/taskflow` | 10m | ✅ | ✅ | 5m | infra-configs |
-| `monitoring` | `./gitops/monitoring/platform` | 30m | ✅ | ✅ | 10m | infra-controllers |
+| `monitoring` | `./gitops/monitoring/platform` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app |
 | `monitoring-app` | `./gitops/monitoring/app` | 30m | ✅ | ✅ | 10m | monitoring |
+| `monitoring-logging` | `./gitops/monitoring/logging` | 30m | ✅ | ✅ | 10m | monitoring, taskflow-app |
 | `kyverno-policies` | `./gitops/apps/kyverno-policies` | 30m | ✅ | ✅ | 5m | infra-controllers |
 | `policy-reporter` | `./gitops/infrastructure/controllers/policy-reporter` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app |
 | `trivy-operator` | `./gitops/infrastructure/controllers/trivy-operator` | 30m | ✅ | ✅ | 5m | infra-controllers |
+| `hubble-ui` | `./gitops/infrastructure/controllers/hubble-ui` | 10m | ✅ | ✅ | 5m | infra-controllers, taskflow-app |
 
 ### 4.3 Image Automation (Digest Pinning)
 ```
-ImageRepository (ghcr.io/stefanf81/taskflow-enterprise/taskflow-frontend, interval: 5m)
+ImageRepository (ghcr.io/stefanf81/taskflow-frontend, interval: 5m)
     │
     ▼
 ImagePolicy (filter: ^latest$, digestReflectionPolicy: Always)
@@ -169,7 +173,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.2 Backend Deployment (`gitops/apps/taskflow/backend.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend:latest` (digest-pinned by Flux) |
+| Image | `ghcr.io/stefanf81/taskflow-backend:latest` (digest-pinned by Flux) |
 | Replicas | 1 |
 | JVM Heap | Fixed 1 GiB — owned by the **image** via `-XX:MaxRAMPercentage=50.0` (not by the deployment's `JAVA_TOOL_OPTIONS`, which sets only GC logging/caps) |
 | GC | G1 with StringDedup, AlwaysPreTouch, ParallelRefProc, DisableExplicitGC |
@@ -183,7 +187,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.3 Frontend Deployment (`gitops/apps/taskflow/frontend.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `ghcr.io/stefanf81/taskflow-enterprise/taskflow-frontend:latest` (digest-pinned by Flux) |
+| Image | `ghcr.io/stefanf81/taskflow-frontend:latest` (digest-pinned by Flux) |
 | Replicas | 1 |
 | Resources | CPU: 100–500 m, Memory: 128–256 MiB |
 | SecurityContext | readOnlyRootFS, runAsNonRoot UID/GID 101 (nginx user), drop ALL capabilities |
@@ -217,7 +221,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 | Replicas | 1 |
 | Memory Guard | `--set=extensions.jaeger_storage.backends.some_storage.memory.max_traces=5000` |
 | Ports | UI: 16686, OTLP-gRPC: 4317, OTLP-HTTP: 4318 |
-| Resources | CPU: 100m–500 m, Memory: 128–256 MiB |
+| Resources | CPU: 250m (req=limit), Memory: 128–256 MiB |
 
 ### 5.7 Cloudflare DDNS (`gitops/apps/taskflow/cloudflare-ddns.yaml`)
 Keeps the `jokelab.dev`, `www.jokelab.dev`, and `grafana.jokelab.dev` DNS A records synced to the Gateway's external IP (`192.168.50.201`). Uses the `favonia/cloudflare-ddns` image with a SOPS-encrypted Cloudflare API token.
@@ -239,7 +243,7 @@ Keeps the `jokelab.dev`, `www.jokelab.dev`, and `grafana.jokelab.dev` DNS A reco
 ### 5.10 Monitoring Stack (`gitops/monitoring/`)
 | Component | Implementation |
 |-----------|----------------|
-| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.87.0) in namespace `monitoring` |
+| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.88.0) in namespace `monitoring` |
 | CRDs | Installed by the chart (VMServiceScrape, VMSingle, …) |
 | Persistence | VictoriaMetrics TSDB on a **Proxmox CSI-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `proxmox-csi`) |
 | Grafana auth | Admin credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana UI is routed via the Gateway API (see `routes.yaml`), secured by Grafana's login screen; VictoriaMetrics UI is kept strictly internal and accessed via port-forwarding |
@@ -307,6 +311,8 @@ TF/
 │   │   ├── network-policy.yaml      # DB access restriction (backend-only ingress)
 │   │   ├── default-deny.yaml        # Default-deny ingress for data tier (postgres, redis, jaeger)
 │   │   ├── namespace-default-deny.yaml  # Full-namespace default-deny + Gateway/monitoring allow-lists
+│   │   ├── backend-waf.yaml         # Backend Caddy+Coraza WAF sidecar config
+│   │   ├── frontend-waf.yaml        # Frontend Caddy+Coraza WAF sidecar config
 │   │   ├── backend-hpa.yaml         # HPA ready-to-activate (powered by metrics-server)
 │   │   ├── backend-pdb.yaml         # PodDisruptionBudget (minAvailable: 1)
 │   │   ├── frontend-pdb.yaml        # PodDisruptionBudget (minAvailable: 1)
@@ -317,13 +323,15 @@ TF/
 │   ├── infrastructure/
 │   │   ├── controllers/             # HelmRelease + Repository for platform add-ons
 │   │   │   ├── cilium/release.yaml  # Cilium v1.20.0 (eBPF, Gateway API, L2 announcements)
-│   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.0) with Let's Encrypt certificate automation
+│   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.1) with Let's Encrypt certificate automation
+│   │   │   ├── coredns/             # CoreDNS HelmRelease (v1.47.0) — replaces K3s packaged addon
 │   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
 │   │   │   ├── gateway-api/         # Standard Gateway API CRDs + TLSRoute CRD
 │   │   │   ├── kyverno/             # Kyverno policy engine (v3.8.2 / Kyverno v1.18.2)
 │   │   │   ├── falco/               # Falco runtime security (v9.1.0 chart, modern eBPF)
 │   │   │   ├── policy-reporter/     # Policy Reporter + UI dashboard
-│   │   │   └── trivy-operator/      # Trivy vulnerability scanner operator
+│   │   │   ├── trivy-operator/      # Trivy vulnerability scanner operator
+│   │   │   └── hubble-ui/           # Hubble UI oauth2-proxy (GitHub OAuth, public access)
 │   │   │
 │   │   └── configs/                 # Cilium IP pool, L2 policy, GatewayClass
 │   │       ├── cilium/ippool.yaml           # 192.168.50.200–250
@@ -331,7 +339,7 @@ TF/
 │   │       └── gatewayclass.yaml            # Cilium GatewayClass
 │   │
 │   └── clusters/taskflow/           # Flux Kustomizations (cluster-level)
-│       ├── flux-system/             # Flux bootstrap manifests (v2.9.2, generated by bootstrap)
+│       ├── flux-system/             # Flux bootstrap manifests (v2.9.3, generated by bootstrap)
 │       │   ├── kustomization.yaml
 │       │   ├── gotk-components.yaml  # CRDs + RBAC + namespaces
 │       │   └── gotk-sync.yaml        # GitRepository + Kustomization for flux-system
@@ -341,9 +349,11 @@ TF/
   │       ├── taskflow.yaml            # App layer with SOPS decryption
   │       ├── monitoring.yaml          # VictoriaMetrics + Grafana operator (SOPS-enabled)
   │       ├── monitoring-app.yaml      # App VMServiceScrapes (depends on monitoring)
+  │       ├── monitoring-logging.yaml  # Alloy + Loki logging stack (depends on monitoring + taskflow-app)
   │       ├── kyverno-policies.yaml    # Kyverno ClusterPolicies (dependsOn infra-controllers)
   │       ├── policy-reporter.yaml     # Policy Reporter + UI (dependsOn infra-controllers + taskflow-app)
   │       ├── trivy-operator.yaml      # Trivy vulnerability scanner (dependsOn infra-controllers)
+  │       ├── hubble-ui.yaml           # Hubble UI oauth2-proxy (dependsOn infra-controllers + taskflow-app)
   │       └── image-automation.yaml    # ImageRepository + ImagePolicy + ImageUpdateAutomation
   │
   │   ├── monitoring/                  # Observability stack
@@ -360,6 +370,15 @@ TF/
   │   │   └── app/                     # VMServiceScrapes (applied after CRDs exist)
   │   │       ├── vmservicescrapes.yaml # backend / postgres-exporter / redis-exporter
   │   │       └── kustomization.yaml
+  │   │
+  │   └── logging/                     # Alloy + Loki for WAF audit log collection
+  │       ├── alloy-release.yaml       # Grafana Alloy DaemonSet (log shipper)
+  │       ├── loki-release.yaml        # Grafana Loki (log storage, 30-day retention)
+  │       ├── grafana-provisioning.yaml # Loki datasource auto-provisioned in Grafana
+  │       ├── repositories.yaml        # HelmRepository definitions
+  │       ├── vmservicescrapes.yaml    # Alloy metrics scrape
+  │       ├── trivy-dashboard.yaml     # Trivy findings Grafana dashboard
+  │       └── kustomization.yaml
   ```
 
 ---
@@ -375,11 +394,6 @@ make cache         # Show provider cache size
 make cache-clean   # Wipe cached providers
 ```
 
-### Cluster Diagnostics
-```bash
-./diagnose.sh      # Writes comprehensive diagnostics to diagnostics.log
-```
-
 ### Flux Reconciliation (manual override)
 ```bash
 flux reconcile kustomization infra-controllers -n flux-system
@@ -393,14 +407,13 @@ flux reconcile kustomization taskflow-app -n flux-system
 
 | Area | Current State | TODO |
 |------|-------------|------|
-| TLS/HTTPS | Fully configured (HTTPS on port 443) | cert-manager HelmRelease + Let's Encrypt certificates + HTTPS Gateway listener are fully active |
+| TLS/HTTPS | ✅ Resolved | cert-manager HelmRelease (v1.21.1) + Let's Encrypt HTTP-01 certificates + HTTPS Gateway listener are fully active |
 | Multi-node HA | Single k3s node | Add worker nodes via additional Proxmox VMs |
 | GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` module is planned, not yet created) |
 | Pod Disruption Budgets | ✅ Resolved | PDBs added for backend (`backend-pdb.yaml`), frontend (`frontend-pdb.yaml`), and postgres (`postgres-db.yaml`) — all `minAvailable: 1` |
 | Horizontal Pod Autoscaler | ✅ Resolved | HPA exists (`backend-hpa.yaml`, CPU 70%, 1–3 replicas) and `metrics-server` is installed (`metrics-server-release.yaml`) for the `metrics.k8s.io` API |
 | Backup strategy | Proxmox hypervisor backups | Configure scheduled VM backups at the Proxmox level (using PBS or vzdump) |
 | Monitoring stack | Jaeger traces only | VictoriaMetrics + Grafana scaffolded in `gitops/monitoring/` (see §5.9). **Backend JVM/HTTP metrics need an app-repo change** (`micrometer-registry-prometheus`) — tracked in `docs/BACKEND_INTEGRATION_CONTEXT.md`. DB/Redis metrics already flow via exporters. |
-| cert-manager | Installed (v1.21.0) | Configured Let's Encrypt HTTP-01 `ClusterIssuer` + `Certificate` for `jokelab.dev` with an HTTPS Gateway listener |
 
 ---
 
@@ -426,7 +439,7 @@ They only meet at **one file**: `kubeconfig.yaml` (written by Half A, consumed b
 This is the path that actually matters day-to-day:
 
 ```
-1. You push a new :latest image to ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend
+1. You push a new :latest image to ghcr.io/stefanf81/taskflow-backend
         │
 2. Flux ImageRepository (gitops/clusters/taskflow/image-automation.yaml)
    polls ghcr every 5m, sees :latest moved to a new sha256 digest
@@ -474,10 +487,16 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
 ```
 
 - **`infra-controllers`** (`gitops/infrastructure/controllers/`) installs the platform via HelmRelease objects:
-  - `cilium/release.yaml` — Cilium 1.19.5 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
-  - `cert-manager/release.yaml` — cert-manager 1.21.0 (fully active, managing TLS certificates).
+  - `cilium/release.yaml` — Cilium 1.20.0 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
+  - `cert-manager/release.yaml` — cert-manager 1.21.1 (fully active, managing TLS certificates).
+  - `coredns/release.yaml` — CoreDNS 1.47.0 (replaces K3s packaged addon, manages DNS with custom LAN hairpin-NAT overrides).
   - `proxmox-csi/` — Proxmox CSI driver (dynamic storage provisioning of virtual disks with native hypervisor backup integration).
   - `gateway-api/` — the standard Gateway API CRDs.
+  - `kyverno/release.yaml` — Kyverno 3.8.2 (Kubernetes-native policy engine, mutating + validating admission webhook).
+  - `falco/release.yaml` — Falco 9.1.0 chart (runtime security, modern eBPF driver, Falcosidekick → PolicyReports).
+  - `policy-reporter/` — Policy Reporter + UI dashboard (visualizes Kyverno/Trivy/Falco PolicyReports).
+  - `trivy-operator/release.yaml` — Trivy Operator (vulnerability scanning of running containers/images).
+  - `hubble-ui/` — Hubble UI oauth2-proxy (GitHub OAuth, public access at `hubble.jokelab.dev`).
 - **`infra-configs`** (`gitops/infrastructure/configs/`) applies Cilium's `CiliumLoadBalancerIPPool` (`192.168.50.200–250`), the `CiliumL2AnnouncementPolicy` (which Ethernet interfaces advertise the IP via ARP), and the `GatewayClass` named `cilium`. These **must** come after the controllers, hence the dependency.
 
 ### 10.5 How the app is exposed (the request path)

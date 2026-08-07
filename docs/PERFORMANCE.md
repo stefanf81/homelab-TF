@@ -6,9 +6,11 @@
 
 ## 1. Tier 1 — Likely real problems (fix first)
 
-### 1.1 JVM off-heap memory is unbounded → OOM-restart risk (HIGH)
-**File:** `gitops/apps/taskflow/backend.yaml`
+### 1.1 JVM off-heap memory is unbounded → OOM-restart risk (HIGH) — ✅ RESOLVED
 
+> **Resolved:** The JVM sizing has been fixed. The backend now uses `MaxRAMPercentage=50.0` (owned by the image Dockerfile) for a 1 GiB heap at the 2 GiB limit, with `MaxMetaspaceSize=256m` and Guaranteed QoS (`requests == limits == 2Gi/2000m`). See `BACKEND_INTEGRATION_CONTEXT.md` for the full contract.
+
+**Previous config (for reference):**
 ```
 -Xms1536m -Xmx1536m ... -XX:+ExitOnOutOfMemoryError
 resources:
@@ -16,22 +18,22 @@ resources:
   limits:   cpu 4000m, memory 2560Mi
 ```
 
-- Heap is fixed at **1.5 GiB**. The container **requests 2 GiB**, so the *guaranteed* off-heap budget is only **512 MiB** (2 GiB − 1.5 GiB). Kubernetes only guarantees the request; under node memory pressure the pod can't grow toward its 2.56 GiB limit.
-- Off-heap must hold: metaspace, compressed class space, thread stacks, **Netty/direct ByteBuffers** (OTLP export + JDBC + Lettuce Redis), mmap'd files, GC structures. A Spring Boot 3.5 app with JPA/Hibernate + Jackson + actuator + an OTLP agent routinely uses 400–900 MiB off-heap under load.
-- `-XX:+ExitOnOutOfMemoryError` means **any** transient off-heap spike kills the JVM → pod restart → cold start (~110 s startup probe budget) → request errors.
-
-**Fix (pick one, both is best):**
-- Raise the memory request to meet the limit and add off-heap caps:
-  ```yaml
-  # Guaranteed QoS: requests == limits so the full budget is reserved and CPU isn't throttled
-  requests: { cpu: "2000m", memory: "2Gi" }
+**Current config** (`backend.yaml` + image Dockerfile):
+```yaml
+# backend.yaml — JAVA_TOOL_OPTIONS (only GC/logging, no heap override)
+env:
+  - name: JAVA_TOOL_OPTIONS
+    value: >-
+      -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError
+      -XX:+UseStringDeduplication -XX:+AlwaysPreTouch
+      -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC
+      -XX:MaxMetaspaceSize=256m
+      -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags:filecount=5,filesize=10m
+resources:
+  requests: { cpu: "2000m", memory: "2Gi" }   # Guaranteed QoS
   limits:   { cpu: "2000m", memory: "2Gi" }
-  ```
-  ```bash
-  -Xms1024m -Xmx1024m -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=512m
-  ```
-  (Heap 1 GiB + metaspace 256 MiB + direct 512 MiB ≈ 1.75 GiB, comfortably under 2 GiB, leaving ~256 MiB for thread stacks/GC. Trimmed from 3Gi/1.5GiB heap to free ~1 GiB on the 14 GiB node.)
-- The README already admits metaspace/direct caps were "intentionally omitted until measured" — but with `ExitOnOutOfMemoryError` on, *unmeasured* means *unprotected*. Cap them now.
+```
+The image Dockerfile owns heap sizing via `-XX:MaxRAMPercentage=50.0` → 1 GiB heap at the 2 GiB limit.
 
 ### 1.2 ~~No observability → you are tuning blind~~ (RESOLVED — infra side)
 **Files:** `gitops/monitoring/platform/release.yaml` (VictoriaMetrics stack), `gitops/monitoring/app/vmservicescrapes.yaml` (app scrapes)
@@ -56,25 +58,37 @@ resources:
 
 ## 2. Tier 2 — Tuning mismatches
 
-### 2.1 `effective_cache_size` is overstated (MEDIUM)
-**File:** `gitops/apps/taskflow/postgres-db.yaml`
+### 2.1 `effective_cache_size` is overstated (MEDIUM) — ✅ RESOLVED
 
+> **Resolved:** `effective_cache_size` is now `700MB` in `postgres-db.yaml`.
+
+**Previous config (for reference):**
 ```yaml
 effective_cache_size=1152MB   # but container memory limit is only 1024Mi
 ```
 
-`effective_cache_size` is a **planner hint** for how much of the data set is cached by the OS. The container is capped at 1024 MiB; Postgres RSS is ~384 (shared_buffers) + ~300 (30 backends × ~10 MiB) ≈ 800–900 MiB, leaving only **~300 MiB** of real OS page cache. Setting the hint to 1152 MiB (~2×+ reality) makes index scans look artificially cheap → the planner can pick suboptimal plans (wrong join/scan choices) under load.
+**Current config** (`postgres-db.yaml`):
+```yaml
+effective_cache_size=700MB    # matches realistic OS page cache
+```
 
-**Fix:** Set `effective_cache_size=700MB` to match the realistic cache, or raise the container memory limit and set it proportionally.
+The value was corrected because the container is capped at 1024 MiB; Postgres RSS is ~384 (shared_buffers) + ~300 (30 backends × ~10 MiB) ≈ 800–900 MiB, leaving only ~300 MiB of real OS page cache. The original 1152 MiB hint (~2×+ reality) made index scans look artificially cheap and could cause suboptimal plans under load.
 
-> **Resolved:** `effective_cache_size` is now `700MB` in both the manifest and `README.md` (the prior drift — README said `768MB`, manifest said `1152MB` — has been corrected).
+### 2.2 Backend is "Burstable" QoS → CPU throttling under load (MEDIUM) — ✅ RESOLVED
 
-### 2.2 Backend is "Burstable" QoS → CPU throttling under load (MEDIUM)
-**File:** `gitops/apps/taskflow/backend.yaml`
+> **Resolved:** The backend now uses Guaranteed QoS (`requests == limits == 2000m` CPU).
 
-`requests.cpu=1000m` but `limits.cpu=4000m` → **Burstable** QoS. Under node CPU pressure the pod can be throttled below its 4-core ceiling, and on a shared node a latency-sensitive API can stall. For a single, latency-sensitive service it's usually better to run **Guaranteed** QoS (`requests == limits`) so it never gets squeezed and never throttles below its reservation.
+**Previous config:**
+```yaml
+requests: { cpu: "1000m" }
+limits:   { cpu: "4000m" }    # Burstable QoS
+```
 
-**Fix:** Set `requests.cpu == limits.cpu` (e.g. both `2000m`) when you resize memory per §1.1.
+**Current config** (`backend.yaml`):
+```yaml
+requests: { cpu: "2000m", memory: "2Gi" }
+limits:   { cpu: "2000m", memory: "2Gi" }   # Guaranteed QoS
+```
 
 ### 2.3 Redis is ephemeral → cold-cache stampede on restart (MEDIUM)
 **File:** `gitops/apps/taskflow/redis.yaml`
@@ -110,27 +124,16 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 | # | Action | Status |
 |---|--------|--------|
 | 1 | **Monitoring stack** (VictoriaMetrics + Grafana + kube-state-metrics + node-exporter) | ✅ Deployed and collecting metrics |
-| 2 | **Backend `/actuator/prometheus`** — `micrometer-registry-prometheus` + exposure + SecurityConfig permit | ✅ Already done in the app repo (see §below) |
+| 2 | **Backend `/actuator/prometheus`** — `micrometer-registry-prometheus` + exposure + SecurityConfig permit | ⏳ Pending — app repo change required. The VMServiceScrape exists but is inert until `micrometer-registry-prometheus` is added to the backend build. See `BACKEND_INTEGRATION_CONTEXT.md`. |
 | 3 | **JVM sizing** — single source of truth via `MaxRAMPercentage=50.0` (image), Guaranteed QoS `2Gi` | ✅ Applied — `backend.yaml` JAVA_TOOL_OPTIONS no longer overrides heap/direct; image owns sizing |
 | 4 | **`effective_cache_size`** corrected to 700MB | ✅ Applied in `postgres-db.yaml` |
 | 5 | **Postgres PVC** migrated from Longhorn to Proxmox CSI | ✅ Applied in `postgres-pvc.yaml` |
 | 6 | **Harden Redis** — add persistence PVC or document stampede risk | ⏳ Pending (see §2.3) — still ephemeral by design |
 | 7 | **Re-evaluate pool sizes** when adding a second backend replica | ✅ `max_connections` raised 30→50 in `postgres-db.yaml`; HPA caps at 3 replicas (25×3=75 > 50, so scale past 2 only with another `max_connections` bump) |
-| 8 | **Redis / Jaeger QoS** — Guaranteed (requests==limits) | ✅ Applied in `redis.yaml` / `jaeger.yaml` |
+| 8 | **Redis / Jaeger QoS** — Guaranteed (requests==limits) | ⚠️ Redis and Jaeger use Burstable QoS (requests < limits). This is intentional: Redis is ephemeral and Jaeger is a dev tool. Guaranteed QoS is not required for either. |
 | 9 | **Backend startup probe** tightened 20→15 failures | ✅ Applied in `backend.yaml` |
 | 10 | **Scrape intervals** relaxed to 60s for postgres/redis exporters | ✅ Applied in `vmservicescrapes.yaml` |
 | 11 | **Flux image-poll interval** 5m→10m | ✅ Applied in `image-automation.yaml` |
-
-### Note on item 2 (backend metrics) — already implemented in the app repo
-The app repo (`taskflow` / `msx`) already ships everything PERFORMANCE.md originally
-flagged as "pending":
-- `build.gradle`: `io.micrometer:micrometer-registry-prometheus` ✅
-- `application-prod.properties`: `management.endpoints.web.exposure.include=health,info,prometheus` + `prometheus.enabled=true` ✅
-- `SecurityConfig.java`: `.requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll()` ✅
-- `application.properties`: `server.http2.enabled=true` ✅
-
-So the VMServiceScrape in `gitops/monitoring/app` is **live**, not inert.
-
 ### Note on item 3 (JVM sizing) — resolution of the TF-vs-image conflict
 The previous config had a **silent bug**: `backend.yaml` set `-Xmx1024m` + `-XX:MaxDirectMemorySize=512m`
 in `JAVA_TOOL_OPTIONS`, while the Dockerfile set `MaxRAMPercentage=75.0` + `MaxDirectMemorySize=256m`.

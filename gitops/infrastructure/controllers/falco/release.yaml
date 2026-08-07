@@ -34,7 +34,7 @@ spec:
         cpu: "1000m"
         memory: "1024Mi"
 
-    # Enable Prometheus metrics endpoint (port 14223 by default)
+    # Enable Prometheus metrics endpoint (port 8765 by default)
     metrics:
       enabled: true
 

@@ -13,6 +13,10 @@ Reference for tuning and maintaining the Taskflow Caddy+Coraza WAF deployments.
 
 With `load_owasp_crs`, the connector merges the embedded CRS filesystem with the OS filesystem. `Include @...` loads from the embedded CRS; `Include /etc/coraza/...` loads from the mounted ConfigMap.
 
+## Current Deployment Mode
+
+> **Note:** The current deployment uses `SecRuleEngine DetectionOnly` — all rules are evaluated and logged, but no requests are blocked. This is the recommended mode for initial rollout and tuning. See [TASKFLOW_WAF_RUNBOOK](../TASKFLOW_WAF_RUNBOOK.md) for test procedures before switching to `On`.
+
 ## Directive Load Order
 
 ```

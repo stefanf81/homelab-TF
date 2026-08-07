@@ -47,8 +47,8 @@ Audit logs from the WAF are collected by **Grafana Alloy**, stored in **Grafana 
 | Caddy | `taskflow` | 2.11.4 | HTTP server + reverse proxy |
 | Coraza | `taskflow` | v2.5.0 | WAF engine (OWASP ModSecurity compatible) |
 | OWASP CRS | `taskflow` | v4.25.0 | Core Rule Set for attack detection |
-| Alloy | `monitoring` | v1.18.0 | Log collection agent |
-| Loki | `monitoring` | 18.7.1 (chart) | Log aggregation and storage |
+| Alloy | `monitoring` | v1.11.0 | Log collection agent |
+| Loki | `monitoring` | 18.7.3 (chart) | Log aggregation and storage |
 | Grafana | `monitoring` | via victoria-metrics-k8s-stack | Dashboard visualization |
 
 ## Traffic Flow
