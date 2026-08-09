@@ -161,7 +161,7 @@ data:
           "description": "Formatted audit records that contain a matched Coraza rule with description. Open a row for the unmodified JSON evidence.",
           "gridPos": {"x": 8, "y": 16, "w": 16, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json | regexp `\\\\[msg \\\\\"(?P<rule_msg>[^\\\\\"]+)\\\\\"\\\\]` | line_format `{{.transaction_request_method}} {{.transaction_request_uri}} [rule={{.rule_id}}: {{.rule_msg}}] ip={{.transaction_client_ip}}`"}],
+          "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json | regexp `\\[msg \\\\\"(?P<rule_msg>[^\\\\\"]+)\\\\\"\\]` | line_format `{{.transaction_request_method}} {{.transaction_request_uri}} [rule={{.rule_id}}: {{.rule_msg}}] ip={{.transaction_client_ip}}`"}],
           "options": {"showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLines": true, "prettifyLogMessage": false, "enableLogDetails": true}
         },
         {
