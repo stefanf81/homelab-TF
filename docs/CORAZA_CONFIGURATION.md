@@ -208,7 +208,7 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
    ```
    ruby -ryaml -e 'puts YAML.load_file(ARGV[0]).fetch("data").fetch("Caddyfile")' \
      gitops/apps/taskflow/frontend-waf.yaml | \
-      docker run --rm -i ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0-r1 \
+      docker run --rm -i ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1 \
      caddy validate --config /dev/stdin --adapter caddyfile
    ```
 6. Reconcile and replay the test request. Confirm the false positive is gone and the rule still fires on other inputs.

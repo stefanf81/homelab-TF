@@ -4,7 +4,7 @@
 
 - `taskflow-frontend-waf` receives `www.jokelab.dev/` traffic.
 - `taskflow-backend-waf` receives `www.jokelab.dev/api` traffic.
-- Both WAFs use Caddy `2.11.4`, Coraza Caddy `v2.5.0`, OWASP CRS, and an audit-log redactor sidecar.
+- Both WAFs use Caddy `2.11.4`, Coraza Caddy `v2.6.0`, OWASP CRS, and an audit-log redactor sidecar.
 - Both WAFs start with `SecRuleEngine DetectionOnly` and paranoia level 1.
 - Loki runs as one monolithic replica in `monitoring` with 30-day retention.
 - Alloy collects only pods labelled as Taskflow WAFs and sends them to Loki.
@@ -18,18 +18,18 @@ Build and publish the image manually:
 ```bash
 # Build for linux/amd64 (k3s node architecture)
 docker build --platform linux/amd64 \
-  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0-r1 \
+  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1 \
   gitops/images/taskflow-caddy-coraza
 
 # Authenticate to GHCR (requires write:packages scope)
 echo $(gh auth token) | docker login ghcr.io -u stefanf81 --password-stdin
 
 # Push the image
-docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0-r1
+docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1
 
 # Get digest for pinning
 docker inspect --format='{{index .RepoDigests 0}}' \
-  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0-r1
+  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1
 ```
 
 Replace the image reference in both WAF Deployments with the digest returned by
@@ -210,9 +210,9 @@ curl -s -o /dev/null -w "%{http_code}" \
 **Fix**: Rebuild for the correct platform:
 ```bash
 docker build --platform linux/amd64 \
-  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0-r1 \
+  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1 \
   gitops/images/taskflow-caddy-coraza
-docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0-r1
+docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1
 # Update digest in frontend-waf.yaml and backend-waf.yaml
 ```
 

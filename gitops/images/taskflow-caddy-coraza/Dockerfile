@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 ARG CADDY_VERSION=2.11.4
-ARG CORAZA_CADDY_VERSION=v2.5.0
+ARG CORAZA_CADDY_VERSION=v2.6.0
 
 FROM caddy:${CADDY_VERSION}-builder-alpine AS builder
 

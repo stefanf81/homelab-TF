@@ -45,7 +45,7 @@ Audit logs from the WAF are collected by **Grafana Alloy**, stored in **Grafana 
 | Component | Namespace | Version | Purpose |
 |-----------|-----------|---------|---------|
 | Caddy | `taskflow` | 2.11.4 | HTTP server + reverse proxy |
-| Coraza | `taskflow` | v2.5.0 | WAF engine (OWASP ModSecurity compatible) |
+| Coraza | `taskflow` | v2.6.0 | WAF engine (OWASP ModSecurity compatible) |
 | OWASP CRS | `taskflow` | v4.25.0 | Core Rule Set for attack detection |
 | Alloy | `monitoring` | v1.11.0 | Log collection agent |
 | Loki | `monitoring` | 18.7.3 (chart) | Log aggregation and storage |
@@ -82,7 +82,7 @@ Internet → Cloudflare DNS → Port Forward → 192.168.50.201 (L2 announcement
 The custom Caddy+Coraza image is built manually and pushed to GHCR:
 
 - **Repository**: `ghcr.io/stefanf81/taskflow-caddy-coraza`
-- **Tag**: `2.11.4-coraza2.5.0-r1`
+- **Tag**: `2.11.4-coraza2.6.0-r1`
 - **Dockerfile**: `gitops/images/taskflow-caddy-coraza/Dockerfile`
 - **Platform**: `linux/amd64` (k3s node architecture)
 - **Digest**: Pinned in both WAF Deployments
@@ -91,17 +91,17 @@ The custom Caddy+Coraza image is built manually and pushed to GHCR:
 
 ```bash
 docker build --platform linux/amd64 \
-  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0-r1 \
+  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1 \
   gitops/images/taskflow-caddy-coraza/
 
 # Authenticate to GHCR (requires write:packages scope)
 echo $(gh auth token) | docker login ghcr.io -u stefanf81 --password-stdin
 
-docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0-r1
+docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1
 
 # Get digest for pinning
 docker inspect --format='{{index .RepoDigests 0}}' \
-  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.5.0-r1
+  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1
 ```
 
 ### Image Build Details
