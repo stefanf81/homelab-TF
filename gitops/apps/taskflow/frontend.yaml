@@ -16,6 +16,8 @@ spec:
       labels:
         app: taskflow-frontend
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: frontend
           # Flux image automation pins :latest to its current digest (see ImagePolicy

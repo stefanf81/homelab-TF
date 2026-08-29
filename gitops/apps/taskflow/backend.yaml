@@ -16,6 +16,8 @@ spec:
       labels:
         app: taskflow-backend
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       # Allow in-flight requests to drain on rollout. Pair with server.shutdown=graceful in the
       # backend's prod profile so Spring finishes active requests before the pod is killed.
       terminationGracePeriodSeconds: 45
