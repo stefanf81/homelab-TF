@@ -53,6 +53,7 @@ spec:
 
     singleBinary:
       replicas: 1
+      affinity: ~
       persistence:
         enabled: true
         storageClass: proxmox-csi
@@ -70,8 +71,8 @@ spec:
     gateway:
       enabled: true
       replicas: 1
-      # The gateway's default hard anti-affinity prevents a rolling update on
-      # this single-node cluster. Recreate replaces it only after stopping it.
+      # Disable chart default hard anti-affinity which blocks pods on single-node homelab clusters
+      affinity: ~
       deploymentStrategy:
         type: Recreate
       service:
