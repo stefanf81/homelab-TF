@@ -70,6 +70,10 @@ spec:
     gateway:
       enabled: true
       replicas: 1
+      # The gateway's default hard anti-affinity prevents a rolling update on
+      # this single-node cluster. Recreate replaces it only after stopping it.
+      deploymentStrategy:
+        type: Recreate
       service:
         type: ClusterIP
 
