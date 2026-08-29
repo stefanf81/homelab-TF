@@ -137,11 +137,31 @@ spec:
         - victoriametrics-metrics-datasource
       serviceMonitor:
         path: /metrics
+      envValueFrom:
+        GF_AUTH_GITHUB_CLIENT_ID:
+          secretKeyRef:
+            name: grafana-github-oauth
+            key: clientId
+        GF_AUTH_GITHUB_CLIENT_SECRET:
+          secretKeyRef:
+            name: grafana-github-oauth
+            key: clientSecret
       grafana.ini:
         server:
           domain: grafana.jokelab.dev
           root_url: "https://%(domain)s/"
           serve_from_sub_path: false
+        auth:
+          disable_login_form: true
+        "auth.github":
+          enabled: true
+          allow_sign_up: true
+          auto_assign_org: true
+          auto_assign_org_role: Admin
+          scopes: user:email,read:org
+          auth_url: https://github.com/login/oauth/authorize
+          token_url: https://github.com/login/oauth/access_token
+          api_url: https://api.github.com/user
       sidecar:
         dashboards:
           reloadURL: "http://localhost:3000/api/admin/provisioning/dashboards/reload"

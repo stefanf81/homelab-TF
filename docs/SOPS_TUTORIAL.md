@@ -62,7 +62,7 @@ creation_rules:
 2. **`key.txt`**: Contains your local private key. **NEVER COMMIT `key.txt` TO GIT.** It is explicitly ignored in `.gitignore`.
 3. **`gitops/apps/taskflow/taskflow-secrets.yaml`**: The encrypted application secrets.
 4. **`gitops/infrastructure/controllers/proxmox-csi/proxmox-csi-secrets.yaml`**: Proxmox CSI storage secrets.
-5. **`gitops/monitoring/platform/grafana-secrets.yaml`**: Grafana admin secrets.
+5. **`gitops/monitoring/platform/grafana-secrets.yaml`**: Grafana admin and GitHub OAuth secrets.
 
 ---
 

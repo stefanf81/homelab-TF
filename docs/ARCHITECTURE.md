@@ -246,7 +246,7 @@ Keeps the `jokelab.dev`, `www.jokelab.dev`, and `grafana.jokelab.dev` DNS A reco
 | VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.88.0) in namespace `monitoring` |
 | CRDs | Installed by the chart (VMServiceScrape, VMSingle, …) |
 | Persistence | VictoriaMetrics TSDB on a **Proxmox CSI-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `proxmox-csi`) |
-| Grafana auth | Admin credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana UI is routed via the Gateway API (see `routes.yaml`), secured by Grafana's login screen; VictoriaMetrics UI is kept strictly internal and accessed via port-forwarding |
+| Grafana auth | GitHub OAuth authentication (`auth.github`) with credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana UI is routed via the Gateway API (see `routes.yaml`); VictoriaMetrics UI is kept strictly internal and accessed via port-forwarding |
 | App metrics | `VMServiceScrape`s in `gitops/monitoring/app` scrape the backend (`/actuator/prometheus`), `postgres-exporter`, and `redis-exporter` |
 | DB/Redis metrics | Side-car exporters (`postgres-exporter.yaml`, `redis-exporter.yaml` in `gitops/apps/taskflow`) — **no backend change required**; they reuse `db-secret` |
 | Backend metrics | **Require an app-repo change** — the backend must add `micrometer-registry-prometheus` and expose `/actuator/prometheus` (see `docs/BACKEND_INTEGRATION_CONTEXT.md`). The VMServiceScrape exists but is inert until then. |
@@ -261,7 +261,7 @@ Keeps the `jokelab.dev`, `www.jokelab.dev`, and `grafana.jokelab.dev` DNS A reco
 | Pod security | All containers: `readOnlyRootFilesystem`, `allowPrivilegeEscalation=false`, drop ALL capabilities, runAsNonRoot |
 | Secrets encryption | SOPS age-encrypted (`*-secrets.yaml`), decrypted by Flux at reconciliation time only |
 | Image pinning | Flux image automation rewrites `:latest` to `@sha256:<digest>` — immutable references in Git |
-| Grafana & VM UIs | Grafana UI is exposed securely on the Gateway at `/grafana` (secured by a login form with a strong, SOPS-encrypted admin password). VictoriaMetrics (VMSingle) is kept strictly internal to protect operational metrics, accessible privately via port-forwarding. |
+| Grafana & VM UIs | Grafana UI is exposed securely on the Gateway at `grafana.jokelab.dev` (protected by GitHub OAuth with SOPS-encrypted credentials). VictoriaMetrics (VMSingle) is kept strictly internal to protect operational metrics, accessible privately via port-forwarding. |
 | In-cluster scrape only | VictoriaMetrics scrapes taskflow services over the cluster network (plain HTTP, no auth). The backend must therefore permit `GET /actuator/prometheus` unauthenticated (see `docs/BACKEND_INTEGRATION_CONTEXT.md` §2.3). |
 | SSH hardening | kubeconfig fetch uses strict host key checking disabled (homelab convenience) with known_hosts file |
 | Cloud-init isolation | k3s installed via cloud-init user-data heredoc from column 0 (no whitespace parsing issues) |
@@ -360,7 +360,7 @@ TF/
   │   │   ├── platform/                # Operator + CRDs + storage + Grafana secret
   │   │   │   ├── namespace.yaml       # monitoring namespace
   │   │   │   ├── repository.yaml      # victoriametrics HelmRepository
-  │   │   │   ├── grafana-secrets.yaml # SOPS-encrypted Grafana admin (age-encrypted)
+  │   │   │   ├── grafana-secrets.yaml # SOPS-encrypted Grafana admin & GitHub OAuth (age-encrypted)
   │   │   │   ├── release.yaml         # victoria-metrics-k8s-stack HelmRelease (tuned)
   │   │   │   ├── routes.yaml          # HTTPRoute for Grafana
   │   │   │   ├── metrics-server-release.yaml  # metrics-server HelmRelease
