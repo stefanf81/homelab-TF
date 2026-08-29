@@ -75,6 +75,9 @@ metadata:
   name: taskflow-images
   namespace: flux-system
 spec:
+  # Latest currently resolves to a broken GHCR manifest; keep automation paused
+  # until the application images are republished with complete manifests.
+  suspend: true
   interval: 10m0s
   sourceRef:
     kind: GitRepository
