@@ -23,14 +23,14 @@ gitops/
 │   ├── kyverno/                     # Kyverno controller (reconciled by infra-controllers)
 │   │   ├── namespace.yaml           # kyverno ns + PSA enforce:privileged
 │   │   ├── repository.yaml          # HelmRepository kyverno @ https://kyverno.github.io/kyverno/
-│   │   ├── release.yaml             # HelmRelease kyverno v3.8.2, single-replica, crds: Skip
+│   │   ├── release.yaml             # HelmRelease kyverno v3.9.0, single-replica, crds: Skip
 │   │   └── kustomization.yaml
 │   └── policy-reporter/             # Policy Reporter + UI (its OWN cluster Kustomization)
 │       ├── namespace.yaml                # policy-reporter ns
 │       ├── repository.yaml               # HelmRepository policy-reporter @ https://kyverno.github.io/policy-reporter
 │       ├── trivy-adapter-repository.yaml # HelmRepository trivy-operator-polr-adapter @ https://fjogeleit.github.io/trivy-operator-polr-adapter
 │       ├── policy-reporter-secrets.yaml  # SOPS-encrypted GitHub OAuth secret (policy-reporter-github-oauth)
-│       ├── release.yaml                  # HelmRelease policy-reporter v3.9.1, ui + kyverno & trivy plugins, OAuth, 6 Trivy UI sources, crds: Skip
+│       ├── release.yaml                  # HelmRelease policy-reporter v3.10.0, ui + kyverno & trivy plugins, OAuth, 6 Trivy UI sources, crds: Skip
 │       ├── trivy-adapter-release.yaml    # HelmRelease trivy-operator-polr-adapter v0.11.5 (Trivy CRDs -> PolicyReports)
 │       ├── route.yaml                    # HTTPRoute -> policy-reporter-ui:8080 on taskflow-gateway (:443)
 │       └── kustomization.yaml
@@ -87,7 +87,7 @@ Gateway exists first, so the route programs immediately and `wait` succeeds.
 
 ### Chart & version
 - Chart: `kyverno/kyverno` from `https://kyverno.github.io/kyverno/`
-- Pinned: **3.8.2** (ships Kyverno **v1.18.2**, including latest July 2026 security fixes). Requires k8s ≥ ~1.25 (cluster is 1.36.2).
+- Pinned: **3.9.0** (ships Kyverno **v1.19.0**). Requires k8s ≥ ~1.25 (cluster is 1.36.2).
 
 ### CRD handling — important gotcha
 Chart **v3** ships its CRDs as **templated resources** controlled by the `crds.install: true`
@@ -154,7 +154,7 @@ Policy Reporter dashboard — a clean end-to-end proof the pipeline works.
 
 ### Install
 - Chart: `policy-reporter/policy-reporter` from `https://kyverno.github.io/policy-reporter`
-- Pinned: **3.9.1** (ships Policy Reporter + UI app **3.9.0**)
+- Pinned: **3.10.0** (ships Policy Reporter + UI app **3.10.0**)
 - Values: `ui.enabled: true` (UI subchart, service `policy-reporter-ui:8080`),
   `plugin.kyverno.enabled: true` + `plugin.trivy.enabled: true` (enrich the UI with
   policy descriptions/YAML and Trivy vulnerability details), `ui.oauth` (GitHub OAuth,

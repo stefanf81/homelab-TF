@@ -97,9 +97,9 @@ The scaffolded manifests inside this layout include critical performance and net
 
 Kyverno provides Kubernetes-native policy enforcement; Policy Reporter gives it a UI.
 
-* **Controller** — `gitops/infrastructure/controllers/kyverno/` (HelmRelease `kyverno` v3.8.2, single-replica, CRDs owned by the chart). System namespaces (`kube-system`, `flux-system`, `kyverno`, `cert-manager`, `cilium`) are excluded from enforcement.
+* **Controller** — `gitops/infrastructure/controllers/kyverno/` (HelmRelease `kyverno` v3.9.0, shipping Kyverno v1.19.0, single-replica, CRDs owned by the chart). System namespaces (`kube-system`, `flux-system`, `kyverno`, `cert-manager`, `cilium`) are excluded from enforcement.
 * **Policies** — `gitops/apps/kyverno-policies/` holds `ClusterPolicy` resources in **Audit** mode (no blocking yet). Reconciled by the `kyverno-policies` Kustomization, which `dependsOn: infra-controllers` so the CRDs exist before policies apply.
-* **Dashboard** — `gitops/infrastructure/controllers/policy-reporter/` (HelmRelease `policy-reporter` v3.9.1, `ui.enabled`, `plugin.kyverno.enabled` + `plugin.trivy.enabled`, GitHub OAuth, six Trivy `ui.sources`). Its `HTTPRoute` serves `https://kyverno.jokelab.dev` via the shared Cilium Gateway, using the `taskflow-jokelab-cert` certificate, whose `dnsNames` already include `kyverno.jokelab.dev`. Ensure the hostname has a public DNS record before certificate issuance or renewal.
+* **Dashboard** — `gitops/infrastructure/controllers/policy-reporter/` (HelmRelease `policy-reporter` v3.10.0, `ui.enabled`, `plugin.kyverno.enabled` + `plugin.trivy.enabled`, GitHub OAuth, six Trivy `ui.sources`). Its `HTTPRoute` serves `https://kyverno.jokelab.dev` via the shared Cilium Gateway, using the `taskflow-jokelab-cert` certificate, whose `dnsNames` already include `kyverno.jokelab.dev`. Ensure the hostname has a public DNS record before certificate issuance or renewal.
 
 **Add a policy:** drop a `ClusterPolicy` YAML into `gitops/apps/kyverno-policies/` and commit — Flux applies it automatically.
 

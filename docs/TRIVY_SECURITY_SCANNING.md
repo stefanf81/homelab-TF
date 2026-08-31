@@ -23,7 +23,7 @@ gitops/
 │   ├── trivy-operator/               # Trivy Operator (own cluster Kustomization)
 │   │   ├── namespace.yaml            # trivy-system ns
 │   │   ├── repository.yaml           # HelmRepository aqua @ https://aquasecurity.github.io/helm-charts
-│   │   ├── release.yaml             # HelmRelease trivy-operator v0.34.0, scanners + compliance (own kustomization)
+│   │   ├── release.yaml             # HelmRelease trivy-operator v0.36.0, scanners + compliance (own kustomization)
 │   │   └── kustomization.yaml
 │   └── policy-reporter/              # Policy Reporter + adapter (see docs/KYVERNO_POLICY_ENGINE.md)
 │       ├── trivy-adapter-repository.yaml  # HelmRepository trivy-operator-polr-adapter
@@ -45,7 +45,7 @@ gitops/
 ## 2. Chart & version
 
 - Chart: `aqua/trivy-operator` from `https://aquasecurity.github.io/helm-charts`
-- Pinned: **0.34.0** (app **0.32.0**)
+- Pinned: **0.36.0**
 - `install.crds: CreateReplace` / `upgrade.crds: CreateReplace` — the chart **owns** the
   Trivy CRDs (they are not provided by Kyverno).
 
@@ -187,7 +187,7 @@ The adapter writes named reports (e.g. `trivy-nginx` in each namespace, or clust
 `trivy-operator.source=VulnerabilityReport`) so the UI can group them under its configured
 **sources**.
 
-Policy Reporter's own HelmRelease (`policy-reporter`, v3.9.1) additionally has:
+Policy Reporter's own HelmRelease (`policy-reporter`, v3.10.0) additionally has:
 
 - `plugin.trivy.enabled: true` — lets Policy Reporter enrich the reports / metrics with
   severity data (so the `policy_report_info`/`policy_report_result` metrics and the

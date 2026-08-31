@@ -54,6 +54,10 @@ variable "k3s_token" {
   sensitive = true
 }
 
+variable "k3s_version" {
+  type = string
+}
+
 variable "docker_hub_mirror" {
   type    = string
   default = ""

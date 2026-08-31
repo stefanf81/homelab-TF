@@ -1,9 +1,11 @@
-# Ubuntu 26.04 (Resolute) Cloud Image
+# Ubuntu 26.04 (Resolute) Cloud Image, pinned to the 2026-08-23 release image.
 resource "proxmox_download_file" "ubuntu_cloud_image" {
   content_type        = "iso"
   datastore_id        = "local"
   node_name           = var.proxmox_node
-  url                 = "https://cloud-images.ubuntu.com/releases/resolute/release/ubuntu-26.04-server-cloudimg-amd64.img"
+  url                 = "https://cloud-images.ubuntu.com/releases/resolute/release-20260823/ubuntu-26.04-server-cloudimg-amd64.img"
+  checksum            = "8196be9d7958059cb56c6c75c80fdf6cee8a8885bc149ea791d7db1c7ef93035"
+  checksum_algorithm  = "sha256"
   file_name           = "ubuntu-26.04-server-cloudimg-amd64.img"
   overwrite           = false
   overwrite_unmanaged = true
@@ -82,7 +84,7 @@ runcmd:
             - "${var.docker_hub_mirror}"
     MIRROR_EOF
     fi
-  - curl -sfL https://get.k3s.io | K3S_TOKEN=${var.k3s_token} sh -s - server --tls-san=${split("/", var.ip_address)[0]} --kubelet-arg="system-reserved=cpu=200m,memory=500Mi" --kubelet-arg="kube-reserved=cpu=200m,memory=500Mi" --node-label="topology.kubernetes.io/region=homelab" --node-label="topology.kubernetes.io/zone=${var.proxmox_node}" --disable servicelb --disable traefik --disable coredns --disable metrics-server --flannel-backend=none --disable-network-policy
+  - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=${var.k3s_version} K3S_TOKEN=${var.k3s_token} sh -s - server --tls-san=${split("/", var.ip_address)[0]} --kubelet-arg="system-reserved=cpu=200m,memory=500Mi" --kubelet-arg="kube-reserved=cpu=200m,memory=500Mi" --node-label="topology.kubernetes.io/region=homelab" --node-label="topology.kubernetes.io/zone=${var.proxmox_node}" --disable servicelb --disable traefik --disable coredns --disable metrics-server --flannel-backend=none --disable-network-policy
 EOF
     file_name = "k3s-cloud-config.yaml"
   }

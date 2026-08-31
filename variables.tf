@@ -89,6 +89,12 @@ variable "k3s_token" {
   sensitive   = true
 }
 
+variable "k3s_version" {
+  type        = string
+  description = "The k3s release to install on newly provisioned nodes"
+  default     = "v1.36.4+k3s1"
+}
+
 variable "docker_hub_mirror" {
   type        = string
   description = "Optional URL for a Docker Hub mirror registry (e.g. https://mirror.gcr.io)"
@@ -100,4 +106,3 @@ variable "kubeconfig_path" {
   description = "Where to store the kubeconfig fetched from the k3s node"
   default     = "./kubeconfig.yaml"
 }
-

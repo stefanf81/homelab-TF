@@ -13,6 +13,7 @@ module "proxmox" {
   memory_size       = var.memory_size
   disk_size         = var.disk_size
   k3s_token         = var.k3s_token
+  k3s_version       = var.k3s_version
   docker_hub_mirror = var.docker_hub_mirror
 }
 
@@ -26,6 +27,5 @@ module "k3s_kubeconfig" {
 
   depends_on = [module.proxmox]
 }
-
 
 

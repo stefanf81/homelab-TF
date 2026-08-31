@@ -14,5 +14,6 @@ memory_size       = 14336
 disk_size         = 100
 ssh_user          = "ubuntu"
 k3s_token         = "REPLACE_ME"
+k3s_version       = "v1.36.4+k3s1"
 docker_hub_mirror = "https://mirror.gcr.io"
 kubeconfig_path   = "./kubeconfig.yaml"

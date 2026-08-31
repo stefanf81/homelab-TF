@@ -11,9 +11,10 @@ TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE,
 ### 2.1 Provisioning Stack
 | Component | Tool / Version | Purpose |
 |-----------|---------------|---------|
-| IaC Engine | OpenTofu ≥ 1.8.0 | VM provisioning & kubeconfig fetch |
+| IaC Engine | OpenTofu 1.12.3 (minimum ≥ 1.8.0) | VM provisioning & kubeconfig fetch |
 | Provider | `bpg/proxmox` v0.111.1 | Proxmox VE API integration |
-| Cloud Image | Ubuntu 26.04 (Resolute) cloud-init | k3s host OS |
+| Cloud Image | Ubuntu 26.04 (Resolute), release-20260823, SHA-256 pinned | k3s host OS |
+| k3s | v1.36.4+k3s1 | Kubernetes distribution |
 | Orchestration | Makefile (`make init`, `make apply`) | Enforces correct provisioning sequence |
 
 ### 2.2 VM Specifications (defaults in `variables.tf`)
@@ -46,7 +47,7 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 
 ### 3.1 Runtime
 - **Distribution**: k3s (single-node cluster)
-- **CNI**: Cilium v1.20.0 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
+- **CNI**: Cilium v1.20.1 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
 - **Storage**: Proxmox CSI (dynamic VM virtual disk provisioning)
 
 ### 3.2 Cilium Configuration (`gitops/infrastructure/controllers/cilium/release.yaml`)
@@ -197,7 +198,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.4 PostgreSQL Deployment (`gitops/apps/taskflow/postgres-db.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `postgres:18.4-alpine` |
+| Image | `postgres:18.6-alpine` |
 | Replicas | 1 |
 | Storage | 10 GiB PVC, storageClass: proxmox-csi (ReadWriteOnce) |
 | SecurityContext | runAsNonRoot UID/GID 70 (postgres), drop ALL capabilities, fsGroup 70 with OnRootMismatch policy |
@@ -322,12 +323,12 @@ TF/
 │   │
 │   ├── infrastructure/
 │   │   ├── controllers/             # HelmRelease + Repository for platform add-ons
-│   │   │   ├── cilium/release.yaml  # Cilium v1.20.0 (eBPF, Gateway API, L2 announcements)
+│   │   │   ├── cilium/release.yaml  # Cilium v1.20.1 (eBPF, Gateway API, L2 announcements)
 │   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.1) with Let's Encrypt certificate automation
 │   │   │   ├── coredns/             # CoreDNS HelmRelease (v1.47.0) — replaces K3s packaged addon
 │   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
 │   │   │   ├── gateway-api/         # Standard Gateway API CRDs + TLSRoute CRD
-│   │   │   ├── kyverno/             # Kyverno policy engine (v3.8.2 / Kyverno v1.18.2)
+│   │   │   ├── kyverno/             # Kyverno policy engine (v3.9.0 / Kyverno v1.19.0)
 │   │   │   ├── falco/               # Falco runtime security (v9.1.0 chart, modern eBPF)
 │   │   │   ├── policy-reporter/     # Policy Reporter + UI dashboard
 │   │   │   ├── trivy-operator/      # Trivy vulnerability scanner operator
@@ -487,12 +488,12 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
 ```
 
 - **`infra-controllers`** (`gitops/infrastructure/controllers/`) installs the platform via HelmRelease objects:
-  - `cilium/release.yaml` — Cilium 1.20.0 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
+  - `cilium/release.yaml` — Cilium 1.20.1 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
   - `cert-manager/release.yaml` — cert-manager 1.21.1 (fully active, managing TLS certificates).
   - `coredns/release.yaml` — CoreDNS 1.47.0 (replaces K3s packaged addon, manages DNS with custom LAN hairpin-NAT overrides).
   - `proxmox-csi/` — Proxmox CSI driver (dynamic storage provisioning of virtual disks with native hypervisor backup integration).
   - `gateway-api/` — the standard Gateway API CRDs.
-  - `kyverno/release.yaml` — Kyverno 3.8.2 (Kubernetes-native policy engine, mutating + validating admission webhook).
+  - `kyverno/release.yaml` — Kyverno 3.9.0 (Kubernetes-native policy engine, mutating + validating admission webhook).
   - `falco/release.yaml` — Falco 9.1.0 chart (runtime security, modern eBPF driver, Falcosidekick → PolicyReports).
   - `policy-reporter/` — Policy Reporter + UI dashboard (visualizes Kyverno/Trivy/Falco PolicyReports).
   - `trivy-operator/release.yaml` — Trivy Operator (vulnerability scanning of running containers/images).
@@ -545,7 +546,7 @@ Key point: **Services are `ClusterIP` only**. Nothing is exposed except through 
 2. **Jaeger UI is not on the Gateway anymore** — don't re-add a `/jaeger` route without putting auth in front of it.
 3. **Postgres UID is 70 on purpose** — don't "standardize" it to `10001`; the Postgres volume ownership depends on 70.
 4. **`proxmox_insecure = true`** disables TLS verification to Proxmox. Fine for a self-signed homelab, dangerous anywhere else.
-5. **Ubuntu 26.04 ("Resolute")** is a future release — verify the cloud-image URL in `modules/proxmox/main.tf` actually resolves before `make provision` (ISSUES.md #18).
+5. **Ubuntu 26.04 ("Resolute")** is pinned to the 2026-08-23 cloud image release and verified with a SHA-256 checksum in `modules/proxmox/main.tf`.
 6. The whole stack is **single-replica** — there is no HA. A node reboot = full downtime. That's the accepted homelab tradeoff, not a bug.
 
 ### 10.9 The monitoring stack (VictoriaMetrics + Grafana) and how to reach it
