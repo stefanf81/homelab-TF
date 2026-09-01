@@ -71,8 +71,8 @@ spec:
     vmsingle:
       enabled: true
       spec:
-        # 3 days of history is plenty for a homelab. VM is extremely compact.
-        retentionPeriod: "3d"
+        # Keep two weeks of history while retaining VictoriaMetrics' compact footprint.
+        retentionPeriod: "14d"
         # Highly optimized RAM profile (VMSingle uses 1/3 to 1/5 the RAM of Prometheus)
         resources:
           requests:
