@@ -42,7 +42,7 @@ spec:
     falcosidekick:
       enabled: true
       image:
-        tag: 2.34.1
+        tag: 2.35.0
       config:
         policyreport:
           enabled: true
