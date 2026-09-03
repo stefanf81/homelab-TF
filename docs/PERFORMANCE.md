@@ -1,6 +1,6 @@
 # TaskFlow — Performance Analysis
 
-> **Scope note:** The initial review was static analysis (cluster unreachable). Since then the cluster is live and several findings have been resolved. The monitoring stack (VictoriaMetrics + Grafana + kube-state-metrics + node-exporter) is now fully deployed. The remaining blind spot — the backend's `/actuator/prometheus` endpoint — needs `micrometer-registry-prometheus` added in the app repo (see `BACKEND_INTEGRATION_CONTEXT.md`). Once that ships, every finding below becomes measurable.
+> **Scope note:** The initial review was static analysis (cluster unreachable). The monitoring stack (VictoriaMetrics + Grafana + kube-state-metrics + node-exporter) is deployed, and the backend plus GitOps configuration now expose its existing Micrometer Prometheus registry for in-cluster scraping. JVM, HTTP, Hikari, PostgreSQL, Redis, node, and disk metrics are configured for the TaskFlow Performance Grafana dashboard after the normal application deployment.
 
 ---
 
@@ -35,10 +35,10 @@ resources:
 ```
 The image Dockerfile owns heap sizing via `-XX:MaxRAMPercentage=50.0` → 1 GiB heap at the 2 GiB limit.
 
-### 1.2 ~~No observability → you are tuning blind~~ (RESOLVED — infra side)
+### 1.2 ~~No observability → you are tuning blind~~ (RESOLVED)
 **Files:** `gitops/monitoring/platform/release.yaml` (VictoriaMetrics stack), `gitops/monitoring/app/vmservicescrapes.yaml` (app scrapes)
 
-> **Resolved (infrastructure):** The monitoring stack is deployed and collecting cluster-wide metrics:
+> **Resolved:** The monitoring stack is deployed and collecting cluster-wide metrics:
 > - **VictoriaMetrics** (VMSingle + vmagent) — replaces Prometheus, ~⅓ the RAM
 > - **Grafana** — dashboards queryable at `https://grafana.jokelab.dev`
 > - **kube-state-metrics** — pod/Deployment/replica/namespace resource metrics
@@ -46,8 +46,9 @@ The image Dockerfile owns heap sizing via `-XX:MaxRAMPercentage=50.0` → 1 GiB 
 > - **PostgreSQL exporter** — DB query latency, active connections, cache hit ratio
 > - **Redis exporter** — cache hit rate, memory usage, evictions
 > - **Falco** — runtime security event metrics
+> - **Spring Boot Actuator + Micrometer** — JVM, HTTP latency, and Hikari connection-pool metrics from `/actuator/prometheus`; the endpoint is reachable without application credentials only from the monitoring namespace.
 >
-> **Remaining gap (backend app repo):** The backend's `/actuator/prometheus` is still INERT — no `micrometer-registry-prometheus` dependency in the app build. Until that ships, you cannot see JVM GC, heap, HTTP request latencies, or DB pool metrics from the backend. See `docs/BACKEND_INTEGRATION_CONTEXT.md` for the exact 3-line change required. This is the single prerequisite for confirming items 1.1, 2.1, 2.2 with real data.
+> The backend Service and VMServiceScrape use the same named `http` port, so discovery does not depend on an unnamed numeric Service port.
 
 ### 1.3 ~~PostgreSQL runs on Longhorn (network storage)~~ (RESOLVED)
 **File:** `gitops/apps/taskflow/postgres-pvc.yaml` (`storageClassName: proxmox-csi`)
@@ -124,7 +125,7 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 | # | Action | Status |
 |---|--------|--------|
 | 1 | **Monitoring stack** (VictoriaMetrics + Grafana + kube-state-metrics + node-exporter) | ✅ Deployed and collecting metrics |
-| 2 | **Backend `/actuator/prometheus`** — `micrometer-registry-prometheus` + exposure + SecurityConfig permit | ⏳ Pending — app repo change required. The VMServiceScrape exists but is inert until `micrometer-registry-prometheus` is added to the backend build. See `BACKEND_INTEGRATION_CONTEXT.md`. |
+| 2 | **Backend `/actuator/prometheus`** — Micrometer registry, exposure, SecurityConfig permit, and named VMServiceScrape port | ✅ Configured — the normal application and Flux deployment activates backend JVM, HTTP, and Hikari scrapes alongside existing PostgreSQL, Redis, node, and disk telemetry. |
 | 3 | **JVM sizing** — single source of truth via `MaxRAMPercentage=50.0` (image), Guaranteed QoS `2Gi` | ✅ Applied — `backend.yaml` JAVA_TOOL_OPTIONS no longer overrides heap/direct; image owns sizing |
 | 4 | **`effective_cache_size`** corrected to 700MB | ✅ Applied in `postgres-db.yaml` |
 | 5 | **Postgres PVC** migrated from Longhorn to Proxmox CSI | ✅ Applied in `postgres-pvc.yaml` |
@@ -170,5 +171,3 @@ resources:
 
 This removes the rigid heap, fixes the silent direct-memory override, and bounds native memory
 so `ExitOnOutOfMemoryError` only triggers on a real leak, not a benign spike.
-
-

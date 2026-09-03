@@ -197,15 +197,15 @@ kind: Service
 metadata:
   name: backend
   namespace: taskflow
-  # `app: taskflow-backend` label lets the Prometheus ServiceMonitor in
-  # gitops/monitoring/app select this Service (ServiceMonitor matches Service
-  # labels, not the pod selector).
+  # `app: taskflow-backend` lets the VMServiceScrape in gitops/monitoring/app
+  # select this Service (scrapes select Service labels, not pod selectors).
   labels:
     app: taskflow-backend
 spec:
   ports:
-    - port: 8080
-      targetPort: 8080
+    - name: http
+      port: 8080
+      targetPort: http
       # Advertise HTTP/2 (h2c) to the Cilium Gateway so it multiplexes requests to the
       # backend over a single connection. The backend already enables server.http2.enabled=true
       # (application.properties); without this the Gateway would speak HTTP/1.1 upstream.

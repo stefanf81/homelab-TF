@@ -1,0 +1,172 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskflow-performance-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: taskflow
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: taskflow-observability
+data:
+  taskflow-performance.json: |
+    {
+      "uid": "taskflow-performance",
+      "title": "TaskFlow Performance",
+      "description": "Backend JVM, HTTP, Hikari, PostgreSQL, Redis, pod, node, and disk performance metrics.",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {"from": "now-6h", "to": "now"},
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Backend Scrape Availability",
+          "gridPos": {"x": 0, "y": 0, "w": 6, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "max(up{namespace=\"taskflow\",service=\"backend\"})", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "HTTP Request Rate by Status",
+          "gridPos": {"x": 6, "y": 0, "w": 18, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum by (status) (rate(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",uri!~\"/actuator.*\"}[$__rate_interval]))", "legendFormat": "{{status}}"}],
+          "fieldConfig": {"defaults": {"unit": "reqps", "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "HTTP p95 Latency",
+          "gridPos": {"x": 0, "y": 5, "w": 12, "h": 7},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{namespace=\"taskflow\",service=\"backend\",uri!~\"/actuator.*\"}[$__rate_interval])))", "legendFormat": "p95"}],
+          "fieldConfig": {"defaults": {"unit": "s", "decimals": 3}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "HTTP 5xx Error Ratio",
+          "gridPos": {"x": 12, "y": 5, "w": 12, "h": 7},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum(rate(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",status=~\"5..\",uri!~\"/actuator.*\"}[$__rate_interval])) / sum(rate(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",uri!~\"/actuator.*\"}[$__rate_interval]))", "legendFormat": "5xx ratio"}],
+          "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 2, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "orange", "value": 0.01}, {"color": "red", "value": 0.05}]}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "JVM Heap Usage",
+          "gridPos": {"x": 0, "y": 12, "w": 12, "h": 7},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [
+            {"refId": "A", "expr": "sum(jvm_memory_used_bytes{namespace=\"taskflow\",service=\"backend\",area=\"heap\"})", "legendFormat": "used"},
+            {"refId": "B", "expr": "sum(jvm_memory_committed_bytes{namespace=\"taskflow\",service=\"backend\",area=\"heap\"})", "legendFormat": "committed"},
+            {"refId": "C", "expr": "sum(jvm_memory_max_bytes{namespace=\"taskflow\",service=\"backend\",area=\"heap\"})", "legendFormat": "max"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "JVM GC Pause and Live Threads",
+          "gridPos": {"x": 12, "y": 12, "w": 12, "h": 7},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [
+            {"refId": "A", "expr": "sum(rate(jvm_gc_pause_seconds_sum{namespace=\"taskflow\",service=\"backend\"}[$__rate_interval]))", "legendFormat": "GC pause seconds/s"},
+            {"refId": "B", "expr": "sum(jvm_threads_live_threads{namespace=\"taskflow\",service=\"backend\"})", "legendFormat": "live threads"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Hikari Connection Pool",
+          "gridPos": {"x": 0, "y": 19, "w": 12, "h": 7},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [
+            {"refId": "A", "expr": "sum(hikaricp_connections_active{namespace=\"taskflow\",service=\"backend\"})", "legendFormat": "active"},
+            {"refId": "B", "expr": "sum(hikaricp_connections_idle{namespace=\"taskflow\",service=\"backend\"})", "legendFormat": "idle"},
+            {"refId": "C", "expr": "sum(hikaricp_connections_pending{namespace=\"taskflow\",service=\"backend\"})", "legendFormat": "pending"},
+            {"refId": "D", "expr": "sum(hikaricp_connections_max{namespace=\"taskflow\",service=\"backend\"})", "legendFormat": "max"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "PostgreSQL Connections and Cache Hit Ratio",
+          "gridPos": {"x": 12, "y": 19, "w": 12, "h": 7},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [
+            {"refId": "A", "expr": "sum(pg_stat_activity_count{namespace=\"taskflow\",datname=\"taskflow\"})", "legendFormat": "connections"},
+            {"refId": "B", "expr": "max(pg_settings_max_connections{namespace=\"taskflow\"})", "legendFormat": "max connections"},
+            {"refId": "C", "expr": "sum(rate(pg_stat_database_blks_hit{namespace=\"taskflow\",datname=\"taskflow\"}[$__rate_interval])) / (sum(rate(pg_stat_database_blks_hit{namespace=\"taskflow\",datname=\"taskflow\"}[$__rate_interval])) + sum(rate(pg_stat_database_blks_read{namespace=\"taskflow\",datname=\"taskflow\"}[$__rate_interval])))", "legendFormat": "cache hit ratio"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}, "overrides": [{"matcher": {"id": "byName", "options": "cache hit ratio"}, "properties": [{"id": "unit", "value": "percentunit"}]}]},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Redis Memory, Hit Ratio, and Evictions",
+          "gridPos": {"x": 0, "y": 26, "w": 12, "h": 7},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [
+            {"refId": "A", "expr": "max(redis_memory_used_bytes{namespace=\"taskflow\"})", "legendFormat": "memory used"},
+            {"refId": "B", "expr": "sum(rate(redis_keyspace_hits_total{namespace=\"taskflow\"}[$__rate_interval])) / (sum(rate(redis_keyspace_hits_total{namespace=\"taskflow\"}[$__rate_interval])) + sum(rate(redis_keyspace_misses_total{namespace=\"taskflow\"}[$__rate_interval])))", "legendFormat": "hit ratio"},
+            {"refId": "C", "expr": "sum(rate(redis_evicted_keys_total{namespace=\"taskflow\"}[$__rate_interval]))", "legendFormat": "evictions/s"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}, "overrides": [{"matcher": {"id": "byName", "options": "memory used"}, "properties": [{"id": "unit", "value": "bytes"}]}, {"matcher": {"id": "byName", "options": "hit ratio"}, "properties": [{"id": "unit", "value": "percentunit"}]}]},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 10,
+          "type": "timeseries",
+          "title": "Backend Pod CPU and Memory Limit Usage",
+          "gridPos": {"x": 12, "y": 26, "w": 12, "h": 7},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [
+            {"refId": "A", "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"taskflow\",pod=~\"taskflow-backend-.*\",container=\"backend\",metrics_path=\"/metrics/cadvisor\"}[$__rate_interval])) / sum(kube_pod_container_resource_limits{namespace=\"taskflow\",pod=~\"taskflow-backend-.*\",container=\"backend\",resource=\"cpu\",unit=\"core\"})", "legendFormat": "CPU / limit"},
+            {"refId": "B", "expr": "sum(container_memory_working_set_bytes{namespace=\"taskflow\",pod=~\"taskflow-backend-.*\",container=\"backend\",metrics_path=\"/metrics/cadvisor\"}) / sum(kube_pod_container_resource_limits{namespace=\"taskflow\",pod=~\"taskflow-backend-.*\",container=\"backend\",resource=\"memory\",unit=\"byte\"})", "legendFormat": "memory / limit"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 2, "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 11,
+          "type": "timeseries",
+          "title": "Node CPU and Memory Usage",
+          "gridPos": {"x": 0, "y": 33, "w": 12, "h": 7},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [
+            {"refId": "A", "expr": "1 - avg(rate(node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"}[$__rate_interval]))", "legendFormat": "CPU usage"},
+            {"refId": "B", "expr": "1 - (node_memory_MemAvailable_bytes{job=\"node-exporter\"} / node_memory_MemTotal_bytes{job=\"node-exporter\"})", "legendFormat": "memory usage"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 2, "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 12,
+          "type": "timeseries",
+          "title": "Root Disk Free Space and Busy Time",
+          "gridPos": {"x": 12, "y": 33, "w": 12, "h": 7},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [
+            {"refId": "A", "expr": "node_filesystem_avail_bytes{job=\"node-exporter\",mountpoint=\"/\"} / node_filesystem_size_bytes{job=\"node-exporter\",mountpoint=\"/\"}", "legendFormat": "root free"},
+            {"refId": "B", "expr": "sum by (device) (rate(node_disk_io_time_seconds_total{job=\"node-exporter\",device=~\"sd[a-z]+\"}[$__rate_interval]))", "legendFormat": "{{device}} busy"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 2, "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        }
+      ]
+    }

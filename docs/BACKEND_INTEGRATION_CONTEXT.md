@@ -2,9 +2,8 @@
 
 This document is **hand-off context for an AI (or engineer) working on the TaskFlow
 Spring Boot backend source repository** (`taskflow-backend`). It explains what the
-*infrastructure* side (this `homelab/TF` repo) already assumes about the backend, and
-exactly what still has to change in the backend so the monitoring stack we scaffolded
-actually receives metrics.
+*infrastructure* side (this `homelab/TF` repo) already assumes about the backend and
+the monitoring integration that the backend must preserve.
 
 Read `docs/ARCHITECTURE.md` first for the full platform picture. This file is the
 backend-specific slice.
@@ -13,16 +12,16 @@ backend-specific slice.
 
 ## 0. TL;DR — what the backend owes the infra
 
-1. **Add `micrometer-registry-prometheus`** so `/actuator/prometheus` exists.
-2. **Expose that endpoint** (`management.endpoints.web.exposure.include`).
-3. **Let VictoriaMetrics scrape it unauthenticated** — Spring Security must permit
-   `GET /actuator/prometheus` (and already must permit `/actuator/health/*`).
+1. **Keep `micrometer-registry-prometheus` and Actuator** in the backend build.
+2. **Keep `/actuator/prometheus` exposed** (`management.endpoints.web.exposure.include`).
+3. **Let VictoriaMetrics scrape it unauthenticated** — Spring Security permits only
+   `GET /actuator/prometheus`; Cilium NetworkPolicy limits access to `monitoring`.
 4. **Do not fight the container contract** — run as non-root UID `10001`, read-only
    root FS (only `/tmp` writable), heap via the `JAVA_TOOL_OPTIONS` env (already set
    by the deployment, don't hard-code heap in the Dockerfile).
 
-Everything else (VictoriaMetrics, Grafana, the VMServiceScrape, exporters) is already wired
-in the infra repo and will light up the moment the endpoint exists.
+VictoriaMetrics, Grafana, the VMServiceScrape, exporters, and the performance dashboard are
+already wired in the infra repo.
 
 ---
 
@@ -45,12 +44,12 @@ integration is infra-complete; nothing to do there unless you change the tracing
 
 ---
 
-## 2. The one missing piece: Prometheus metrics
+## 2. Prometheus metrics contract
 
-### 2.1 Dependency to add
+### 2.1 Build dependencies
 
 ```gradle
-// Spring Boot 3.5.3 — Micrometer Prometheus registry + Actuator
+// Both dependencies are already declared in the backend build.
 implementation 'org.springframework.boot:spring-boot-starter-actuator'
 implementation 'io.micrometer:micrometer-registry-prometheus'
 ```
@@ -65,8 +64,7 @@ management.endpoint.health.probes.enabled=true
 management.health.livenessstate.enabled=true
 management.health.readinessstate.enabled=true
 
-# Optional but recommended: tag every series with the app + env so dashboards
-# can filter cleanly once more services emit metrics.
+# Tag every series with the application name for dashboard filtering.
 management.metrics.tags.application=taskflow-backend
 ```
 
@@ -87,10 +85,10 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
             .authorizeHttpRequests(auth -> auth
-                // Actuator probes + VictoriaMetrics scrape must be reachable without auth
-                .requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll()
-                .requestMatchers("/api/**").authenticated()   // your real app traffic
-                .anyRequest().permitAll()                     // adjust to your needs
+                .requestMatchers("/actuator/health/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/actuator/prometheus").permitAll()
+                .requestMatchers("/actuator/**").hasRole("ADMIN")
+                .anyRequest().authenticated()
             )
             // ... rest of your config
         ;
@@ -104,22 +102,22 @@ public class SecurityConfig {
 > The probe endpoints already have to be open for the existing liveness/readiness
 > checks, so treat `/actuator/prometheus` the same way.
 
-### 2.4 That's it for the backend
+### 2.4 Scrape wiring
 
 The VMServiceScrape is **already defined** in the infra repo at
 `gitops/monitoring/app/vmservicescrapes.yaml` and looks like:
 
 ```yaml
-- port: "8080"
+- port: http
   path: /actuator/prometheus
   interval: 30s
   scheme: http
 selector: { matchLabels: { app: taskflow-backend } }   # matches the backend Service
 ```
 
-It is valid today but collects **zero series** until 2.1–2.3 ship. No infra change is
-required when you add the dependency — Flux will just start showing backend metrics in
-Grafana within ~30s of the new image digest landing.
+The backend Service exposes the matching named `http` port. The `allow-monitoring-scrape`
+NetworkPolicy permits port 8080 from the `monitoring` namespace while the public Gateway has
+no route to the backend's Actuator paths.
 
 ---
 
@@ -132,7 +130,8 @@ curl -s localhost:8080/actuator/prometheus | head
 # Expect a stream of `# TYPE` / `jvm_*` / `http_server_requests_*` lines, not 404/401.
 ```
 
-If that curl returns metrics, the cluster integration is already done.
+If that curl returns metrics, verify the output includes `jvm_memory_used_bytes`,
+`http_server_requests_seconds`, and `hikaricp_connections_active` before deployment.
 
 ---
 

@@ -250,7 +250,7 @@ Keeps the `jokelab.dev`, `www.jokelab.dev`, and `grafana.jokelab.dev` DNS A reco
 | Grafana auth | GitHub OAuth authentication (`auth.github`) with credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana UI is routed via the Gateway API (see `routes.yaml`); VictoriaMetrics UI is kept strictly internal and accessed via port-forwarding |
 | App metrics | `VMServiceScrape`s in `gitops/monitoring/app` scrape the backend (`/actuator/prometheus`), `postgres-exporter`, and `redis-exporter` |
 | DB/Redis metrics | Side-car exporters (`postgres-exporter.yaml`, `redis-exporter.yaml` in `gitops/apps/taskflow`) — **no backend change required**; they reuse `db-secret` |
-| Backend metrics | **Require an app-repo change** — the backend must add `micrometer-registry-prometheus` and expose `/actuator/prometheus` (see `docs/BACKEND_INTEGRATION_CONTEXT.md`). The VMServiceScrape exists but is inert until then. |
+| Backend metrics | Spring Boot Actuator and `micrometer-registry-prometheus` expose `/actuator/prometheus`; the VMServiceScrape selects the backend's named `http` Service port. |
 
 ---
 
@@ -414,7 +414,7 @@ flux reconcile kustomization taskflow-app -n flux-system
 | Pod Disruption Budgets | ✅ Resolved | PDBs added for backend (`backend-pdb.yaml`), frontend (`frontend-pdb.yaml`), and postgres (`postgres-db.yaml`) — all `minAvailable: 1` |
 | Horizontal Pod Autoscaler | ✅ Resolved | HPA exists (`backend-hpa.yaml`, CPU 70%, 1–3 replicas) and `metrics-server` is installed (`metrics-server-release.yaml`) for the `metrics.k8s.io` API |
 | Backup strategy | Proxmox hypervisor backups | Configure scheduled VM backups at the Proxmox level (using PBS or vzdump) |
-| Monitoring stack | Jaeger traces only | VictoriaMetrics + Grafana scaffolded in `gitops/monitoring/` (see §5.9). **Backend JVM/HTTP metrics need an app-repo change** (`micrometer-registry-prometheus`) — tracked in `docs/BACKEND_INTEGRATION_CONTEXT.md`. DB/Redis metrics already flow via exporters. |
+| Monitoring stack | VictoriaMetrics, Grafana, and Grafana dashboards | JVM/HTTP/Hikari metrics come from Spring Boot Actuator; PostgreSQL and Redis metrics come from exporters; node and disk metrics come from the stack's kubelet and node-exporter scrapes. |
 
 ---
 
@@ -570,7 +570,7 @@ The monitoring UIs are now exposed through the main Cilium Gateway API using zer
 **What produces metrics today vs. later:**
 - ✅ Node + kubelet (cadvisor) + kube-state-metrics — from the stack itself, providing workload and host metrics.
 - ✅ PostgreSQL + Redis — via the `postgres-exporter` / `redis-exporter` side-cars in `gitops/apps/taskflow` (no backend change).
-- ⏳ **Backend JVM/HTTP** — requires the app repo to add `micrometer-registry-prometheus` and expose `/actuator/prometheus` (unauthenticated, in-cluster scrape). The VMServiceScrape already exists and is inert until then. See `docs/BACKEND_INTEGRATION_CONTEXT.md`.
+- ✅ **Backend JVM/HTTP/Hikari** — Spring Boot exposes `/actuator/prometheus` for in-cluster scraping. The VMServiceScrape targets the backend's named `http` Service port; Cilium limits the unauthenticated endpoint to the `monitoring` namespace. See `docs/BACKEND_INTEGRATION_CONTEXT.md`.
 
 **Resource budget (memory-trimmed):** the stack reserves ~1.1 GiB of limit
 (VMSingle 512 Mi cap / 128 Mi req, vmagent 256 Mi, Grafana 256 Mi,
