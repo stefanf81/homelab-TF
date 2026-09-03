@@ -128,7 +128,7 @@ spec:
       enabled: true
       image:
         # renovate: datasource=docker depName=grafana/grafana
-        tag: 13.2.0
+        tag: 13.2.1
       persistence:
         enabled: true
         storageClassName: proxmox-csi
