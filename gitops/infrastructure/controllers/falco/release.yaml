@@ -42,6 +42,7 @@ spec:
     falcosidekick:
       enabled: true
       image:
+        # renovate: datasource=docker depName=falcosecurity/falcosidekick
         tag: 2.35.0
       config:
         policyreport:

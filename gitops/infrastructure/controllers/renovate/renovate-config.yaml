@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: renovate-config
+  namespace: renovate
+  labels:
+    app.kubernetes.io/name: renovate
+    app.kubernetes.io/component: dependency-updater
+    app.kubernetes.io/part-of: infrastructure
+data:
+  config.json: |
+    {
+      "platform": "github",
+      "repositories": ["stefanf81/homelab-TF"],
+      "onboarding": false,
+      "requireConfig": "strict",
+      "autodiscover": false,
+      "dryRun": "full",
+      "logLevel": "info"
+    }

@@ -21,6 +21,7 @@ spec:
   # so metrics-server must skip the TLS verify for both kubelet + API server.
   values:
     image:
+      # renovate: datasource=docker depName=registry.k8s.io/metrics-server/metrics-server
       tag: v0.9.0
     args:
       - --kubelet-insecure-tls

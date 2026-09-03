@@ -20,6 +20,7 @@ spec:
     controller:
       plugin:
         image:
+          # renovate: datasource=docker depName=ghcr.io/sergelogvinov/proxmox-csi-plugin
           tag: v0.20.0
     existingConfigSecret: proxmox-csi-config
     storageClass:

@@ -20,6 +20,7 @@ gitops/
 ├── apps/                       # 3. User-facing applications (TaskFlow frontend, backend, database)
 │   ├── taskflow/
 │   └── kyverno-policies/       #   Example ClusterPolicies (Audit mode); reconciled by kyverno-policies Kustomization
+├── RENOVATE.md                  #   Dependency-update bot activation and operation
 ├── README.md                   # GitOps directory overview
 └── FLUX_BOOTSTRAP.md    # Instructions for remote Git & Flux CD integration
 ```

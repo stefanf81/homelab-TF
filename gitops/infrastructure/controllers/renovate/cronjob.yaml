@@ -1,0 +1,73 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: renovate
+  namespace: renovate
+  labels:
+    app.kubernetes.io/name: renovate
+    app.kubernetes.io/component: dependency-updater
+    app.kubernetes.io/part-of: infrastructure
+spec:
+  # 03:17 local time avoids routine Flux reconciliation windows.
+  schedule: "17 3 * * *"
+  timeZone: Europe/Brussels
+  suspend: true
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1800
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: renovate
+            app.kubernetes.io/component: dependency-updater
+            app.kubernetes.io/part-of: infrastructure
+        spec:
+          serviceAccountName: renovate
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: renovate
+              image: renovate/renovate:41.140.1
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: RENOVATE_BASE_DIR
+                  value: /tmp/renovate
+                - name: RENOVATE_CONFIG_FILE
+                  value: /opt/renovate/config.json
+              envFrom:
+                - secretRef:
+                    name: renovate
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 512Mi
+                limits:
+                  cpu: 500m
+                  memory: 1Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: config
+                  mountPath: /opt/renovate
+                  readOnly: true
+                - name: work
+                  mountPath: /tmp
+          volumes:
+            - name: config
+              configMap:
+                name: renovate-config
+            - name: work
+              emptyDir: {}

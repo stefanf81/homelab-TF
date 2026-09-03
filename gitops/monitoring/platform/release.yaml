@@ -114,6 +114,7 @@ spec:
         # Keep the image aligned with the operator chart bundled by stack 0.90.0
         # (chart 0.67.2). v0.74.1 only adds a VLDistributed validation webhook
         # (bugfix) — no new watched CRDs, safe to bump.
+        # renovate: datasource=docker depName=victoriametrics/operator
         tag: v0.74.1
       resources:
         requests:
@@ -126,6 +127,7 @@ spec:
     grafana:
       enabled: true
       image:
+        # renovate: datasource=docker depName=grafana/grafana
         tag: 13.2.0
       persistence:
         enabled: true

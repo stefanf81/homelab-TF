@@ -1,0 +1,83 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "labels": ["dependencies"],
+  "dependencyDashboard": true,
+  "automerge": false,
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 1,
+  "minimumReleaseAge": "3 days",
+  "enabledManagers": ["custom.regex", "dockerfile", "flux", "kubernetes"],
+  "ignorePaths": [
+    "gitops/clusters/taskflow/flux-system/gotk-components.yaml",
+    "gitops/infrastructure/controllers/gateway-api/**",
+    "**/*-secrets.yaml"
+  ],
+  "flux": {
+    "managerFilePatterns": [
+      "/^gitops\\/infrastructure\\/controllers\\/.+\\.ya?ml$/",
+      "/^gitops\\/monitoring\\/.+\\.ya?ml$/"
+    ]
+  },
+  "kubernetes": {
+    "managerFilePatterns": [
+      "/^gitops\\/apps\\/.+\\.ya?ml$/",
+      "/^gitops\\/infrastructure\\/controllers\\/renovate\\/.+\\.ya?ml$/"
+    ]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^gitops\\/infrastructure\\/controllers\\/(falco|proxmox-csi)\\/release\\.yaml$/",
+        "/^gitops\\/monitoring\\/platform\\/(metrics-server-release|release)\\.yaml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>docker) depName=(?<depName>\\S+)\\s+tag:\\s?(?<currentValue>[^\\s#]+)"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Flux owns these mutable-tag digest pins.",
+      "matchManagers": ["kubernetes"],
+      "matchPackageNames": [
+        "ghcr.io/stefanf81/taskflow-backend",
+        "ghcr.io/stefanf81/taskflow-frontend"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Flux system manifests are generated and must be regenerated as a unit.",
+      "matchManagers": ["flux"],
+      "matchPackageNames": ["fluxcd/flux2"],
+      "enabled": false
+    },
+    {
+      "description": "This setup manages image tags and Helm charts, not Kubernetes API migrations.",
+      "matchDatasources": ["kubernetes-api"],
+      "enabled": false
+    },
+    {
+      "description": "Major Helm chart upgrades need focused manual review.",
+      "matchManagers": ["flux"],
+      "matchDatasources": ["helm"],
+      "matchUpdateTypes": ["major"],
+      "labels": ["dependencies", "major-update"]
+    },
+    {
+      "matchManagers": ["flux"],
+      "matchDatasources": ["helm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "labels": ["dependencies", "helm"]
+    },
+    {
+      "matchManagers": ["custom.regex", "dockerfile", "kubernetes"],
+      "labels": ["container-image", "dependencies"]
+    },
+    {
+      "matchPackageNames": ["renovate/renovate"],
+      "labels": ["dependencies", "renovate"]
+    }
+  ]
+}

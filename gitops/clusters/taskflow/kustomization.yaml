@@ -13,3 +13,4 @@ resources:
   - policy-reporter.yaml
   - trivy-operator.yaml
   - hubble-ui.yaml
+  - renovate.yaml
