@@ -41,7 +41,7 @@ spec:
           memory: 2Gi
     operator:
       vulnerabilityScannerEnabled: true
-      sbomGenerationEnabled: true
+      sbomGenerationEnabled: false
       configAuditScannerEnabled: true
       configAuditScannerScanOnlyCurrentRevisions: true
       rbacAssessmentScannerEnabled: true
@@ -54,6 +54,7 @@ spec:
       scanJobsConcurrentLimit: 1
       concurrentScanJobsLimit: 1
       scanNodeCollectorLimit: 1
+      metricsFindingsEnabled: false
     compliance:
       failEntriesLimit: 10
       reportType: all
@@ -69,7 +70,7 @@ spec:
     resources:
       requests:
         cpu: 100m
-        memory: 128Mi
+        memory: 256Mi
       limits:
         cpu: 500m
-        memory: 512Mi
+        memory: 1Gi
