@@ -10,7 +10,7 @@ metadata:
 spec:
   # Evaluated in Europe/Brussels by the operator's TZ environment variable.
   schedule: "17 3 * * *"
-  image: renovate/renovate:41.140.1
+  image: renovate/renovate:44.65.5
   provider:
     name: github
   discoveryFilters:
