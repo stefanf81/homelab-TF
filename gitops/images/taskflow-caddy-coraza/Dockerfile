@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.27
 
 ARG CADDY_VERSION=2.11.4
 ARG CORAZA_CADDY_VERSION=v2.6.0
