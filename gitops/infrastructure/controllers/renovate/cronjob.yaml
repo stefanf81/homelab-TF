@@ -11,7 +11,7 @@ spec:
   # 03:17 local time avoids routine Flux reconciliation windows.
   schedule: "17 3 * * *"
   timeZone: Europe/Brussels
-  suspend: true
+  suspend: false
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 3

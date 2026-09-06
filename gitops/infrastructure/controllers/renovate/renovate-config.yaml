@@ -14,6 +14,5 @@ data:
       "repositories": ["stefanf81/homelab-TF"],
       "onboarding": false,
       "requireConfig": "required",
-      "autodiscover": false,
-      "dryRun": "full"
+      "autodiscover": false
     }
