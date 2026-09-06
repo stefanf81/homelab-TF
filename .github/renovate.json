@@ -4,6 +4,7 @@
   "labels": ["dependencies"],
   "dependencyDashboard": true,
   "automerge": false,
+  "fetchChangeLogs": "off",
   "prConcurrentLimit": 3,
   "prHourlyLimit": 1,
   "minimumReleaseAge": "3 days",
