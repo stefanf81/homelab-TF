@@ -13,8 +13,7 @@ data:
       "platform": "github",
       "repositories": ["stefanf81/homelab-TF"],
       "onboarding": false,
-      "requireConfig": "strict",
+      "requireConfig": "required",
       "autodiscover": false,
-      "dryRun": "full",
-      "logLevel": "info"
+      "dryRun": "full"
     }
