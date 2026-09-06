@@ -50,9 +50,9 @@ spec:
         - port: 443
           protocol: TCP
 ---
-# The namespace-scoped operator needs only DNS and the Kubernetes API.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
+# The namespace-scoped operator needs only DNS and the Cilium API-server entity.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
 metadata:
   name: allow-operator-kubernetes-api
   namespace: renovate
@@ -61,33 +61,19 @@ metadata:
     app.kubernetes.io/component: dependency-updater
     app.kubernetes.io/part-of: infrastructure
 spec:
-  podSelector:
+  endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: renovate-operator
-  policyTypes:
-    - Egress
+      k8s:app.kubernetes.io/name: renovate-operator
   egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
-    - to:
-        - ipBlock:
-            cidr: 10.43.0.1/32
-      ports:
-        - port: 443
-          protocol: TCP
-    - to:
-        - ipBlock:
-            cidr: 192.168.50.55/32
-      ports:
-        - port: 6443
-          protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
