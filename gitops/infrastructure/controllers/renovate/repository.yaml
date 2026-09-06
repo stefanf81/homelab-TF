@@ -1,0 +1,12 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: mogenius
+  namespace: renovate
+  labels:
+    app.kubernetes.io/name: renovate
+    app.kubernetes.io/component: dependency-updater
+    app.kubernetes.io/part-of: infrastructure
+spec:
+  interval: 1h
+  url: https://helm.mogenius.com/public

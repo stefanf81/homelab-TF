@@ -1,52 +1,46 @@
 # Renovate
 
-Renovate runs as a daily, manually reviewed dependency-update CronJob in the
-`renovate` namespace. It creates pull requests only; it never pushes to `main`
+Renovate runs through the Mogenius Renovate Operator in the `renovate`
+namespace. The operator discovers `stefanf81/homelab-TF` daily at 03:17
+Europe/Brussels, then runs a single hardened Renovate executor for that
+repository. Updates create pull requests only; Renovate never pushes to `main`
 or merges updates.
 
-## Activate
+## Credentials
 
-1. Create a fine-grained PAT for the dedicated GitHub bot account, restricted to
-   `stefanf81/homelab-TF`, with Contents, Pull requests, and Issues read/write.
-2. Edit the encrypted Secret locally and replace the placeholder:
-
-   ```bash
-   sops gitops/infrastructure/controllers/renovate/renovate-secrets.yaml
-   ```
-
-3. Remove the `dryRun` property from
-   `gitops/infrastructure/controllers/renovate/renovate-config.yaml` after the
-   initial scan succeeds.
-4. Change `suspend: true` to `suspend: false` in
-   `gitops/infrastructure/controllers/renovate/cronjob.yaml`.
-
-## Validate the initial scan
-
-Keep the CronJob suspended and `dryRun: "full"`, reconcile Flux, and start a
-one-off Job:
+The SOPS-encrypted GitHub credential is at:
 
 ```bash
-flux reconcile kustomization renovate --with-source
-kubectl -n renovate create job --from=cronjob/renovate renovate-dry-run
-kubectl -n renovate logs job/renovate-dry-run -f
+sops gitops/infrastructure/controllers/renovate/job/renovate-secrets.yaml
 ```
 
-The scan should discover Flux HelmRelease charts, Kubernetes images, Dockerfile
-bases, and the explicitly annotated tag-only Helm values. It must not propose
-changes to generated Flux manifests, vendored Gateway API resources, Kubernetes
-API versions, or the Flux-managed TaskFlow backend/frontend digests.
+Use a fine-grained PAT for the dedicated GitHub bot account, restricted to
+`stefanf81/homelab-TF`, with Contents, Pull requests, and Issues read/write.
 
-Renovate may still list the generated Flux system manifest during extraction
-because the Flux manager always has a built-in `gotk-components.yaml` detector.
-The repository policy disables `fluxcd/flux2`, so it cannot open PRs for that
-generated file.
+## Manual Run
+
+The operator performs discovery before it schedules an executor. Trigger a
+discovery, wait for it to complete, then schedule the known project:
+
+```bash
+kubectl -n renovate annotate renovatejob renovate \
+  renovate-operator.mogenius.com/discovery=true --overwrite
+
+kubectl -n renovate annotate renovatejob renovate \
+  renovate-operator.mogenius.com/schedule-all=true --overwrite
+```
+
+Inspect the resulting projects and Jobs:
+
+```bash
+kubectl -n renovate get renovatejobs,renovateprojects,jobs
+```
 
 ## Private GHCR Images
 
-GitHub does not support GitHub Packages access through fine-grained PATs.
-Therefore, the custom WAF image requires a separate classic PAT from the bot
-account with only the `read:packages` scope. Configure it in the same SOPS
-Secret as valid JSON, replacing the empty `RENOVATE_HOST_RULES` value:
+GitHub Packages access is unavailable through fine-grained PATs. For private
+GHCR image metadata, add a separate classic PAT with only `read:packages` to
+`RENOVATE_HOST_RULES` in the same encrypted Secret:
 
 ```json
 [
@@ -59,12 +53,16 @@ Secret as valid JSON, replacing the empty `RENOVATE_HOST_RULES` value:
 ]
 ```
 
-The fine-grained platform PAT remains restricted to this repository. The
-classic token is used only for registry metadata and cannot create branches or
-pull requests.
+The fine-grained platform token remains restricted to this repository. The
+classic token is used only to retrieve registry metadata.
 
-## Normal operation
+## Operation
 
-The CronJob runs at 03:17 Europe/Brussels. It permits one active run, retains
-two successful and three failed Jobs, and opens at most three dependency PRs at
-one time. All updates require manual review and merge.
+The operator is namespace-scoped, policy-enforced, and has no public route.
+Its executor runs without a Kubernetes API token and may egress only to DNS and
+HTTPS. Completed jobs expire after 24 hours. The operator's UI is available
+only through a local port-forward when needed:
+
+```bash
+kubectl -n renovate port-forward svc/renovate-operator 8081:8081
+```

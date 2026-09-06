@@ -14,3 +14,4 @@ resources:
   - trivy-operator.yaml
   - hubble-ui.yaml
   - renovate.yaml
+  - renovate-job.yaml

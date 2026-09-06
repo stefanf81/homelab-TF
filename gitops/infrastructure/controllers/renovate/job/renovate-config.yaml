@@ -10,9 +10,6 @@ metadata:
 data:
   config.json: |
     {
-      "platform": "github",
-      "repositories": ["stefanf81/homelab-TF"],
       "onboarding": false,
-      "requireConfig": "required",
-      "autodiscover": false
+      "requireConfig": "required"
     }
