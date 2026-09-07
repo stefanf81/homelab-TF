@@ -7,7 +7,7 @@
   "prConcurrentLimit": 5,
   "prHourlyLimit": 0,
   "minimumReleaseAge": "3 days",
-  "enabledManagers": ["custom.regex", "dockerfile", "flux", "kubernetes"],
+  "enabledManagers": ["custom.regex", "dockerfile", "flux", "github-actions", "kubernetes"],
   "ignorePaths": [
     "gitops/clusters/taskflow/flux-system/gotk-components.yaml",
     "gitops/infrastructure/controllers/gateway-api/**",

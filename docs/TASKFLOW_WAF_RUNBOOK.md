@@ -12,8 +12,30 @@
 
 ## Build the WAF image
 
-The repository intentionally contains only the Dockerfile, not a CI workflow.
-Build and publish the image manually:
+The image is automatically built and pushed to GHCR via GitHub Actions
+(`.github/workflows/build-taskflow-caddy-coraza.yaml`) whenever changes are
+pushed to `gitops/images/taskflow-caddy-coraza/` or manually triggered via
+`workflow_dispatch`.
+
+To trigger manually via GitHub CLI:
+
+```bash
+gh workflow run build-taskflow-caddy-coraza.yaml -f push=true
+```
+
+The workflow publishes with the version and revision declared by
+`CADDY_VERSION`, `CORAZA_CADDY_VERSION`, and `IMAGE_REVISION` in the Dockerfile.
+Increment `IMAGE_REVISION` when the image recipe changes without either upstream
+version changing; published revision tags must not be overwritten.
+
+The existing GHCR package must grant this repository write access before its
+first workflow publish. In the package settings, open **Manage Actions access**,
+add `stefanf81/homelab-TF`, and select the **Write** role. The workflow then
+authenticates with its short-lived `GITHUB_TOKEN`; no publishing PAT is needed.
+
+### Manual Local Build (Alternative)
+
+Build and publish the image locally if needed:
 
 ```bash
 # Build for linux/amd64 (k3s node architecture)

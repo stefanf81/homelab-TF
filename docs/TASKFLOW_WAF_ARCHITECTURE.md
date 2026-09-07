@@ -79,7 +79,7 @@ Internet → Cloudflare DNS → Port Forward → 192.168.50.201 (L2 announcement
 
 ## Image
 
-The custom Caddy+Coraza image is built manually and pushed to GHCR:
+The custom Caddy+Coraza image is built via GitHub Actions (`.github/workflows/build-taskflow-caddy-coraza.yaml`) and pushed to GHCR:
 
 - **Repository**: `ghcr.io/stefanf81/taskflow-caddy-coraza`
 - **Tag**: `2.11.4-coraza2.6.0-r1`
@@ -87,7 +87,21 @@ The custom Caddy+Coraza image is built manually and pushed to GHCR:
 - **Platform**: `linux/amd64` (k3s node architecture)
 - **Digest**: Pinned in both WAF Deployments
 
-### Build & Push
+### Build & Push (CI & Manual)
+
+The image is built automatically upon pushes to `gitops/images/taskflow-caddy-coraza/` or manually via GitHub CLI:
+
+```bash
+gh workflow run build-taskflow-caddy-coraza.yaml -f push=true
+```
+
+The release tag is derived from the Dockerfile's `CADDY_VERSION`,
+`CORAZA_CADDY_VERSION`, and `IMAGE_REVISION` arguments. Increment
+`IMAGE_REVISION` for recipe-only changes so immutable revision tags are never
+overwritten. The GHCR package must grant `stefanf81/homelab-TF` **Write** access
+under **Manage Actions access** before the workflow's first publish.
+
+Manual local build if needed:
 
 ```bash
 docker build --platform linux/amd64 \
