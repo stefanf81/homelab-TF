@@ -160,7 +160,7 @@ spec:
         - name: ghcr-pull-secret
       initContainers:
         - name: create-audit-pipe
-          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1@sha256:331f8224ccbd6aab879fdb8ef5489226fd72a3697688da653a699a346a95387b
+          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1@sha256:f9ad4fa5398339d6aee465241c0f300b0c12fc785276940882566328cde8fb9a
           command: ["/bin/sh", "-c", "if [ ! -p /var/run/coraza/audit.pipe ]; then rm -f /var/run/coraza/audit.pipe && mkfifo /var/run/coraza/audit.pipe; fi"]
           securityContext:
             runAsNonRoot: true
@@ -175,7 +175,7 @@ spec:
               mountPath: /var/run/coraza
       containers:
         - name: waf
-          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1@sha256:331f8224ccbd6aab879fdb8ef5489226fd72a3697688da653a699a346a95387b
+          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1@sha256:f9ad4fa5398339d6aee465241c0f300b0c12fc785276940882566328cde8fb9a
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -225,7 +225,7 @@ spec:
               cpu: 750m
               memory: 768Mi
         - name: audit-log-redactor
-          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1@sha256:331f8224ccbd6aab879fdb8ef5489226fd72a3697688da653a699a346a95387b
+          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1@sha256:f9ad4fa5398339d6aee465241c0f300b0c12fc785276940882566328cde8fb9a
           imagePullPolicy: IfNotPresent
           command: ["/bin/sh", "/etc/coraza/audit-redactor.sh"]
           securityContext:
