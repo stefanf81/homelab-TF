@@ -4,9 +4,8 @@
   "labels": ["dependencies"],
   "dependencyDashboard": true,
   "automerge": false,
-  "fetchChangeLogs": "off",
-  "prConcurrentLimit": 3,
-  "prHourlyLimit": 1,
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 0,
   "minimumReleaseAge": "3 days",
   "enabledManagers": ["custom.regex", "dockerfile", "flux", "kubernetes"],
   "ignorePaths": [
@@ -30,11 +29,10 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
-        "/^gitops\\/infrastructure\\/controllers\\/(falco|proxmox-csi)\\/release\\.yaml$/",
-        "/^gitops\\/monitoring\\/platform\\/(metrics-server-release|release)\\.yaml$/"
+        "/^gitops\\/.+\\.ya?ml$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>docker) depName=(?<depName>\\S+)\\s+tag:\\s?(?<currentValue>[^\\s#]+)"
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s+(?:tag|version):\\s*[\"']?(?<currentValue>[^\"'\\s#]+)[\"']?"
       ]
     }
   ],
@@ -60,11 +58,56 @@
       "enabled": false
     },
     {
-      "description": "Major Helm chart upgrades need focused manual review.",
-      "matchManagers": ["flux"],
-      "matchDatasources": ["helm"],
+      "description": "Require dashboard checkbox approval for all major updates to prevent breaking changes.",
       "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
       "labels": ["dependencies", "major-update"]
+    },
+    {
+      "description": "Group general patch updates together",
+      "matchUpdateTypes": ["patch"],
+      "groupName": "patch updates"
+    },
+    {
+      "description": "Group VictoriaMetrics stack components together",
+      "matchPackageNames": [
+        "victoria-metrics-k8s-stack",
+        "victoriametrics/operator",
+        "grafana/grafana"
+      ],
+      "groupName": "VictoriaMetrics Stack"
+    },
+    {
+      "description": "Group Falco components together",
+      "matchPackageNames": [
+        "falco",
+        "falcosecurity/falcosidekick"
+      ],
+      "groupName": "Falco Stack"
+    },
+    {
+      "description": "Group Logging components together",
+      "matchPackageNames": [
+        "loki",
+        "alloy"
+      ],
+      "groupName": "Logging Stack"
+    },
+    {
+      "description": "Group Proxmox CSI components together",
+      "matchPackageNames": [
+        "proxmox-csi-plugin",
+        "ghcr.io/sergelogvinov/proxmox-csi-controller"
+      ],
+      "groupName": "Proxmox CSI"
+    },
+    {
+      "description": "Group Metrics Server chart and controller image together",
+      "matchPackageNames": [
+        "metrics-server",
+        "registry.k8s.io/metrics-server/metrics-server"
+      ],
+      "groupName": "Metrics Server"
     },
     {
       "matchManagers": ["flux"],

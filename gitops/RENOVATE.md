@@ -36,10 +36,14 @@ Inspect the resulting projects and Jobs:
 kubectl -n renovate get renovatejobs,renovateprojects,jobs
 ```
 
-## Private GHCR Images
+## Private GHCR Images & Release Notes (Changelogs)
 
-GitHub Packages access is unavailable through fine-grained PATs. For private
-GHCR image metadata, add a separate classic PAT with only `read:packages` to
+GitHub Packages access is unavailable through fine-grained PATs. Similarly, a
+fine-grained PAT restricted to `stefanf81/homelab-TF` cannot read releases from
+upstream repositories on `api.github.com`, causing unauthenticated rate-limit
+errors when fetching changelogs.
+
+To support both private GHCR metadata and rich PR changelogs, configure
 `RENOVATE_HOST_RULES` in the same encrypted Secret:
 
 ```json
@@ -49,12 +53,39 @@ GHCR image metadata, add a separate classic PAT with only `read:packages` to
     "matchHost": "ghcr.io",
     "username": "YOUR_BOT_ACCOUNT",
     "password": "CLASSIC_PAT_WITH_READ_PACKAGES_ONLY"
+  },
+  {
+    "matchHost": "api.github.com",
+    "token": "CLASSIC_PAT_WITH_NO_SCOPES"
   }
 ]
 ```
 
 The fine-grained platform token remains restricted to this repository. The
-classic token is used only to retrieve registry metadata.
+classic token requires no OAuth scopes and is used only for public metadata and
+release changelogs (5,000 requests/hour limit).
+
+## PR Workflow & Grouping
+
+- **Dependency Dashboard**: Open updates and pending upgrades are tracked in the
+  Dependency Dashboard issue.
+- **Major Upgrades**: All major updates require manual opt-in. They appear under
+  "Pending Approval" on the Dependency Dashboard and will not open a PR until
+  their checkbox is ticked.
+- **Tightly Coupled Stacks**: Co-dependent components are grouped into unified PRs:
+  - VictoriaMetrics Stack (`victoria-metrics-k8s-stack`, `victoriametrics/operator`, `grafana/grafana`)
+  - Falco Stack (`falco`, `falcosidekick`)
+  - Logging Stack (`loki`, `alloy`)
+  - Proxmox CSI (`proxmox-csi-plugin`, `proxmox-csi-controller`)
+  - Metrics Server (`metrics-server` chart and image)
+- **General Patch Updates**: Standalone patch updates are bundled together into a
+  single `patch updates` PR to reduce notification noise.
+- **Concurrency**: Up to 5 PRs may remain open concurrently (`prConcurrentLimit: 5`),
+  and hourly rate limiting is disabled (`prHourlyLimit: 0`) so scheduled runs
+  generate updates in a single batch.
+- **Custom Image Annotations**: Any manifest under `gitops/` supports inline
+  annotations for Renovate:
+  `# renovate: datasource=<ds> depName=<dep> tag: <tag>` or `version: <ver>`.
 
 ## Operation
 
