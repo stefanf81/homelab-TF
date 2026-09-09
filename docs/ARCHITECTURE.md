@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE, provisioned via OpenTofu and managed through GitOps (Flux CD). The stack delivers a Spring Boot 3.5.3 / Angular 22 enterprise application with PostgreSQL, Redis caching, and Jaeger distributed tracing — all behind Cilium's Gateway API with zero-trust security hardening.
+TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE, provisioned via OpenTofu and managed through GitOps (Flux CD). The stack delivers a Spring Boot 4.1.1 / Angular 22 enterprise application with PostgreSQL, Redis caching, and Jaeger distributed tracing — all behind Cilium's Gateway API with zero-trust security hardening.
 
 ---
 
@@ -145,7 +145,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
               ┌─────────▼───┐  ┌────▼─────┐  ┌──▼──────────┐
               │   Backend   │  │  Jaeger  │  │   Frontend  │
               │ (Spring Boot│  │(all-in-1)│  │ (Angular +  │
-              │  3.5.3,     │  │          │  │  nginx)     │
+               │  4.1.1,     │  │          │  │  nginx)     │
               │  JVM 1GiB)  │  └────┬─────┘  └─────────────┘
     └──────┬──────┘         │
            │                │
@@ -314,7 +314,6 @@ TF/
 │   │   ├── namespace-default-deny.yaml  # Full-namespace default-deny + Gateway/monitoring allow-lists
 │   │   ├── backend-waf.yaml         # Backend Caddy+Coraza WAF sidecar config
 │   │   ├── frontend-waf.yaml        # Frontend Caddy+Coraza WAF sidecar config
-│   │   ├── backend-hpa.yaml         # HPA ready-to-activate (powered by metrics-server)
 │   │   ├── backend-pdb.yaml         # PodDisruptionBudget (minAvailable: 1)
 │   │   ├── frontend-pdb.yaml        # PodDisruptionBudget (minAvailable: 1)
 │   │   ├── certificate.yaml         # Let's Encrypt TLS cert for jokelab.dev + subdomains
@@ -412,7 +411,7 @@ flux reconcile kustomization taskflow-app -n flux-system
 | Multi-node HA | Single k3s node | Add worker nodes via additional Proxmox VMs |
 | GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` module is planned, not yet created) |
 | Pod Disruption Budgets | ✅ Resolved | PDBs added for backend (`backend-pdb.yaml`), frontend (`frontend-pdb.yaml`), and postgres (`postgres-db.yaml`) — all `minAvailable: 1` |
-| Horizontal Pod Autoscaler | ✅ Resolved | HPA exists (`backend-hpa.yaml`, CPU 70%, 1–3 replicas) and `metrics-server` is installed (`metrics-server-release.yaml`) for the `metrics.k8s.io` API |
+| Backend scaling | Intentionally single replica | Local SSE connections and the current database connection budget are not multi-replica safe; add distributed event fan-out and connection pooling before autoscaling. |
 | Backup strategy | Proxmox hypervisor backups | Configure scheduled VM backups at the Proxmox level (using PBS or vzdump) |
 | Monitoring stack | VictoriaMetrics, Grafana, and Grafana dashboards | JVM/HTTP/Hikari metrics come from Spring Boot Actuator; PostgreSQL and Redis metrics come from exporters; node and disk metrics come from the stack's kubelet and node-exporter scrapes. |
 

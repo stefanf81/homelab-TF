@@ -16,6 +16,8 @@ spec:
       labels:
         app: taskflow-frontend
     spec:
+      securityContext:
+        fsGroup: 10001
       imagePullSecrets:
         - name: ghcr-pull-secret
       containers:
@@ -27,14 +29,12 @@ spec:
           image: ghcr.io/stefanf81/taskflow-frontend:latest@sha256:2394041261e3a71832b8ae930d779498acf20ccb7ddcc8036b22096245e60c3a # {"$imagepolicy": "flux-system:taskflow-frontend"}
           imagePullPolicy: IfNotPresent
           securityContext:
-            # UID/GID 101 is the unprivileged "nginx" user inside the nginx:alpine base
-            # image (not the project's 10001 convention). It is correct here because the
-            # image's nginx master/drop privileges expect 101. Keep in sync if you swap images.
+            # The image creates and runs as its dedicated nginx-runtime UID/GID 10001.
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             runAsNonRoot: true
-            runAsUser: 101
-            runAsGroup: 101
+            runAsUser: 10001
+            runAsGroup: 10001
             capabilities:
               drop:
                 - ALL

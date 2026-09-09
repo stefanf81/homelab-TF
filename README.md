@@ -24,7 +24,7 @@ You also need access to a **Proxmox VE 8.x** host with an API token (with VM cre
 - `gitops/` – Declarative Flux v2 manifests:
   - `gitops/infrastructure/controllers` – Cilium v1.20.1, cert-manager, CoreDNS, Proxmox CSI, Kyverno, Falco, Policy Reporter, Trivy Operator, Hubble UI oauth2-proxy.
   - `gitops/infrastructure/configs` – Cilium L2 announcement policy (`192.168.50.200-250`), `GatewayClass`.
-  - `gitops/apps/taskflow` – Spring Boot 3.5.3 backend, Angular 22 frontend, PostgreSQL 18.6, Redis 8.10, Jaeger.
+  - `gitops/apps/taskflow` – Spring Boot 4.1.1 backend, Angular 22 frontend, PostgreSQL 18.6, Redis 8.10, Jaeger.
   - `gitops/monitoring` – VictoriaMetrics TSDB + Grafana operator stack + metrics-server.
   - `gitops/clusters/taskflow` – Cluster root Kustomizations.
 

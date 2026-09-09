@@ -111,11 +111,11 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 
 | # | Item | Where | Note |
 |---|------|-------|------|
-| 3.1 | `synchronous_commit` tuning | `postgres-db.yaml` | ✅ Applied: `synchronous_commit=off` (no replicas → no durability cost, 5–20× write gain). |
+| 3.1 | `synchronous_commit` tuning | `postgres-db.yaml` | `synchronous_commit=off` trades the last WAL-writer interval of acknowledged writes for lower commit latency; it is suitable only for this explicitly accepted homelab durability profile. |
 | 3.2 | gzip / `Cache-Control` on nginx | `frontend` repo `nginx.conf` | ✅ Already done in the app repo: `gzip on; comp_level 6`, `Cache-Control "public"` + `expires 6M` on static assets. |
 | 3.3 | HTTP/2 | `backend.yaml` Service + `gateway` | ✅ Backend `server.http2.enabled=true` (app repo) + `appProtocol: kubernetes.io/h2c` on the backend Service so Cilium Gateway multiplexes to the backend. |
 | 3.4 | JVM GC logging / `-XX:MaxGCPauseMillis` | `backend.yaml` | ✅ Applied: rotated `-Xlog:gc*` + `MaxGCPauseMillis=100`. |
-| 3.5 | Single replica / autoscaling | `backend.yaml` + `backend-hpa.yaml` | ✅ HPA added (CPU 70%, 1–3 replicas). Powered by `metrics-server` (installed in `gitops/monitoring/platform/metrics-server-release.yaml`) for the `metrics.k8s.io` API. PDBs added for backend + frontend. |
+| 3.5 | Single replica / autoscaling | `backend.yaml` | Backend is intentionally fixed at one replica. Local SSE state and the PostgreSQL connection budget must be redesigned before autoscaling is reintroduced. PDBs protect backend and frontend availability. |
 | 3.6 | `random_page_cost=1.1` assumes SSD | `postgres-db.yaml` | Reasonable for Proxmox-CSI-backed-SSD; re-check if you move DB to spinning disk. |
 
 ---
@@ -130,7 +130,7 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 | 4 | **`effective_cache_size`** corrected to 700MB | ✅ Applied in `postgres-db.yaml` |
 | 5 | **Postgres PVC** migrated from Longhorn to Proxmox CSI | ✅ Applied in `postgres-pvc.yaml` |
 | 6 | **Harden Redis** — add persistence PVC or document stampede risk | ⏳ Pending (see §2.3) — still ephemeral by design |
-| 7 | **Re-evaluate pool sizes** when adding a second backend replica | ✅ `max_connections` raised 30→50 in `postgres-db.yaml`; HPA caps at 3 replicas (25×3=75 > 50, so scale past 2 only with another `max_connections` bump) |
+| 7 | **Re-evaluate pool sizes** when adding replicas | Backend autoscaling is disabled. Local SSE state and a 25-connection Hikari pool require distributed event fan-out and connection-pool redesign before scaling. |
 | 8 | **Redis / Jaeger QoS** — Guaranteed (requests==limits) | ⚠️ Redis and Jaeger use Burstable QoS (requests < limits). This is intentional: Redis is ephemeral and Jaeger is a dev tool. Guaranteed QoS is not required for either. |
 | 9 | **Backend startup probe** tightened 20→15 failures | ✅ Applied in `backend.yaml` |
 | 10 | **Scrape intervals** relaxed to 60s for postgres/redis exporters | ✅ Applied in `vmservicescrapes.yaml` |

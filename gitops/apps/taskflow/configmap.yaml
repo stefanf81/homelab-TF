@@ -18,6 +18,8 @@ data:
   # new hostname, add it here AND to certificate.yaml's dnsNames AND httproute.yaml's
   # hostnames, or the browser's /api calls will be CORS-rejected.
   APP_CORS_ALLOWED_ORIGINS: "http://localhost:4200,https://jokelab.dev,https://www.jokelab.dev"
+  # The backend receives forwarding headers only from the in-cluster WAF pods.
+  APP_TRUSTED_PROXY_REGEX: "^10\\.42\\.[0-9]{1,3}\\.[0-9]{1,3}$"
   # --- HTTP server tuning (prod) ---------------------------------------------
   # Response compression: shrink /api JSON (and other text) payloads over the wire.
   # 1 KiB floor avoids wasting CPU on tiny responses; explicit mime list keeps the

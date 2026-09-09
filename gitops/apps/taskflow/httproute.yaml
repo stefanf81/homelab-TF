@@ -10,6 +10,18 @@ spec:
   hostnames:
     - "www.jokelab.dev"
   rules:
+    # The administrator event stream is intentionally long lived (30 minutes).
+    # It must not inherit the 10-second request timeout for regular API calls.
+    - matches:
+        - path:
+            type: Exact
+            value: /api/v1/appointments/events
+      timeouts:
+        backendRequest: "31m"
+      backendRefs:
+        - name: taskflow-backend-waf
+          port: 8080
+
     # Route API traffic to the backend service
     - matches:
         - path:

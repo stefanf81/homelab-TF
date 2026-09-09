@@ -67,6 +67,11 @@ spec:
                 configMapKeyRef:
                   name: backend-config
                   key: APP_CORS_ALLOWED_ORIGINS
+            - name: APP_TRUSTED_PROXY_REGEX
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: APP_TRUSTED_PROXY_REGEX
             - name: SERVER_COMPRESSION_ENABLED
               valueFrom:
                 configMapKeyRef:
@@ -112,6 +117,16 @@ spec:
                 secretKeyRef:
                   name: redis-secret
                   key: REDIS_PASSWORD
+            - name: APP_RSA_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: taskflow-jwt-keys
+                  key: APP_RSA_PRIVATE_KEY
+            - name: APP_RSA_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: taskflow-jwt-keys
+                  key: APP_RSA_PUBLIC_KEY
             - name: SPRING_REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -143,10 +158,10 @@ spec:
             #  - DisableExplicitGC: blocks Full GCs triggered by System.gc() calls.
             #  - GC logging to /tmp/gc.log with rotation (5 files × 10 MiB) — readable via
             #    `kubectl exec -n taskflow deploy/taskflow-backend -- cat /tmp/gc.log.0`.
-            #  - HeapDumpOnOutOfMemoryError + HeapDumpPath=/tmp/dump.hprof: post-mortem
+            #  - HeapDumpOnOutOfMemoryError + HeapDumpPath=/tmp/heapdump.hprof: post-mortem
             #    dump on OOM (both paths are writable thanks to the emptyDir tmp-volume).
             - name: JAVA_TOOL_OPTIONS
-              value: "-XX:+UseG1GC -XX:MaxRAMPercentage=50.0 -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxDirectMemorySize=256m -XX:MaxMetaspaceSize=256m -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags:filecount=5,filesize=10m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/dump.hprof"
+              value: "-XX:+UseG1GC -XX:+UseContainerSupport -XX:MaxRAMPercentage=50.0 -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxDirectMemorySize=256m -XX:MaxMetaspaceSize=256m -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags:filecount=5,filesize=10m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/heapdump.hprof"
           ports:
             - containerPort: 8080
               name: http

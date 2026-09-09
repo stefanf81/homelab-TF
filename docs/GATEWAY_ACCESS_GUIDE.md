@@ -32,7 +32,7 @@ You can access the services through the Cilium Gateway using the following hostn
 | Service | Access URL | Description |
 | :--- | :--- | :--- |
 | **TaskFlow Web App** | `https://www.jokelab.dev/` | The Angular 22 Frontend (bare apex `jokelab.dev` 301-redirects to `www`) |
-| **TaskFlow API Backend** | `https://www.jokelab.dev/api/...` | The Spring Boot 3.5.3 REST API (same origin as frontend) |
+| **TaskFlow API Backend** | `https://www.jokelab.dev/api/...` | The Spring Boot 4.1.1 REST API (same origin as frontend) |
 | **Grafana Metrics UI** | `https://grafana.jokelab.dev/` | Real-time performance dashboards |
 | **VictoriaMetrics TSDB** | *(Private)* | Scraped time-series metrics. Accessed securely via `kubectl port-forward -n monitoring svc/vmsingle-victoria-metrics-k8s-stack 8428:8428` at `http://localhost:8428/vmsingle/` |
 
