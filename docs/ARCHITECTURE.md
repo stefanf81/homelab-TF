@@ -11,14 +11,14 @@ TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE,
 ### 2.1 Provisioning Stack
 | Component | Tool / Version | Purpose |
 |-----------|---------------|---------|
-| IaC Engine | OpenTofu 1.12.3 (minimum ≥ 1.8.0) | VM provisioning & kubeconfig fetch |
+| IaC Engine | OpenTofu (minimum ≥ 1.8.0) | VM provisioning & kubeconfig fetch |
 | Provider | `bpg/proxmox` v0.111.1 | Proxmox VE API integration |
 | Cloud Image | Ubuntu 26.04 (Resolute), release-20260823, SHA-256 pinned | k3s host OS |
 | k3s | v1.36.4+k3s1 | Kubernetes distribution |
 | Orchestration | Makefile (`make init`, `make apply`) | Enforces correct provisioning sequence |
 
 ### 2.2 VM Specifications (defaults in `variables.tf`)
-- **CPU**: 6 cores (host type, with vPMU + vendor string passthrough)
+- **CPU**: 6 cores (host CPU type)
 - **Memory**: 14 GiB (dedicated + floating)
 - **Disk**: 100 GB SCSI (virtio-scsi-single, SSD + discard enabled)
 - **Network**: `vmbr0` bridge, static IP via cloud-init
@@ -69,7 +69,7 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 
 ---
 
-## 4. GitOps Layer (Flux CD v2.9.3)
+## 4. GitOps Layer (Flux CD v2.9.5)
 
 ### 4.1 Kustomization Dependency Chain
 ```
@@ -92,9 +92,10 @@ taskflow-app                     monitoring (VictoriaMetrics + Grafana operator 
     ▼
 (image automation commits new digests)
 ```
-> `monitoring` depends on `infra-controllers` (so CRDs land first); `monitoring-app`
+> `monitoring` depends on both `infra-controllers` and `taskflow-app` (its Grafana
+> route targets the TaskFlow Gateway); `monitoring-app`
 > depends on `monitoring` (so the VMServiceScrape CRD exists before the VMServiceScrapes
-> are applied). `taskflow-app` and `monitoring` are independent branches.
+> are applied).
 
 ### 4.2 Flux Kustomizations
 | Name | Path | Interval | Prune | Wait | Timeout | Depends On |
@@ -112,7 +113,7 @@ taskflow-app                     monitoring (VictoriaMetrics + Grafana operator 
 
 ### 4.3 Image Automation (Digest Pinning)
 ```
-ImageRepository (ghcr.io/stefanf81/taskflow-frontend, interval: 5m)
+ImageRepository (ghcr.io/stefanf81/taskflow-frontend, interval: 10m)
     │
     ▼
 ImagePolicy (filter: ^latest$, digestReflectionPolicy: Always)
@@ -132,43 +133,18 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 
 ### 5.1 Architecture Diagram
 ```
-                    ┌──────────────┐
-                    │   Gateway    │  Cilium Gateway API
-                    │ taskflow-gw  │  Port: 80, Class: cilium
-                    └──────┬───────┘
-                           │
-              ┌────────────┼────────────┐
-              │            │            │
-              /api (10s)  Jaeger (internal   /
-              │        only, not on GW) │
-              │            │            │
-              ┌─────────▼───┐  ┌────▼─────┐  ┌──▼──────────┐
-              │   Backend   │  │  Jaeger  │  │   Frontend  │
-              │ (Spring Boot│  │(all-in-1)│  │ (Angular +  │
-               │  4.1.1,     │  │          │  │  nginx)     │
-              │  JVM 1GiB)  │  └────┬─────┘  └─────────────┘
-    └──────┬──────┘         │
-           │                │
-    ┌──────▼──────┐   ┌────▼─────┐
-    │   Redis     │   │ Jaeger   │
-    │ (384MB,     │   │ UI svc   │
-    │  LRU evict) │   └──────────┘
-    └──────┬──────┘
-           │
-     ┌──────▼──────┐
-     │ PostgreSQL  │
-     │ (17-alpine, │
-     │  10Gi Proxmox CSI)
-     └─────────────┘
+Gateway `taskflow-gateway` (Cilium, :80/:443)
+  ├── `/api/v1/appointments/events` (31m) ──▶ backend WAF ──▶ backend:8080
+  ├── `/api` (10s) ────────────────────────▶ backend WAF ──▶ backend:8080
+  ├── `/` ────────────────────────────────▶ frontend WAF ─▶ frontend:8080
+  └── `grafana.jokelab.dev` ──────────────▶ Grafana (monitoring)
 
-                  ┌──────────────────────────────────────────────┐
-                  │  Monitoring (namespace: monitoring)           │
-                  │  VictoriaMetrics ──scrapes──▶ backend:8080    │
-                  │  (TSDB on Proxmox CSI PVC) /actuator/prometheus│
-                  │  Grafana (admin secret,   postgres-exporter   │
-                  │   off public Gateway)    redis-exporter       │
-                  └──────────────────────────────────────────────┘
-                  (UIs reached via kubectl port-forward — see S10.9)
+Backend ──▶ Redis (384MB LRU)
+Backend ──▶ Jaeger (OTLP; UI is internal and port-forward-only)
+Backend ──▶ PostgreSQL (10Gi Proxmox CSI)
+
+VictoriaMetrics (monitoring) ──scrapes──▶ backend, exporters, Falco, Trivy
+VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 ```
 
 ### 5.2 Backend Deployment (`gitops/apps/taskflow/backend.yaml`)
@@ -176,7 +152,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 |----------|-------|
 | Image | `ghcr.io/stefanf81/taskflow-backend:latest` (digest-pinned by Flux) |
 | Replicas | 1 |
-| JVM Heap | Fixed 1 GiB — owned by the **image** via `-XX:MaxRAMPercentage=50.0` (not by the deployment's `JAVA_TOOL_OPTIONS`, which sets only GC logging/caps) |
+| JVM Heap | Fixed 1 GiB — owned by the deployment's `JAVA_TOOL_OPTIONS` via `-XX:MaxRAMPercentage=50.0` at the 2 GiB limit |
 | GC | G1 with StringDedup, AlwaysPreTouch, ParallelRefProc, DisableExplicitGC |
 | OOM Policy | `-XX:+ExitOnOutOfMemoryError` (fail fast) |
 | Resources | CPU: 2 cores (req=limit), Memory: 2Gi (Guaranteed QoS, req==limit) |
@@ -190,10 +166,10 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 |----------|-------|
 | Image | `ghcr.io/stefanf81/taskflow-frontend:latest` (digest-pinned by Flux) |
 | Replicas | 1 |
-| Resources | CPU: 100–500 m, Memory: 128–256 MiB |
-| SecurityContext | readOnlyRootFS, runAsNonRoot UID/GID 101 (nginx user), drop ALL capabilities |
+| Resources | CPU: 250 m, Memory: 256 MiB (Guaranteed QoS) |
+| SecurityContext | readOnlyRootFS, runAsNonRoot UID/GID 10001, drop ALL capabilities |
 | Volumes | tmp-volume (`/tmp`), var-cache-volume (`/var/cache/nginx`), var-run-volume (`/var/run`) — all emptyDir |
-| Probes | All probe on `/` port 8080 |
+| Probes | All probes on `/index.html` port 8080 |
 
 ### 5.4 PostgreSQL Deployment (`gitops/apps/taskflow/postgres-db.yaml`)
 | Property | Value |
@@ -209,7 +185,7 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 ### 5.5 Redis Deployment (`gitops/apps/taskflow/redis.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `redis:8.10.0-alpine` |
+| Image | `redis:8.10.1-alpine` |
 | Replicas | 1 |
 | Storage | emptyDir (ephemeral, no persistence) |
 | Memory Guard | `--maxmemory 384mb`, `allkeys-lru`, lazyfree eviction, 10 samples |
@@ -225,7 +201,10 @@ ImageUpdateAutomation (Setters strategy → rewrites manifests with @sha256:<dig
 | Resources | CPU: 250m (req=limit), Memory: 128–256 MiB |
 
 ### 5.7 Cloudflare DDNS (`gitops/apps/taskflow/cloudflare-ddns.yaml`)
-Keeps the `jokelab.dev`, `www.jokelab.dev`, and `grafana.jokelab.dev` DNS A records synced to the Gateway's external IP (`192.168.50.201`). Uses the `favonia/cloudflare-ddns` image with a SOPS-encrypted Cloudflare API token.
+Keeps the `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`,
+`kyverno.jokelab.dev`, and `hubble.jokelab.dev` DNS A records synced to the
+Gateway's external IP (`192.168.50.201`). Uses the `favonia/cloudflare-ddns`
+image with a SOPS-encrypted Cloudflare API token.
 
 ### 5.8 Network Policies (`gitops/apps/taskflow/network-policy.yaml`)
 | Target | Allowed From | Port(s) | Protocol |
@@ -235,16 +214,17 @@ Keeps the `jokelab.dev`, `www.jokelab.dev`, and `grafana.jokelab.dev` DNS A reco
 | jaeger | pods with `app: taskflow-backend` | 4317, 4318 (OTLP) + 16686 (UI) | TCP |
 
 ### 5.9 Gateway & Routing (`gateway.yaml` + `httproute.yaml`)
-- **Gateway**: `taskflow-gateway`, class: `cilium`, port 80/443 (HTTP/HTTPS), allowed routes restricted to approved namespaces (`taskflow`, `monitoring`)
+- **Gateway**: `taskflow-gateway`, class: `cilium`, port 80/443 (HTTP/HTTPS), allowed routes restricted to approved namespaces (`taskflow`, `monitoring`, `policy-reporter`, `hubble-ui`)
 - **HTTPRoute rules** (order matters — first match wins):
-1. `/api` → backend:8080 (backendRequest timeout: 10s)
-2. `/` → frontend:8080 (catch-all default)
+1. `/api/v1/appointments/events` → backend WAF:8080 (backendRequest timeout: 31m)
+2. `/api` → backend WAF:8080 (backendRequest timeout: 10s)
+3. `/` → frontend WAF:8080 (catch-all default)
 - *Jaeger UI is intentionally NOT exposed through the Gateway (no auth in front of it); reach it via `kubectl port-forward` — see §10.6.*
 
 ### 5.10 Monitoring Stack (`gitops/monitoring/`)
 | Component | Implementation |
 |-----------|----------------|
-| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.88.0) in namespace `monitoring` |
+| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.92.0) in namespace `monitoring` |
 | CRDs | Installed by the chart (VMServiceScrape, VMSingle, …) |
 | Persistence | VictoriaMetrics TSDB on a **Proxmox CSI-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `proxmox-csi`) |
 | Grafana auth | GitHub OAuth authentication (`auth.github`) with credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana UI is routed via the Gateway API (see `routes.yaml`); VictoriaMetrics UI is kept strictly internal and accessed via port-forwarding |
@@ -339,7 +319,7 @@ TF/
 │   │       └── gatewayclass.yaml            # Cilium GatewayClass
 │   │
 │   └── clusters/taskflow/           # Flux Kustomizations (cluster-level)
-│       ├── flux-system/             # Flux bootstrap manifests (v2.9.3, generated by bootstrap)
+│       ├── flux-system/             # Flux bootstrap manifests (v2.9.5, generated by bootstrap)
 │       │   ├── kustomization.yaml
 │       │   ├── gotk-components.yaml  # CRDs + RBAC + namespaces
 │       │   └── gotk-sync.yaml        # GitRepository + Kustomization for flux-system
@@ -372,7 +352,7 @@ TF/
   │   │       └── kustomization.yaml
   │   │
   │   └── logging/                     # Alloy + Loki for WAF audit log collection
-  │       ├── alloy-release.yaml       # Grafana Alloy DaemonSet (log shipper)
+  │       ├── alloy-release.yaml       # Grafana Alloy Deployment (log shipper)
   │       ├── loki-release.yaml        # Grafana Loki (log storage, 30-day retention)
   │       ├── grafana-provisioning.yaml # Loki datasource auto-provisioned in Grafana
   │       ├── repositories.yaml        # HelmRepository definitions
@@ -504,11 +484,12 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
 ```
 Browser ── https://www.jokelab.dev ──▶ (DNS → Public IP → Port Forward → 192.168.50.201, an L2-announced IP; bare apex `jokelab.dev` 301-redirects to `www`)
                                             │
-                                     Cilium Gateway (taskflow-gateway, class: cilium, :80)
-                                            │  HTTPRoute taskflow-route (first-match-wins):
-                                            ├─ /api*    → service backend:8080      (30s backend timeout)
-                                            ├─ /jaeger* → [REMOVED — see §10.6]
-                                            └─ /*       → service frontend:8080
+                                      Cilium Gateway (taskflow-gateway, class: cilium, :80/:443)
+                                             │  HTTPRoute taskflow-route (first-match-wins):
+                                             ├─ /events  → service backend-waf:8080  (31m backend timeout)
+                                             ├─ /api*    → service backend-waf:8080  (10s backend timeout)
+                                             ├─ /jaeger* → [REMOVED — see §10.6]
+                                             └─ /*       → service frontend-waf:8080
 ```
 
 Key point: **Services are `ClusterIP` only**. Nothing is exposed except through the Gateway. The external IP (`192.168.50.200+`) is handed out by Cilium's L2 announcement, not by k3s ServiceLB (which we disabled). That's why disabling `servicelb` in cloud-init and defining the IP pool in `infra-configs` are two halves of the same decision.
@@ -550,20 +531,22 @@ Key point: **Services are `ClusterIP` only**. Nothing is exposed except through 
 
 ### 10.9 The monitoring stack (VictoriaMetrics + Grafana) and how to reach it
 
-Scaffolded in `gitops/monitoring/` (see §5.9). It reconciles independently of the app
-and is **ready the moment the backend emits metrics** — but note the split:
+Scaffolded in `gitops/monitoring/` (see §5.9). The platform Kustomization waits for
+the app because its Grafana route targets the TaskFlow Gateway:
 
 - **`monitoring`** Kustomization (`gitops/monitoring/platform`) installs the operator +
-  CRDs + Grafana (SOPS admin secret) + the Proxmox CSI TSDB PVC. Depends on `infra-controllers`.
+  CRDs + Grafana (SOPS admin secret) + the Proxmox CSI TSDB PVC. Depends on
+  `infra-controllers` and `taskflow-app`.
 - **`monitoring-app`** Kustomization (`gitops/monitoring/app`) applies the
-  ServiceMonitors. Depends on `monitoring` so the ServiceMonitor CRD already exists.
+  VMServiceScrapes. Depends on `monitoring` so the VMServiceScrape CRD already exists.
 
 **Reaching the UIs:**
 
 The monitoring UIs are now exposed through the main Cilium Gateway API using zero-config wildcard IP and public DNS routing. See [Gateway Access Guide](GATEWAY_ACCESS_GUIDE.md) for full setup instructions.
 
 - **Grafana:** `https://grafana.jokelab.dev`
-  *(admin login credentials are saved in your local gitignored `grafana.secret`)*
+  *(credentials are supplied by the SOPS-encrypted `grafana-secrets.yaml`; the
+  rendered admin Secret is `grafana-admin`.)*
 - **VictoriaMetrics (VMSingle):** Accessed privately via `kubectl port-forward -n monitoring svc/vmsingle-victoria-metrics-k8s-stack 8428:8428` at `http://localhost:8428/vmsingle/`
 
 **What produces metrics today vs. later:**
@@ -573,7 +556,7 @@ The monitoring UIs are now exposed through the main Cilium Gateway API using zer
 
 **Resource budget (memory-trimmed):** the stack reserves ~1.1 GiB of limit
 (VMSingle 512 Mi cap / 128 Mi req, vmagent 256 Mi, Grafana 256 Mi,
-operator 128 Mi, exporters + node-exporter ~0.4 GiB; kube-state-metrics off). VictoriaMetrics runs **3d
+operator 128 Mi, exporters + node-exporter ~0.4 GiB; kube-state-metrics is enabled). VictoriaMetrics runs **14d
 retention** and scrapes at **30s** for higher-resolution dashboards.
 On the 14 GiB node this still leaves the bulk for backend (2 GiB guaranteed) +
 Postgres (1 GiB limit) + Redis + Jaeger; if it's still tight, the biggest single

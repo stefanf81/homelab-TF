@@ -23,27 +23,41 @@ The VM boots k3s without Flannel, so Cilium must be installed on top.
 
 ```bash
 export KUBECONFIG=$PWD/kubeconfig.yaml
-cilium install --version 1.19.5
+cilium install --version 1.20.1
 cilium status --wait
 ```
 
 If the node stays NotReady, fix Cilium before moving on.
 
-## 3. Seed the Flux SOPS key once
-
-Flux decrypts `*-secrets.yaml` via the `sops-age` Secret in `flux-system`.
-
-```bash
-kubectl create secret generic sops-age -n flux-system \
-  --from-file=age.agekey=key.txt
-```
-
-## 4. Bootstrap Flux
+## 3. Bootstrap Flux
 
 The bootstrap manifests already live in `gitops/clusters/taskflow/flux-system/`.
 
 ```bash
 kubectl apply -k gitops/clusters/taskflow/flux-system
+```
+
+## 4. Seed SOPS and GHCR secrets
+
+Flux decrypts `*-secrets.yaml` via the `sops-age` Secret in `flux-system`.
+Create it after applying the bootstrap manifests, because that apply creates the
+`flux-system` namespace. The WAF and application images also require the
+manually managed GHCR pull secret before `taskflow-app` reconciles.
+
+```bash
+kubectl create secret generic sops-age -n flux-system \
+  --from-file=age.agekey=key.txt
+
+kubectl create namespace taskflow --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret docker-registry ghcr-pull-secret -n taskflow \
+  --docker-server=ghcr.io \
+  --docker-username=<github-user> \
+  --docker-password=<read-packages-token>
+```
+
+## 5. Reconcile Flux
+
+```bash
 flux reconcile source git flux-system
 flux reconcile kustomization flux-system -n flux-system
 ```
@@ -61,7 +75,7 @@ flux reconcile kustomization taskflow-app -n flux-system
 ```bash
 kubectl get pods -A
 kubectl get gateway,httproute -n taskflow
-kubectl get secret -n taskflow db-secret backend-secret
+kubectl get secret -n taskflow db-secret backend-secret redis-secret taskflow-jwt-keys
 ```
 
 ## 7. Image automation (`:latest` digest pinning) — critical gotchas
@@ -143,11 +157,11 @@ kubectl -n taskflow get deployment taskflow-backend \
 **Fix — basic marker (correct for Deployments):**
 ```yaml
 # gitops/apps/taskflow/backend.yaml
-image: ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend:latest # {"$imagepolicy": "flux-system:taskflow-backend"}
+image: ghcr.io/stefanf81/taskflow-backend:latest # {"$imagepolicy": "flux-system:taskflow-backend"}
 # gitops/apps/taskflow/frontend.yaml
-image: ghcr.io/stefanf81/taskflow-enterprise/taskflow-frontend:latest # {"$imagepolicy": "flux-system:taskflow-frontend"}
+image: ghcr.io/stefanf81/taskflow-frontend:latest # {"$imagepolicy": "flux-system:taskflow-frontend"}
 ```
-Flux then emits `ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend:latest@sha256:<digest>`.
+Flux then emits `ghcr.io/stefanf81/taskflow-backend:latest@sha256:<digest>`.
 
 **Correct form for HelmRelease** (separate fields) is the only place `:digest`
 belongs:
@@ -235,7 +249,7 @@ kubectl -n flux-system patch <resource-type>/<resource-name> \
 
 # Flux Kustomization will recreate it from Git
 kubectl -n flux-system annotate kustomization/taskflow-app \
-  fluxcd.io/reconcileAt=$(date +%Y-%m-%dT%H:%M:%S%z) --overwrite
+  reconcile.fluxcd.io/requestedAt=$(date +%s) --overwrite
 ```
 
 **Fix — force a full end-to-end cycle after controllers are up:**
@@ -243,14 +257,14 @@ kubectl -n flux-system annotate kustomization/taskflow-app \
 ```bash
 # 1. Force the app kustomization to recreate automation resources
 kubectl -n flux-system annotate kustomization/taskflow-app \
-  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 
 # 2. Wait for ImageRepository then force an immediate ghcr.io scan
 kubectl -n flux-system wait --for=condition=Ready imagerepository/taskflow-backend --timeout=60s
 kubectl -n flux-system annotate imagerepository/taskflow-backend \
-  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 kubectl -n flux-system annotate imagerepository/taskflow-frontend \
-  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 
 # 3. Check what digest the ImagePolicy resolved
 kubectl -n flux-system get imagepolicy taskflow-backend \
@@ -258,14 +272,14 @@ kubectl -n flux-system get imagepolicy taskflow-backend \
 
 # 4. Force the ImageUpdateAutomation to commit the new digest to Git
 kubectl -n flux-system annotate imageupdateautomation/taskflow-images \
-  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 
 # 5. Check that the commit succeeded
 kubectl -n flux-system describe imageupdateautomation taskflow-images
 
 # 6. Force the app kustomization to pull the new Git commit and roll out pods
 kubectl -n flux-system annotate kustomization/taskflow-app \
-  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 
 # 7. Watch the new pods start
 kubectl -n taskflow get pods -w
@@ -279,9 +293,9 @@ pushed a new `:latest` to ghcr.io and don't want to wait, run these:
 ```bash
 # 1. Force scan ghcr.io for new digests
 kubectl -n flux-system annotate imagerepository/taskflow-backend \
-  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 kubectl -n flux-system annotate imagerepository/taskflow-frontend \
-  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 
 # 2. Check if a new digest was found
 kubectl -n flux-system get imagepolicy taskflow-backend \
@@ -291,11 +305,11 @@ kubectl -n flux-system get imagepolicy taskflow-frontend \
 
 # 3. Commit the new digest to Git
 kubectl -n flux-system annotate imageupdateautomation/taskflow-images \
-  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 
 # 4. Roll out the new commit to the cluster
 kubectl -n flux-system annotate kustomization/taskflow-app \
-  fluxcd.io/reconcileAt="$(date +%Y-%m-%dT%H:%M:%S%z)" --overwrite
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 
 # 5. Watch pods restart
 kubectl -n taskflow get pods -w
@@ -316,5 +330,5 @@ kubectl -n taskflow get pods -l 'app in (taskflow-backend,taskflow-frontend)' -o
 ```
 
 Expected: `conditions` shows `reason: Succeeded`, deployment images look like
-`ghcr.io/stefanf81/taskflow-enterprise/taskflow-backend:latest@sha256:…`, and a `fluxcdbot` commit
+`ghcr.io/stefanf81/taskflow-backend:latest@sha256:…`, and a `fluxcdbot` commit
 (`chore: automated TaskFlow image update`) appears on `main`.

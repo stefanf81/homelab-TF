@@ -47,8 +47,8 @@ Audit logs from the WAF are collected by **Grafana Alloy**, stored in **Grafana 
 | Caddy | `taskflow` | 2.11.4 | HTTP server + reverse proxy |
 | Coraza | `taskflow` | v2.6.0 | WAF engine (OWASP ModSecurity compatible) |
 | OWASP CRS | `taskflow` | v4.25.0 | Core Rule Set for attack detection |
-| Alloy | `monitoring` | v1.11.0 | Log collection agent |
-| Loki | `monitoring` | 18.7.3 (chart) | Log aggregation and storage |
+| Alloy | `monitoring` | 1.12.1 (chart) | Log collection agent |
+| Loki | `monitoring` | 18.12.1 (chart) | Log aggregation and storage |
 | Grafana | `monitoring` | via victoria-metrics-k8s-stack | Dashboard visualization |
 
 ## Traffic Flow
@@ -75,11 +75,14 @@ Internet → Cloudflare DNS → Port Forward → 192.168.50.201 (L2 announcement
 | WAF Pod | Connects To | Protocol |
 |---------|-------------|----------|
 | `taskflow-frontend-waf` | `frontend.taskflow.svc.cluster.local:8080` | HTTP/1.1 |
-| `taskflow-backend-waf` | `backend.taskflow.svc.cluster.local:8080` | HTTP/1.1 (h2c backend) |
+| `taskflow-backend-waf` | `backend.taskflow.svc.cluster.local:8080` | HTTP/1.1 |
 
 ## Image
 
-The custom Caddy+Coraza image is built via GitHub Actions (`.github/workflows/build-taskflow-caddy-coraza.yaml`) and pushed to GHCR:
+The custom Caddy+Coraza image is built from the repository Dockerfile and pushed
+to GHCR. This repository does not currently contain the GitHub Actions workflow
+referenced by older versions of this document, so builds must be run externally
+or manually:
 
 - **Repository**: `ghcr.io/stefanf81/taskflow-caddy-coraza`
 - **Tag**: `2.11.4-coraza2.6.0-r1`
@@ -87,19 +90,16 @@ The custom Caddy+Coraza image is built via GitHub Actions (`.github/workflows/bu
 - **Platform**: `linux/amd64` (k3s node architecture)
 - **Digest**: Pinned in both WAF Deployments
 
-### Build & Push (CI & Manual)
+### Build & Push (Manual)
 
-The image is built automatically upon pushes to `gitops/images/taskflow-caddy-coraza/` or manually via GitHub CLI:
-
-```bash
-gh workflow run build-taskflow-caddy-coraza.yaml -f push=true
-```
+The image can be built manually when `gitops/images/taskflow-caddy-coraza/`
+changes:
 
 The release tag is derived from the Dockerfile's `CADDY_VERSION`,
 `CORAZA_CADDY_VERSION`, and `IMAGE_REVISION` arguments. Increment
 `IMAGE_REVISION` for recipe-only changes so immutable revision tags are never
-overwritten. The GHCR package must grant `stefanf81/homelab-TF` **Write** access
-under **Manage Actions access** before the workflow's first publish.
+overwritten. A publishing account needs package write permission; the pull secret
+used by the cluster needs only package read permission.
 
 Manual local build if needed:
 
@@ -196,7 +196,7 @@ directives `
     Include @crs-setup.conf.example      # CRS setup (tunable knobs)
     Include /etc/coraza/*-exclusions.conf # Before-CRS exclusions
 
-    SecRuleEngine DetectionOnly          # Engine mode
+    SecRuleEngine On                      # Engine mode (blocking)
     SecAction "id:1000001,..."           # Paranoia level + tuning
     SecRequestBodyAccess On              # Body inspection
     SecResponseBodyAccess Off            # Response buffering off
@@ -214,8 +214,8 @@ directives `
 
 | Mode | Effect |
 |------|--------|
-| `DetectionOnly` | Logs matches but never blocks (current setting) |
-| `On` | Enables blocking (deny/drop/redirect) |
+| `DetectionOnly` | Logs matches but never blocks |
+| `On` | Enables blocking (current setting) |
 
 ### Paranoia Level
 
@@ -595,7 +595,7 @@ kubectl run curl-test --rm -i --restart=Never -n taskflow --image=curlimages/cur
 kubectl run curl-test --rm -i --restart=Never -n taskflow --image=curlimages/curl -- \
   curl -s http://taskflow-backend-waf.taskflow.svc.cluster.local:8080/waf-healthz
 
-# SQL injection test (DetectionOnly mode - should pass through)
+# SQL injection test (blocking mode - may return a WAF block status)
 kubectl run curl-test --rm -i --restart=Never -n taskflow --image=curlimages/curl -- \
   curl -s -o /dev/null -w "%{http_code}" \
   'http://taskflow-backend-waf.taskflow.svc.cluster.local:8080/api?test=1%20UNION%20SELECT%201'
@@ -671,7 +671,7 @@ kubectl logs -n monitoring deploy/alloy -c alloy
 - **Network isolation**: Each WAF can only reach its corresponding application service
 - **No public exposure**: Loki and Alloy have no Gateway, LoadBalancer, or public route
 - **Sensitive data redaction**: Caddy access logs redact credentials and tokens
-- **Audit log privacy**: Coraza audit parts exclude request bodies and headers
+- **Audit log privacy**: Coraza audit parts exclude request bodies; the redactor removes sensitive request headers and query parameters
 
 ## File Reference
 

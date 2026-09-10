@@ -24,9 +24,10 @@ Local CLI → kubectl port-forward → Hubble Relay (kube-system) ────�
 1. Browser requests `https://hubble.jokelab.dev`
 2. Cloudflare proxies to cluster IP `192.168.50.201`
 3. Cilium Gateway terminates TLS (certificate: `taskflow-tls-secret`)
-4. HTTPRoute `hubble-ui` routes `/` → `hubble-ui-oauth2-proxy:4180`
+4. HTTPRoute `hubble-ui` routes `/` → `hubble-ui-oauth2-proxy:80` (the
+   Service forwards to oauth2-proxy's container port 4180)
 5. oauth2-proxy checks GitHub session cookie
-6. If no session: redirects to GitHub OAuth → callback at `https://hubble.jokelab.dev/callback`
+6. If no session: redirects to GitHub OAuth → callback at `https://hubble.jokelab.dev/oauth2/callback`
 7. If authenticated: forwards request to `hubble-ui.kube-system.svc.cluster.local:80`
 8. Hubble UI displays live network flows from eBPF
 
@@ -53,7 +54,7 @@ kubectl port-forward -n kube-system svc/hubble-relay 4244:80
 | `namespace.yaml` | `hubble-ui` namespace |
 | `repository.yaml` | HelmRepository `oauth2-proxy` (`https://oauth2-proxy.github.io/manifests`) |
 | `release.yaml` | HelmRelease `hubble-ui-oauth2-proxy` (oauth2-proxy chart 10.7.0) |
-| `route.yaml` | HTTPRoute `hubble-ui` → `hubble-ui-oauth2-proxy:4180` |
+| `route.yaml` | HTTPRoute `hubble-ui` → `hubble-ui-oauth2-proxy:80` (container port 4180) |
 | `hubble-ui-secrets.yaml` | SOPS-encrypted Secret (GitHub OAuth credentials) |
 | `network-policy.yaml` | CiliumNetworkPolicy `allow-gateway-to-hubble-ui` |
 | `kustomization.yaml` | Kustomization listing all resources |
@@ -102,10 +103,10 @@ the chart-generated credential environment variables take precedence.
 ### Installation
 
 ```bash
-# cilium CLI (v0.19.7)
+# cilium CLI (latest release)
 curl -s -L https://github.com/cilium/cilium-cli/releases/latest/download/cilium-darwin-amd64.tar.gz | tar xz -C ~/bin cilium
 
-# hubble CLI (v1.19.4)
+# hubble CLI (latest release; keep it compatible with the cluster)
 curl -s -L https://github.com/cilium/hubble/releases/latest/download/hubble-darwin-amd64.tar.gz | tar xz -C ~/bin hubble
 chmod +x ~/bin/cilium ~/bin/hubble
 ```
@@ -271,7 +272,7 @@ nohup kubectl port-forward -n kube-system svc/hubble-relay 4244:80 &
 
 ### Hubble CLI version mismatch warning
 
-**Cause**: CLI version older than the Cilium/Hubble relay version (1.20.1).
+**Cause**: CLI version older than the Cilium/Hubble relay version (Cilium 1.20.1).
 
 **Fix**: Update CLI:
 ```bash

@@ -6,7 +6,7 @@ This document covers the installation, architecture, Kubernetes-native integrati
 
 ## 1. Architecture Overview
 
-In this cluster, Falco is deployed as a cluster-wide runtime security system using a zero-overhead, highly integrated **GitOps and Kubernetes-Native design**:
+In this cluster, Falco is deployed as a cluster-wide runtime security system using a low-overhead, highly integrated **GitOps and Kubernetes-Native design**:
 
 ```text
                                   +-------------------+

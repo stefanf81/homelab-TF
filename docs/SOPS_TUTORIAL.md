@@ -10,7 +10,10 @@ In GitOps, keeping plain-text secrets in a Git repository is a major security vu
 
 ### How it Works:
 1. **Asymmetric Encryption:** Secrets are encrypted using a public `age` key. Anyone with access to the public key can encrypt secrets.
-2. **Encrypted in Git:** Encrypted secrets are stored in Git. Only the sensitive values are encrypted; the structural metadata of the YAML file (like `apiVersion`, `kind`, and `metadata.name`) remains in plain text. This allows GitOps engines like Flux to track changes easily.
+2. **Encrypted in Git:** Encrypted secrets are stored in Git. SOPS keeps YAML
+   key names readable, but encrypts their values, including structural values
+   such as `apiVersion`, `kind`, and `metadata.name`. Flux decrypts the complete
+   manifest before applying it.
 3. **Decryption at Cluster Edge:** Only authorized developers (with the local `key.txt` private key) and the Kubernetes cluster (via a Secret named `sops-age` inside the `flux-system` namespace) can decrypt these secrets.
 
 ---
@@ -63,6 +66,10 @@ creation_rules:
 3. **`gitops/apps/taskflow/taskflow-secrets.yaml`**: The encrypted application secrets.
 4. **`gitops/infrastructure/controllers/proxmox-csi/proxmox-csi-secrets.yaml`**: Proxmox CSI storage secrets.
 5. **`gitops/monitoring/platform/grafana-secrets.yaml`**: Grafana admin and GitHub OAuth secrets.
+6. **`gitops/infrastructure/controllers/hubble-ui/hubble-ui-secrets.yaml`**: Hubble OAuth credentials.
+7. **`gitops/infrastructure/controllers/policy-reporter/policy-reporter-secrets.yaml`**: Policy Reporter OAuth credentials.
+8. **`gitops/infrastructure/controllers/renovate/job/renovate-secrets.yaml`**: Renovate GitHub credentials.
+9. **`gitops/apps/taskflow/taskflow-jwt-secrets.yaml`**: TaskFlow JWT key material.
 
 ---
 

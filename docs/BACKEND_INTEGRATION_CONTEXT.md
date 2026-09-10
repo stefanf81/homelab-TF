@@ -17,8 +17,8 @@ backend-specific slice.
 3. **Let VictoriaMetrics scrape it unauthenticated** — Spring Security permits only
    `GET /actuator/prometheus`; Cilium NetworkPolicy limits access to `monitoring`.
 4. **Do not fight the container contract** — run as non-root UID `10001`, read-only
-   root FS (only `/tmp` writable), heap via the `JAVA_TOOL_OPTIONS` env (already set
-   by the deployment, don't hard-code heap in the Dockerfile).
+   root FS (only `/tmp` writable), and preserve the JVM flags supplied by the
+   deployment's `JAVA_TOOL_OPTIONS`.
 
 VictoriaMetrics, Grafana, the VMServiceScrape, exporters, and the performance dashboard are
 already wired in the infra repo.
@@ -32,11 +32,11 @@ Defined in `gitops/apps/taskflow/backend.yaml`:
 | Concern | Expectation | Why it matters to you |
 |---------|-------------|----------------------|
 | Image | `ghcr.io/stefanf81/taskflow-backend:latest`, digest-pinned by Flux | Push `:latest`; Flux rewrites to `@sha256:`. No manifest change needed for a deploy. |
-| Listening port | **8080** (ContainerPort `http`) | Gateway routes `/api` → `backend:8080`. Don't change. |
+| Listening port | **8080** (ContainerPort `http`) | The backend WAF routes `/api` → `backend:8080`, and the VMServiceScrape targets the same Service. Don't change. |
 | Liveness/readiness | `GET /actuator/health/liveness` and `/actuator/health/readiness` on 8080 | Probes already use these. Actuator health must stay enabled. |
 | Security context | `runAsNonRoot: true`, `UID/GID 10001`, `readOnlyRootFilesystem: true`, `capabilities.drop: [ALL]` | The image **must** run as 10001 with no writes to the image layer. Mount only `/tmp` (already provided). Log to **stdout/stderr**, not a file. |
 | Env (config) | `SPRING_PROFILES_ACTIVE=prod`, `APP_CORS_ALLOWED_ORIGINS`, secrets via `SPRING_SECURITY_PASSWORD` / `SPRING_DATASOURCE_PASSWORD` / `SPRING_DATA_REDIS_PASSWORD` (and `SPRING_REDIS_PASSWORD`) | Don't hard-code these; they come from ConfigMap/Secret. |
-| JVM heap | Owned by the **image** (`Dockerfile`): `-XX:MaxRAMPercentage=50.0` → 1GiB heap at the 2Gi limit | **Do not set `-Xmx` / `-XX:MaxDirectMemorySize` in `JAVA_TOOL_OPTIONS`** — Dockerfile CMD args win over `JAVA_TOOL_OPTIONS` for conflicting flags (JVM "last-wins"), so an env `-Xmx` would either be ignored (when RAM% is set) or silently override the image's direct-memory cap. The image is the single source of truth for JVM sizing; the deployment env adds only GC logging/caps. |
+| JVM heap | Owned by the deployment's `JAVA_TOOL_OPTIONS`: `-XX:MaxRAMPercentage=50.0` → 1GiB heap at the 2Gi limit | Preserve `MaxRAMPercentage=50.0`, `MaxDirectMemorySize=256m`, and `MaxMetaspaceSize=256m`; do not add competing heap flags in the image. The deployment is the single source of truth for JVM sizing. |
 | Graceful shutdown | 45s termination grace | Configure `server.shutdown=graceful` so in-flight requests drain on rollout. |
 
 The backend **already** sends traces to Jaeger (OTLP `jaeger:4317`/`4318`) — that
@@ -144,10 +144,9 @@ If that curl returns metrics, verify the output includes `jvm_memory_used_bytes`
   `/actuator/prometheus` by default; the VMServiceScrape targets exactly that.
 - **Don't require auth on `/actuator/prometheus`** (see 2.3).
 - **Don't write to the filesystem** outside `/tmp` — the container root FS is read-only.
-- **Don't set JVM heap in `JAVA_TOOL_OPTIONS`** — it's owned by the image's
-  `MaxRAMPercentage=50.0`. The deployment env only adds GC logging/caps. (Dockerfile CMD
-  args override `JAVA_TOOL_OPTIONS` for conflicting flags, so an env `-Xmx` is at best ignored
-  and at worst silently overrides the image's direct-memory cap.)
+- **Don't remove or override the deployment's JVM sizing flags** — the deployment
+  owns `MaxRAMPercentage=50.0`, `MaxDirectMemorySize=256m`, and
+  `MaxMetaspaceSize=256m` in `JAVA_TOOL_OPTIONS`.
 
 ---
 

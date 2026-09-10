@@ -5,33 +5,25 @@
 - `taskflow-frontend-waf` receives `www.jokelab.dev/` traffic.
 - `taskflow-backend-waf` receives `www.jokelab.dev/api` traffic.
 - Both WAFs use Caddy `2.11.4`, Coraza Caddy `v2.6.0`, OWASP CRS, and an audit-log redactor sidecar.
-- Both WAFs start with `SecRuleEngine DetectionOnly` and paranoia level 1.
+- Both WAFs run with `SecRuleEngine On` and paranoia level 2.
 - Loki runs as one monolithic replica in `monitoring` with 30-day retention.
 - Alloy collects only pods labelled as Taskflow WAFs and sends them to Loki.
 - Grafana dashboard at `https://grafana.jokelab.dev/d/taskflow-waf`.
 
 ## Build the WAF image
 
-The image is automatically built and pushed to GHCR via GitHub Actions
-(`.github/workflows/build-taskflow-caddy-coraza.yaml`) whenever changes are
-pushed to `gitops/images/taskflow-caddy-coraza/` or manually triggered via
-`workflow_dispatch`.
+The image is not built by a workflow in this repository. Build and push it from
+the Dockerfile when `gitops/images/taskflow-caddy-coraza/` changes, or use an
+external CI workflow that has equivalent permissions.
 
-To trigger manually via GitHub CLI:
-
-```bash
-gh workflow run build-taskflow-caddy-coraza.yaml -f push=true
-```
-
-The workflow publishes with the version and revision declared by
+The published tag should use the version and revision declared by
 `CADDY_VERSION`, `CORAZA_CADDY_VERSION`, and `IMAGE_REVISION` in the Dockerfile.
 Increment `IMAGE_REVISION` when the image recipe changes without either upstream
 version changing; published revision tags must not be overwritten.
 
-The existing GHCR package must grant this repository write access before its
-first workflow publish. In the package settings, open **Manage Actions access**,
-add `stefanf81/homelab-TF`, and select the **Write** role. The workflow then
-authenticates with its short-lived `GITHUB_TOKEN`; no publishing PAT is needed.
+For a manual publish, the account or token used by `docker push` needs package
+write permission. The cluster's `ghcr-pull-secret` needs only package read
+permission.
 
 ### Manual Local Build (Alternative)
 
@@ -92,9 +84,9 @@ kubectl run curl-test --rm -it --restart=Never --image=curlimages/curl -- \
 ```
 
 Use the public route to exercise representative CRS rule families. These payloads
-are inert query parameters; run them only against the Taskflow WAF. DetectionOnly
-must return the upstream response rather than block it (the unauthenticated API
-currently returns `401`):
+are inert query parameters; run them only against the Taskflow WAF. Because the
+engine is in blocking mode, malicious test payloads may return a WAF block status
+instead of the upstream API's usual `401`:
 
 ```bash
 curl --silent --show-error --max-time 15 --get \
@@ -156,21 +148,19 @@ topk(10, sum by (transaction_client_ip) (
 ))
 ```
 
-## Blocking rollout
+## Blocking and tuning
 
-Blocking is intentionally independent. Tune and enable one application at a time:
-
-1. Observe frontend detections and add narrow frontend exclusions only.
-2. Change only the frontend `SecRuleEngine` to `On`.
-3. Observe frontend behavior and roll back if required.
-4. Tune backend detections and add narrow backend exclusions only.
-5. Change only the backend `SecRuleEngine` to `On`.
+Blocking is enabled independently in each WAF. To tune one application without
+changing the other, temporarily set only that WAF's `SecRuleEngine` to
+`DetectionOnly`, observe and add narrow exclusions, then restore `On` and replay
+the tests before proceeding to the other WAF.
 
 ## Rollback
 
-To roll back public traffic while keeping the WAF workloads available, restore only
-the two `backendRefs` in `gitops/apps/taskflow/httproute.yaml`:
+To roll back public traffic while keeping the WAF workloads available, restore the
+three route backends in `gitops/apps/taskflow/httproute.yaml`:
 
+- `/api/v1/appointments/events` -> `backend:8080` (preserve its separate `31m` timeout)
 - `/api` -> `backend:8080`
 - `/` -> `frontend:8080`
 
@@ -203,7 +193,7 @@ the Helm release.
 
 **Fix**:
 ```bash
-# Create the secret with a PAT that has write:packages scope
+# Create the secret with a PAT that has read:packages scope
 kubectl create secret docker-registry ghcr-pull-secret \
   --namespace=taskflow \
   --docker-server=ghcr.io \
@@ -218,7 +208,7 @@ kubectl delete pods -n taskflow -l app.kubernetes.io/component=waf
 
 **Cause**: The PAT lacks `read:packages` scope, or the image doesn't exist at that digest.
 
-**Fix**: Use a PAT with `write:packages` scope (includes read). Verify the image exists:
+**Fix**: Use a PAT with `read:packages` scope. Verify the image exists:
 ```bash
 curl -s -o /dev/null -w "%{http_code}" \
   -H "Authorization: Bearer $(gh auth token)" \
@@ -401,7 +391,7 @@ kubectl logs -n kube-system -l k8s-app=cilium | grep -i "policy\|denied"
 The `ghcr-pull-secret` is created manually with `kubectl create secret`. It's not
 managed by GitOps. When the PAT expires:
 
-1. Create a new PAT with `write:packages` scope at https://github.com/settings/tokens
+1. Create a new PAT with `read:packages` scope at https://github.com/settings/tokens
 2. Recreate the secret:
    ```bash
    kubectl delete secret ghcr-pull-secret -n taskflow

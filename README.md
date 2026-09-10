@@ -95,9 +95,19 @@ cilium install --version 1.20.1
 cilium status --wait
 ```
 
-### 4️⃣ Seed SOPS Age Private Key in Cluster
+### 4️⃣ Bootstrap Flux CD
 
-Flux decrypts age-encrypted secret files (`*-secrets.yaml`) using a Kubernetes secret named `sops-age` in the `flux-system` namespace.
+Apply the Flux sync manifests. This creates the `flux-system` namespace.
+
+```bash
+# Apply Flux CRDs and Git sync components
+kubectl apply -k gitops/clusters/taskflow/flux-system
+```
+
+### 5️⃣ Seed SOPS Age Private Key and Reconcile All Layers
+
+Flux decrypts age-encrypted secret files (`*-secrets.yaml`) using a Kubernetes
+Secret named `sops-age` in the `flux-system` namespace.
 
 If using the existing repository key (`key.txt` in project root):
 ```bash
@@ -105,15 +115,20 @@ kubectl create secret generic sops-age -n flux-system \
   --from-file=age.agekey=key.txt
 ```
 
+The private GHCR images also require this manually managed pull secret before
+the application Kustomization reconciles:
+```bash
+kubectl create namespace taskflow --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret docker-registry ghcr-pull-secret -n taskflow \
+  --docker-server=ghcr.io \
+  --docker-username=<github-user> \
+  --docker-password=<read-packages-token>
+```
+
 > **Note for new environments:** If generating your own age key (`age-keygen -o key.txt`), update the public recipient key in `.sops.yaml` and re-encrypt all `*-secrets.yaml` files via `sops -e -i <file>` before committing to your remote Git repository.
 
-### 5️⃣ Bootstrap Flux CD & Reconcile All Layers
-
-Apply the Flux sync manifests and force initial reconciliation across all platform layers:
-
+Apply the initial reconciliation across all platform layers:
 ```bash
-# Apply Flux CRDs and Git sync components
-kubectl apply -k gitops/clusters/taskflow/flux-system
 
 # Reconcile Git repository source
 flux reconcile source git flux-system
@@ -168,13 +183,14 @@ kubectl get pods -A
 kubectl get gateway,httproute -A
 
 # Verify application secrets are decrypted
-kubectl get secret -n taskflow db-secret taskflow-secrets
+kubectl get secret -n taskflow db-secret backend-secret redis-secret taskflow-jwt-keys
 ```
 
 Access services via Cilium Gateway:
 - **TaskFlow Web App:** `https://www.jokelab.dev/`
 - **Grafana Observability:** `https://grafana.jokelab.dev/`
 - **Policy Reporter UI:** `https://kyverno.jokelab.dev/`
+- **Hubble UI:** `https://hubble.jokelab.dev/`
 
 ---
 

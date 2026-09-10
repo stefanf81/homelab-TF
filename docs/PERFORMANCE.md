@@ -8,7 +8,7 @@
 
 ### 1.1 JVM off-heap memory is unbounded → OOM-restart risk (HIGH) — ✅ RESOLVED
 
-> **Resolved:** The JVM sizing has been fixed. The backend now uses `MaxRAMPercentage=50.0` (owned by the image Dockerfile) for a 1 GiB heap at the 2 GiB limit, with `MaxMetaspaceSize=256m` and Guaranteed QoS (`requests == limits == 2Gi/2000m`). See `BACKEND_INTEGRATION_CONTEXT.md` for the full contract.
+> **Resolved:** The JVM sizing has been fixed. The backend uses deployment-supplied `JAVA_TOOL_OPTIONS` with `MaxRAMPercentage=50.0` for a 1 GiB heap at the 2 GiB limit, plus `MaxDirectMemorySize=256m` and `MaxMetaspaceSize=256m`, with Guaranteed QoS (`requests == limits == 2Gi/2000m`). See `BACKEND_INTEGRATION_CONTEXT.md` for the full contract.
 
 **Previous config (for reference):**
 ```
@@ -33,7 +33,8 @@ resources:
   requests: { cpu: "2000m", memory: "2Gi" }   # Guaranteed QoS
   limits:   { cpu: "2000m", memory: "2Gi" }
 ```
-The image Dockerfile owns heap sizing via `-XX:MaxRAMPercentage=50.0` → 1 GiB heap at the 2 GiB limit.
+The deployment owns heap sizing via `JAVA_TOOL_OPTIONS` and
+`-XX:MaxRAMPercentage=50.0` → 1 GiB heap at the 2 GiB limit.
 
 ### 1.2 ~~No observability → you are tuning blind~~ (RESOLVED)
 **Files:** `gitops/monitoring/platform/release.yaml` (VictoriaMetrics stack), `gitops/monitoring/app/vmservicescrapes.yaml` (app scrapes)
@@ -126,7 +127,7 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 |---|--------|--------|
 | 1 | **Monitoring stack** (VictoriaMetrics + Grafana + kube-state-metrics + node-exporter) | ✅ Deployed and collecting metrics |
 | 2 | **Backend `/actuator/prometheus`** — Micrometer registry, exposure, SecurityConfig permit, and named VMServiceScrape port | ✅ Configured — the normal application and Flux deployment activates backend JVM, HTTP, and Hikari scrapes alongside existing PostgreSQL, Redis, node, and disk telemetry. |
-| 3 | **JVM sizing** — single source of truth via `MaxRAMPercentage=50.0` (image), Guaranteed QoS `2Gi` | ✅ Applied — `backend.yaml` JAVA_TOOL_OPTIONS no longer overrides heap/direct; image owns sizing |
+| 3 | **JVM sizing** — single source of truth via `MaxRAMPercentage=50.0` (deployment), Guaranteed QoS `2Gi` | ✅ Applied — `backend.yaml` `JAVA_TOOL_OPTIONS` owns heap/direct/metaspace sizing |
 | 4 | **`effective_cache_size`** corrected to 700MB | ✅ Applied in `postgres-db.yaml` |
 | 5 | **Postgres PVC** migrated from Longhorn to Proxmox CSI | ✅ Applied in `postgres-pvc.yaml` |
 | 6 | **Harden Redis** — add persistence PVC or document stampede risk | ⏳ Pending (see §2.3) — still ephemeral by design |
@@ -142,11 +143,10 @@ Because Dockerfile CMD args win over `JAVA_TOOL_OPTIONS` (JVM "last-wins"), the 
 heap = 1GiB (env only source), `MaxDirectMemorySize = 256m` (image won) — so the "512Mi direct"
 comment was wrong, and `MaxRAMPercentage` was dead (ignored when `-Xmx` is set).
 
-Resolution (Option 1, best-practice): the **image owns JVM sizing** via `MaxRAMPercentage=50.0`
-(changed from 75.0 — 75% would give 1.5GiB heap at the 2Gi limit and OOMKilled the pod given
-Netty/Lettuce direct buffers + ~200 thread stacks). The TF `JAVA_TOOL_OPTIONS` keeps only GC
-logging/caps and no longer sets heap or direct memory. See `BACKEND_INTEGRATION_CONTEXT.md` §0/§4
-for the corrected contract.
+Resolution: the **deployment owns JVM sizing** via `JAVA_TOOL_OPTIONS` and
+`MaxRAMPercentage=50.0` (75% would give 1.5GiB heap at the 2Gi limit and OOMKill the pod given
+Netty/Lettuce direct buffers + ~200 thread stacks). The image must not introduce
+competing sizing flags. See `BACKEND_INTEGRATION_CONTEXT.md` §0/§4 for the corrected contract.
 
 ---
 
@@ -163,7 +163,7 @@ env:
       -XX:MaxMetaspaceSize=256m
       -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags:filecount=5,filesize=10m
       -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/dump.hprof
-# Image (Dockerfile) owns heap: -XX:MaxRAMPercentage=50.0  → 1GiB heap at the 2Gi limit
+# Deployment owns heap: -XX:MaxRAMPercentage=50.0  → 1GiB heap at the 2Gi limit
 resources:
   requests: { cpu: "2000m", memory: "2Gi" }   # Guaranteed QoS
   limits:   { cpu: "2000m", memory: "2Gi" }

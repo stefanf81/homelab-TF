@@ -18,9 +18,9 @@ If `KUBECONFIG` is empty, kubectl uses:
 ## Use a specific kubeconfig
 
 ``` bash
-kubectl --kubeconfig ~/homelab/TF/kubeconfig get nodes
-kubectl --kubeconfig ~/homelab/TF/kubeconfig config current-context
-export KUBECONFIG=~/homelab/TF/kubeconfig
+kubectl --kubeconfig ./kubeconfig.yaml get nodes
+kubectl --kubeconfig ./kubeconfig.yaml config current-context
+export KUBECONFIG=$PWD/kubeconfig.yaml
 ```
 
 ## Copy the K3s kubeconfig from the server
@@ -29,29 +29,29 @@ export KUBECONFIG=~/homelab/TF/kubeconfig
 ssh -i ~/.ssh/id_rsa ubuntu@192.168.50.55 \
   "sudo cat /etc/rancher/k3s/k3s.yaml" \
 | sed 's#https://127.0.0.1:6443#https://192.168.50.55:6443#' \
-> ~/homelab/TF/kubeconfig
+  > ./kubeconfig.yaml
 ```
 
 ## Replace your default kubeconfig
 
 ``` bash
-cp ~/homelab/TF/kubeconfig ~/.kube/config
+cp ./kubeconfig.yaml ~/.kube/config
 ```
 
 ## Validate the kubeconfig
 
 ``` bash
-kubectl --kubeconfig ~/homelab/TF/kubeconfig config current-context
-kubectl --kubeconfig ~/homelab/TF/kubeconfig get nodes
-kubectl --kubeconfig ~/homelab/TF/kubeconfig get pods -A
+kubectl --kubeconfig ./kubeconfig.yaml config current-context
+kubectl --kubeconfig ./kubeconfig.yaml get nodes
+kubectl --kubeconfig ./kubeconfig.yaml get pods -A
 ```
 
 ## Inspect the kubeconfig
 
 ``` bash
-head -20 ~/homelab/TF/kubeconfig
-nl -ba ~/homelab/TF/kubeconfig
-cat -A ~/homelab/TF/kubeconfig
+head -20 ./kubeconfig.yaml
+nl -ba ./kubeconfig.yaml
+cat -A ./kubeconfig.yaml
 ```
 
 ## Inspect the kubeconfig on the K3s server

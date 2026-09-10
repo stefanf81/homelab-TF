@@ -15,7 +15,7 @@ With `load_owasp_crs`, the connector merges the embedded CRS filesystem with the
 
 ## Current Deployment Mode
 
-> **Note:** The current deployment uses `SecRuleEngine DetectionOnly` — all rules are evaluated and logged, but no requests are blocked. This is the recommended mode for initial rollout and tuning. See [TASKFLOW_WAF_RUNBOOK](../TASKFLOW_WAF_RUNBOOK.md) for test procedures before switching to `On`.
+> **Note:** The current deployment uses `SecRuleEngine On` with paranoia level 2 — matching rules can block requests. Treat the exclusion files as production controls and test changes against both WAFs before rollout.
 
 ## Directive Load Order
 
@@ -193,7 +193,7 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
 
 ## Tuning Workflow
 
-1. Run in `DetectionOnly` mode.
+1. Observe the current `On` mode and review detections.
 2. Query audit logs for detections:
     ```
     {job="coraza-waf", application="taskflow-frontend"} |= "\"messages\""
@@ -212,7 +212,7 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
      caddy validate --config /dev/stdin --adapter caddyfile
    ```
 6. Reconcile and replay the test request. Confirm the false positive is gone and the rule still fires on other inputs.
-7. Once clean, switch `SecRuleEngine` to `On` and repeat the replay tests.
+7. Reconcile and repeat the replay tests after every exclusion or CRS change.
 
 ## Client IP Forwarding
 
