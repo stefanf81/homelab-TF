@@ -23,7 +23,7 @@ gitops/
 │   ├── kyverno/                     # Kyverno controller (reconciled by infra-controllers)
 │   │   ├── namespace.yaml           # kyverno ns + PSA enforce:privileged
 │   │   ├── repository.yaml          # HelmRepository kyverno @ https://kyverno.github.io/kyverno/
-│   │   ├── release.yaml             # HelmRelease kyverno v3.9.0, single-replica, crds: Skip
+│   │   ├── release.yaml             # HelmRelease kyverno v3.9.1, single-replica, crds: Skip
 │   │   └── kustomization.yaml
 │   └── policy-reporter/             # Policy Reporter + UI (its OWN cluster Kustomization)
 │       ├── namespace.yaml                # policy-reporter ns
@@ -87,7 +87,7 @@ Gateway exists first, so the route programs immediately and `wait` succeeds.
 
 ### Chart & version
 - Chart: `kyverno/kyverno` from `https://kyverno.github.io/kyverno/`
-- Pinned: **3.9.0** (ships Kyverno **v1.19.0**). Requires k8s ≥ ~1.25 (the
+- Pinned: **3.9.1** (ships Kyverno **v1.19.1**). Requires k8s ≥ ~1.25 (the
   provisioned cluster is configured for k3s `v1.36.4+k3s1`).
 
 ### CRD handling — important gotcha

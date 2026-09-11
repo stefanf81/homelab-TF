@@ -224,7 +224,7 @@ image with a SOPS-encrypted Cloudflare API token.
 ### 5.10 Monitoring Stack (`gitops/monitoring/`)
 | Component | Implementation |
 |-----------|----------------|
-| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.92.0) in namespace `monitoring` |
+| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.92.1) in namespace `monitoring` |
 | CRDs | Installed by the chart (VMServiceScrape, VMSingle, …) |
 | Persistence | VictoriaMetrics TSDB on a **Proxmox CSI-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `proxmox-csi`) |
 | Grafana auth | GitHub OAuth authentication (`auth.github`) with credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana UI is routed via the Gateway API (see `routes.yaml`); VictoriaMetrics UI is kept strictly internal and accessed via port-forwarding |
@@ -304,10 +304,10 @@ TF/
 │   │   ├── controllers/             # HelmRelease + Repository for platform add-ons
 │   │   │   ├── cilium/release.yaml  # Cilium v1.20.1 (eBPF, Gateway API, L2 announcements)
 │   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.1) with Let's Encrypt certificate automation
-│   │   │   ├── coredns/             # CoreDNS HelmRelease (v1.47.0) — replaces K3s packaged addon
+│   │   │   ├── coredns/             # CoreDNS HelmRelease (v1.47.1) — replaces K3s packaged addon
 │   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
 │   │   │   ├── gateway-api/         # Standard Gateway API CRDs + TLSRoute CRD
-│   │   │   ├── kyverno/             # Kyverno policy engine (v3.9.0 / Kyverno v1.19.0)
+│   │   │   ├── kyverno/             # Kyverno policy engine (v3.9.1 / Kyverno v1.19.1)
 │   │   │   ├── falco/               # Falco runtime security (v9.1.0 chart, modern eBPF)
 │   │   │   ├── policy-reporter/     # Policy Reporter + UI dashboard
 │   │   │   ├── trivy-operator/      # Trivy vulnerability scanner operator
@@ -469,10 +469,10 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
 - **`infra-controllers`** (`gitops/infrastructure/controllers/`) installs the platform via HelmRelease objects:
   - `cilium/release.yaml` — Cilium 1.20.1 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
   - `cert-manager/release.yaml` — cert-manager 1.21.1 (fully active, managing TLS certificates).
-  - `coredns/release.yaml` — CoreDNS 1.47.0 (replaces K3s packaged addon, manages DNS with custom LAN hairpin-NAT overrides).
+  - `coredns/release.yaml` — CoreDNS 1.47.1 (replaces K3s packaged addon, manages DNS with custom LAN hairpin-NAT overrides).
   - `proxmox-csi/` — Proxmox CSI driver (dynamic storage provisioning of virtual disks with native hypervisor backup integration).
   - `gateway-api/` — the standard Gateway API CRDs.
-  - `kyverno/release.yaml` — Kyverno 3.9.0 (Kubernetes-native policy engine, mutating + validating admission webhook).
+  - `kyverno/release.yaml` — Kyverno 3.9.1 (Kubernetes-native policy engine, mutating + validating admission webhook).
   - `falco/release.yaml` — Falco 9.1.0 chart (runtime security, modern eBPF driver, Falcosidekick → PolicyReports).
   - `policy-reporter/` — Policy Reporter + UI dashboard (visualizes Kyverno/Trivy/Falco PolicyReports).
   - `trivy-operator/release.yaml` — Trivy Operator (vulnerability scanning of running containers/images).

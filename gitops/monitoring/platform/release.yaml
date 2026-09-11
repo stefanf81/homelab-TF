@@ -8,7 +8,7 @@ spec:
   chart:
     spec:
       chart: victoria-metrics-k8s-stack
-      version: 0.92.0
+      version: 0.92.1
       sourceRef:
         kind: HelmRepository
         name: victoriametrics
@@ -111,7 +111,7 @@ spec:
 
     victoria-metrics-operator:
       image:
-        # Keep the image aligned with the operator chart bundled by stack 0.92.0
+        # Keep the image aligned with the operator chart bundled by stack 0.92.1
         # (chart 0.67.3). v0.74.1 only adds a VLDistributed validation webhook
         # (bugfix) — no new watched CRDs, safe to bump.
         # renovate: datasource=docker depName=victoriametrics/operator
