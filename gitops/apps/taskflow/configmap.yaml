@@ -6,7 +6,6 @@ metadata:
 data:
   SPRING_PROFILES_ACTIVE: "prod"
   # Origins the browser may call /api from.
-  # - http://localhost:4200        : local `ng serve` dev server
   # - https://jokelab.dev          : bare apex (documented access URL in
   #                                  GATEWAY_ACCESS_GUIDE.md / ARCHITECTURE.md;
   #                                  cert includes this SAN, so it must be allowed
@@ -17,7 +16,7 @@ data:
   # the earlier comment referencing it was stale. If you ever serve the app from a
   # new hostname, add it here AND to certificate.yaml's dnsNames AND httproute.yaml's
   # hostnames, or the browser's /api calls will be CORS-rejected.
-  APP_CORS_ALLOWED_ORIGINS: "http://localhost:4200,https://jokelab.dev,https://www.jokelab.dev"
+  APP_CORS_ALLOWED_ORIGINS: "https://jokelab.dev,https://www.jokelab.dev"
   # The backend receives forwarding headers only from the in-cluster WAF pods.
   APP_TRUSTED_PROXY_REGEX: "^10\\.42\\.[0-9]{1,3}\\.[0-9]{1,3}$"
   # --- HTTP server tuning (prod) ---------------------------------------------
