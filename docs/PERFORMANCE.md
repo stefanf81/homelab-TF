@@ -102,9 +102,9 @@ limits:   { cpu: "2000m", memory: "2Gi" }   # Guaranteed QoS
 
 **File:** `gitops/apps/taskflow/postgres-db.yaml` (`max_connections=50`)
 
-Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's fine (10 of 30). But if the backend scales to 3+ replicas, `3 × 10 = 30` exhausts `max_connections` with zero headroom for `psql`/migrations/admin. 
+Spring Boot's default HikariCP `maximumPoolSize` is 10, while `postgres-db.yaml` budgets for a 25-connection pool. With one backend replica that's fine, but if the backend ever scales, each replica multiplies the pool and can exhaust `max_connections=50` with no headroom for `psql`/migrations/admin.
 
-**Fix:** Either raise `max_connections` to ~50–100 (cheap at this RAM) or explicitly set `spring.datasource.hikari.maximum-pool-size` lower (e.g. 8) and size it against expected replicas.
+**Fix:** Pin `spring.datasource.hikari.maximum-pool-size` explicitly in the app (≤25 total across replicas) and keep `max_connections` sized from that number, or raise `max_connections` to ~50–100 (cheap at this RAM).
 
 ---
 
@@ -130,8 +130,8 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10. With one backend that's 
 | 3 | **JVM sizing** — single source of truth via `MaxRAMPercentage=50.0` (deployment), Guaranteed QoS `2Gi` | ✅ Applied — `backend.yaml` `JAVA_TOOL_OPTIONS` owns heap/direct/metaspace sizing |
 | 4 | **`effective_cache_size`** corrected to 700MB | ✅ Applied in `postgres-db.yaml` |
 | 5 | **Postgres PVC** migrated from Longhorn to Proxmox CSI | ✅ Applied in `postgres-pvc.yaml` |
-| 6 | **Harden Redis** — add persistence PVC or document stampede risk | ⏳ Pending (see §2.3) — still ephemeral by design |
-| 7 | **Re-evaluate pool sizes** when adding replicas | Backend autoscaling is disabled. Local SSE state and a 25-connection Hikari pool require distributed event fan-out and connection-pool redesign before scaling. |
+| 6 | **Harden Redis** — add persistence PVC or document stampede risk | ✅ Resolved (intentionally ephemeral) — RDB/AOF are now explicitly disabled (`--save ""`, `--appendonly no`) so no stray bgsave/fork memory spikes occur; stampede risk on restart is accepted (see §2.3) |
+| 7 | **Re-evaluate pool sizes** when adding replicas | Backend autoscaling is disabled. Local SSE state and the Hikari pool require distributed event fan-out and connection-pool redesign before scaling. |
 | 8 | **Redis / Jaeger QoS** — Guaranteed (requests==limits) | ⚠️ Redis and Jaeger use Burstable QoS (requests < limits). This is intentional: Redis is ephemeral and Jaeger is a dev tool. Guaranteed QoS is not required for either. |
 | 9 | **Backend startup probe** tightened 20→15 failures | ✅ Applied in `backend.yaml` |
 | 10 | **Scrape intervals** relaxed to 60s for postgres/redis exporters | ✅ Applied in `vmservicescrapes.yaml` |

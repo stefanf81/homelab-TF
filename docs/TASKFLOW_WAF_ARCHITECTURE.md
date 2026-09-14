@@ -6,6 +6,8 @@ Taskflow uses a **Caddy + Coraza WAF** (Web Application Firewall) to inspect all
 
 Audit logs from the WAF are collected by **Grafana Alloy**, stored in **Grafana Loki** (30-day retention), and visualized in a **Grafana dashboard**.
 
+> **Status update:** Coraza writes audit JSON directly to container stdout (`SecAuditLog /dev/stdout`); the previous FIFO plus `audit-log-redactor` sidecar was removed because a stalled reader could block every audited request while `/waf-healthz` stayed green. Credential redaction now happens at ingest in Alloy. Caddy runs with `admin off`, so **Caddyfile changes require a manual rollout restart** (see the runbook).
+
 ```
                     ┌──────────────┐
                     │   Gateway    │  Cilium Gateway API
@@ -80,9 +82,10 @@ Internet → Cloudflare DNS → Port Forward → 192.168.50.201 (L2 announcement
 ## Image
 
 The custom Caddy+Coraza image is built from the repository Dockerfile and pushed
-to GHCR. This repository does not currently contain the GitHub Actions workflow
-referenced by older versions of this document, so builds must be run externally
-or manually:
+to GHCR. Builds are automated by
+`.github/workflows/build-taskflow-caddy-coraza.yaml` for changes under
+`gitops/images/taskflow-caddy-coraza/`; the manual steps below remain available
+as a fallback:
 
 - **Repository**: `ghcr.io/stefanf81/taskflow-caddy-coraza`
 - **Tag**: `2.11.4-coraza2.6.0-r1`
@@ -127,7 +130,7 @@ The Dockerfile uses a multi-stage build:
 3. **Key steps**:
     - `setcap -r /usr/bin/caddy` — strips file capabilities (required for `allowPrivilegeEscalation: false`)
     - Creates `caddy` user (UID 100) for non-root execution
-    - Adds `jq`, used by the audit-log redactor sidecar
+    - Adds `jq` (kept for ad-hoc debugging; the audit pipeline no longer needs it)
     - Exposes port 8080
 
 ## Kubernetes Resources
@@ -151,7 +154,6 @@ Each WAF ConfigMap contains:
 |-----|---------|
 | `Caddyfile` | Main configuration with inline Coraza directives |
 | `*-exclusions.conf` | CRS exclusion rules (initially empty) |
-| `audit-redactor.sh` | Sanitizes Coraza audit JSON before it reaches stdout |
 
 ### Volume Mounts
 
@@ -162,7 +164,6 @@ Each WAF ConfigMap contains:
 | `/data` | emptyDir | Caddy data storage |
 | `/config` | emptyDir | Caddy runtime config |
 | `/tmp` | emptyDir | Temporary files |
-| `/var/run/coraza` | emptyDir | Named pipe carrying raw Coraza audit records to the redactor |
 
 ### Image Pull Secret
 
@@ -201,7 +202,7 @@ directives `
     SecRequestBodyAccess On              # Body inspection
     SecResponseBodyAccess Off            # Response buffering off
     SecAuditEngine RelevantOnly          # Audit logging
-    SecAuditLog /var/run/coraza/audit.pipe # Private audit pipe (JSON)
+    SecAuditLog /dev/stdout               # Audit JSON to container stdout
     SecAuditLogParts ABFHZ               # Includes matched-rule metadata
     SecRequestBodyLimit 10485760         # 10 MB max body
     SecRequestBodyNoFilesLimit 1048576   # 1 MB max non-file body
@@ -221,7 +222,7 @@ directives `
 
 | Level | Description |
 |-------|-------------|
-| 1 | Minimal rules, low false-positive rate (current) |
+| 1 | Minimal rules, low false-positive rate |
 | 2 | More exotic attack detection, moderate false-positive risk |
 | 3 | Aggressive, high false-positive rate |
 | 4 | Maximum, not recommended for production |
@@ -229,8 +230,9 @@ directives `
 ### Audit Log Parts
 
 Current: **ABFHZ** (request headers, response headers, matched-rule metadata, end
-marker). It excludes request bodies. The audit-log redactor sidecar removes inbound
-credential headers and sensitive query parameter values before writing JSON to stdout.
+marker). It excludes request bodies. Coraza writes the records straight to stdout;
+Alloy redacts inbound credential headers and sensitive query parameter values at
+ingest (see `gitops/monitoring/logging/alloy-release.yaml`).
 
 | Part | Content |
 |------|---------|
@@ -364,7 +366,7 @@ loki.write "local" {
 | `application` | `taskflow-frontend` or `taskflow-backend` |
 | `namespace` | `taskflow` |
 | `pod` | Pod name |
-| `container` | `waf` for Caddy access logs; `audit-log-redactor` for Coraza audit logs |
+| `container` | `waf` (both Caddy access logs and Coraza audit records) |
 | `cluster` | `homelab` |
 | `source` | `coraza` |
 | `method` | HTTP request method from a Coraza audit transaction |
@@ -671,7 +673,7 @@ kubectl logs -n monitoring deploy/alloy -c alloy
 - **Network isolation**: Each WAF can only reach its corresponding application service
 - **No public exposure**: Loki and Alloy have no Gateway, LoadBalancer, or public route
 - **Sensitive data redaction**: Caddy access logs redact credentials and tokens
-- **Audit log privacy**: Coraza audit parts exclude request bodies; the redactor removes sensitive request headers and query parameters
+- **Audit log privacy**: Coraza audit parts exclude request bodies; Alloy removes sensitive request headers and query parameters at ingest
 
 ## File Reference
 

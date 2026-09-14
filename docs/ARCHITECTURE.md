@@ -30,7 +30,7 @@ TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE,
 | Kernel params | `fs.inotify.max_user_instances=8192`, `vm.max_map_count=262144`, `fs.file-max=2097152`, `vm.swappiness=1` |
 | Multipath | Blacklists loop, md, dm, sr, scd, sda partitions; enables user-friendly names |
 | System services | iscsid (enabled/started), qemu-guest-agent (enabled/started), journald capped at 100 MB |
-| k3s flags | `--flannel-backend=none --disable-network-policy --disable servicelb --disable traefik` |
+| k3s flags | `--flannel-backend=none --disable-network-policy --disable servicelb --disable traefik --disable coredns --disable metrics-server` |
 
 ### 2.4 Module Dependency Graph
 ```
@@ -84,7 +84,7 @@ infra-controllers (HelmReleases: Cilium, cert-manager, Proxmox CSI, Gateway API,
 infra-configs (Cilium IP pool + L2 policy, GatewayClass)
     │                                  │
     ▼                                  ▼
-taskflow-app                     monitoring (VictoriaMetrics + Grafana operator + CRDs;
+taskflow-app                     monitoring (VictoriaMetrics + Grafana + CRDs;
 (SOPS-decrypted app manifests)    SOPS-decrypted Grafana admin secret)
     │                                  │
     │                                  ├──▶ monitoring-app (VMServiceScrapes for taskflow services)
@@ -107,9 +107,11 @@ taskflow-app                     monitoring (VictoriaMetrics + Grafana operator 
 | `monitoring-app` | `./gitops/monitoring/app` | 30m | ✅ | ✅ | 10m | monitoring |
 | `monitoring-logging` | `./gitops/monitoring/logging` | 30m | ✅ | ✅ | 10m | monitoring, taskflow-app |
 | `kyverno-policies` | `./gitops/apps/kyverno-policies` | 30m | ✅ | ✅ | 5m | infra-controllers |
-| `policy-reporter` | `./gitops/infrastructure/controllers/policy-reporter` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app |
+| `policy-reporter` | `./gitops/infrastructure/controllers/policy-reporter` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app, trivy-operator |
 | `trivy-operator` | `./gitops/infrastructure/controllers/trivy-operator` | 30m | ✅ | ✅ | 5m | infra-controllers |
 | `hubble-ui` | `./gitops/infrastructure/controllers/hubble-ui` | 10m | ✅ | ✅ | 5m | infra-controllers, taskflow-app |
+| `renovate` | `./gitops/infrastructure/controllers/renovate` | 1h | ✅ | ✅ | 5m | infra-controllers |
+| `renovate-job` | `./gitops/infrastructure/controllers/renovate/job` | 1h | ✅ | ✅ | 5m | renovate |
 
 ### 4.3 Image Automation (Digest Pinning)
 ```
@@ -239,7 +241,7 @@ image with a SOPS-encrypted Cloudflare API token.
 | Control | Implementation |
 |---------|---------------|
 | Zero-trust networking | Cilium network policies restrict all inter-service access; only backend can reach DB/Redis/Jaeger. A namespace-level default-deny (`namespace-default-deny.yaml`) blocks ALL ingress to the `taskflow` namespace by default, then selectively re-opens only the Gateway (Envoy) and monitoring scrapes |
-| Pod security | All containers: `readOnlyRootFilesystem`, `allowPrivilegeEscalation=false`, drop ALL capabilities, runAsNonRoot |
+| Pod security | App/edge containers: `readOnlyRootFilesystem`, `allowPrivilegeEscalation=false`, drop ALL capabilities, runAsNonRoot. Postgres, Redis and Jaeger are documented exceptions (writable root FS required by their data dirs). |
 | Secrets encryption | SOPS age-encrypted (`*-secrets.yaml`), decrypted by Flux at reconciliation time only |
 | Image pinning | Flux image automation rewrites `:latest` to `@sha256:<digest>` — immutable references in Git |
 | Grafana & VM UIs | Grafana UI is exposed securely on the Gateway at `grafana.jokelab.dev` (protected by GitHub OAuth with SOPS-encrypted credentials). VictoriaMetrics (VMSingle) is kept strictly internal to protect operational metrics, accessible privately via port-forwarding. |
@@ -327,7 +329,7 @@ TF/
 │       ├── infra-controllers.yaml   # HelmRelease controllers (Cilium, Proxmox CSI, etc.)
 │       ├── infra-configs.yaml       # Cilium configs + GatewayClass
   │       ├── taskflow.yaml            # App layer with SOPS decryption
-  │       ├── monitoring.yaml          # VictoriaMetrics + Grafana operator (SOPS-enabled)
+  │       ├── monitoring.yaml          # VictoriaMetrics + Grafana (SOPS-enabled)
   │       ├── monitoring-app.yaml      # App VMServiceScrapes (depends on monitoring)
   │       ├── monitoring-logging.yaml  # Alloy + Loki logging stack (depends on monitoring + taskflow-app)
   │       ├── kyverno-policies.yaml    # Kyverno ClusterPolicies (dependsOn infra-controllers)
@@ -422,7 +424,7 @@ This is the path that actually matters day-to-day:
 1. You push a new :latest image to ghcr.io/stefanf81/taskflow-backend
         │
 2. Flux ImageRepository (gitops/clusters/taskflow/image-automation.yaml)
-   polls ghcr every 5m, sees :latest moved to a new sha256 digest
+   polls ghcr every 10m, sees :latest moved to a new sha256 digest
         │
 3. Flux ImagePolicy (digestReflectionPolicy: Always) records the new digest
         │
@@ -448,7 +450,7 @@ The single most important design decision here is: **no SSH provisioners for k3s
 - `proxmox_download_file` pulls the Ubuntu 26.04 cloud image into the `local` datastore.
 - `proxmox_virtual_environment_file.cloud_config` builds a **cloud-init snippet** (heredoc from column 0 to avoid YAML-whitespace parsing bugs) that, at first boot, installs kernel tweaks, multipath/iscsi storage packages, and **runs the k3s install script** with our exact flags:
   ```
-  --flannel-backend=none --disable-network-policy --disable servicelb --disable traefik
+  --flannel-backend=none --disable-network-policy --disable servicelb --disable traefik --disable coredns --disable metrics-server
   ```
   These flags are why Cilium (not Flannel/kube-proxy/servicelb/traefik) is the *only* networking + ingress + LB stack. They are set **once at boot**, not by Terraform on every apply — so Terraform never re-runs a fragile script against a live node.
 - `proxmox_virtual_environment_vm` creates the VM. Note `ignore_changes` on `tags` / `user_account` / `mac_address` so day-2 tweaks don't trigger a VM rebuild.
@@ -500,8 +502,8 @@ Key point: **Services are `ClusterIP` only**. Nothing is exposed except through 
 |---------|--------------|------------------|
 | Network isolation | `network-policy.yaml` (DB), `redis.yaml` (redis NP), `jaeger.yaml` (jaeger NP) | Only `app: taskflow-backend` pods may reach Postgres (5432), Redis (6379), or Jaeger OTLP (4317/4318). Everything else is denied by default (Cilium deny-all baseline). |
 | **Jaeger UI locked down** | `httproute.yaml` + `jaeger.yaml` | The `/jaeger` Gateway route was **removed** and the open `16686` ingress rule deleted (ISSUES.md #2). Jaeger UI is now cluster-internal only — reach it via `kubectl port-forward`, never through the public Gateway, because it has no auth. |
-| Read-only root FS | every Deployment's `securityContext` | Containers can't write to their image layer; only explicit `emptyDir` mounts (`/tmp`, nginx caches) are writable. |
-| Non-root + dropped caps | every container | `runAsNonRoot: true`, `capabilities.drop: [ALL]`. Backend/Redis/Jaeger use UID `10001`; Postgres uses image-native UID `70`; frontend uses nginx UID `101`. |
+| Read-only root FS | backend, frontend, WAF, exporters, DDNS | Containers can't write to their image layer; only explicit `emptyDir` mounts (`/tmp`, Caddy data/config) are writable. Postgres, Redis and Jaeger intentionally run with a writable root FS (documented exceptions). |
+| Non-root + dropped caps | every container | `runAsNonRoot: true`, `capabilities.drop: [ALL]`. Backend/frontend/Redis/Jaeger use UID `10001`; Postgres uses image-native UID `70`. |
 | Secret encryption | `.sops.yaml` + `taskflow-secrets.yaml` | `POSTGRES_PASSWORD`, `SPRING_SECURITY_PASSWORD`, and `REDIS_PASSWORD` are age-encrypted; Flux decrypts at apply time using the `sops-age` Secret. The plaintext `key.txt` is `.gitignore`d. |
 | Immutable images | `image-automation.yaml` | Flux pins every app image to a `@sha256:` digest in Git. |
 
@@ -554,10 +556,10 @@ The monitoring UIs are now exposed through the main Cilium Gateway API using zer
 - ✅ PostgreSQL + Redis — via the `postgres-exporter` / `redis-exporter` side-cars in `gitops/apps/taskflow` (no backend change).
 - ✅ **Backend JVM/HTTP/Hikari** — Spring Boot exposes `/actuator/prometheus` for in-cluster scraping. The VMServiceScrape targets the backend's named `http` Service port; Cilium limits the unauthenticated endpoint to the `monitoring` namespace. See `docs/BACKEND_INTEGRATION_CONTEXT.md`.
 
-**Resource budget (memory-trimmed):** the stack reserves ~1.1 GiB of limit
-(VMSingle 512 Mi cap / 128 Mi req, vmagent 256 Mi, Grafana 256 Mi,
+**Resource budget (memory-trimmed):** the stack reserves ~1.5 GiB of limit
+(VMSingle 1 Gi cap / 256 Mi req, vmagent 256 Mi, Grafana 256 Mi,
 operator 128 Mi, exporters + node-exporter ~0.4 GiB; kube-state-metrics is enabled). VictoriaMetrics runs **14d
-retention** and scrapes at **30s** for higher-resolution dashboards.
+retention** and scrapes app metrics at **30–60s** (per VMServiceScrape) for higher-resolution dashboards.
 On the 14 GiB node this still leaves the bulk for backend (2 GiB guaranteed) +
 Postgres (1 GiB limit) + Redis + Jaeger; if it's still tight, the biggest single
 lever is the backend JVM (already trimmed to 1 GiB heap / 2 GiB QoS) or disabling

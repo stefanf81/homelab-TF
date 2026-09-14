@@ -136,7 +136,7 @@ sops:
         -----BEGIN AGE ENCRYPTED FILE-----
         …
         -----END AGE ENCRYPTED FILE-----
-      recipient: age14tnw8z266962s0guenumuyqht55kt68grrx204wsle8u8ph9vscxnm22
+      recipient: age14tnw8z266962s0guenumuyqht55kt68grrx204wsle8u8p8ph9vscxnm22
 ```
 The `recipient:` must match the **public** key derived from your private key:
 ```bash

@@ -10,6 +10,8 @@ Your application route and monitoring routes each have a strict `hostnames:` mat
 
 - **`taskflow-route`** — `www.jokelab.dev` (the bare apex `jokelab.dev` 301-redirects to `www`)
 - **`monitoring-routes`** — `grafana.jokelab.dev`
+- **`hubble-ui`** — `hubble.jokelab.dev` (oauth2-proxy, allow-listed GitHub user)
+- **`policy-reporter-ui`** — `kyverno.jokelab.dev` (oauth2-proxy, allow-listed GitHub user)
 
 ```yaml
 # taskflow-route (gitops/apps/taskflow/httproute.yaml)
@@ -34,6 +36,8 @@ You can access the services through the Cilium Gateway using the following hostn
 | **TaskFlow Web App** | `https://www.jokelab.dev/` | The Angular 22 Frontend (bare apex `jokelab.dev` 301-redirects to `www`) |
 | **TaskFlow API Backend** | `https://www.jokelab.dev/api/...` | The Spring Boot 4.1.1 REST API (same origin as frontend) |
 | **Grafana Metrics UI** | `https://grafana.jokelab.dev/` | Real-time performance dashboards |
+| **Hubble UI** | `https://hubble.jokelab.dev/` | Network flow visibility (oauth2-proxy) |
+| **Policy Reporter UI** | `https://kyverno.jokelab.dev/` | Kyverno/Trivy policy reports (oauth2-proxy) |
 | **VictoriaMetrics TSDB** | *(Private)* | Scraped time-series metrics. Accessed securely via `kubectl port-forward -n monitoring svc/vmsingle-victoria-metrics-k8s-stack 8428:8428` at `http://localhost:8428/vmsingle/` |
 
 ### 🔒 The Same-Origin CORS Advantage

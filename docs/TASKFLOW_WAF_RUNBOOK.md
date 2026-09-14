@@ -4,17 +4,19 @@
 
 - `taskflow-frontend-waf` receives `www.jokelab.dev/` traffic.
 - `taskflow-backend-waf` receives `www.jokelab.dev/api` traffic.
-- Both WAFs use Caddy `2.11.4`, Coraza Caddy `v2.6.0`, OWASP CRS, and an audit-log redactor sidecar.
+- Both WAFs use Caddy `2.11.4`, Coraza Caddy `v2.6.0`, and OWASP CRS (single container, no sidecars).
 - Both WAFs run with `SecRuleEngine On` and paranoia level 2.
+- Coraza audit JSON goes straight to stdout; Alloy redacts credentials at ingest.
 - Loki runs as one monolithic replica in `monitoring` with 30-day retention.
-- Alloy collects only pods labelled as Taskflow WAFs and sends them to Loki.
+- Alloy collects WAF logs plus all other Taskflow workload logs and sends them to Loki.
 - Grafana dashboard at `https://grafana.jokelab.dev/d/taskflow-waf`.
 
 ## Build the WAF image
 
-The image is not built by a workflow in this repository. Build and push it from
-the Dockerfile when `gitops/images/taskflow-caddy-coraza/` changes, or use an
-external CI workflow that has equivalent permissions.
+The image is built automatically by
+`.github/workflows/build-taskflow-caddy-coraza.yaml` when
+`gitops/images/taskflow-caddy-coraza/` changes. The manual steps below are a
+fallback.
 
 The published tag should use the version and revision declared by
 `CADDY_VERSION`, `CORAZA_CADDY_VERSION`, and `IMAGE_REVISION` in the Dockerfile.
@@ -35,8 +37,10 @@ docker build --platform linux/amd64 \
   -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1 \
   gitops/images/taskflow-caddy-coraza
 
-# Authenticate to GHCR (requires write:packages scope)
-echo $(gh auth token) | docker login ghcr.io -u stefanf81 --password-stdin
+# Authenticate to GHCR (requires write:packages; prefer a classic PAT — gho_ tokens may lack GHCR scopes)
+read -r -s GITHUB_TOKEN
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u stefanf81 --password-stdin
+unset GITHUB_TOKEN
 
 # Push the image
 docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1
@@ -70,6 +74,21 @@ kubectl get httproute -n taskflow taskflow-route -o yaml
 ```
 
 The route must report `Accepted=True` and `ResolvedRefs=True`.
+
+## Apply Caddyfile changes (manual reload)
+
+Both WAFs run Caddy with `admin off`, so editing the ConfigMap does **not** reload
+the running config. After changing `Caddyfile` or `*-exclusions.conf` in Git:
+
+```bash
+flux reconcile kustomization taskflow-app -n flux-system --with-source
+kubectl -n taskflow rollout restart deployment/taskflow-backend-waf deployment/taskflow-frontend-waf
+kubectl -n taskflow rollout status deployment/taskflow-backend-waf
+kubectl -n taskflow rollout status deployment/taskflow-frontend-waf
+```
+
+Verify the new rule set is live by sending a canary request that the new rule
+should match (or confirm fresh audit timestamps in Loki).
 
 ## Internal tests
 
@@ -126,8 +145,6 @@ Inspect logs separately:
 ```bash
 kubectl logs -n taskflow deploy/taskflow-frontend-waf
 kubectl logs -n taskflow deploy/taskflow-backend-waf
-kubectl logs -n taskflow deploy/taskflow-frontend-waf -c audit-log-redactor
-kubectl logs -n taskflow deploy/taskflow-backend-waf -c audit-log-redactor
 kubectl logs -n monitoring deploy/alloy
 ```
 
@@ -177,7 +194,7 @@ the Helm release.
 - Original application Services remain ClusterIP.
 - Gateway access is allowed only to the WAF workloads.
 - Each WAF can reach only its corresponding application Service and cluster DNS.
-- Coraza audit parts exclude request bodies; the audit-log redactor removes credential headers and sensitive query parameters before stdout.
+- Coraza audit parts exclude request bodies; Alloy removes credential headers and sensitive query parameters at ingest.
 - Caddy access logs redact credentials and selected sensitive query parameters.
 - Loki and Alloy have no Gateway, LoadBalancer, or public route.
 
@@ -412,10 +429,10 @@ secret management.
 ### Coraza Audit Log Parts
 
 Current setting: `ABFHZ` (request headers, response headers, matched-rule metadata,
-and end marker). It excludes request bodies. Coraza writes raw records to a named pipe,
-and the `audit-log-redactor` sidecar sanitizes inbound credentials and sensitive query
-values before records reach stdout, Alloy, or Loki. Do not bypass the sidecar by
-sending `SecAuditLog` directly to stdout.
+and end marker). It excludes request bodies. Coraza writes records directly to
+container stdout; Alloy sanitizes credential headers and sensitive query values at
+ingest before they reach Loki. Do not add a blocking FIFO/file sink to
+`SecAuditLog` — a stalled reader can block every audited request.
 
 ---
 

@@ -84,6 +84,7 @@ kubectl port-forward -n kube-system svc/hubble-relay 4244:80
 - **Homepage URL**: `https://hubble.jokelab.dev`
 - **Callback URL**: `https://hubble.jokelab.dev/oauth2/callback`
 - **Client ID and client secret**: stored in the SOPS-encrypted `hubble-ui-github-oauth` Secret
+- **Access restriction**: `github_users = ["stefanf81"]` in the oauth2-proxy `configFile` — every other GitHub account is rejected
 
 ### Authentication Comparison
 
@@ -213,11 +214,12 @@ kubectl get httproute hubble-ui -n hubble-ui
 
 **Cause**: Missing `email_domains` or `authenticated-emails-file` in oauth2-proxy config.
 
-**Fix**: Ensure the `configFile` includes `email_domains = ["*"]`:
+**Fix**: Ensure the `configFile` includes `email_domains = ["*"]` plus the allow-list:
 ```yaml
 configFile: |-
   provider = "github"
   email_domains = ["*"]
+  github_users = ["stefanf81"]
   ...
 ```
 

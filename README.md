@@ -19,13 +19,13 @@ You also need access to a **Proxmox VE 8.x** host with an API token (with VM cre
 
 ## 📁 Repository Layout
 
-- `modules/proxmox` – Provisions the pinned Ubuntu 26.04 VM; cloud-init installs k3s `v1.36.4+k3s1` at boot (no SSH provisioners, per OpenTofu best practice).
+- `modules/proxmox` – Provisions the pinned Ubuntu 26.04 VM; cloud-init installs k3s `v1.36.4+k3s1` at boot (no SSH provisioning; the only SSH use is the one-shot kubeconfig fetch in `modules/k3s-kubeconfig`).
 - `modules/k3s-kubeconfig` – SSHs into the node once cloud-init finishes, fetches `/etc/rancher/k3s/k3s.yaml`, and writes a local `kubeconfig.yaml`.
 - `gitops/` – Declarative Flux v2 manifests:
   - `gitops/infrastructure/controllers` – Cilium v1.20.1, cert-manager, CoreDNS, Proxmox CSI, Kyverno, Falco, Policy Reporter, Trivy Operator, Hubble UI oauth2-proxy.
   - `gitops/infrastructure/configs` – Cilium L2 announcement policy (`192.168.50.200-250`), `GatewayClass`.
   - `gitops/apps/taskflow` – Spring Boot 4.1.1 backend, Angular 22 frontend, PostgreSQL 18.6, Redis 8.10, Jaeger.
-  - `gitops/monitoring` – VictoriaMetrics TSDB + Grafana operator stack + metrics-server.
+  - `gitops/monitoring` – VictoriaMetrics TSDB + Grafana stack + metrics-server.
   - `gitops/clusters/taskflow` – Cluster root Kustomizations.
 
 ---
@@ -183,7 +183,7 @@ kubectl get pods -A
 kubectl get gateway,httproute -A
 
 # Verify application secrets are decrypted
-kubectl get secret -n taskflow db-secret backend-secret redis-secret taskflow-jwt-keys
+kubectl get secret -n taskflow db-secret backend-secret redis-secret taskflow-jwt-keys cloudflare-secret
 ```
 
 Access services via Cilium Gateway:

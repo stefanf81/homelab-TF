@@ -27,7 +27,7 @@ directives `
     SecRequestBodyAccess On              #    Body processing
     SecResponseBodyAccess Off            #    Response buffering (off)
     SecAuditEngine RelevantOnly          #    Audit logging
-    SecAuditLog /var/run/coraza/audit.pipe #  Private audit-log pipe
+    SecAuditLog /dev/stdout             #  Audit JSON to stdout (Alloy redacts at ingest)
     SecAuditLogFormat JSON               #    JSON audit records
     SecAuditLogParts ABFHZ               #    Rule-match metadata plus request/response headers
     SecRequestBodyLimit 10485760         #    Max request body (10 MB)
@@ -98,11 +98,10 @@ Configured by `SecAuditLogParts`. Each letter adds a section:
 | Z | End of audit log entry |
 
 Current setting: **`ABFHZ`** — includes request and response headers plus the `H`
-rule-match metadata. Request bodies remain excluded. Coraza writes these records to a
-shared named pipe; the `audit-log-redactor` sidecar removes inbound `Authorization`,
-`Proxy-Authorization`, and `Cookie` headers and sensitive query parameters before
-emitting JSON to stdout for Alloy. Raw audit records are neither persisted nor sent to
-container stdout.
+rule-match metadata. Request bodies remain excluded. Coraza writes these records
+directly to container stdout; Alloy removes inbound `Authorization`,
+`Proxy-Authorization`, and `Cookie` headers and sensitive query parameters while
+ingesting the records. Nothing is written to disk.
 
 ## SecAuditEngine
 

@@ -29,10 +29,14 @@ gitops/
 │       ├── namespace.yaml                # policy-reporter ns
 │       ├── repository.yaml               # HelmRepository policy-reporter @ https://kyverno.github.io/policy-reporter
 │       ├── trivy-adapter-repository.yaml # HelmRepository trivy-operator-polr-adapter @ https://fjogeleit.github.io/trivy-operator-polr-adapter
-│       ├── policy-reporter-secrets.yaml  # SOPS-encrypted GitHub OAuth secret (policy-reporter-github-oauth)
-│       ├── release.yaml                  # HelmRelease policy-reporter v3.10.0, ui + kyverno & trivy plugins, OAuth, 6 Trivy UI sources, crds: Skip
+│       ├── policy-reporter-secrets.yaml  # (legacy) SOPS OAuth secret, unused after the oauth2-proxy migration
+│       ├── policy-reporter-ui-oauth-secrets.yaml # SOPS OAuth credentials for oauth2-proxy (client-id/client-secret/cookie-secret)
+│       ├── oauth2-proxy-repository.yaml  # HelmRepository oauth2-proxy
+│       ├── oauth2-proxy-release.yaml     # HelmRelease oauth2-proxy (github_users allow-list)
+│       ├── oauth2-proxy-network-policy.yaml # Gateway -> oauth2-proxy ingress only
+│       ├── release.yaml                  # HelmRelease policy-reporter v3.10.0, ui + plugins, ui.oauth disabled, metrics on, crds: Skip
 │       ├── trivy-adapter-release.yaml    # HelmRelease trivy-operator-polr-adapter v0.11.5 (Trivy CRDs -> PolicyReports)
-│       ├── route.yaml                    # HTTPRoute -> policy-reporter-ui:8080 on taskflow-gateway (:443)
+│       ├── route.yaml                    # HTTPRoute -> policy-reporter-ui-oauth2-proxy:80 on taskflow-gateway (:443)
 │       └── kustomization.yaml
 ├── apps/
 │   └── kyverno-policies/            # Example ClusterPolicies (Audit mode)
@@ -273,22 +277,23 @@ alongside `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`.
 > This resets all issuance state to zero; Flux re-applies the Certificate from Git and a new
 > order is created immediately. See §10 Troubleshooting.
 
-### Authentication (GitHub OAuth)
-The Policy Reporter UI is protected by **GitHub OAuth** (`ui.oauth.enabled: true`):
+### Authentication (GitHub OAuth via oauth2-proxy)
+The Policy Reporter UI's built-in GitHub OAuth has **no user/org allow-list**, so
+`ui.oauth.enabled` is disabled and the UI is fronted by an oauth2-proxy
+(`gitops/infrastructure/controllers/policy-reporter/oauth2-proxy-release.yaml`):
 
-- `provider: github` with `callbackUrl: https://kyverno.jokelab.dev/callback`
-- Credentials (`clientId` / `clientSecret`) live in the
-  SOPS-encrypted `policy-reporter-github-oauth` Secret
-  (`gitops/infrastructure/controllers/policy-reporter/policy-reporter-secrets.yaml`),
-  decrypted by Flux at reconciliation time only.
-- Once signed in, access can be further scoped via policy-reporter's UI oauth options
-  (e.g. restricted GitHub organizations/users) in `ui.oauth` values of the HelmRelease.
-- To rotate the GitHub app credentials, edit the secret, re-encrypt
-  (`sops -e -i gitops/infrastructure/controllers/policy-reporter/policy-reporter-secrets.yaml`),
-  commit; Flux re-applies it (the UI deployment reads it on next reconcile).
-
-If you prefer no OAuth, you can instead disable `ui.oauth.enabled` and optionally use
-`ui.basicAuth` (SOPS-encrypted `username` / `password`).
+- `provider = "github"` with `redirect_url = https://kyverno.jokelab.dev/oauth2/callback`
+- Login is restricted with `github_users = ["stefanf81"]`; with no org/repo
+  configured, every other GitHub account is rejected by oauth2-proxy.
+- Credentials (`client-id` / `client-secret` / `cookie-secret`) live in the
+  SOPS-encrypted `policy-reporter-ui-github-oauth` Secret
+  (`policy-reporter-ui-oauth-secrets.yaml`). Create a GitHub OAuth App with the
+  callback above, replace the `PLACEHOLDER_*` values, and re-encrypt:
+  `sops -e -i gitops/infrastructure/controllers/policy-reporter/policy-reporter-ui-oauth-secrets.yaml`.
+  Until then login fails closed.
+- The old `policy-reporter-github-oauth` secret is unused after the migration.
+- The HTTPRoute targets the oauth2-proxy (`policy-reporter-ui-oauth2-proxy:80`),
+  not the UI Service.
 
 ---
 
