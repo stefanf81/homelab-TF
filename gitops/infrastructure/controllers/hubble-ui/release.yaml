@@ -41,6 +41,7 @@ spec:
         whitelist_domains = [".jokelab.dev"]
         reverse_proxy = true
         set_xauthrequest = true
+        skip_provider_button = true
         email_domains = ["*"]
         # SECURITY: restrict logins to this GitHub username. With no org/repo
         # configured, oauth2-proxy rejects every user not listed here.

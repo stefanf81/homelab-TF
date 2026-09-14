@@ -48,6 +48,7 @@ spec:
         whitelist_domains = [".jokelab.dev"]
         reverse_proxy = true
         set_xauthrequest = true
+        skip_provider_button = true
         email_domains = ["*"]
         # SECURITY: the Policy Reporter UI's built-in GitHub OAuth has no
         # user/org allow-list, so the UI is fronted by this proxy instead.
