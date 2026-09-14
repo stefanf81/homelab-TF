@@ -22,8 +22,14 @@ spec:
     # Do NOT set this to CreateReplace — it conflicts with Kyverno's owned CRDs
     # (error: "cannot be imported into the current release: invalid ownership metadata").
     crds: Skip
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   upgrade:
     crds: Skip
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   values:
     # v3 CRD management: Kyverno templates + owns the CRDs (Helm/Flux applies them).
     crds:

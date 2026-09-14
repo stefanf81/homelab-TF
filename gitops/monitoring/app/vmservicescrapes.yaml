@@ -108,3 +108,144 @@ spec:
       path: /metrics
       interval: 60s
       scheme: http
+---
+# --- Cilium agent (eBPF datapath + policy metrics) ----------------------------
+# Headless Service `cilium-agent` is only created with prometheus.metricsService=true.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: cilium-agent
+  namespace: monitoring
+spec:
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames:
+      - kube-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cilium-agent
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scheme: http
+---
+# --- Cilium operator ----------------------------------------------------------
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: cilium-operator
+  namespace: monitoring
+spec:
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames:
+      - kube-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cilium-operator
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 60s
+      scheme: http
+---
+# --- Hubble flow metrics (dns/drop/tcp/flow/httpV2) ---------------------------
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: hubble-metrics
+  namespace: monitoring
+spec:
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames:
+      - kube-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hubble
+  endpoints:
+    - port: hubble-metrics
+      path: /metrics
+      interval: 30s
+      scheme: http
+---
+# --- CoreDNS (override Corefile hosts/hairpin traffic included) ----------------
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: coredns
+  namespace: monitoring
+spec:
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames:
+      - kube-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: coredns
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scheme: http
+---
+# --- cert-manager controller (certificate expiry / renewal failures) ----------
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: cert-manager
+  namespace: monitoring
+spec:
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames:
+      - cert-manager
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cert-manager
+  endpoints:
+    - port: http-metrics
+      path: /metrics
+      interval: 60s
+      scheme: http
+---
+# --- Kyverno (all four controller metrics Services share part-of=kyverno) -----
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: kyverno
+  namespace: monitoring
+spec:
+  jobLabel: app.kubernetes.io/component
+  namespaceSelector:
+    matchNames:
+      - kyverno
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: kyverno
+  endpoints:
+    - port: metrics-port
+      path: /metrics
+      interval: 60s
+      scheme: http
+---
+# --- Policy Reporter (needs metrics.enabled: true in its HelmRelease) ----------
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: policy-reporter
+  namespace: monitoring
+spec:
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames:
+      - policy-reporter
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: policy-reporter
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 60s
+      scheme: http

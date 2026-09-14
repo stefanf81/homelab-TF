@@ -18,8 +18,14 @@ spec:
   install:
     createNamespace: true
     crds: CreateReplace
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   upgrade:
     crds: CreateReplace
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   values:
     # Use modern eBPF driver which is fully supported on modern kernels (Ubuntu 26.04).
     driver:
@@ -44,6 +50,13 @@ spec:
       image:
         # renovate: datasource=docker depName=falcosecurity/falcosidekick
         tag: 2.35.0
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
       config:
         policyreport:
           enabled: true

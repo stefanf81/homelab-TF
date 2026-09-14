@@ -8,6 +8,7 @@ spec:
   dependsOn:
     - name: infra-controllers
   interval: 30m
+  retryInterval: 5m
   path: ./gitops/apps/kyverno-policies
   prune: true
   sourceRef:

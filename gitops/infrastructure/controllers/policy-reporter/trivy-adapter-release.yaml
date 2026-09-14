@@ -16,6 +16,13 @@ spec:
       interval: 12h
   install:
     createNamespace: true
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  upgrade:
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   values:
     # WatchList client (client-go >= v0.35) hangs cache sync on startup
     # (fjogeleit/trivy-operator-polr-adapter#394); fall back to List+Watch.

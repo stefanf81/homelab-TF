@@ -8,6 +8,7 @@ spec:
     - name: monitoring
     - name: taskflow-app
   interval: 30m
+  retryInterval: 5m
   path: ./gitops/monitoring/logging
   prune: true
   sourceRef:

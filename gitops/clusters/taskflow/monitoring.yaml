@@ -16,6 +16,7 @@ spec:
     - name: infra-controllers
     - name: taskflow-app
   interval: 30m
+  retryInterval: 5m
   path: ./gitops/monitoring/platform
   prune: true
   sourceRef:

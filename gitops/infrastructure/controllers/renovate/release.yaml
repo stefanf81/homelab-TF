@@ -19,8 +19,14 @@ spec:
         namespace: renovate
   install:
     crds: CreateReplace
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   upgrade:
     crds: CreateReplace
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   values:
     fullnameOverride: renovate-operator
     crd:

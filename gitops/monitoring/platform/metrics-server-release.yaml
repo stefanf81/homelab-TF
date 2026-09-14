@@ -14,22 +14,29 @@ spec:
         kind: HelmRepository
         name: metrics-server
         namespace: monitoring
-  # metrics-server must run in kube-system (reads kubelet credentials from there).
+  # metrics-server runs in the monitoring namespace with explicit RBAC below.
   install:
     createNamespace: false
-  # Single-node k3s: kubelets serve HTTP (not HTTPS) and use a self-signed cert,
-  # so metrics-server must skip the TLS verify for both kubelet + API server.
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  upgrade:
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  # Single-node k3s: kubelets serve a self-signed cert, so metrics-server must
+  # skip kubelet TLS verification.
   values:
+    # RBAC is managed explicitly in metrics-server-rbac.yaml (reliable on k3s);
+    # disable the chart copy so there is only one owner.
+    rbac:
+      create: false
     image:
       # renovate: datasource=docker depName=registry.k8s.io/metrics-server/metrics-server
       tag: v0.9.0
     args:
       - --kubelet-insecure-tls
       - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
-      # v0.9.x requires configmaps RBAC in kube-system; tolerate lookup failure on
-      # single-node k3s where the extension-apiserver-authentication RoleBinding
-      # may not be updated by the Helm upgrade.
-      - --authentication-tolerate-lookup-failure
     replicas: 1
     resources:
       requests:

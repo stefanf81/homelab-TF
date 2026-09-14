@@ -3,6 +3,11 @@ kind: CiliumL2AnnouncementPolicy
 metadata:
   name: default-l2
 spec:
+  # Announce only from the homelab node(s). Without this, every future worker
+  # would advertise the same LB IP and cause ARP conflicts.
+  nodeSelector:
+    matchLabels:
+      topology.kubernetes.io/region: homelab
   loadBalancerIPs: true
   externalIPs: true
   interfaces:

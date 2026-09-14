@@ -7,6 +7,7 @@ spec:
   dependsOn:
     - name: infra-controllers
   interval: 30m
+  retryInterval: 5m
   path: ./gitops/infrastructure/controllers/trivy-operator
   prune: true
   sourceRef:

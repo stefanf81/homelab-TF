@@ -10,6 +10,7 @@ spec:
   dependsOn:
     - name: monitoring
   interval: 30m
+  retryInterval: 5m
   path: ./gitops/monitoring/app
   prune: true
   sourceRef:

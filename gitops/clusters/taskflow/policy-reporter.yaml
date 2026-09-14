@@ -11,7 +11,11 @@ spec:
   dependsOn:
     - name: infra-controllers
     - name: taskflow-app
+    # The Trivy adapter watches VulnerabilityReport/ConfigAuditReport CRDs owned by
+    # trivy-operator; without this ordering it crash-loops until they exist.
+    - name: trivy-operator
   interval: 30m
+  retryInterval: 5m
   path: ./gitops/infrastructure/controllers/policy-reporter
   prune: true
   sourceRef:

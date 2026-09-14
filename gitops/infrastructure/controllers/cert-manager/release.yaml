@@ -15,10 +15,22 @@ spec:
         namespace: cert-manager
   install:
     createNamespace: true
-    crds: CreateReplace
+    # The chart ships an EMPTY crds/ directory: CRDs are rendered as chart
+    # templates. Flux therefore has nothing to manage (its crds option only reads
+    # crds/), so let Helm own the CRDs via crds.enabled + crds.keep — an upgrade
+    # can then never delete them.
+    crds: Skip
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   upgrade:
-    crds: CreateReplace
+    crds: Skip
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   values:
-    installCRDs: true
+    crds:
+      enabled: true
+      keep: true
     extraArgs:
       - --enable-gateway-api

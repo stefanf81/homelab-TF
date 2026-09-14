@@ -15,9 +15,13 @@ spec:
         namespace: kube-system
   install:
     createNamespace: false
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   upgrade:
     remediation:
       retries: 3
+      remediateLastFailure: true
   values:
     image:
       repository: coredns/coredns

@@ -15,6 +15,13 @@ spec:
         namespace: csi-proxmox
   install:
     createNamespace: true
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  upgrade:
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   values:
     # Pin the controller image to the latest plugin version (chart default may lag)
     controller:
@@ -22,6 +29,23 @@ spec:
         image:
           # renovate: datasource=docker depName=ghcr.io/sergelogvinov/proxmox-csi-controller
           tag: v0.20.0
+        resources:
+          requests:
+            cpu: 20m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+    # Chart ships no requests/limits for the node plugin; cap it on the shared node.
+    node:
+      plugin:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
     existingConfigSecret: proxmox-csi-config
     storageClass:
       - name: proxmox-csi

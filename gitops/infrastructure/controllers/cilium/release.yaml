@@ -15,32 +15,85 @@ spec:
         namespace: kube-system
   install:
     crds: CreateReplace
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   upgrade:
     crds: CreateReplace
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   values:
     ipam:
       mode: "kubernetes"
     kubeProxyReplacement: true
+    # Pin the API server endpoint explicitly. With kube-proxy replacement the agent
+    # must not depend on the ClusterIP path it is itself providing; the node IP is
+    # the documented k3s pattern (k3s exposes :6443 on all interfaces).
+    k8sServiceHost: "192.168.50.55"
+    k8sServicePort: 6443
     devices: "eth0" # Exclude tailscale0 to prevent any eBPF and Tailscale routing conflicts
     bpf:
       masquerade: true # Offload SNAT to eBPF (requires kubeProxyReplacement: true, already set)
-      hostLegacyRouting: false # Disable eBPF host routing to prevent routing loops for host-network Envoy proxies in single-node clusters
-    securityContext:
-      capabilities:
-        cleanCiliumState:
-          - NET_ADMIN
+      # false => eBPF host routing is ENABLED (legacy host stack disabled). Kept false
+      # to avoid routing loops for host-network Envoy proxies in single-node clusters.
+      hostLegacyRouting: false
+    # WireGuard adds no value until a second node exists (all traffic is node-local);
+    # enable together with the first worker node.
+    encryption:
+      enabled: false
+    # Agent resources (the chart ships none).
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
     operator:
       replicas: 1 # Optimized for single-node cluster
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      prometheus:
+        enabled: true # operator metrics service (VMServiceScrape)
+        metricsService: true # actually create the headless Service (enabled alone only opens the port)
+    prometheus:
+      enabled: true # agent metrics service (VMServiceScrape)
+      metricsService: true
     gatewayAPI:
       enabled: true # Enable the Gateway API controller inside Cilium
+      gatewayClass:
+        # The `cilium` GatewayClass is managed by Git in
+        # gitops/infrastructure/configs/gatewayclass.yaml; letting the chart create
+        # it as well causes Helm/Flux ownership conflicts on upgrades.
+        create: "false"
     l2announcements:
       enabled: true
     hubble:
       enabled: true
       relay:
         enabled: true
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
       ui:
         enabled: true
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
       metrics:
         enabled:
           - dns
@@ -48,4 +101,5 @@ spec:
           - tcp
           - flow
           - icmp
-          - http
+          # `http` is deprecated in Cilium 1.20; httpV2 supersedes it (cannot run both).
+          - httpV2
