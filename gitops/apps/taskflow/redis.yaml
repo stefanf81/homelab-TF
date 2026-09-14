@@ -27,21 +27,29 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             # Cap memory to leave headroom for Redis overhead; evict LRU keys on pressure.
-            # No RDB persistence: /data is an emptyDir, so snapshots would NOT survive a Pod
-            # replacement and may fail to write as UID 10001. Re-add --save only with a real PVC.
             - "--maxmemory"
             - "384mb"
             - "--maxmemory-policy"
             - "allkeys-lru"
+            # Explicitly disable RDB snapshots AND AOF: /data is an emptyDir, so
+            # persistence would not survive a Pod replacement. Redis's compiled
+            # defaults otherwise enable RDB (save 3600 1 / 300 100 / 60 10000) and
+            # stop-writes-on-bgsave-error, causing pointless fork/COW memory spikes
+            # in this 512Mi container and turning transient bgsave failures into
+            # write errors (MISCONF). Re-add only together with a real PVC.
+            - "--save"
+            - ""
+            - "--appendonly"
+            - "no"
             # Evict in a background thread (no main-thread stall) and sample more keys for accuracy.
             - "--lazyfree-lazy-eviction"
             - "yes"
             - "--maxmemory-samples"
             - "10"
-            # Redis 8 I/O threading — parallelise socket reads/writes and protocol
-            # parsing across 2 background threads. The 8.0 rewrite is substantially
-            # lighter than the 7.x implementation; even with 500m CPU this improves
-            # throughput during eviction bursts by keeping the main thread free.
+            # Redis 8 I/O threading — offloads socket writes and protocol parsing to
+            # 2 background threads. Reads remain on the main thread unless
+            # --io-threads-do-reads is enabled; with 500m CPU this still helps
+            # during eviction bursts. Reduce to 1 if CPU throttling is observed.
             - "--io-threads"
             - "2"
             # Guard against client-connection memory blowup. Caps the combined output

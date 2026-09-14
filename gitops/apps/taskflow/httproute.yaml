@@ -17,6 +17,9 @@ spec:
             type: Exact
             value: /api/v1/appointments/events
       timeouts:
+        # `request` must be set explicitly: when unset the Gateway/Envoy default
+        # (typically 15s) wins and the stream is cut long before backendRequest.
+        request: "31m"
         backendRequest: "31m"
       backendRefs:
         - name: taskflow-backend-waf

@@ -1,3 +1,12 @@
+# MANUAL RELOAD REQUIRED: Caddy runs with `admin off` and the Deployment is not
+# restarted automatically when this ConfigMap changes. After editing the
+# Caddyfile, apply the change:
+#   kubectl -n taskflow rollout restart deployment/taskflow-backend-waf
+#
+# Audit pipeline: Coraza writes JSON audit records directly to stdout
+# (SecAuditLog /dev/stdout); Alloy performs credential redaction at ingest.
+# There is intentionally no FIFO/redactor sidecar — a stalled reader could
+# otherwise block every audited request while /waf-healthz stayed green.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -62,7 +71,7 @@ data:
                     SecRequestBodyAccess On
                     SecResponseBodyAccess Off
                     SecAuditEngine RelevantOnly
-                    SecAuditLog /var/run/coraza/audit.pipe
+                    SecAuditLog /dev/stdout
                     SecAuditLogFormat JSON
                     SecAuditLogParts ABFHZ
 
@@ -86,43 +95,6 @@ data:
   backend-exclusions.conf: |
     # No backend CRS exclusions are configured initially.
     # Add only request-scoped exclusions after observing a legitimate false positive.
-  audit-redactor.sh: |
-    #!/bin/sh
-    set -eu
-
-    jq_filter='
-      def sensitive_header:
-        ascii_downcase as $name |
-        $name == "authorization" or $name == "proxy-authorization" or $name == "cookie";
-      def redact_headers:
-        with_entries(if (.key | sensitive_header) then .value = ["REDACTED"] else . end);
-      def redact_uri:
-        split("?") as $parts |
-        if ($parts | length) < 2 then . else
-          $parts[0] + "?" + (
-            ($parts[1:] | join("?") | split("&")) |
-            map(
-              if test("^(access_token|refresh_token|id_token|code|state|password|secret)(=|$)"; "i")
-              then split("=")[0] + "=REDACTED"
-              else .
-              end
-            ) |
-            join("&")
-          )
-        end;
-      if (.transaction.request.headers? | type) == "object"
-      then .transaction.request.headers |= redact_headers
-      else .
-      end |
-      if (.transaction.request.uri? | type) == "string"
-      then .transaction.request.uri |= redact_uri
-      else .
-      end
-    '
-
-    cat /var/run/coraza/audit.pipe | while IFS= read -r record; do
-        printf '%s\n' "$record" | jq -ce "$jq_filter" 2>/dev/null || true
-    done
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -158,21 +130,6 @@ spec:
         fsGroup: 100
       imagePullSecrets:
         - name: ghcr-pull-secret
-      initContainers:
-        - name: create-audit-pipe
-          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1@sha256:f9ad4fa5398339d6aee465241c0f300b0c12fc785276940882566328cde8fb9a
-          command: ["/bin/sh", "-c", "if [ ! -p /var/run/coraza/audit.pipe ]; then rm -f /var/run/coraza/audit.pipe && mkfifo /var/run/coraza/audit.pipe; fi"]
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 100
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-          volumeMounts:
-            - name: audit-pipe
-              mountPath: /var/run/coraza
       containers:
         - name: waf
           image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1@sha256:f9ad4fa5398339d6aee465241c0f300b0c12fc785276940882566328cde8fb9a
@@ -201,8 +158,6 @@ spec:
               mountPath: /config
             - name: tmp
               mountPath: /tmp
-            - name: audit-pipe
-              mountPath: /var/run/coraza
           readinessProbe:
             httpGet:
               path: /waf-healthz
@@ -224,31 +179,6 @@ spec:
             limits:
               cpu: 750m
               memory: 768Mi
-        - name: audit-log-redactor
-          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1@sha256:f9ad4fa5398339d6aee465241c0f300b0c12fc785276940882566328cde8fb9a
-          imagePullPolicy: IfNotPresent
-          command: ["/bin/sh", "/etc/coraza/audit-redactor.sh"]
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 100
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-          volumeMounts:
-            - name: coraza-config
-              mountPath: /etc/coraza
-              readOnly: true
-            - name: audit-pipe
-              mountPath: /var/run/coraza
-          resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
-            limits:
-              cpu: 100m
-              memory: 128Mi
       volumes:
         - name: caddy-config
           configMap:
@@ -262,17 +192,16 @@ spec:
             items:
               - key: backend-exclusions.conf
                 path: backend-exclusions.conf
-              - key: audit-redactor.sh
-                path: audit-redactor.sh
-            defaultMode: 0555
+            defaultMode: 0444
         - name: caddy-data
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 128Mi
         - name: caddy-runtime-config
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 32Mi
         - name: tmp
-          emptyDir: {}
-        - name: audit-pipe
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 256Mi
 ---
 apiVersion: v1
 kind: Service
