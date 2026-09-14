@@ -20,13 +20,23 @@ spec:
     # PolicyReport CRDs (wgpolicyk8s.io) are already installed by Kyverno.
     # This chart provides none of its own, so skip CRD handling in Flux.
     crds: Skip
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   upgrade:
     crds: Skip
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   values:
     replicaCount: 1
     # Enable the REST API to receive external events (e.g. Falco alerts)
     rest:
       enabled: true
+    # Expose /metrics for the VMServiceScrape (dashboard + alerting).
+    metrics:
+      enabled: true
+      mode: detailed
     resources:
       requests:
         cpu: "50m"
@@ -89,10 +99,11 @@ spec:
               - pass
               - skip
       oauth:
-        enabled: true
-        provider: github
-        callbackUrl: https://kyverno.jokelab.dev/callback
-        secretRef: policy-reporter-github-oauth
+        # SECURITY: the built-in GitHub OAuth has no user/org allow-list, so it is
+        # disabled. The UI is fronted by oauth2-proxy instead
+        # (oauth2-proxy-release.yaml, github_users = ["stefanf81"]).
+        # The old secret in policy-reporter-secrets.yaml is now unused.
+        enabled: false
       resources:
         requests:
           cpu: "50m"

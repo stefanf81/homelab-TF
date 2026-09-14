@@ -1,0 +1,21 @@
+# Allow the Cilium Gateway to reach only the oauth2-proxy in the policy-reporter
+# namespace. The UI service itself stays cluster-internal (the HTTPRoute targets
+# the proxy, not the UI).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-gateway-to-policy-reporter-ui
+  namespace: policy-reporter
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: oauth2-proxy
+  ingress:
+    - fromEndpoints:
+        - matchExpressions:
+            - key: reserved:ingress
+              operator: Exists
+      toPorts:
+        - ports:
+            - port: "4180"
+              protocol: TCP

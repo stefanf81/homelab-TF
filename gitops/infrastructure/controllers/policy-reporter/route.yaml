@@ -19,5 +19,7 @@ spec:
             type: PathPrefix
             value: /
       backendRefs:
-        - name: policy-reporter-ui
-          port: 8080
+        # Front the UI with the user-restricted oauth2-proxy (its built-in GitHub
+        # OAuth supports no allow-list).
+        - name: policy-reporter-ui-oauth2-proxy
+          port: 80

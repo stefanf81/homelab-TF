@@ -4,7 +4,11 @@ resources:
   - namespace.yaml
   - repository.yaml
   - trivy-adapter-repository.yaml
+  - oauth2-proxy-repository.yaml
   - policy-reporter-secrets.yaml
+  - policy-reporter-ui-oauth-secrets.yaml
   - release.yaml
   - trivy-adapter-release.yaml
+  - oauth2-proxy-release.yaml
+  - oauth2-proxy-network-policy.yaml
   - route.yaml

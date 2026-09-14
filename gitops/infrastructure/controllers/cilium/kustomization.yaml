@@ -1,6 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# NOTE: no Namespace resource. `kube-system` is a built-in namespace owned by the
+# OS and must never be in a pruned Flux inventory (removing it from Git would
+# otherwise delete the namespace). Cilium's HelmRelease targets kube-system directly.
 resources:
-  - namespace.yaml
   - repository.yaml
   - release.yaml

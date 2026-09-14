@@ -15,8 +15,14 @@ spec:
         namespace: monitoring
   install:
     createNamespace: true
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   upgrade:
     crds: CreateReplace
+    remediation:
+      retries: 3
+      remediateLastFailure: true
   values:
     # ---------------------------------------------------------------------
     # Trimmed stack for a 14 GiB single-node homelab. Replaces Prometheus with
@@ -73,17 +79,21 @@ spec:
       spec:
         # Keep two weeks of history while retaining VictoriaMetrics' compact footprint.
         retentionPeriod: "14d"
-        # Highly optimized RAM profile (VMSingle uses 1/3 to 1/5 the RAM of Prometheus)
+        # Highly optimized RAM profile (VMSingle uses 1/3 to 1/5 the RAM of Prometheus).
+        # 512Mi proved tight for 14d retention + dashboard queries; 1Gi gives ingestion
+        # and merge/query buffers room without pressuring the shared node.
         resources:
           requests:
             cpu: 100m
-            memory: 128Mi
+            memory: 256Mi
           limits:
             cpu: "500m"
-            memory: 512Mi
+            memory: 1Gi
         extraArgs:
           # Limit internal caches so the container doesn't OOM under pressure
           memory.allowedPercent: "60"
+          # Refuse ingestion/writes when the PVC is nearly full instead of filling the disk
+          storage.minFreeDiskSpaceBytes: "2GB"
           # Serve VMSingle UI from a sub-path so we can route it via Gateway API
           http.pathPrefix: "/vmsingle"
         # Persist TSDB on Proxmox CSI
@@ -157,9 +167,19 @@ spec:
           disable_login_form: true
         "auth.github":
           enabled: true
-          allow_sign_up: true
+          # SECURITY: public Grafana + open sign-up previously granted any GitHub
+          # account the Admin role (and datasource proxy access to VMSingle/Loki).
+          allow_sign_up: false
           auto_assign_org: true
-          auto_assign_org_role: Admin
+          auto_assign_org_role: Viewer
+          # Only stefanf81 can authenticate via GitHub: the role expression yields a
+          # role solely for that login, and role_attribute_strict denies everyone
+          # else. The local `grafana-admin` account remains the break-glass login.
+          role_attribute_path: "[login=='stefanf81'][0] && 'GrafanaAdmin'"
+          role_attribute_strict: true
+          # role_attribute_path returns GrafanaAdmin; without this flag Grafana
+          # would grant only org-admin, not server admin.
+          allow_assign_grafana_admin: true
           scopes: user:email,read:org
           auth_url: https://github.com/login/oauth/authorize
           token_url: https://github.com/login/oauth/access_token
@@ -167,8 +187,14 @@ spec:
       sidecar:
         dashboards:
           reloadURL: "http://localhost:3000/api/admin/provisioning/dashboards/reload"
+          # Grafana runs in `monitoring`; limit ConfigMap discovery to this
+          # namespace instead of cluster-wide.
+          searchNamespaces:
+            - monitoring
         datasources:
           reloadURL: "http://localhost:3000/api/admin/provisioning/datasources/reload"
+          searchNamespaces:
+            - monitoring
       # Grafana is exposed via an HTTPRoute on the public Gateway
       ingress:
         enabled: false
