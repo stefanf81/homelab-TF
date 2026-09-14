@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - repositories.yaml
   - loki-release.yaml
+  - alloy-pvc.yaml
   - alloy-release.yaml
   - grafana-provisioning.yaml
   - trivy-dashboard.yaml

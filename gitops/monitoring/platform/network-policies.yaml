@@ -1,0 +1,29 @@
+# Ingress-only default-deny for the monitoring namespace.
+#
+# Egress is intentionally left open: vmagent's scrape fan-out spans kubelet,
+# node-exporter, and app exporters in other namespaces, and ingress is the
+# sensitive surface (VMSingle/Loki/Grafana/Alloy APIs are unauthenticated on the
+# Pod network). Without these rules any pod in the cluster can read, push, or
+# delete all telemetry.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: monitoring-ingress-default-deny
+  namespace: monitoring
+spec:
+  endpointSelector: {}
+  ingress:
+    # Same-namespace traffic: Grafana -> VMSingle/Loki, Alloy -> loki-gateway,
+    # vmagent -> kube-state-metrics, Loki internal memberlist.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+    # Host processes: kubelet liveness/readiness probes, the kube-apiserver
+    # proxying to aggregated APIs (metrics-server), and hostNetwork scrapes.
+    - fromEntities:
+        - host
+    # Cilium Gateway -> Grafana (grafana.jokelab.dev) and health checks.
+    - fromEndpoints:
+        - matchExpressions:
+            - key: reserved:ingress
+              operator: Exists
