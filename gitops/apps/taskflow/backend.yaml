@@ -162,6 +162,14 @@ spec:
             #    dump on OOM (both paths are writable thanks to the emptyDir tmp-volume).
             - name: JAVA_TOOL_OPTIONS
               value: "-XX:+UseG1GC -XX:+UseContainerSupport -XX:MaxRAMPercentage=50.0 -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxDirectMemorySize=256m -XX:MaxMetaspaceSize=256m -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags:filecount=5,filesize=10m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/heapdump.hprof"
+            # glibc-only allocator cap (Ubuntu 26.04 base since the Alpine->resolute
+            # migration): arenas default to 8 x cores and the JVM's worker/carrier
+            # threads spread native allocations across them, padding RSS. Measured
+            # -72 MiB median with no throughput/GC cost (BENCHMARKS.md §51 in the
+            # backend repo). Must be a plain env var — glibc reads it at process
+            # start; it cannot be appended to JAVA_TOOL_OPTIONS.
+            - name: MALLOC_ARENA_MAX
+              value: "2"
           ports:
             - containerPort: 8080
               name: http
@@ -171,7 +179,8 @@ spec:
             # (MaxRAMPercentage=50.0 in JAVA_TOOL_OPTIONS — see env block above) − 256Mi
             # metaspace − 256Mi direct ≈ 1GiB for thread stacks/GC/native libs. Trimmed from
             # 3Gi→2Gi to free ~1 GiB on the 14 GiB node; the app must not need >1 GiB heap
-            # under load or this will OOM.
+            # under load or this will OOM. MALLOC_ARENA_MAX=2 (env above) additionally caps
+            # glibc arena padding with no throughput cost (BENCHMARKS.md §51).
             limits:
               cpu: "2000m"
               memory: 2Gi

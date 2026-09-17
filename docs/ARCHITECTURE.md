@@ -156,6 +156,7 @@ VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 | Replicas | 1 |
 | JVM Heap | Fixed 1 GiB — owned by the deployment's `JAVA_TOOL_OPTIONS` via `-XX:MaxRAMPercentage=50.0` at the 2 GiB limit |
 | GC | G1 with StringDedup, AlwaysPreTouch, ParallelRefProc, DisableExplicitGC |
+| Base OS / allocator | Ubuntu 26.04 LTS (Temurin `21-jre-resolute`); `MALLOC_ARENA_MAX=2` caps glibc arenas (BENCHMARKS.md §51) |
 | OOM Policy | `-XX:+ExitOnOutOfMemoryError` (fail fast) |
 | Resources | CPU: 2 cores (req=limit), Memory: 2Gi (Guaranteed QoS, req==limit) |
 | SecurityContext | readOnlyRootFS, runAsNonRoot UID/GID 10001, drop ALL capabilities |
