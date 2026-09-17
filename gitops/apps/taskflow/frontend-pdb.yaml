@@ -1,13 +1,14 @@
-# PodDisruptionBudget for the frontend. Mirrors the backend PDB: with a single replica,
-# minAvailable: 1 blocks voluntary evictions from leaving zero replicas during node
-# drains / upgrades / rollouts.
+# PodDisruptionBudget for the frontend. Mirrors the backend PDB: with a single
+# replica, maxUnavailable: 1 allows the eviction API (node drains, k3s upgrades) to
+# proceed instead of blocking forever. A brief outage is the accepted tradeoff.
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: taskflow-frontend-pdb
   namespace: taskflow
 spec:
-  minAvailable: 1
+  maxUnavailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
   selector:
     matchLabels:
       app: taskflow-frontend

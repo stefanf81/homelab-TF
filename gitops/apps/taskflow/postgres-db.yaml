@@ -158,10 +158,11 @@ metadata:
   name: postgres-db-pdb
   namespace: taskflow
 spec:
-  # With a single-replica database, setting minAvailable: 1 blocks voluntary
-  # evictions (e.g. node drains, k3s upgrades) from accidentally terminating the
-  # database. The administrator must explicitly delete the pod or drain with force.
-  minAvailable: 1
+  # With a single-replica database, minAvailable: 1 would block the eviction API
+  # (node drains, k3s upgrades) forever. maxUnavailable: 1 allows a controlled
+  # maintenance restart; a brief database outage is the accepted tradeoff.
+  maxUnavailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
   selector:
     matchLabels:
       app: postgres-db
