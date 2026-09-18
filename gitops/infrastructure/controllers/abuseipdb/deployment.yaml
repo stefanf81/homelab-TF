@@ -36,10 +36,10 @@ spec:
           type: RuntimeDefault
       containers:
         - name: sync
-          # Public GHCR package. After the first CI build, pin the digest from
-          # the workflow summary for a fully reproducible rollout, e.g.
-          #   ghcr.io/stefanf81/abuseipdb-sync:0.1.0-r1@sha256:<digest>
-          image: ghcr.io/stefanf81/abuseipdb-sync:0.1.0-r1
+          # Public GHCR package, pinned by digest so the running binary is
+          # exactly the built/reviewed image. Bump the digest from the build
+          # workflow summary when the Go code changes.
+          image: ghcr.io/stefanf81/abuseipdb-sync:0.1.0-r1@sha256:a0b319f5e731d3573be45850be4d7627260bc0b0409ebedbbf509964c8b36d2b
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
