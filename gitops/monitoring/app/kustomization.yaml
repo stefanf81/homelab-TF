@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - vmservicescrapes.yaml
   - taskflow-performance-dashboard.yaml
+  - abuseipdb.yaml

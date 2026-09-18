@@ -1,0 +1,3 @@
+# Never send a locally built binary or VCS metadata into the image context.
+abuseipdb-sync
+.git

@@ -1,0 +1,311 @@
+# App-layer scrapes and dashboard for the AbuseIPDB synchronizer.
+# Discovered by vmagent (selectAllByDefault: true on the VM k8s stack chart).
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: abuseipdb-sync
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: abuseipdb-sync
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: taskflow-observability
+spec:
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames:
+      - abuseipdb
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: abuseipdb-sync
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scheme: http
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: abuseipdb-security-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: abuseipdb-sync
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: taskflow-observability
+data:
+  abuseipdb-security.json: |
+    {
+      "uid": "abuseipdb-security",
+      "title": "AbuseIPDB Security",
+      "description": "Feed health, change tracking and Cilium enforcement for the runtime-managed AbuseIPDB denylist. Detailed per-IP investigation is done in Loki / Hubble, not as metric labels.",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {"from": "now-24h", "to": "now"},
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Feed entries",
+          "description": "CIDRs currently published in CiliumCIDRGroup/abuseipdb.",
+          "gridPos": {"x": 0, "y": 0, "w": 4, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "abuseipdb_entries", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Feed age",
+          "description": "Time since the last successful AbuseIPDB synchronization. Orange beyond 7h (missed cycle), red beyond ABUSEIPDB_MAX_STALE_AGE (24h).",
+          "gridPos": {"x": 4, "y": 0, "w": 4, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "time() - abuseipdb_last_success_timestamp_seconds", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "orange", "value": 25200}, {"color": "red", "value": 86400}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Last successful sync",
+          "gridPos": {"x": 8, "y": 0, "w": 4, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "abuseipdb_last_success_timestamp_seconds * 1000", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "dateTimeAsIso"}, "overrides": []},
+          "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Sync status",
+          "description": "Result of the most recent synchronization attempt.",
+          "gridPos": {"x": 12, "y": 0, "w": 4, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "abuseipdb_sync_success", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "short", "mappings": [{"type": "value", "options": {"0": {"text": "FAILING", "color": "red", "index": 0}, "1": {"text": "OK", "color": "green", "index": 1}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "Last API status",
+          "description": "HTTP status of the last AbuseIPDB blacklist request. 200 healthy, 429 daily rate limit, 401/422 configuration problem.",
+          "gridPos": {"x": 16, "y": 0, "w": 4, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "abuseipdb_last_http_status", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 200}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 6,
+          "type": "stat",
+          "title": "Invalid feed lines",
+          "description": "Lines rejected as malformed in the selected time range. Any increase means a response failed validation and was not applied.",
+          "gridPos": {"x": 20, "y": 0, "w": 4, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "increase(abuseipdb_invalid_entries_total[$__range])", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "red", "value": 1}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Sync errors by reason",
+          "description": "Bounded reason labels only (network/http/rate_limited/parse/validation/kube).",
+          "gridPos": {"x": 0, "y": 5, "w": 8, "h": 7},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum by (reason) (increase(abuseipdb_sync_errors_total[$__rate_interval]))", "legendFormat": "{{reason}}"}],
+          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Entries added / removed",
+          "description": "Change applied during the last successful synchronization.",
+          "gridPos": {"x": 8, "y": 5, "w": 8, "h": 7},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [
+            {"refId": "A", "expr": "abuseipdb_entries_added", "legendFormat": "added"},
+            {"refId": "B", "expr": "abuseipdb_entries_removed", "legendFormat": "removed"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Filtered feed entries",
+          "description": "Feed entries removed before applying: trusted exceptions and protected/internal ranges.",
+          "gridPos": {"x": 16, "y": 5, "w": 8, "h": 7},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [
+            {"refId": "A", "expr": "abuseipdb_exceptions_removed", "legendFormat": "exceptions"},
+            {"refId": "B", "expr": "abuseipdb_protected_removed", "legendFormat": "protected ranges"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 10,
+          "type": "timeseries",
+          "title": "Cilium policy drops by reason",
+          "description": "Hubble drop metric (aggregate, bounded labels). Detailed source IPs are not metric labels by design.",
+          "gridPos": {"x": 0, "y": 12, "w": 8, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum by (reason) (rate(hubble_drop_total[$__rate_interval]))", "legendFormat": "{{reason}}"}],
+          "fieldConfig": {"defaults": {"unit": "ops", "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 11,
+          "type": "timeseries",
+          "title": "Gateway 403 responses",
+          "description": "HTTP responses returned by the Cilium Gateway with status 403, including denylist rejects at reserved:ingress.",
+          "gridPos": {"x": 8, "y": 12, "w": 8, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum(rate(hubble_http_requests_total{status=\"403\"}[$__rate_interval]))", "legendFormat": "403/s"}],
+          "fieldConfig": {"defaults": {"unit": "ops", "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+        },
+        {
+          "id": 12,
+          "type": "timeseries",
+          "title": "Drops by protocol",
+          "gridPos": {"x": 16, "y": 12, "w": 8, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum by (protocol) (rate(hubble_drop_total[$__rate_interval]))", "legendFormat": "{{protocol}}"}],
+          "fieldConfig": {"defaults": {"unit": "ops", "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 13,
+          "type": "stat",
+          "title": "Cilium targets up",
+          "description": "Scrape targets for cilium-agent, cilium-operator and hubble metrics.",
+          "gridPos": {"x": 0, "y": 20, "w": 6, "h": 6},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum(up{job=~\"cilium-agent|cilium-operator|hubble\"})", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 14,
+          "type": "stat",
+          "title": "Failing Cilium controllers",
+          "gridPos": {"x": 6, "y": 20, "w": 6, "h": 6},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "max(cilium_controllers_failing)", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "red", "value": 1}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 15,
+          "type": "stat",
+          "title": "Max BPF map pressure",
+          "description": "Highest BPF map utilization across agents. Watch after large feed updates (see the scalability notes in the runbook).",
+          "gridPos": {"x": 12, "y": 20, "w": 6, "h": 6},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "max(cilium_bpf_map_pressure)", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 2, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "orange", "value": 0.5}, {"color": "red", "value": 0.8}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 16,
+          "type": "timeseries",
+          "title": "Policy enforcement status",
+          "description": "Endpoints by enforcement mode. A drop in enforced endpoints can indicate policy propagation problems.",
+          "gridPos": {"x": 18, "y": 20, "w": 6, "h": 6},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum by (enforcement) (cilium_policy_endpoint_enforcement_status)", "legendFormat": "{{enforcement}}"}],
+          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 18,
+          "type": "stat",
+          "title": "Cloudflare sync status",
+          "description": "Result of the most recent push to the Cloudflare edge (IP list + WAF rule).",
+          "gridPos": {"x": 0, "y": 26, "w": 4, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "abuseipdb_cloudflare_sync_success", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "short", "mappings": [{"type": "value", "options": {"0": {"text": "FAILING", "color": "red", "index": 0}, "1": {"text": "OK", "color": "green", "index": 1}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 19,
+          "type": "stat",
+          "title": "Cloudflare list entries",
+          "description": "Entries published in the Cloudflare account IP list (free plan cap: 10,000).",
+          "gridPos": {"x": 4, "y": 26, "w": 4, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "abuseipdb_cloudflare_entries", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 20,
+          "type": "stat",
+          "title": "Cloudflare last sync",
+          "gridPos": {"x": 8, "y": 26, "w": 4, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "abuseipdb_cloudflare_last_success_timestamp_seconds * 1000", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "dateTimeAsIso"}, "overrides": []},
+          "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 21,
+          "type": "stat",
+          "title": "Cloudflare feed age",
+          "description": "Time since the last successful Cloudflare edge update. Red beyond ABUSEIPDB_MAX_STALE_AGE (24h).",
+          "gridPos": {"x": 12, "y": 26, "w": 4, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "time() - abuseipdb_cloudflare_last_success_timestamp_seconds", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "orange", "value": 25200}, {"color": "red", "value": 86400}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 22,
+          "type": "stat",
+          "title": "WAF rule present",
+          "description": "Whether the managed zone custom rule (ref abuseipdb) exists and is enabled.",
+          "gridPos": {"x": 16, "y": 26, "w": 4, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "abuseipdb_cloudflare_rule_present", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 23,
+          "type": "stat",
+          "title": "Bulk operation pending",
+          "description": "Cloudflare allows one pending list bulk operation per account; a stuck pending operation delays the next update.",
+          "gridPos": {"x": 20, "y": 26, "w": 4, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "abuseipdb_cloudflare_bulk_operation_pending", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "short", "mappings": [{"type": "value", "options": {"0": {"text": "No", "color": "green", "index": 0}, "1": {"text": "Pending", "color": "orange", "index": 1}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "orange", "value": 1}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 24,
+          "type": "timeseries",
+          "title": "Cloudflare sync errors by reason",
+          "description": "Bounded reason labels only (network/http/rate_limited/bulk/validation).",
+          "gridPos": {"x": 0, "y": 31, "w": 24, "h": 6},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum by (reason) (increase(abuseipdb_cloudflare_sync_errors_total[$__rate_interval]))", "legendFormat": "{{reason}}"}],
+          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 17,
+          "type": "text",
+          "title": "Detailed source-IP investigation",
+          "description": "Per-IP investigation is intentionally not exposed as Prometheus labels. Use Loki for synchronizer logs and Hubble for Cilium flow decisions.",
+          "gridPos": {"x": 0, "y": 37, "w": 24, "h": 9},
+          "options": {"mode": "markdown", "content": "**Where enforcement happens**\n\n- **Cloudflare edge (real client IPs):** account IP list `abuseipdb` referenced by the zone WAF custom rule `ip.src in $abuseipdb` (action Block). This is what protects the proxied public hostnames.\n- **Cilium (direct paths):** `CiliumCIDRGroup/abuseipdb` + `CiliumClusterwideNetworkPolicy deny-abuseipdb-ingress` on `reserved:ingress`, for direct-to-origin/LAN traffic. Cilium only sees Cloudflare edge addresses for proxied traffic.\n\n**Synchronizer logs (Loki)**\n\n```logql\n{namespace=\"abuseipdb\"} | json\n{namespace=\"abuseipdb\"} |= \"Cloudflare edge sink updated\"\n{namespace=\"abuseipdb\"} |= \"synchronization failed\"\n```\n\n**Cilium flow detail (Hubble CLI, per source IP)**\n\n```shell\nhubble observe --verdict DROPPED --last 100\nhubble observe --from-ip <suspected-source-ip>\nhubble observe --label cidrgroup:io.cilium.groupname/abuseipdb\n```"}
+        }
+      ]
+    }

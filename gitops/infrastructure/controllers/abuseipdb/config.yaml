@@ -1,0 +1,79 @@
+# Non-secret configuration for the AbuseIPDB → CiliumCIDRGroup synchronizer.
+#
+# ABUSEIPDB_CONFIDENCE_MINIMUM is intentionally unset: confidenceMinimum below
+# 100 is an AbuseIPDB subscriber feature. Set it here (25-100) only if the
+# subscription supports custom filtering. The standard blacklist is used as-is
+# otherwise, and the API response is what actually decides which addresses are
+# returned.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: abuseipdb-sync-config
+  namespace: abuseipdb
+  labels:
+    app.kubernetes.io/name: abuseipdb-sync
+    app.kubernetes.io/component: ip-reputation-sync
+    app.kubernetes.io/part-of: infrastructure
+data:
+  # AbuseIPDB daily blacklist limits: Individual 10,000 (5 calls/day),
+  # Basic 100,000 (100/day), Premium 500,000 (500/day). 6h = 4 calls/day.
+  ABUSEIPDB_LIMIT: "10000"
+  ABUSEIPDB_SYNC_INTERVAL: "6h"
+  ABUSEIPDB_CONFIDENCE_MINIMUM: ""
+  ABUSEIPDB_MAX_STALE_AGE: "24h"
+  ABUSEIPDB_STALE_BEHAVIOR: "fail-open"
+  ABUSEIPDB_MIN_ENTRIES: "1"
+  ABUSEIPDB_MAX_SHRINK_PERCENT: "50"
+  ABUSEIPDB_CIDRGROUP_NAME: "abuseipdb"
+  ABUSEIPDB_HTTP_TIMEOUT: "30s"
+  ABUSEIPDB_LISTEN_ADDR: ":8080"
+  LOG_LEVEL: "info"
+  # ---------------------------------------------------------------------------
+  # Cloudflare edge sink: same feed, pushed to an account IP list referenced by
+  # one zone WAF custom rule. This is the enforcement point that sees real
+  # client IPs, because Cloudflare (not Cilium) terminates the proxied public
+  # traffic. Account/Zone IDs are not secrets.
+  # ---------------------------------------------------------------------------
+  CLOUDFLARE_SYNC_ENABLED: "true"
+  CLOUDFLARE_ACCOUNT_ID: "83b747375007ebe7d23ef219e23e3511"
+  CLOUDFLARE_ZONE_ID: "30a91c28daef1e791c057f511ccd6929"
+  CLOUDFLARE_LIST_NAME: "abuseipdb"
+  # Free plan caps a custom list at 10,000 items; larger values fail this sink
+  # only (Cilium keeps working).
+  CLOUDFLARE_MAX_ENTRIES: "10000"
+  # Stable rule reference used to find/update only our rule in the zone entry
+  # point. Max 10 characters, lowercase.
+  CLOUDFLARE_RULE_REF: "abuseipdb"
+---
+# Git-managed filter lists mounted into the synchronizer. They are re-read on
+# every synchronization, so edits take effect without a pod restart.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: abuseipdb-sync-files
+  namespace: abuseipdb
+  labels:
+    app.kubernetes.io/name: abuseipdb-sync
+    app.kubernetes.io/component: ip-reputation-sync
+    app.kubernetes.io/part-of: infrastructure
+data:
+  # Trusted addresses that must NEVER be denied, even if AbuseIPDB lists them.
+  # Because Cilium deny rules win over allow rules, exceptions are subtracted
+  # from the generated CIDR group instead of being expressed as an allow rule.
+  #
+  # Examples:
+  #   203.0.113.10/32     # office public IP
+  #   2001:db8:abcd::/48  # VPN gateway pool
+  #   198.51.100.0/24     # vulnerability scanner
+  exceptions.txt: |
+    # No trusted exceptions are configured initially.
+  # Additional infrastructure ranges that are rejected from external reputation
+  # data on top of the built-in special-purpose/private ranges in the
+  # synchronizer. Keep this in sync with the cluster network layout.
+  protected-cidrs.txt: |
+    # k3s Pod CIDR (Caddy trusted_proxies)
+    10.42.0.0/16
+    # k3s Service CIDR
+    10.43.0.0/16
+    # Node / LAN subnet (also covers the Cilium LoadBalancer IP pool)
+    192.168.50.0/24

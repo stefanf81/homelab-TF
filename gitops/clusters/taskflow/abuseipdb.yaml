@@ -1,0 +1,33 @@
+# AbuseIPDB reputation feed → runtime-managed CiliumCIDRGroup/abuseipdb.
+#
+# The synchronizer running in the `abuseipdb` namespace maintains the CIDR
+# group dynamically; the group itself is deliberately NOT part of this (or any)
+# Flux Kustomization, so Flux can never overwrite or prune the live list.
+#
+# Enforcement is a separate, staged step: see
+# gitops/infrastructure/configs/cilium/abuseipdb-ingress-deny.yaml and
+# docs/ABUSEIPDB_CILIUM_BLOCKLIST.md.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: abuseipdb
+  namespace: flux-system
+spec:
+  # Cilium must be installed (CRDs + agent) before the synchronizer can write
+  # the CiliumCIDRGroup.
+  dependsOn:
+    - name: infra-controllers
+  interval: 30m
+  retryInterval: 5m
+  path: ./gitops/infrastructure/controllers/abuseipdb
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 5m
+  # Decrypt the SOPS-encrypted AbuseIPDB API key (reuses the same age key).
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age

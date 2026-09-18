@@ -1,0 +1,40 @@
+# Least-privilege RBAC for the AbuseIPDB synchronizer.
+#
+# CiliumCIDRGroup is cluster-scoped, so a ClusterRole is required. The
+# synchronizer only ever creates and updates the single dynamic group it owns
+# (never deletes it), so `delete` is deliberately absent.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: abuseipdb-sync
+  labels:
+    app.kubernetes.io/name: abuseipdb-sync
+    app.kubernetes.io/component: ip-reputation-sync
+    app.kubernetes.io/part-of: infrastructure
+rules:
+  - apiGroups:
+      - cilium.io
+    resources:
+      - ciliumcidrgroups
+    verbs:
+      - get
+      - create
+      - update
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: abuseipdb-sync
+  labels:
+    app.kubernetes.io/name: abuseipdb-sync
+    app.kubernetes.io/component: ip-reputation-sync
+    app.kubernetes.io/part-of: infrastructure
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: abuseipdb-sync
+subjects:
+  - kind: ServiceAccount
+    name: abuseipdb-sync
+    namespace: abuseipdb

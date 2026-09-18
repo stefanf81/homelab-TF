@@ -4,6 +4,7 @@ resources:
   - flux-system
   - infra-controllers.yaml
   - infra-configs.yaml
+  - abuseipdb.yaml
   - image-automation.yaml
   - taskflow.yaml
   - monitoring.yaml

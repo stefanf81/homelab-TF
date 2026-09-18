@@ -1,0 +1,105 @@
+# AbuseIPDB → CiliumCIDRGroup synchronizer.
+#
+# The Deployment runs the synchronizer only; it never serves traffic. The
+# CiliumCIDRGroup/abuseipdb object it maintains is intentionally NOT committed
+# to Git and is not part of any Flux inventory, so Flux reconciling/pruning
+# this directory can never overwrite or delete the runtime list.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: abuseipdb-sync
+  namespace: abuseipdb
+  labels:
+    app.kubernetes.io/name: abuseipdb-sync
+    app.kubernetes.io/component: ip-reputation-sync
+    app.kubernetes.io/part-of: infrastructure
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: abuseipdb-sync
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: abuseipdb-sync
+        app.kubernetes.io/component: ip-reputation-sync
+        app.kubernetes.io/part-of: infrastructure
+    spec:
+      serviceAccountName: abuseipdb-sync
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: sync
+          # Public GHCR package. After the first CI build, pin the digest from
+          # the workflow summary for a fully reproducible rollout, e.g.
+          #   ghcr.io/stefanf81/abuseipdb-sync:0.1.0-r1@sha256:<digest>
+          image: ghcr.io/stefanf81/abuseipdb-sync:0.1.0-r1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: abuseipdb-sync-config
+          env:
+            - name: ABUSEIPDB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: abuseipdb-sync
+                  key: ABUSEIPDB_API_KEY
+            - name: CLOUDFLARE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: abuseipdb-sync
+                  key: CLOUDFLARE_API_TOKEN
+                  optional: true
+            - name: ABUSEIPDB_EXCEPTIONS_FILE
+              value: /etc/abuseipdb/exceptions.txt
+            - name: ABUSEIPDB_PROTECTED_FILE
+              value: /etc/abuseipdb/protected-cidrs.txt
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: filter-lists
+              mountPath: /etc/abuseipdb
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: filter-lists
+          configMap:
+            name: abuseipdb-sync-files
+            items:
+              - key: exceptions.txt
+                path: exceptions.txt
+              - key: protected-cidrs.txt
+                path: protected-cidrs.txt

@@ -1,0 +1,58 @@
+# =============================================================================
+# STAGE 4 MANIFEST — NOT YET ACTIVATED
+# =============================================================================
+# This file is intentionally NOT listed in
+# gitops/infrastructure/configs/cilium/kustomization.yaml. It is the final,
+# cluster-wide enforcement step and must only be enabled after:
+#
+#   1. the synchronizer is running and CiliumCIDRGroup/abuseipdb contains a
+#      validated, non-empty list (Stage 2);
+#   2. a controlled deny test confirmed that a listed source is rejected by
+#      Cilium before reaching Caddy/Coraza (Stage 3).
+#
+# To activate, add `- abuseipdb-ingress-deny.yaml` to the resources list in
+# gitops/infrastructure/configs/cilium/kustomization.yaml and reconcile.
+# Rollback is instant: `kubectl delete ciliumclusterwidenetworkpolicy
+# deny-abuseipdb-ingress` (no Cilium/Gateway/Caddy restart required).
+#
+# SCOPE: `reserved:ingress` is the shared per-node Cilium Envoy identity, so
+# this policy applies cluster-wide to every Gateway/Ingress listener (here:
+# www.jokelab.dev, grafana., kyverno. and hubble.jokelab.dev).
+#
+# SOURCE-IP LIMITATION: the public hostnames are proxied by Cloudflare, so
+# Cilium sees Cloudflare edge addresses for Internet traffic. This policy
+# therefore protects direct-to-origin traffic (e.g. scanners hitting the WAN
+# address with a forged Host header), LAN traffic and any future non-proxied
+# listener. It cannot see the original client IP behind the proxy. See
+# docs/ABUSEIPDB_CILIUM_BLOCKLIST.md.
+# =============================================================================
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: deny-abuseipdb-ingress
+  labels:
+    app.kubernetes.io/name: abuseipdb-sync
+    app.kubernetes.io/component: ip-reputation-feed
+    app.kubernetes.io/part-of: infrastructure
+    security-source: abuseipdb
+spec:
+  description: >-
+    Reject external ingress traffic originating from IP addresses supplied by
+    the AbuseIPDB reputation feed. Deny rules take precedence over all allow
+    policies. The referenced CiliumCIDRGroup is maintained at runtime by the
+    abuseipdb-sync controller and is never stored in Git.
+  endpointSelector:
+    matchExpressions:
+      - key: reserved:ingress
+        operator: Exists
+  ingressDeny:
+    - fromCIDRSet:
+        - cidrGroupRef: abuseipdb
+  # Deny policies can put the selected endpoint into ingress default-deny mode.
+  # The allow-all below makes that irrelevant (deny still wins) and keeps this
+  # policy a pure denylist for traffic that was previously allowed.
+  ingress:
+    - fromEntities:
+        - all
+  enableDefaultDeny:
+    ingress: false

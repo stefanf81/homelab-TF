@@ -3,3 +3,6 @@ kind: Kustomization
 resources:
   - ippool.yaml
   - l2announcement-policy.yaml
+  # abuseipdb-ingress-deny.yaml is intentionally NOT listed yet: it is the
+  # staged enforcement step (Stage 4). See the file header and
+  # docs/ABUSEIPDB_CILIUM_BLOCKLIST.md before enabling it.
