@@ -44,6 +44,18 @@ data:
   # Stable rule reference used to find/update only our rule in the zone entry
   # point. Max 10 characters, lowercase.
   CLOUDFLARE_RULE_REF: "abuseipdb"
+  # ---------------------------------------------------------------------------
+  # Cloudflare Security Events collector: polls firewallEventsAdaptive and
+  # ships blocked requests to Loki for the "Blocked Sources" dashboard. Needs
+  # the API token to carry Zone Analytics: Read (edit the token in Cloudflare;
+  # the token value does not change).
+  # ---------------------------------------------------------------------------
+  CLOUDFLARE_FIREWALL_LOG_ENABLED: "true"
+  CLOUDFLARE_FIREWALL_POLL_INTERVAL: "5m"
+  CLOUDFLARE_FIREWALL_LOOKBACK: "5m"
+  CLOUDFLARE_FIREWALL_MAX_WINDOW: "1h"
+  CLOUDFLARE_FIREWALL_LIMIT: "5000"
+  LOKI_PUSH_URL: "http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push"
 ---
 # Git-managed filter lists mounted into the synchronizer. They are re-read on
 # every synchronization, so edits take effect without a pod restart.

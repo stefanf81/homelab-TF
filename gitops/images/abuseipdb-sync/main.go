@@ -55,6 +55,9 @@ func main() {
 	if cfg.CloudflareEnabled {
 		app.cf = NewCloudflareClient(cfg, &http.Client{Timeout: cfg.HTTPTimeout}, logger)
 	}
+	if cfg.FirewallLogEnabled {
+		app.firewall = NewFirewallCollector(cfg, &http.Client{Timeout: cfg.HTTPTimeout}, logger)
+	}
 	metricBuildInfo.WithLabelValues(version).Set(1)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -110,6 +113,9 @@ func main() {
 	}()
 
 	go app.reportFeedAge(ctx)
+	if app.firewall != nil {
+		go app.firewall.Run(ctx)
+	}
 
 	logger.Info("starting initial synchronization",
 		"interval", cfg.SyncInterval.String(),
@@ -141,11 +147,12 @@ func main() {
 }
 
 type App struct {
-	cfg  *Config
-	log  *slog.Logger
-	feed *FeedClient
-	ccg  *CIDRGroupClient
-	cf   *CloudflareClient
+	cfg      *Config
+	log      *slog.Logger
+	feed     *FeedClient
+	ccg      *CIDRGroupClient
+	cf       *CloudflareClient
+	firewall *FirewallCollector
 
 	mu             sync.Mutex
 	lastSuccess    time.Time

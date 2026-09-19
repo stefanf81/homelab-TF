@@ -22,6 +22,8 @@ const (
 	defaultCloudflareListName   = "abuseipdb"
 	defaultCloudflareMaxEntries = 10000
 	defaultCloudflareRuleRef    = "abuseipdb"
+
+	defaultLokiPushURL = "http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push"
 )
 
 // defaultProtectedCIDRs are never accepted from external reputation data,
@@ -80,6 +82,13 @@ type Config struct {
 	CloudflareMaxEntries int
 	CloudflareRuleRef    string
 
+	FirewallLogEnabled   bool
+	FirewallPollInterval time.Duration
+	FirewallLookback     time.Duration
+	FirewallMaxWindow    time.Duration
+	FirewallLimit        int
+	LokiPushURL          string
+
 	Exceptions []netip.Prefix
 	Protected  []netip.Prefix
 }
@@ -104,6 +113,22 @@ func LoadConfig() (*Config, error) {
 	if cfg.CloudflareEnabled, err = envBool("CLOUDFLARE_SYNC_ENABLED", false); err != nil {
 		return nil, err
 	}
+	if cfg.FirewallLogEnabled, err = envBool("CLOUDFLARE_FIREWALL_LOG_ENABLED", false); err != nil {
+		return nil, err
+	}
+	if cfg.FirewallPollInterval, err = envDuration("CLOUDFLARE_FIREWALL_POLL_INTERVAL", 5*time.Minute); err != nil {
+		return nil, err
+	}
+	if cfg.FirewallLookback, err = envDuration("CLOUDFLARE_FIREWALL_LOOKBACK", 5*time.Minute); err != nil {
+		return nil, err
+	}
+	if cfg.FirewallMaxWindow, err = envDuration("CLOUDFLARE_FIREWALL_MAX_WINDOW", time.Hour); err != nil {
+		return nil, err
+	}
+	if cfg.FirewallLimit, err = envInt("CLOUDFLARE_FIREWALL_LIMIT", 5000); err != nil {
+		return nil, err
+	}
+	cfg.LokiPushURL = envString("LOKI_PUSH_URL", defaultLokiPushURL)
 	if cfg.CloudflareMaxEntries, err = envInt("CLOUDFLARE_MAX_ENTRIES", defaultCloudflareMaxEntries); err != nil {
 		return nil, err
 	}
@@ -172,6 +197,30 @@ func LoadConfig() (*Config, error) {
 		}
 		if !cloudflareRefPattern.MatchString(cfg.CloudflareRuleRef) {
 			return nil, fmt.Errorf("CLOUDFLARE_RULE_REF %q must start with a lowercase letter and contain only lowercase letters, numbers and underscores", cfg.CloudflareRuleRef)
+		}
+	}
+
+	if cfg.FirewallLogEnabled {
+		if cfg.CloudflareAPIToken == "" {
+			return nil, fmt.Errorf("CLOUDFLARE_API_TOKEN is empty but CLOUDFLARE_FIREWALL_LOG_ENABLED is true")
+		}
+		if cfg.CloudflareZoneID == "" {
+			return nil, fmt.Errorf("CLOUDFLARE_ZONE_ID must be set when CLOUDFLARE_FIREWALL_LOG_ENABLED is true")
+		}
+		if cfg.LokiPushURL == "" {
+			return nil, fmt.Errorf("LOKI_PUSH_URL must not be empty")
+		}
+		if cfg.FirewallPollInterval < time.Minute {
+			return nil, fmt.Errorf("CLOUDFLARE_FIREWALL_POLL_INTERVAL must be at least 1m, got %s", cfg.FirewallPollInterval)
+		}
+		if cfg.FirewallLookback <= 0 {
+			return nil, fmt.Errorf("CLOUDFLARE_FIREWALL_LOOKBACK must be positive, got %s", cfg.FirewallLookback)
+		}
+		if cfg.FirewallMaxWindow < cfg.FirewallPollInterval {
+			return nil, fmt.Errorf("CLOUDFLARE_FIREWALL_MAX_WINDOW (%s) must be >= CLOUDFLARE_FIREWALL_POLL_INTERVAL (%s)", cfg.FirewallMaxWindow, cfg.FirewallPollInterval)
+		}
+		if cfg.FirewallLimit < 1 || cfg.FirewallLimit > 10000 {
+			return nil, fmt.Errorf("CLOUDFLARE_FIREWALL_LIMIT must be between 1 and 10000, got %d", cfg.FirewallLimit)
 		}
 	}
 

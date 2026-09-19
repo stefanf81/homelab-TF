@@ -115,4 +115,29 @@ var (
 		Name: "abuseipdb_cloudflare_rule_present",
 		Help: "Whether the managed Cloudflare WAF custom rule is present (1) or not (0).",
 	})
+
+	metricFirewallCollectorSuccess = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "cloudflare_firewall_collector_success",
+		Help: "Whether the last Cloudflare Security Events collection succeeded (1) or failed (0).",
+	})
+
+	metricFirewallCollectorErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "cloudflare_firewall_collector_errors_total",
+		Help: "Total number of failed Cloudflare Security Events collection attempts by reason.",
+	}, []string{"reason"})
+
+	metricFirewallEvents = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "cloudflare_firewall_events_total",
+		Help: "Total blocked requests collected from Cloudflare Security Events, by action and rule source.",
+	}, []string{"action", "source"})
+
+	metricFirewallLastSuccess = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "cloudflare_firewall_last_success_timestamp_seconds",
+		Help: "Unix timestamp of the last successful Cloudflare Security Events collection.",
+	})
+
+	metricFirewallLastWindowEvents = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "cloudflare_firewall_last_window_events",
+		Help: "Number of blocked events collected in the last window.",
+	})
 )
