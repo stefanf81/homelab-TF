@@ -53,10 +53,10 @@ func TestFirewallCollectorPollAndPush(t *testing.T) {
 	mock := &firewallMock{
 		t: t,
 		events: []map[string]any{
-			{"action": "block", "source": "firewallCustom", "clientIP": "192.0.2.10", "clientAsn": 64500,
+			{"action": "block", "source": "firewallCustom", "clientIP": "192.0.2.10", "clientAsn": "64500",
 				"clientCountryName": "NL", "clientRequestPath": "/wp-login.php", "clientRequestHTTPHost": "www.jokelab.dev",
 				"userAgent": "curl/8", "ruleId": "", "datetime": base.Format(time.RFC3339)},
-			{"action": "block", "source": "firewallCustom", "clientIP": "192.0.2.10", "clientAsn": 64500,
+			{"action": "block", "source": "firewallCustom", "clientIP": "192.0.2.10", "clientAsn": "64500",
 				"clientCountryName": "NL", "clientRequestPath": "/wp-login.php", "clientRequestHTTPHost": "www.jokelab.dev",
 				"userAgent": "curl/8", "ruleId": "", "datetime": base.Add(20 * time.Second).Format(time.RFC3339)},
 			{"action": "challenge", "source": "firewallManaged", "clientIP": "192.0.2.11",

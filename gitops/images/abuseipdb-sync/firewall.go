@@ -22,7 +22,7 @@ type cfFirewallEvent struct {
 	Action    string `json:"action"`
 	Source    string `json:"source"`
 	ClientIP  string `json:"clientIP"`
-	ClientASN int    `json:"clientAsn"`
+	ClientASN string `json:"clientAsn"`
 	Country   string `json:"clientCountryName"`
 	Path      string `json:"clientRequestPath"`
 	Host      string `json:"clientRequestHTTPHost"`
@@ -222,7 +222,7 @@ func (c *FirewallCollector) doGraphQL(ctx context.Context, query string, filter 
 		} `json:"errors"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, &cloudflareError{status: resp.StatusCode, message: fmt.Sprintf("invalid GraphQL response: %.200s", strings.TrimSpace(string(body)))}
+		return nil, &cloudflareError{status: resp.StatusCode, message: fmt.Sprintf("invalid GraphQL response: %v (body %.200s)", err, strings.TrimSpace(string(body)))}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		msg := ""
@@ -292,7 +292,7 @@ type firewallGroup struct {
 	Host      string
 	Path      string
 	UserAgent string
-	ASN       int
+	ASN       string
 	Country   string
 	Count     int
 }
@@ -359,7 +359,7 @@ type firewallLogLine struct {
 	Host      string `json:"host,omitempty"`
 	Path      string `json:"path,omitempty"`
 	UserAgent string `json:"user_agent,omitempty"`
-	ASN       int    `json:"asn,omitempty"`
+	ASN       string `json:"asn,omitempty"`
 	Country   string `json:"country,omitempty"`
 	Count     int    `json:"count"`
 }
