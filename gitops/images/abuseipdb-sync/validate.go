@@ -94,17 +94,18 @@ func parseEntry(s string) (netip.Prefix, error) {
 	return canonicalPrefix(netip.PrefixFrom(a, a.BitLen())), nil
 }
 
-// canonicalPrefix canonicalizes a prefix: IPv4-mapped IPv6 addresses are
-// unmapped to IPv4 and the prefix is masked to its network address.
+// canonicalPrefix canonicalizes a prefix: prefixes that lie entirely within
+// the IPv4-mapped IPv6 range (::ffff:0:0/96) are unmapped to IPv4, and every
+// prefix is masked to its network address.
+//
+// The IPv4-mapped /96 block itself is NOT unmapped: doing so would collapse it
+// to 0.0.0.0/0 and make it overlap every IPv4 address.
 func canonicalPrefix(p netip.Prefix) netip.Prefix {
 	addr := p.Addr()
-	if addr.Is4In6() && p.Bits() >= 96 {
+	if addr.Is4In6() && p.Bits() > 96 {
 		return netip.PrefixFrom(addr.Unmap(), p.Bits()-96).Masked()
 	}
-	if addr.Is4In6() {
-		addr = addr.Unmap()
-	}
-	return netip.PrefixFrom(addr, p.Bits()).Masked()
+	return p.Masked()
 }
 
 // SortDedup removes duplicate prefixes and returns a deterministically sorted

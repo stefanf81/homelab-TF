@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 )
@@ -51,6 +52,51 @@ func TestCanonicalPrefixMasking(t *testing.T) {
 	got := canonicalPrefix(mustPrefix(t, "10.1.2.3/8"))
 	if got.String() != "10.0.0.0/8" {
 		t.Fatalf("want 10.0.0.0/8, got %s", got)
+	}
+}
+
+func TestCanonicalPrefixMappedRange(t *testing.T) {
+	// The IPv4-mapped /96 block must stay IPv6. Unmapping it to 0.0.0.0/0 would
+	// make it overlap (and filter out) every IPv4 feed entry.
+	got := canonicalPrefix(mustPrefix(t, "::ffff:0:0/96"))
+	if got.String() == "0.0.0.0/0" {
+		t.Fatal("mapped range must not collapse to 0.0.0.0/0")
+	}
+	if !got.Addr().Is4In6() || got.Bits() != 96 || got.Addr().Is4() {
+		t.Fatalf("want the IPv6 mapped /96 block to stay IPv6, got %s", got)
+	}
+	// A mapped address is still unmapped to plain IPv4.
+	if got := canonicalPrefix(mustPrefix(t, "::ffff:192.0.2.9/128")); got.String() != "192.0.2.9/32" {
+		t.Fatalf("want 192.0.2.9/32, got %s", got)
+	}
+	// Sub-ranges of the mapped block are unmapped with adjusted bits.
+	if got := canonicalPrefix(mustPrefix(t, "::ffff:192.0.2.0/120")); got.String() != "192.0.2.0/24" {
+		t.Fatalf("want 192.0.2.0/24, got %s", got)
+	}
+}
+
+func TestDefaultProtectedDoesNotFilterPublicIPv4(t *testing.T) {
+	protected, err := ParseFilterList([]byte(strings.Join(defaultProtectedCIDRs, "\n")))
+	if err != nil {
+		t.Fatalf("parsing built-in protected CIDRs: %v", err)
+	}
+	feed := []netip.Prefix{
+		mustPrefix(t, "8.8.8.8/32"),
+		mustPrefix(t, "203.0.113.7/32"), // TEST-NET-3 is deliberately protected
+		mustPrefix(t, "198.51.100.9/32"),
+		mustPrefix(t, "192.0.2.1/32"),
+		mustPrefix(t, "1.1.1.1/32"),
+	}
+	kept, removed := FilterOverlaps(feed, protected)
+	if removed != 3 {
+		t.Fatalf("want 3 removed (documentation ranges), got %d (kept=%v)", removed, kept)
+	}
+	for _, p := range kept {
+		switch p.String() {
+		case "8.8.8.8/32", "1.1.1.1/32":
+		default:
+			t.Fatalf("unexpected kept prefix %s", p)
+		}
 	}
 }
 

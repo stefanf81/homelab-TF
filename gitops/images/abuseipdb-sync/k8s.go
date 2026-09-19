@@ -28,9 +28,10 @@ const (
 	annotationStale        = "abuseipdb.io/stale-cleared-at"
 )
 
+// CiliumCIDRGroup graduated to v2 in Cilium 1.20; v2alpha1 is deprecated.
 var ccgGVR = schema.GroupVersionResource{
 	Group:    "cilium.io",
-	Version:  "v2alpha1",
+	Version:  "v2",
 	Resource: "ciliumcidrgroups",
 }
 
@@ -178,7 +179,7 @@ func (c *CIDRGroupClient) buildObject(
 		annotations[annotationStale] = clearTime.UTC().Format(time.RFC3339)
 	}
 	obj := &unstructured.Unstructured{Object: map[string]interface{}{
-		"apiVersion": "cilium.io/v2alpha1",
+		"apiVersion": "cilium.io/v2",
 		"kind":       "CiliumCIDRGroup",
 		"metadata": map[string]interface{}{
 			"name": name,
