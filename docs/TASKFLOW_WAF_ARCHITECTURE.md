@@ -6,6 +6,13 @@ Taskflow uses a **Caddy + Coraza WAF** (Web Application Firewall) to inspect all
 
 Audit logs from the WAF are collected by **Grafana Alloy**, stored in **Grafana Loki** (30-day retention), and visualized in a **Grafana dashboard**.
 
+> **IP reputation is not a WAF concern here.** Known-malicious source IPs are
+> enforced **before** this stack: at the Cloudflare edge for proxied traffic
+> (IP list + WAF block rule) and by Cilium on the direct path
+> (`CiliumCIDRGroup` + `CiliumClusterwideNetworkPolicy`). The AbuseIPDB feed is
+> deliberately not loaded into Caddy/Coraza. See
+> `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`.
+
 > **Status update:** Coraza writes audit JSON directly to container stdout (`SecAuditLog /dev/stdout`); the previous FIFO plus `audit-log-redactor` sidecar was removed because a stalled reader could block every audited request while `/waf-healthz` stayed green. Credential redaction now happens at ingest in Alloy. Caddy runs with `admin off`, so **Caddyfile changes require a manual rollout restart** (see the runbook).
 
 ```

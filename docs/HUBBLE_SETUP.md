@@ -161,8 +161,36 @@ hubble:
       - tcp
       - flow
       - icmp
-      - http
+      - httpV2
 ```
+
+### Flow export to Loki (`Blocked Sources`)
+
+Hubble telemetry is also used as a data source for Grafana without the Hubble
+UI. The static exporter writes dropped/error flows to a rotated file on the
+node, and Alloy ships that file to Loki:
+
+```yaml
+# gitops/infrastructure/controllers/cilium/release.yaml
+hubble:
+  export:
+    static:
+      enabled: true
+      filePath: /var/run/cilium/hubble/events.log
+      allowList:
+        - '{"verdict":["DROPPED","ERROR"]}'
+      fieldMask: [time, verdict, drop_reason_desc, is_reply, traffic_direction,
+                  IP, l4, source.identity, source.namespace, source.pod_name,
+                  destination.identity, destination.namespace, destination.pod_name,
+                  node_name]
+```
+
+Alloy mounts `/var/run/cilium/hubble` read-only and tails `events.log`
+(`{job="hubble-flows"}`). Grafana dashboard **Blocked Sources** parses source
+IPs, ports and drop reasons at query time. Envoy-enforced L7 denials at
+`reserved:ingress` (e.g. the AbuseIPDB CIDR deny) carry no `drop_reason_desc`
+and are shown as `L7/policy deny (no reason)`. See
+`docs/ABUSEIPDB_CILIUM_BLOCKLIST.md` for the full pipeline.
 
 ## Network Policy
 

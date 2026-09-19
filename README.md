@@ -22,10 +22,11 @@ You also need access to a **Proxmox VE 8.x** host with an API token (with VM cre
 - `modules/proxmox` – Provisions the pinned Ubuntu 26.04 VM; cloud-init installs k3s `v1.36.4+k3s1` at boot (no SSH provisioning; the only SSH use is the one-shot kubeconfig fetch in `modules/k3s-kubeconfig`).
 - `modules/k3s-kubeconfig` – SSHs into the node once cloud-init finishes, fetches `/etc/rancher/k3s/k3s.yaml`, and writes a local `kubeconfig.yaml`.
 - `gitops/` – Declarative Flux v2 manifests:
-  - `gitops/infrastructure/controllers` – Cilium v1.20.1, cert-manager, CoreDNS, Proxmox CSI, Kyverno, Falco, Policy Reporter, Trivy Operator, Hubble UI oauth2-proxy.
-  - `gitops/infrastructure/configs` – Cilium L2 announcement policy (`192.168.50.200-250`), `GatewayClass`.
+  - `gitops/infrastructure/controllers` – Cilium v1.20.1, cert-manager, CoreDNS, Proxmox CSI, Kyverno, Falco, Policy Reporter, Trivy Operator, Hubble UI oauth2-proxy, AbuseIPDB synchronizer.
+  - `gitops/infrastructure/configs` – Cilium L2 announcement policy (`192.168.50.200-250`), `GatewayClass`, and the AbuseIPDB ingress deny policy.
   - `gitops/apps/taskflow` – Spring Boot 4.1.1 backend, Angular 22 frontend, PostgreSQL 18.6, Redis 8.10, Jaeger.
-  - `gitops/monitoring` – VictoriaMetrics TSDB + Grafana stack + metrics-server.
+  - `gitops/monitoring` – VictoriaMetrics TSDB + Grafana stack + metrics-server + dashboards (incl. `Blocked Sources`).
+  - `gitops/images` – Custom image sources: TaskFlow Caddy+Coraza WAF and `abuseipdb-sync`.
   - `gitops/clusters/taskflow` – Cluster root Kustomizations.
 
 ---
@@ -207,6 +208,7 @@ To ensure production-grade security, resiliency, and performance on a single-nod
 * **Kubernetes Gateway API:** Deployed standard Gateway API CRDs (`gateway-api`) and enabled Cilium's Gateway API controller (`gatewayAPI.enabled = true`).
 * **ServiceLB Deconfliction & L2 Announcements:** K3s ServiceLB is disabled (`--disable servicelb`). Cilium L2 announcements (`CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy`) advertise gateway IP `192.168.50.201`.
 * **Zero-Trust Network Policies:** Ingress to database/cache tiers (`postgres-db`, `redis`, `jaeger`) is restricted strictly to backend pods.
+* **IP Reputation Denylist (AbuseIPDB):** A Go synchronizer (`gitops/images/abuseipdb-sync`) maintains a runtime-managed `CiliumCIDRGroup` that a `CiliumClusterwideNetworkPolicy` denies on the direct-to-origin path, and mirrors the same validated list into a Cloudflare account IP list referenced by a zone WAF block rule — the enforcement point that sees real client IPs behind the Cloudflare proxy. Caddy/Coraza are untouched (no list duplication). Per-IP visibility: Grafana `Blocked Sources` (Cloudflare + Cilium); see `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`.
 
 ### 3. Storage Resiliency & Database Performance
 * **Proxmox CSI Storage:** PostgreSQL PVC (`postgres-pvc.yaml`) uses **10Gi** storage on the `proxmox-csi` StorageClass, enabling dynamic disk attachments and hypervisor-level backups.

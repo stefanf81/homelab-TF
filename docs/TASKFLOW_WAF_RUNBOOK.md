@@ -172,6 +172,16 @@ changing the other, temporarily set only that WAF's `SecRuleEngine` to
 `DetectionOnly`, observe and add narrow exclusions, then restore `On` and replay
 the tests before proceeding to the other WAF.
 
+### Source-IP reputation (not a WAF concern)
+
+Known-malicious source IPs never reach these WAFs: the AbuseIPDB denylist is
+enforced at the Cloudflare edge (proxied traffic) and by Cilium on the
+`reserved:ingress` identity (direct-to-origin traffic). Do not add IP denylists
+to Caddy/Coraza. To pause or roll back the IP layer, see
+`docs/ABUSEIPDB_CILIUM_BLOCKLIST.md` §Rollback. Per-IP block lists for operators
+live on the `Blocked Sources` Grafana dashboard (Cloudflare + Cilium), not in
+the WAF dashboards.
+
 ## Rollback
 
 To roll back public traffic while keeping the WAF workloads available, restore the

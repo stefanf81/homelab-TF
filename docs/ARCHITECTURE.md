@@ -58,10 +58,15 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 | Gateway API | Built-in controller enabled |
 | L2 announcements | Enabled (for external IP exposure) |
 | Operator replicas | 1 (single-node optimized) |
+| Hubble flow export | `hubble.export.static` — DROPPED/ERROR flows written to `/var/run/cilium/hubble/events.log` for Loki/Grafana (`Blocked Sources`) |
 
 ### 3.3 Cilium Network Policies (`gitops/infrastructure/configs/cilium/`)
 - **IP Pool**: `CiliumLoadBalancerIPPool` — `192.168.50.200–250`
 - **L2 Policy**: `CiliumL2AnnouncementPolicy` — matches interfaces `^eth[0-9]+`, `^enp[0-9]+`
+- **AbuseIPDB ingress deny**: `CiliumClusterwideNetworkPolicy deny-abuseipdb-ingress` selects
+  `reserved:ingress` and denies `fromCIDRSet: cidrGroupRef: abuseipdb`. The group is maintained at
+  runtime by the `abuseipdb-sync` controller (never committed to Git). See
+  `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`.
 
 ### 3.4 Gateway API (`gitops/infrastructure/controllers/gateway-api/`)
 - Standard Gateway API CRDs installed via `standard-install.yaml`
@@ -80,28 +85,31 @@ infra-controllers (HelmReleases: Cilium, cert-manager, Proxmox CSI, Gateway API,
                     CoreDNS, Kyverno, Falco, Policy Reporter, Trivy Operator,
                     Hubble UI oauth2-proxy)
     │
+    ├──▶ abuseipdb (AbuseIPDB synchronizer → CiliumCIDRGroup + Cloudflare IP list)
     ▼
-infra-configs (Cilium IP pool + L2 policy, GatewayClass)
+infra-configs (Cilium IP pool + L2 policy, GatewayClass, AbuseIPDB deny policy)
     │                                  │
     ▼                                  ▼
 taskflow-app                     monitoring (VictoriaMetrics + Grafana + CRDs;
 (SOPS-decrypted app manifests)    SOPS-decrypted Grafana admin secret)
     │                                  │
-    │                                  ├──▶ monitoring-app (VMServiceScrapes for taskflow services)
-    │                                  └──▶ monitoring-logging (Alloy + Loki for WAF audit logs)
+    │                                  ├──▶ monitoring-app (VMServiceScrapes + Grafana dashboards)
+    │                                  └──▶ monitoring-logging (Alloy + Loki: WAF audit logs,
+    │                                       abuseipdb-sync logs, Hubble flow export)
     ▼
 (image automation commits new digests)
 ```
 > `monitoring` depends on both `infra-controllers` and `taskflow-app` (its Grafana
 > route targets the TaskFlow Gateway); `monitoring-app`
 > depends on `monitoring` (so the VMServiceScrape CRD exists before the VMServiceScrapes
-> are applied).
+> are applied); `abuseipdb` depends on `infra-controllers` (Cilium CRDs).
 
 ### 4.2 Flux Kustomizations
 | Name | Path | Interval | Prune | Wait | Timeout | Depends On |
 |------|------|----------|-------|------|---------|------------|
 | `infra-controllers` | `./gitops/infrastructure/controllers` | 30m | ✅ | ✅ | 10m | — |
 | `infra-configs` | `./gitops/infrastructure/configs` | 30m | ✅ | ✅ | 10m | infra-controllers |
+| `abuseipdb` | `./gitops/infrastructure/controllers/abuseipdb` | 30m | ✅ | ✅ | 5m | infra-controllers |
 | `taskflow-app` | `./gitops/apps/taskflow` | 10m | ✅ | ✅ | 5m | infra-configs |
 | `monitoring` | `./gitops/monitoring/platform` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app |
 | `monitoring-app` | `./gitops/monitoring/app` | 30m | ✅ | ✅ | 10m | monitoring |
@@ -234,6 +242,7 @@ image with a SOPS-encrypted Cloudflare API token.
 | App metrics | `VMServiceScrape`s in `gitops/monitoring/app` scrape the backend (`/actuator/prometheus`), `postgres-exporter`, and `redis-exporter` |
 | DB/Redis metrics | Side-car exporters (`postgres-exporter.yaml`, `redis-exporter.yaml` in `gitops/apps/taskflow`) — **no backend change required**; they reuse `db-secret` |
 | Backend metrics | Spring Boot Actuator and `micrometer-registry-prometheus` expose `/actuator/prometheus`; the VMServiceScrape selects the backend's named `http` Service port. |
+| Security/denylist dashboards | Grafana `AbuseIPDB Security` (feed + sink health) and `Blocked Sources` (per-IP Cloudflare blocks from the Security Events collector and per-IP Cilium denials from the Hubble flow export shipped by Alloy to Loki). |
 
 ---
 
@@ -242,6 +251,7 @@ image with a SOPS-encrypted Cloudflare API token.
 | Control | Implementation |
 |---------|---------------|
 | Zero-trust networking | Cilium network policies restrict all inter-service access; only backend can reach DB/Redis/Jaeger. A namespace-level default-deny (`namespace-default-deny.yaml`) blocks ALL ingress to the `taskflow` namespace by default, then selectively re-opens only the Gateway (Envoy) and monitoring scrapes |
+| IP reputation denylist | AbuseIPDB feed enforced at two layers by `abuseipdb-sync`: Cloudflare edge (IP list + zone WAF block rule — sees real client IPs behind the proxy) and Cilium (`CiliumCIDRGroup` + cluster-wide deny on `reserved:ingress` — direct-to-origin traffic). Caddy/Coraza are untouched. See `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md` |
 | Pod security | App/edge containers: `readOnlyRootFilesystem`, `allowPrivilegeEscalation=false`, drop ALL capabilities, runAsNonRoot. Postgres, Redis and Jaeger are documented exceptions (writable root FS required by their data dirs). |
 | Secrets encryption | SOPS age-encrypted (`*-secrets.yaml`), decrypted by Flux at reconciliation time only |
 | Image pinning | Flux image automation rewrites `:latest` to `@sha256:<digest>` — immutable references in Git |
@@ -314,12 +324,18 @@ TF/
 │   │   │   ├── falco/               # Falco runtime security (v9.1.0 chart, modern eBPF)
 │   │   │   ├── policy-reporter/     # Policy Reporter + UI dashboard
 │   │   │   ├── trivy-operator/      # Trivy vulnerability scanner operator
+│   │   │   ├── abuseipdb/           # AbuseIPDB synchronizer (IP reputation → Cilium + Cloudflare)
 │   │   │   └── hubble-ui/           # Hubble UI oauth2-proxy (GitHub OAuth, public access)
 │   │   │
-│   │   └── configs/                 # Cilium IP pool, L2 policy, GatewayClass
+│   │   └── configs/                 # Cilium IP pool, L2 policy, GatewayClass, deny policy
 │   │       ├── cilium/ippool.yaml           # 192.168.50.200–250
 │   │       ├── cilium/l2announcement-policy.yaml  # eth* + enp* interfaces
+│   │       ├── cilium/abuseipdb-ingress-deny.yaml # reserved:ingress deny via cidrGroupRef
 │   │       └── gatewayclass.yaml            # Cilium GatewayClass
+│   │
+│   ├── images/                      # Custom image sources
+│   │   ├── taskflow-caddy-coraza/   # Caddy + Coraza WAF image
+│   │   └── abuseipdb-sync/          # Go synchronizer (blacklist → Cilium + Cloudflare, flow collection)
 │   │
 │   └── clusters/taskflow/           # Flux Kustomizations (cluster-level)
 │       ├── flux-system/             # Flux bootstrap manifests (v2.9.5, generated by bootstrap)
@@ -328,41 +344,44 @@ TF/
 │       │   └── gotk-sync.yaml        # GitRepository + Kustomization for flux-system
 │       ├── kustomization.yaml       # References all layers
 │       ├── infra-controllers.yaml   # HelmRelease controllers (Cilium, Proxmox CSI, etc.)
-│       ├── infra-configs.yaml       # Cilium configs + GatewayClass
-  │       ├── taskflow.yaml            # App layer with SOPS decryption
-  │       ├── monitoring.yaml          # VictoriaMetrics + Grafana (SOPS-enabled)
-  │       ├── monitoring-app.yaml      # App VMServiceScrapes (depends on monitoring)
-  │       ├── monitoring-logging.yaml  # Alloy + Loki logging stack (depends on monitoring + taskflow-app)
-  │       ├── kyverno-policies.yaml    # Kyverno ClusterPolicies (dependsOn infra-controllers)
-  │       ├── policy-reporter.yaml     # Policy Reporter + UI (dependsOn infra-controllers + taskflow-app)
-  │       ├── trivy-operator.yaml      # Trivy vulnerability scanner (dependsOn infra-controllers)
-  │       ├── hubble-ui.yaml           # Hubble UI oauth2-proxy (dependsOn infra-controllers + taskflow-app)
-  │       └── image-automation.yaml    # ImageRepository + ImagePolicy + ImageUpdateAutomation
-  │
-  │   ├── monitoring/                  # Observability stack
-  │   │   ├── platform/                # Operator + CRDs + storage + Grafana secret
-  │   │   │   ├── namespace.yaml       # monitoring namespace
-  │   │   │   ├── repository.yaml      # victoriametrics HelmRepository
-  │   │   │   ├── grafana-secrets.yaml # SOPS-encrypted Grafana admin & GitHub OAuth (age-encrypted)
-  │   │   │   ├── release.yaml         # victoria-metrics-k8s-stack HelmRelease (tuned)
-  │   │   │   ├── routes.yaml          # HTTPRoute for Grafana
-  │   │   │   ├── metrics-server-release.yaml  # metrics-server HelmRelease
-  │   │   │   ├── metrics-server-repository.yaml # metrics-server HelmRepository
-  │   │   │   ├── metrics-server-rbac.yaml       # metrics-server RBAC
-  │   │   │   └── kustomization.yaml
-  │   │   └── app/                     # VMServiceScrapes (applied after CRDs exist)
-  │   │       ├── vmservicescrapes.yaml # backend / postgres-exporter / redis-exporter
-  │   │       └── kustomization.yaml
-  │   │
-  │   └── logging/                     # Alloy + Loki for WAF audit log collection
-  │       ├── alloy-release.yaml       # Grafana Alloy Deployment (log shipper)
-  │       ├── loki-release.yaml        # Grafana Loki (log storage, 30-day retention)
-  │       ├── grafana-provisioning.yaml # Loki datasource auto-provisioned in Grafana
-  │       ├── repositories.yaml        # HelmRepository definitions
-  │       ├── vmservicescrapes.yaml    # Alloy metrics scrape
-  │       ├── trivy-dashboard.yaml     # Trivy findings Grafana dashboard
-  │       └── kustomization.yaml
-  ```
+│       ├── infra-configs.yaml       # Cilium configs + GatewayClass + deny policy
+│       ├── abuseipdb.yaml             # AbuseIPDB synchronizer (dependsOn infra-controllers)
+│       ├── taskflow.yaml            # App layer with SOPS decryption
+│       ├── monitoring.yaml          # VictoriaMetrics + Grafana (SOPS-enabled)
+│       ├── monitoring-app.yaml      # App VMServiceScrapes + Grafana dashboards (depends on monitoring)
+│       ├── monitoring-logging.yaml  # Alloy + Loki logging stack (depends on monitoring + taskflow-app)
+│       ├── kyverno-policies.yaml    # Kyverno ClusterPolicies (dependsOn infra-controllers)
+│       ├── policy-reporter.yaml     # Policy Reporter + UI (dependsOn infra-controllers + taskflow-app)
+│       ├── trivy-operator.yaml      # Trivy vulnerability scanner (dependsOn infra-controllers)
+│       ├── hubble-ui.yaml           # Hubble UI oauth2-proxy (dependsOn infra-controllers + taskflow-app)
+│       └── image-automation.yaml    # ImageRepository + ImagePolicy + ImageUpdateAutomation
+│
+│   ├── monitoring/                  # Observability stack
+│   │   ├── platform/                # Operator + CRDs + storage + Grafana secret
+│   │   │   ├── namespace.yaml       # monitoring namespace
+│   │   │   ├── repository.yaml      # victoriametrics HelmRepository
+│   │   │   ├── grafana-secrets.yaml # SOPS-encrypted Grafana admin & GitHub OAuth (age-encrypted)
+│   │   │   ├── release.yaml         # victoria-metrics-k8s-stack HelmRelease (tuned)
+│   │   │   ├── routes.yaml          # HTTPRoute for Grafana
+│   │   │   ├── metrics-server-release.yaml  # metrics-server HelmRelease
+│   │   │   ├── metrics-server-repository.yaml # metrics-server HelmRepository
+│   │   │   ├── metrics-server-rbac.yaml       # metrics-server RBAC
+│   │   │   └── kustomization.yaml
+│   │   └── app/                     # VMServiceScrapes + dashboards (applied after CRDs exist)
+│   │       ├── vmservicescrapes.yaml # backend / postgres-exporter / redis-exporter / cilium / abuseipdb
+│   │       ├── abuseipdb.yaml        # AbuseIPDB Security dashboard + synchronizer scrape
+│   │       ├── blocked-sources-dashboard.yaml # Blocked Sources dashboard (Cloudflare + Cilium IPs)
+│   │       └── kustomization.yaml
+│   │
+│   └── logging/                     # Alloy + Loki for WAF audit + flow log collection
+│       ├── alloy-release.yaml       # Grafana Alloy Deployment (WAF logs, abuseipdb logs, Hubble flow file)
+│       ├── loki-release.yaml        # Grafana Loki (log storage, 30-day retention)
+│       ├── grafana-provisioning.yaml # Loki datasource auto-provisioned in Grafana
+│       ├── repositories.yaml        # HelmRepository definitions
+│       ├── vmservicescrapes.yaml    # Alloy metrics scrape
+│       ├── trivy-dashboard.yaml     # Trivy findings Grafana dashboard
+│       └── kustomization.yaml
+```
 
 ---
 
@@ -480,7 +499,7 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
   - `policy-reporter/` — Policy Reporter + UI dashboard (visualizes Kyverno/Trivy/Falco PolicyReports).
   - `trivy-operator/release.yaml` — Trivy Operator (vulnerability scanning of running containers/images).
   - `hubble-ui/` — Hubble UI oauth2-proxy (GitHub OAuth, public access at `hubble.jokelab.dev`).
-- **`infra-configs`** (`gitops/infrastructure/configs/`) applies Cilium's `CiliumLoadBalancerIPPool` (`192.168.50.200–250`), the `CiliumL2AnnouncementPolicy` (which Ethernet interfaces advertise the IP via ARP), and the `GatewayClass` named `cilium`. These **must** come after the controllers, hence the dependency.
+- **`infra-configs`** (`gitops/infrastructure/configs/`) applies Cilium's `CiliumLoadBalancerIPPool` (`192.168.50.200–250`), the `CiliumL2AnnouncementPolicy` (which Ethernet interfaces advertise the IP via ARP), the `GatewayClass` named `cilium`, and the `CiliumClusterwideNetworkPolicy` that denies AbuseIPDB-listed sources at the Gateway. These **must** come after the controllers, hence the dependency.
 
 ### 10.5 How the app is exposed (the request path)
 
@@ -497,6 +516,8 @@ Browser ── https://www.jokelab.dev ──▶ (DNS → Public IP → Port For
 
 Key point: **Services are `ClusterIP` only**. Nothing is exposed except through the Gateway. The external IP (`192.168.50.200+`) is handed out by Cilium's L2 announcement, not by k3s ServiceLB (which we disabled). That's why disabling `servicelb` in cloud-init and defining the IP pool in `infra-configs` are two halves of the same decision.
 
+AbuseIPDB-listed sources are rejected even earlier than the HTTPRoute chain: at the Cloudflare edge for proxied requests, and by Cilium on the `reserved:ingress` identity for direct-to-origin requests (see `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`).
+
 ### 10.6 Security model as actually implemented (zero-trust, in practice)
 
 | Control | Where it lives | What it enforces |
@@ -507,6 +528,7 @@ Key point: **Services are `ClusterIP` only**. Nothing is exposed except through 
 | Non-root + dropped caps | every container | `runAsNonRoot: true`, `capabilities.drop: [ALL]`. Backend/frontend/Redis/Jaeger use UID `10001`; Postgres uses image-native UID `70`. |
 | Secret encryption | `.sops.yaml` + `taskflow-secrets.yaml` | `POSTGRES_PASSWORD`, `SPRING_SECURITY_PASSWORD`, and `REDIS_PASSWORD` are age-encrypted; Flux decrypts at apply time using the `sops-age` Secret. The plaintext `key.txt` is `.gitignore`d. |
 | Immutable images | `image-automation.yaml` | Flux pins every app image to a `@sha256:` digest in Git. |
+| IP reputation denylist | `gitops/infrastructure/controllers/abuseipdb/` + `gitops/infrastructure/configs/cilium/abuseipdb-ingress-deny.yaml` | AbuseIPDB-listed sources are blocked at the Cloudflare edge (proxied path) and by Cilium on `reserved:ingress` (direct path). The `CiliumCIDRGroup` and Cloudflare list are runtime-managed and never in Git. |
 
 ### 10.7 What to touch when you want to change X
 
@@ -517,6 +539,9 @@ Key point: **Services are `ClusterIP` only**. Nothing is exposed except through 
 | Expose a new URL path | `gitops/apps/taskflow/httproute.yaml` | Flux reconciles Gateway |
 | Change the external IP range | `gitops/infrastructure/configs/cilium/ippool.yaml` | `flux reconcile kustomization infra-configs` |
 | Rotate a DB/app secret | `sops edit gitops/apps/taskflow/taskflow-secrets.yaml` | Flux re-decrypts on next sync |
+| Tune the AbuseIPDB sync (interval, list size, exceptions) | `gitops/infrastructure/controllers/abuseipdb/config.yaml` | `flux reconcile kustomization abuseipdb -n flux-system` |
+| Pause either denylist sink | `abuseipdb-ingress-deny` file (Cilium) / `CLOUDFLARE_SYNC_ENABLED` (edge) | see rollback in `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md` |
+| Rotate the AbuseIPDB key / Cloudflare token | `sops edit gitops/infrastructure/controllers/abuseipdb/abuseipdb-secrets.yaml` | Flux re-decrypts on next sync |
 | Bump Cilium/Proxmox CSI/cert-manager version | the `version:` in the relevant `release.yaml` | Flux upgrades (CRDs `CreateReplace`) |
 | Change VM size/network | `terraform.tfvars` + `variables.tf` | `make apply` (note: some changes force VM recreate → auto re-fetch kubeconfig) |
 | Add a TLS cert | `gitops/infrastructure/controllers/cert-manager/` + HTTPS listener in `gateway.yaml` | see ISSUES.md #19 |
@@ -541,7 +566,13 @@ the app because its Grafana route targets the TaskFlow Gateway:
   CRDs + Grafana (SOPS admin secret) + the Proxmox CSI TSDB PVC. Depends on
   `infra-controllers` and `taskflow-app`.
 - **`monitoring-app`** Kustomization (`gitops/monitoring/app`) applies the
-  VMServiceScrapes. Depends on `monitoring` so the VMServiceScrape CRD already exists.
+  VMServiceScrapes and the Grafana dashboards (`TaskFlow Performance`,
+  `AbuseIPDB Security`, `Blocked Sources`). Depends on `monitoring` so the
+  VMServiceScrape CRD already exists.
+- **`monitoring-logging`** Kustomization (`gitops/monitoring/logging`) runs
+  Loki + Alloy, which ships the WAF audit logs, the `abuseipdb-sync` logs and
+  the Cilium Hubble flow export into Loki for Grafana Explore and the
+  `Blocked Sources` dashboard.
 
 **Reaching the UIs:**
 
@@ -556,6 +587,7 @@ The monitoring UIs are now exposed through the main Cilium Gateway API using zer
 - ✅ Node + kubelet (cadvisor) + kube-state-metrics — from the stack itself, providing workload and host metrics.
 - ✅ PostgreSQL + Redis — via the `postgres-exporter` / `redis-exporter` side-cars in `gitops/apps/taskflow` (no backend change).
 - ✅ **Backend JVM/HTTP/Hikari** — Spring Boot exposes `/actuator/prometheus` for in-cluster scraping. The VMServiceScrape targets the backend's named `http` Service port; Cilium limits the unauthenticated endpoint to the `monitoring` namespace. See `docs/BACKEND_INTEGRATION_CONTEXT.md`.
+- ✅ **Cilium/Hubble** (agent, operator, hubble metrics) and the **AbuseIPDB synchronizer** (`abuseipdb_*`, `cloudflare_firewall_*`) via VMServiceScrapes; drops and denials also flow to Loki as described in `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`.
 
 **Resource budget (memory-trimmed):** the stack reserves ~1.5 GiB of limit
 (VMSingle 1 Gi cap / 256 Mi req, vmagent 256 Mi, Grafana 256 Mi,

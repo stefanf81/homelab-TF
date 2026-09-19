@@ -16,16 +16,17 @@ gitops/
 │   │   ├── kyverno/            #   Kyverno policy engine (HelmRelease; reconciled by infra-controllers)
 │   │   ├── policy-reporter/    #   Policy Reporter + UI (own Kustomization; dashboard at kyverno.jokelab.dev)
 │   │   ├── falco/              #   Falco runtime security (modern eBPF, PolicyReport integration)
-│   │   └── trivy-operator/     #   Trivy vulnerability scanner (own Kustomization; dependsOn infra-controllers)
+│   │   ├── trivy-operator/     #   Trivy vulnerability scanner (own Kustomization; dependsOn infra-controllers)
+│   │   └── abuseipdb/          #   AbuseIPDB synchronizer (IP reputation → Cilium + Cloudflare; own Kustomization)
 │   └── configs/
 ├── apps/                       # 3. User-facing applications (TaskFlow frontend, backend, database)
 │   ├── taskflow/
 │   └── kyverno-policies/       #   Example ClusterPolicies (Audit mode); reconciled by kyverno-policies Kustomization
 ├── monitoring/                 # 4. VictoriaMetrics, Grafana, Loki, Alloy, and dashboards
-│   ├── platform/
-│   ├── app/
-│   └── logging/
-├── images/                     # Custom WAF image Dockerfile
+│   ├── platform/               #   VictoriaMetrics stack, Grafana, routes, grafana secrets
+│   ├── app/                    #   App scrapes + Grafana dashboards (incl. "Blocked Sources", "AbuseIPDB Security")
+│   └── logging/                #   Loki, Alloy (WAF logs, abuseipdb-sync logs, Hubble flow export)
+├── images/                     # Custom images: WAF (Caddy+Coraza) and abuseipdb-sync Dockerfiles
 ├── RENOVATE.md                  #   Dependency-update bot activation and operation
 ├── README.md                   # GitOps directory overview
 └── FLUX_BOOTSTRAP.md    # Instructions for remote Git & Flux CD integration
@@ -52,11 +53,13 @@ Contains the system controllers deployed primarily via **HelmReleases**.
 * **`policy-reporter/`**: Installs Policy Reporter + its UI subchart — a read-only web dashboard for Kyverno, Trivy, and Falco `PolicyReport` / `ClusterPolicyReport` objects. Exposed at `https://kyverno.jokelab.dev` through the Cilium Gateway (same pattern as Grafana), protected by **GitHub OAuth**. Trivy findings are surfaced via the `trivy-operator-polr-adapter` (Trivy CRDs → PolicyReports) plus the `plugin.trivy` enrichment. Has its **own** cluster Kustomization (`policy-reporter`) that `dependsOn` both `infra-controllers` and `taskflow-app` so the Gateway exists before the HTTPRoute is programmed.
 * **`falco/`**: Installs Falco runtime security as a DaemonSet with modern eBPF driver. Uses Falcosidekick to write native Kubernetes `PolicyReport` CRDs visible in the Policy Reporter UI. Exposes Prometheus metrics on port 8765 for VictoriaMetrics scraping.
 * **`trivy-operator/`**: Installs the Trivy vulnerability scanner operator. Scans container images for CVEs, runs the **config-audit** (misconfiguration), **RBAC**, **infra-assessment**, and **exposed-secret** scanners, and executes **cluster compliance** reports (NSA, CIS, PSS) on a schedule. SBOM generation is disabled in the current configuration. Results produce `VulnerabilityReport`/`ConfigAuditReport`/… CRDs consumed by the Policy Reporter (see `docs/TRIVY_SECURITY_SCANNING.md`). Has its **own** cluster Kustomization (`trivy-operator`) that `dependsOn` `infra-controllers`.
+* **`abuseipdb/`**: Runs the **AbuseIPDB synchronizer** — it downloads the AbuseIPDB blacklist, validates/normalizes it, and maintains two runtime-managed enforcement sinks: `CiliumCIDRGroup/abuseipdb` (used by the `CiliumClusterwideNetworkPolicy` that denies listed sources on the direct path) and a Cloudflare account IP list referenced by a zone WAF custom rule (the enforcement point that sees real client IPs behind the proxy). It also collects Cloudflare Security Events for the `Blocked Sources` dashboard. Has its **own** cluster Kustomization (`abuseipdb`) that `dependsOn` `infra-controllers`. See `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`.
 
 #### B. `infrastructure/configs/` (Controller Instances)
 Contains the actual custom configurations and Custom Resources (CRs) consumed by the controllers installed in the folder above.
 * **`cilium/ippool.yaml`**: Configures the IP pool block for LoadBalancer services via `CiliumLoadBalancerIPPool`. *Optimized:* Adjusted to map your homelab subnet (`192.168.50.200 - 192.168.50.250`).
 * **`cilium/l2announcement-policy.yaml`**: Advertises the allocated IP ranges locally via Layer 2 (ARP) using `CiliumL2AnnouncementPolicy`.
+* **`cilium/abuseipdb-ingress-deny.yaml`**: `CiliumClusterwideNetworkPolicy` that denies sources from `CiliumCIDRGroup/abuseipdb` at the `reserved:ingress` (Cilium Gateway) hop, for direct-to-origin traffic. The referenced CIDR group is maintained at runtime by `abuseipdb-sync` and is deliberately not committed to Git.
 
 ### 3. `apps/` (The Application Layer)
 This layer houses user-facing workloads and microservices. Workloads here are kept separate from the infrastructure layer to allow application developers to deploy code without risking platform-level system configuration.
@@ -98,6 +101,12 @@ The scaffolded manifests inside this layout include critical performance and net
 * **SOPS Ready:** Matches your `*-secrets.yaml` files. To secure your credentials in Git, generate an age key and run:
   ```bash
   sops -e -i gitops/apps/taskflow/taskflow-secrets.yaml
+  ```
+  The AbuseIPDB synchronizer uses the same mechanism
+  (`gitops/infrastructure/controllers/abuseipdb/abuseipdb-secrets.yaml`, holding
+  the AbuseIPDB API key and the Cloudflare API token):
+  ```bash
+  sops gitops/infrastructure/controllers/abuseipdb/abuseipdb-secrets.yaml
   ```
 
 ### 4. Policy Engine & Dashboard (Kyverno + Policy Reporter)

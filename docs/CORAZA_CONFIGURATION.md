@@ -224,6 +224,11 @@ The HTTPRoute attaches application traffic exclusively to the HTTPS Gateway list
 so each WAF explicitly passes `X-Forwarded-Proto: https` upstream. Do not widen the
 trusted proxy CIDR without also tightening the WAF ingress policy.
 
+IP reputation blocking (AbuseIPDB) is intentionally **not** implemented in
+Coraza/Caddy: denylisted source IPs are rejected at the Cloudflare edge (proxied
+traffic) and by Cilium on the direct path, before requests reach the WAF. See
+`docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`.
+
 ## Documentation Links
 
 - Coraza SecLang Reference: https://coraza.io/docs/seclang/directives/
