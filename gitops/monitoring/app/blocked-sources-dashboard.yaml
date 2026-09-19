@@ -89,10 +89,13 @@ data:
           "id": 6,
           "type": "timeseries",
           "title": "Cilium drops over time",
-          "description": "Dropped flows per minute by drop reason. POLICY_DENIED / L7 http-request DROPPED are the denylist and default-deny enforcement at reserved:ingress.",
+          "description": "Dropped flows per minute by reason. POLICY_DENIED is the datapath denylist; L7/policy deny (no reason) are Envoy-enforced denials at reserved:ingress (AbuseIPDB CIDR deny or default-deny), which carry no drop_reason_desc.",
           "gridPos": {"x": 12, "y": 5, "w": 12, "h": 7},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "sum by (flow_drop_reason_desc) (count_over_time({job=\"hubble-flows\"} | json [1m]))", "legendFormat": "{{flow_drop_reason_desc}}"}],
+          "targets": [
+            {"refId": "A", "expr": "sum by (flow_drop_reason_desc) (count_over_time({job=\"hubble-flows\"} | json | flow_drop_reason_desc=~\".+\" [1m]))", "legendFormat": "{{flow_drop_reason_desc}}"},
+            {"refId": "B", "expr": "sum(count_over_time({job=\"hubble-flows\"} | json | flow_drop_reason_desc=\"\" [1m]))", "legendFormat": "L7/policy deny (no reason)"}
+          ],
           "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}, "overrides": []},
           "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
         },
@@ -111,10 +114,10 @@ data:
           "id": 8,
           "type": "table",
           "title": "Top dropped source IPs (Cilium)",
-          "description": "Source IPs with dropped flows in Cilium. For proxied traffic this is Cloudflare; for direct-to-origin it is the real client.",
+          "description": "Source IPs with dropped flows in Cilium, excluding IPv6 multicast noise (:: and link-local). For proxied traffic this is Cloudflare; for direct-to-origin it is the real client.",
           "gridPos": {"x": 8, "y": 12, "w": 8, "h": 7},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "topk(20, sum by (flow_IP_source) (count_over_time({job=\"hubble-flows\"} | json [$__range])))", "instant": true}],
+          "targets": [{"refId": "A", "expr": "topk(20, sum by (flow_IP_source) (count_over_time({job=\"hubble-flows\"} | json | flow_IP_source!=\"::\" | flow_IP_source!~\"fe80:.*\" [$__range])))", "instant": true}],
           "options": {"showHeader": true},
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
