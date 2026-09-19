@@ -81,7 +81,9 @@ spec:
             k8s:app.kubernetes.io/name: loki
       toPorts:
         - ports:
-            - port: "80"
+            # Loki gateway pod port (the Service exposes it as 80, but Cilium
+            # policy matches the backend pod port after service translation).
+            - port: "8080"
               protocol: TCP
     - toEntities:
         - kube-apiserver

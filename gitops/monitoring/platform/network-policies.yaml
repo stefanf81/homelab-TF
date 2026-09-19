@@ -27,3 +27,24 @@ spec:
         - matchExpressions:
             - key: reserved:ingress
               operator: Exists
+---
+# The AbuseIPDB synchronizer ships Cloudflare Security Events to Loki directly.
+# Cilium matches the backend pod port (8080), not the gateway Service port (80).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-abuseipdb-sync-to-loki
+  namespace: monitoring
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+      app.kubernetes.io/component: gateway
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: abuseipdb
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
