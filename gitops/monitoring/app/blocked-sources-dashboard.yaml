@@ -66,11 +66,11 @@ data:
         {
           "id": 4,
           "type": "stat",
-          "title": "Cilium dropped flows",
-          "description": "Dropped/error flows recorded by Hubble (direct-to-origin path, policy denies plus other drops).",
+          "title": "Cilium policy denials",
+          "description": "Dropped/denied flows on the direct-to-origin path (POLICY_DENIED plus Envoy L7 denials without a reason). Excludes unrelated noise (IPv6 multicast, stale IPs, missing backends).",
           "gridPos": {"x": 18, "y": 0, "w": 6, "h": 5},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "sum(count_over_time({job=\"hubble-flows\"}[$__range]))", "instant": true}],
+          "targets": [{"refId": "A", "expr": "sum(count_over_time({job=\"hubble-flows\"} | json | flow_drop_reason_desc!~\"UNSUPPORTED_L3_PROTOCOL|STALE_OR_UNROUTABLE_IP|SERVICE_BACKEND_NOT_FOUND|DROP_REASON_UNKNOWN\" [$__range]))", "instant": true}],
           "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "orange", "value": 1}, {"color": "red", "value": 100}]}}, "overrides": []},
           "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
         },
@@ -88,12 +88,12 @@ data:
         {
           "id": 6,
           "type": "timeseries",
-          "title": "Cilium drops over time",
-          "description": "Dropped flows per minute by reason. POLICY_DENIED is the datapath denylist; L7/policy deny (no reason) are Envoy-enforced denials at reserved:ingress (AbuseIPDB CIDR deny or default-deny), which carry no drop_reason_desc.",
+          "title": "Cilium policy denials over time",
+          "description": "Denied flows per minute. POLICY_DENIED is the datapath denylist; 'L7/policy deny (no reason)' are Envoy-enforced denials at reserved:ingress (AbuseIPDB CIDR deny or default-deny), which carry no drop_reason_desc. Unrelated drop reasons are excluded.",
           "gridPos": {"x": 12, "y": 5, "w": 12, "h": 7},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [
-            {"refId": "A", "expr": "sum by (flow_drop_reason_desc) (count_over_time({job=\"hubble-flows\"} | json | flow_drop_reason_desc=~\".+\" [1m]))", "legendFormat": "{{flow_drop_reason_desc}}"},
+            {"refId": "A", "expr": "sum by (flow_drop_reason_desc) (count_over_time({job=\"hubble-flows\"} | json | flow_drop_reason_desc=~\"POLICY_DENIED\" [1m]))", "legendFormat": "{{flow_drop_reason_desc}}"},
             {"refId": "B", "expr": "sum(count_over_time({job=\"hubble-flows\"} | json | flow_drop_reason_desc=\"\" [1m]))", "legendFormat": "L7/policy deny (no reason)"}
           ],
           "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}, "overrides": []},
@@ -113,11 +113,11 @@ data:
         {
           "id": 8,
           "type": "table",
-          "title": "Top dropped source IPs (Cilium)",
-          "description": "Source IPs with dropped flows in Cilium, excluding IPv6 multicast noise (:: and link-local). For proxied traffic this is Cloudflare; for direct-to-origin it is the real client.",
+          "title": "Top denied source IPs (Cilium)",
+          "description": "Source IPs with policy denials in Cilium, excluding IPv6 multicast noise and unrelated drop reasons. For proxied traffic this is Cloudflare; for direct-to-origin it is the real client.",
           "gridPos": {"x": 8, "y": 12, "w": 8, "h": 7},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "topk(20, sum by (flow_IP_source) (count_over_time({job=\"hubble-flows\"} | json | flow_IP_source!=\"::\" | flow_IP_source!~\"fe80:.*\" [$__range])))", "instant": true}],
+          "targets": [{"refId": "A", "expr": "topk(20, sum by (flow_IP_source) (count_over_time({job=\"hubble-flows\"} | json | flow_drop_reason_desc!~\"UNSUPPORTED_L3_PROTOCOL|STALE_OR_UNROUTABLE_IP|SERVICE_BACKEND_NOT_FOUND|DROP_REASON_UNKNOWN\" | flow_IP_source!=\"::\" | flow_IP_source!~\"fe80:.*\" [$__range])))", "instant": true}],
           "options": {"showHeader": true},
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
@@ -147,7 +147,7 @@ data:
           "title": "Top targeted ports (Cilium)",
           "gridPos": {"x": 8, "y": 19, "w": 8, "h": 7},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "topk(20, sum by (flow_l4_TCP_destination_port) (count_over_time({job=\"hubble-flows\"} | json | flow_l4_TCP_destination_port=~\".+\" [$__range])))", "instant": true}],
+          "targets": [{"refId": "A", "expr": "topk(20, sum by (flow_l4_TCP_destination_port) (count_over_time({job=\"hubble-flows\"} | json | flow_drop_reason_desc!~\"UNSUPPORTED_L3_PROTOCOL|STALE_OR_UNROUTABLE_IP|SERVICE_BACKEND_NOT_FOUND|DROP_REASON_UNKNOWN\" | flow_l4_TCP_destination_port=~\".+\" [$__range])))", "instant": true}],
           "options": {"showHeader": true},
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
@@ -174,11 +174,11 @@ data:
         {
           "id": 14,
           "type": "logs",
-          "title": "Recent Cilium drops",
-          "description": "Raw Hubble flow records for dropped/error flows.",
+          "title": "Recent Cilium denials",
+          "description": "Raw Hubble flow records for denied flows (unrelated drop reasons excluded).",
           "gridPos": {"x": 12, "y": 26, "w": 12, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "{job=\"hubble-flows\"} | json | line_format `{{.flow_verdict}} {{.flow_drop_reason_desc}} src={{.flow_IP_source}} dst={{.flow_IP_destination}} port={{.flow_l4_TCP_destination_port}} dir={{.flow_traffic_direction}}`"}],
+          "targets": [{"refId": "A", "expr": "{job=\"hubble-flows\"} | json | flow_drop_reason_desc!~\"UNSUPPORTED_L3_PROTOCOL|STALE_OR_UNROUTABLE_IP|SERVICE_BACKEND_NOT_FOUND|DROP_REASON_UNKNOWN\" | line_format `{{.flow_verdict}} {{.flow_drop_reason_desc}} src={{.flow_IP_source}} dst={{.flow_IP_destination}} port={{.flow_l4_TCP_destination_port}} dir={{.flow_traffic_direction}}`"}],
           "options": {"showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLines": true, "prettifyLogMessage": false, "enableLogDetails": true}
         },
         {
