@@ -4,3 +4,4 @@ resources:
   - vmservicescrapes.yaml
   - taskflow-performance-dashboard.yaml
   - abuseipdb.yaml
+  - blocked-sources-dashboard.yaml

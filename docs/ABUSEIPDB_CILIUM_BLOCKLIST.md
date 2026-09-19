@@ -165,6 +165,42 @@ Cloudflare sink: `abuseipdb_cloudflare_sync_success`, `_entries`,
 All labels are bounded; individual IPs are never metric labels. Use Loki
 (`{namespace="abuseipdb"}`) and Hubble for per-IP investigation.
 
+## Blocked-source visibility (Grafana)
+
+Two Loki-sourced dashboards complement the aggregate `AbuseIPDB Security`
+dashboard. Per-IP values are always parsed at query time and never stored as
+Prometheus labels.
+
+* **`Blocked Sources`** (`gitops/monitoring/app/blocked-sources-dashboard.yaml`):
+  * *Cloudflare edge blocks* — `abuseipdb-sync` polls the Security Events API
+    (`firewallEventsAdaptive`) every `CLOUDFLARE_FIREWALL_POLL_INTERVAL`,
+    aggregates per client IP/rule/minute and pushes to Loki
+    (`{job="cloudflare-firewall"}`). This shows the **real client IPs** blocked
+    at the edge. The Cloudflare API token must carry `Zone Analytics: Read`
+    (edit the token in Cloudflare; the token value does not change). Free-plan
+    Security Events retention is 24h.
+  * *Cilium drops* — Cilium's static Hubble exporter writes dropped/error flows
+    to `/var/run/cilium/hubble/events.log` (rotated), Alloy tails that file and
+    ships it to Loki (`{job="hubble-flows"}`). This covers direct-to-origin
+    traffic; for proxied traffic the source is a Cloudflare edge address.
+* Useful LogQL:
+
+```logql
+# blocked client IPs at the Cloudflare edge (top 20)
+topk(20, sum by (client_ip) (sum_over_time({job="cloudflare-firewall"} | json | unwrap count [$__range])))
+
+# dropped source IPs in Cilium (top 20)
+topk(20, sum by (flow_IP_source) (count_over_time({job="hubble-flows"} | json [$__range])))
+
+# drop reasons
+sum by (flow_drop_reason_desc) (count_over_time({job="hubble-flows"} | json [1h]))
+```
+
+```bash
+# raw flow file on the node (debugging)
+kubectl -n kube-system exec ds/cilium -- tail -20 /var/run/cilium/hubble/events.log
+```
+
 ## RBAC, secrets and egress
 
 * ServiceAccount `abuseipdb-sync` + ClusterRole limited to `get`, `create`,

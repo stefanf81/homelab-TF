@@ -1,0 +1,189 @@
+# "Blocked Sources" dashboard: per-IP view of traffic rejected at the two
+# enforcement layers.
+#
+# - Cloudflare edge blocks come from the firewallEventsAdaptive collector in
+#   abuseipdb-sync (Loki job=cloudflare-firewall). Free-plan Security Events
+#   retention is 24h, so short ranges are the most meaningful.
+# - Cilium drops come from the Hubble flow export shipped by Alloy
+#   (Loki job=hubble-flows); the direct-to-origin denylist shows up as
+#   POLICY_DENIED / L7 http-request DROPPED flows at reserved:ingress.
+#
+# Per-IP values are parsed at query time; they are never Prometheus labels.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blocked-sources-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: abuseipdb-sync
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: taskflow-observability
+data:
+  blocked-sources.json: |
+    {
+      "uid": "blocked-sources",
+      "title": "Blocked Sources",
+      "description": "Per-IP traffic rejected by Cloudflare (proxied path) and Cilium (direct path). Client IPs are parsed from logs at query time, never metric labels.",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {"from": "now-24h", "to": "now"},
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Cloudflare blocked requests",
+          "description": "Sum of blocked requests reported by Cloudflare Security Events in the selected range.",
+          "gridPos": {"x": 0, "y": 0, "w": 6, "h": 5},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum(sum_over_time({job=\"cloudflare-firewall\"} | json | unwrap count [$__range]))", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "orange", "value": 1}, {"color": "red", "value": 100}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Cloudflare collector age",
+          "description": "Time since the last successful Security Events collection. Requires Zone Analytics: Read on the API token.",
+          "gridPos": {"x": 6, "y": 0, "w": 6, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "time() - cloudflare_firewall_last_success_timestamp_seconds", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "orange", "value": 600}, {"color": "red", "value": 1800}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Cloudflare collector errors",
+          "description": "Failed Security Events collections in the range, by reason.",
+          "gridPos": {"x": 12, "y": 0, "w": 6, "h": 5},
+          "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
+          "targets": [{"refId": "A", "expr": "sum by (reason) (increase(cloudflare_firewall_collector_errors_total[$__range]))", "legendFormat": "{{reason}}", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "red", "value": 1}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Cilium dropped flows",
+          "description": "Dropped/error flows recorded by Hubble (direct-to-origin path, policy denies plus other drops).",
+          "gridPos": {"x": 18, "y": 0, "w": 6, "h": 5},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum(count_over_time({job=\"hubble-flows\"}[$__range]))", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "orange", "value": 1}, {"color": "red", "value": 100}]}}, "overrides": []},
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Cloudflare blocks over time",
+          "description": "Blocked requests per minute, split by the Cloudflare rule source (firewallCustom = the AbuseIPDB denylist rule).",
+          "gridPos": {"x": 0, "y": 5, "w": 12, "h": 7},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum by (source) (sum_over_time({job=\"cloudflare-firewall\"} | json | unwrap count [1m]))", "legendFormat": "{{source}}"}],
+          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Cilium drops over time",
+          "description": "Dropped flows per minute by drop reason. POLICY_DENIED / L7 http-request DROPPED are the denylist and default-deny enforcement at reserved:ingress.",
+          "gridPos": {"x": 12, "y": 5, "w": 12, "h": 7},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum by (flow_drop_reason_desc) (count_over_time({job=\"hubble-flows\"} | json [1m]))", "legendFormat": "{{flow_drop_reason_desc}}"}],
+          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+        },
+        {
+          "id": 7,
+          "type": "table",
+          "title": "Top blocked client IPs (Cloudflare)",
+          "description": "Client IPs blocked at the Cloudflare edge, parsed from the Security Events log body.",
+          "gridPos": {"x": 0, "y": 12, "w": 8, "h": 7},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "topk(20, sum by (client_ip) (sum_over_time({job=\"cloudflare-firewall\"} | json | unwrap count [$__range])))", "instant": true}],
+          "options": {"showHeader": true},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 8,
+          "type": "table",
+          "title": "Top dropped source IPs (Cilium)",
+          "description": "Source IPs with dropped flows in Cilium. For proxied traffic this is Cloudflare; for direct-to-origin it is the real client.",
+          "gridPos": {"x": 8, "y": 12, "w": 8, "h": 7},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "topk(20, sum by (flow_IP_source) (count_over_time({job=\"hubble-flows\"} | json [$__range])))", "instant": true}],
+          "options": {"showHeader": true},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 9,
+          "type": "table",
+          "title": "Top blocked countries (Cloudflare)",
+          "gridPos": {"x": 16, "y": 12, "w": 8, "h": 7},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "topk(20, sum by (country) (sum_over_time({job=\"cloudflare-firewall\"} | json | unwrap count [$__range])))", "instant": true}],
+          "options": {"showHeader": true},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 10,
+          "type": "table",
+          "title": "Top blocked request paths (Cloudflare)",
+          "gridPos": {"x": 0, "y": 19, "w": 8, "h": 7},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "topk(20, sum by (path) (sum_over_time({job=\"cloudflare-firewall\"} | json | path=~\".+\" | unwrap count [$__range])))", "instant": true}],
+          "options": {"showHeader": true},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 11,
+          "type": "table",
+          "title": "Top targeted ports (Cilium)",
+          "gridPos": {"x": 8, "y": 19, "w": 8, "h": 7},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "topk(20, sum by (flow_l4_TCP_destination_port) (count_over_time({job=\"hubble-flows\"} | json | flow_l4_TCP_destination_port=~\".+\" [$__range])))", "instant": true}],
+          "options": {"showHeader": true},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 12,
+          "type": "table",
+          "title": "Top blocked user agents (Cloudflare)",
+          "gridPos": {"x": 16, "y": 19, "w": 8, "h": 7},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "topk(20, sum by (user_agent) (sum_over_time({job=\"cloudflare-firewall\"} | json | user_agent=~\".+\" | unwrap count [$__range])))", "instant": true}],
+          "options": {"showHeader": true},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+        },
+        {
+          "id": 13,
+          "type": "logs",
+          "title": "Recent Cloudflare blocks",
+          "description": "Raw aggregated Security Events (per client IP, rule source, minute).",
+          "gridPos": {"x": 0, "y": 26, "w": 12, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "{job=\"cloudflare-firewall\"} | json | line_format `{{.action}} {{.source}} ip={{.client_ip}} host={{.host}} path={{.path}} ua={{.user_agent}} hits={{.count}}`"}],
+          "options": {"showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLines": true, "prettifyLogMessage": false, "enableLogDetails": true}
+        },
+        {
+          "id": 14,
+          "type": "logs",
+          "title": "Recent Cilium drops",
+          "description": "Raw Hubble flow records for dropped/error flows.",
+          "gridPos": {"x": 12, "y": 26, "w": 12, "h": 8},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "{job=\"hubble-flows\"} | json | line_format `{{.flow_verdict}} {{.flow_drop_reason_desc}} src={{.flow_IP_source}} dst={{.flow_IP_destination}} port={{.flow_l4_TCP_destination_port}} dir={{.flow_traffic_direction}}`"}],
+          "options": {"showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLines": true, "prettifyLogMessage": false, "enableLogDetails": true}
+        },
+        {
+          "id": 15,
+          "type": "text",
+          "title": "Reading this dashboard",
+          "gridPos": {"x": 0, "y": 34, "w": 24, "h": 6},
+          "options": {"mode": "markdown", "content": "**Cloudflare (proxied path, real client IPs)** — collected by `abuseipdb-sync` from the Security Events API into Loki (`job=\"cloudflare-firewall\"`). Needs `Zone Analytics: Read` on the API token; free-plan Security Events retention is 24h, so use short ranges.\n\n**Cilium (direct path)** — Hubble flow export shipped by Alloy (`job=\"hubble-flows\"`). `POLICY_DENIED` / L7 `http-request DROPPED` at `reserved:ingress` is the AbuseIPDB denylist or default-deny enforcement; other reasons (e.g. `UNSUPPORTED_L3_PROTOCOL`) are unrelated drops. For proxied traffic Cilium sees Cloudflare edge addresses, which is why the edge layer above is the place to look for real client IPs."}
+        }
+      ]
+    }
