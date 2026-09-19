@@ -257,14 +257,44 @@ group is empty.
 
 ### Stage 4 — enable the real deny policy
 
+`abuseipdb-ingress-deny.yaml` is listed in
+`gitops/infrastructure/configs/cilium/kustomization.yaml` (Stage 4 applied).
+Verify the policy and that legitimate traffic still works:
+
 ```bash
-# add "- abuseipdb-ingress-deny.yaml" to gitops/infrastructure/configs/cilium/kustomization.yaml
-flux reconcile kustomization flux-system --with-source
 kubectl get ciliumclusterwidenetworkpolicies
+kubectl get cciliumclusterwidenetworkpolicy deny-abuseipdb-ingress -o yaml | head -40
+# proxied path (real client through Cloudflare) and direct-to-LB path
+curl -s -o /dev/null -w '%{http_code}\n' https://www.jokelab.dev/
+curl --resolve www.jokelab.dev:443:192.168.50.201 -o /dev/null -w '%{http_code}\n' https://www.jokelab.dev/
 ```
 
-Confirm legitimate `Internet → Gateway → Caddy → Coraza → app` traffic still
-works (or `direct → LB` if testing from the LAN).
+To prove the Cilium deny mechanism itself without touching the 10,000-entry
+group, apply a temporary deny for a controlled LAN source, test, then delete it
+(keep `enableDefaultDeny: false` so it cannot flip the ingress endpoint into
+default-deny):
+
+```yaml
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: abuseipdb-test-deny
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: reserved:ingress
+        operator: Exists
+  ingressDeny:
+    - fromCIDRSet:
+        - cidr: 192.168.50.43/32   # the controlled test client
+  ingress:
+    - fromEntities: [all]
+  enableDefaultDeny:
+    ingress: false
+```
+
+Direct requests from that client must return Envoy `403`; deleting the test
+policy restores `200` immediately.
 
 ## Acceptance checks
 

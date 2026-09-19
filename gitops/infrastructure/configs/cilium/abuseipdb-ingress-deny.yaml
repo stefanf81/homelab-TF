@@ -1,19 +1,13 @@
 # =============================================================================
-# STAGE 4 MANIFEST — NOT YET ACTIVATED
+# ACTIVE — AbuseIPDB ingress deny for direct-to-origin traffic
 # =============================================================================
-# This file is intentionally NOT listed in
-# gitops/infrastructure/configs/cilium/kustomization.yaml. It is the final,
-# cluster-wide enforcement step and must only be enabled after:
+# Enabled after the synchronizer was verified (10,000 validated entries,
+# Cloudflare edge block confirmed with a controlled IP, both sinks identical).
 #
-#   1. the synchronizer is running and CiliumCIDRGroup/abuseipdb contains a
-#      validated, non-empty list (Stage 2);
-#   2. a controlled deny test confirmed that a listed source is rejected by
-#      Cilium before reaching Caddy/Coraza (Stage 3).
-#
-# To activate, add `- abuseipdb-ingress-deny.yaml` to the resources list in
-# gitops/infrastructure/configs/cilium/kustomization.yaml and reconcile.
 # Rollback is instant: `kubectl delete ciliumclusterwidenetworkpolicy
-# deny-abuseipdb-ingress` (no Cilium/Gateway/Caddy restart required).
+# deny-abuseipdb-ingress` (no Cilium/Gateway/Caddy restart required). To also
+# stop Flux from re-applying it, remove this file from
+# gitops/infrastructure/configs/cilium/kustomization.yaml.
 #
 # SCOPE: `reserved:ingress` is the shared per-node Cilium Envoy identity, so
 # this policy applies cluster-wide to every Gateway/Ingress listener (here:
@@ -23,8 +17,8 @@
 # Cilium sees Cloudflare edge addresses for Internet traffic. This policy
 # therefore protects direct-to-origin traffic (e.g. scanners hitting the WAN
 # address with a forged Host header), LAN traffic and any future non-proxied
-# listener. It cannot see the original client IP behind the proxy. See
-# docs/ABUSEIPDB_CILIUM_BLOCKLIST.md.
+# listener. The Cloudflare edge sink covers the proxied traffic where the real
+# client IP is visible. See docs/ABUSEIPDB_CILIUM_BLOCKLIST.md.
 # =============================================================================
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
