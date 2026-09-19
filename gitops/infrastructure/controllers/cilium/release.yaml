@@ -103,3 +103,31 @@ spec:
           - icmp
           # `http` is deprecated in Cilium 1.20; httpV2 supersedes it (cannot run both).
           - httpV2
+      # Flow log export for per-IP drop visibility in Grafana. The agent writes
+      # rotated JSON lines to /var/run/cilium/hubble/events.log, which Alloy
+      # tails and ships to Loki (job=hubble-flows). Only DROPPED/ERROR flows are
+      # exported to keep volume low.
+      export:
+        static:
+          enabled: true
+          filePath: /var/run/cilium/hubble/events.log
+          fileMaxSizeMb: 10
+          fileMaxBackups: 5
+          fileCompress: false
+          allowList:
+            - '{"verdict":["DROPPED","ERROR"]}'
+          fieldMask:
+            - time
+            - verdict
+            - drop_reason_desc
+            - is_reply
+            - traffic_direction
+            - IP
+            - l4
+            - source.identity
+            - source.namespace
+            - source.pod_name
+            - destination.identity
+            - destination.namespace
+            - destination.pod_name
+            - node_name

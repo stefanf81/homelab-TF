@@ -35,6 +35,12 @@ spec:
           - name: alloy-data
             persistentVolumeClaim:
               claimName: alloy-data
+          # Hubble flow-log export written by cilium-agent on the node
+          # (hubble.export.static). Read-only; Alloy only tails the file.
+          - name: hubble-flows
+            hostPath:
+              path: /var/run/cilium/hubble
+              type: DirectoryOrCreate
     serviceAccount:
       create: true
       name: grafana-alloy
@@ -56,6 +62,9 @@ spec:
         extra:
           - name: alloy-data
             mountPath: /var/lib/alloy-data
+          - name: hubble-flows
+            mountPath: /var/run/cilium/hubble
+            readOnly: true
       configMap:
         create: true
         content: |
@@ -270,6 +279,31 @@ spec:
             // and individual addresses stay in the log body to avoid cardinality.
             stage.static_labels {
               values = { source = "abuseipdb-sync" }
+            }
+          }
+
+          // ---- Cilium Hubble flow logs (dropped/error flows only) ----------------
+          // Written by cilium-agent (hubble.export.static) to the node and mounted
+          // read-only into Alloy. Bounded labels only; the flow JSON body carries
+          // source IPs, ports and drop reasons, parsed at query time in Grafana.
+          local.file_match "hubble_flows" {
+            path_targets = [{
+              __path__ = "/var/run/cilium/hubble/events.log",
+              job      = "hubble-flows",
+              cluster  = "homelab",
+            }]
+          }
+
+          loki.source.file "hubble_flows" {
+            targets    = local.file_match.hubble_flows.targets
+            forward_to = [loki.process.hubble_flows.receiver]
+          }
+
+          loki.process "hubble_flows" {
+            forward_to = [loki.write.local.receiver]
+
+            stage.static_labels {
+              values = { source = "cilium" }
             }
           }
 
