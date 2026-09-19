@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -245,6 +246,63 @@ func TestCloudflareEnsureRuleExistingCorrectIsNoop(t *testing.T) {
 	}
 	if len(mock.rulePatches) != 0 || len(mock.ruleCreates) != 0 {
 		t.Fatalf("expected no rule changes, patches=%d creates=%d", len(mock.rulePatches), len(mock.ruleCreates))
+	}
+}
+
+func TestCloudflareListItemsCursorPagination(t *testing.T) {
+	const total = 250
+	items := make([]string, 0, total)
+	for i := 0; i < total; i++ {
+		items = append(items, fmt.Sprintf("10.0.%d.%d/32", i/250, i%250))
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/accounts/acc/rules/lists/list-1/items" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		first := 0
+		nextCursor := "c1"
+		switch cursor := r.URL.Query().Get("cursor"); cursor {
+		case "":
+			if page := r.URL.Query().Get("page"); page != "1" {
+				t.Fatalf("unexpected page %q", page)
+			}
+		case "c1":
+			first = 100
+			nextCursor = "c2"
+		case "c2":
+			first = 200
+			nextCursor = ""
+		default:
+			t.Fatalf("unexpected cursor %q", cursor)
+		}
+		end := first + 100
+		if end > len(items) {
+			end = len(items)
+		}
+		type item struct {
+			IP string `json:"ip"`
+		}
+		resp := make([]item, 0, end-first)
+		for _, ip := range items[first:end] {
+			resp = append(resp, item{IP: ip})
+		}
+		resultInfo := map[string]any{}
+		if nextCursor != "" {
+			resultInfo["cursors"] = map[string]string{"after": nextCursor}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "result": resp, "result_info": resultInfo})
+	}))
+	defer srv.Close()
+
+	client := testCloudflareClient(t, srv, 10000)
+	got, err := client.ListItems(context.Background(), "list-1")
+	if err != nil {
+		t.Fatalf("ListItems failed: %v", err)
+	}
+	if len(got) != total {
+		t.Fatalf("want %d items across cursor pages, got %d", total, len(got))
 	}
 }
 

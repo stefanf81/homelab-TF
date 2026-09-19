@@ -115,6 +115,9 @@ type cfAPIError struct {
 type cfResultInfo struct {
 	Page       int `json:"page"`
 	TotalPages int `json:"total_pages"`
+	Cursors    struct {
+		After string `json:"after"`
+	} `json:"cursors"`
 }
 
 type cfList struct {
@@ -226,27 +229,27 @@ func (c *CloudflareClient) EnsureList(ctx context.Context) (string, error) {
 
 func (c *CloudflareClient) listLists(ctx context.Context) ([]cfList, error) {
 	var out []cfList
-	for page := 1; ; page++ {
+	err := c.walk(ctx, c.accountPath("/rules/lists"), func(raw json.RawMessage) error {
 		var lists []cfList
-		info, err := c.doPaged(ctx, http.MethodGet, c.accountPath("/rules/lists"), page, &lists)
-		if err != nil {
-			return nil, fmt.Errorf("listing IP lists: %w", err)
+		if err := json.Unmarshal(raw, &lists); err != nil {
+			return fmt.Errorf("decoding Cloudflare response: %w", err)
 		}
 		out = append(out, lists...)
-		if info == nil || page >= info.TotalPages {
-			return out, nil
-		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing IP lists: %w", err)
 	}
+	return out, nil
 }
 
 // ListItems returns the current items of the list, canonicalized and sorted.
 func (c *CloudflareClient) ListItems(ctx context.Context, listID string) ([]netip.Prefix, error) {
 	var out []netip.Prefix
-	for page := 1; ; page++ {
+	err := c.walk(ctx, fmt.Sprintf("/accounts/%s/rules/lists/%s/items", c.accountID, listID), func(raw json.RawMessage) error {
 		var items []cfListItem
-		info, err := c.doPaged(ctx, http.MethodGet, fmt.Sprintf("/accounts/%s/rules/lists/%s/items", c.accountID, listID), page, &items)
-		if err != nil {
-			return nil, fmt.Errorf("listing IP list items: %w", err)
+		if err := json.Unmarshal(raw, &items); err != nil {
+			return fmt.Errorf("decoding Cloudflare response: %w", err)
 		}
 		for _, it := range items {
 			if it.IP == "" {
@@ -254,14 +257,16 @@ func (c *CloudflareClient) ListItems(ctx context.Context, listID string) ([]neti
 			}
 			p, err := parseEntry(it.IP)
 			if err != nil {
-				return nil, fmt.Errorf("Cloudflare list contains unparseable item %q: %w", it.IP, err)
+				return fmt.Errorf("Cloudflare list contains unparseable item %q: %w", it.IP, err)
 			}
 			out = append(out, p)
 		}
-		if info == nil || page >= info.TotalPages {
-			return SortDedup(out), nil
-		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing IP list items: %w", err)
 	}
+	return SortDedup(out), nil
 }
 
 // ReplaceItems atomically replaces all list items when the desired list
@@ -385,20 +390,43 @@ func (c *CloudflareClient) accountPath(suffix string) string {
 	return fmt.Sprintf("/accounts/%s%s", c.accountID, suffix)
 }
 
-func (c *CloudflareClient) doPaged(ctx context.Context, method, path string, page int, out any) (*cfResultInfo, error) {
-	q := url.Values{}
-	q.Set("page", fmt.Sprintf("%d", page))
-	q.Set("per_page", fmt.Sprintf("%d", cloudflarePageSize))
-	env, err := c.request(ctx, method, path, q, nil)
-	if err != nil {
-		return nil, err
-	}
-	if out != nil && len(env.Result) > 0 {
-		if err := json.Unmarshal(env.Result, out); err != nil {
-			return nil, fmt.Errorf("decoding Cloudflare response: %w", err)
+// walk pages through a Cloudflare list endpoint. The Lists API paginates with
+// an opaque `cursor` (page/per_page is accepted for the first request), so the
+// loop prefers the returned cursor and only falls back to page numbers when a
+// total_pages count is provided.
+func (c *CloudflareClient) walk(ctx context.Context, path string, handle func(json.RawMessage) error) error {
+	cursor := ""
+	page := 1
+	for {
+		q := url.Values{}
+		q.Set("per_page", fmt.Sprintf("%d", cloudflarePageSize))
+		if cursor != "" {
+			q.Set("cursor", cursor)
+		} else {
+			q.Set("page", fmt.Sprintf("%d", page))
 		}
+		env, err := c.request(ctx, http.MethodGet, path, q, nil)
+		if err != nil {
+			return err
+		}
+		if handle != nil && len(env.Result) > 0 {
+			if err := handle(env.Result); err != nil {
+				return err
+			}
+		}
+		if env.ResultInfo == nil {
+			return nil
+		}
+		if after := env.ResultInfo.Cursors.After; after != "" {
+			cursor = after
+			continue
+		}
+		if env.ResultInfo.TotalPages > page {
+			page++
+			continue
+		}
+		return nil
 	}
-	return env.ResultInfo, nil
 }
 
 func (c *CloudflareClient) do(ctx context.Context, method, path string, q url.Values, body any, out any) error {
