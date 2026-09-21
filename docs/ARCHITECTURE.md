@@ -321,7 +321,7 @@ TF/
 │   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
 │   │   │   ├── gateway-api/         # Standard Gateway API CRDs + TLSRoute CRD
 │   │   │   ├── kyverno/             # Kyverno policy engine (v3.9.1 / Kyverno v1.19.1)
-│   │   │   ├── falco/               # Falco runtime security (v9.1.0 chart, modern eBPF)
+│   │   │   ├── falco/               # Falco runtime security (v9.2.0-rc1 chart, modern eBPF)
 │   │   │   ├── policy-reporter/     # Policy Reporter + UI dashboard
 │   │   │   ├── trivy-operator/      # Trivy vulnerability scanner operator
 │   │   │   ├── abuseipdb/           # AbuseIPDB synchronizer (IP reputation → Cilium + Cloudflare)
@@ -495,7 +495,7 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
   - `proxmox-csi/` — Proxmox CSI driver (dynamic storage provisioning of virtual disks with native hypervisor backup integration).
   - `gateway-api/` — the standard Gateway API CRDs.
   - `kyverno/release.yaml` — Kyverno 3.9.1 (Kubernetes-native policy engine, mutating + validating admission webhook).
-  - `falco/release.yaml` — Falco 9.1.0 chart (runtime security, modern eBPF driver, Falcosidekick → PolicyReports).
+  - `falco/release.yaml` — Falco 9.2.0-rc1 chart (runtime security, modern eBPF driver, Falcosidekick → PolicyReports).
   - `policy-reporter/` — Policy Reporter + UI dashboard (visualizes Kyverno/Trivy/Falco PolicyReports).
   - `trivy-operator/release.yaml` — Trivy Operator (vulnerability scanning of running containers/images).
   - `hubble-ui/` — Hubble UI oauth2-proxy (GitHub OAuth, public access at `hubble.jokelab.dev`).

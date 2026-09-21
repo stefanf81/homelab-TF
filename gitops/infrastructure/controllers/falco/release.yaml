@@ -8,8 +8,11 @@ spec:
   chart:
     spec:
       chart: falco
-      # Falco chart v9.1.0 -> Falco 0.44.1. Cluster is running Ubuntu 26.04.
-      version: 9.1.0
+      # Falco chart v9.2.0-rc1 -> Falco 0.45.0-rc2. Cluster runs Ubuntu 26.04 /
+      # kernel 7.0, where Falco 0.44.1 (chart 9.1.0) crashes with
+      # "could not parse param ... type 223 (clone)" (falcosecurity/falco#3955).
+      # The fix landed in the 0.45.0 line; drop this RC pin once 0.45.0 GA ships.
+      version: 9.2.0-rc1
       sourceRef:
         kind: HelmRepository
         name: falco

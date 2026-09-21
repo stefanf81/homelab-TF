@@ -85,7 +85,7 @@ spec:
   chart:
     spec:
       chart: falco
-      version: 9.1.0
+      version: 9.2.0-rc1
       sourceRef:
         kind: HelmRepository
         name: falco
@@ -322,7 +322,7 @@ These are the **actual** metrics that Falco 0.44.x exposes on the `/metrics` end
 | `dir` | Buffer drop direction | `enter`, `exit` |
 | `drop` | Buffer drop category | `clone_fork`, `connect`, `execve`, `open`, `dir_file`, `other_interest` |
 | `engine_name` | Scap engine type | `modern_bpf` |
-| `version` | Falco semantic version | `0.44.1` |
+| `version` | Falco semantic version | `0.45.0-rc2` |
 
 ---
 
