@@ -163,6 +163,9 @@ spec:
           domain: grafana.jokelab.dev
           root_url: "https://%(domain)s/"
           serve_from_sub_path: false
+        analytics:
+          # No update/version-check egress needed in a single-node homelab.
+          check_for_updates: false
         auth:
           disable_login_form: true
         "auth.github":
@@ -202,9 +205,12 @@ spec:
       admin:
         existingSecret: grafana-admin
       resources:
+        # Grafana idles ~350Mi and spikes past 500Mi (Go heap/GC + Bleve search
+        # index). The old 512Mi limit sat below that peak and OOMKilled the
+        # container repeatedly, so give it ~2x headroom over observed peaks.
         requests:
           cpu: 50m
-          memory: 128Mi
+          memory: 256Mi
         limits:
           cpu: 250m
-          memory: 512Mi
+          memory: 1Gi
