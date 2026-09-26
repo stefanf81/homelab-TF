@@ -26,7 +26,7 @@ spec:
         # because this is a transient init container, not a served image. Pin to a digest
         # if you want fully hermetic boots: image: alpine:3.24.1@sha256:<digest>
         - name: wait-for-db
-          image: alpine:3.24.1
+          image: alpine:3.24.2
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
