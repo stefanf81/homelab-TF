@@ -332,7 +332,7 @@ data:
           "title": "Requests by application",
           "gridPos": {"x": 0, "y": 3, "w": 12, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | request_uri != \"/waf-healthz\" | request_uri=~\".+\" [5m]))", "legendFormat": "{{application}}"}],
+          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | msg=\"handled request\" | request_uri != \"/waf-healthz\" | request_uri=~\".+\" [5m]))", "legendFormat": "{{application}}"}],
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
         {
@@ -341,7 +341,7 @@ data:
           "title": "Responses by status",
           "gridPos": {"x": 12, "y": 3, "w": 12, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "sum by (status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | request_uri != \"/waf-healthz\" | status=~\".+\" [5m]))", "legendFormat": "{{status}}"}],
+          "targets": [{"refId": "A", "expr": "sum by (status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | msg=\"handled request\" | request_uri != \"/waf-healthz\" | status=~\".+\" [5m]))", "legendFormat": "{{status}}"}],
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
         {
@@ -350,7 +350,7 @@ data:
           "title": "Requests by HTTP method",
           "gridPos": {"x": 0, "y": 11, "w": 12, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "sum by (request_method) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | request_uri != \"/waf-healthz\" | request_method=~\".+\" [5m]))", "legendFormat": "{{request_method}}"}],
+          "targets": [{"refId": "A", "expr": "sum by (request_method) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | msg=\"handled request\" | request_uri != \"/waf-healthz\" | request_method=~\".+\" [5m]))", "legendFormat": "{{request_method}}"}],
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
         {
@@ -360,7 +360,7 @@ data:
           "description": "URIs are sanitized by Caddy before storage. This is a query-time aggregation, so URI values are not Loki labels.",
           "gridPos": {"x": 12, "y": 11, "w": 12, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "topk(10, sum by (request_uri) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | request_uri != \"/waf-healthz\" | request_uri=~\".+\" [$__range])))", "legendFormat": "{{request_uri}}", "instant": true}],
+          "targets": [{"refId": "A", "expr": "topk(10, sum by (request_uri) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | msg=\"handled request\" | request_uri != \"/waf-healthz\" | request_uri=~\".+\" [$__range])))", "legendFormat": "{{request_uri}}", "instant": true}],
           "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": false},
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
@@ -370,7 +370,7 @@ data:
           "title": "Request outcomes",
           "gridPos": {"x": 0, "y": 19, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "sum by (application, status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | request_uri != \"/waf-healthz\" | status=~\".+\" [$__range]))", "instant": true}],
+          "targets": [{"refId": "A", "expr": "sum by (application, status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | msg=\"handled request\" | request_uri != \"/waf-healthz\" | status=~\".+\" [$__range]))", "instant": true}],
           "options": {"showHeader": true},
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
@@ -381,7 +381,7 @@ data:
           "description": "Resolved visitor IPs from Caddy access logs. Parsed at query time to avoid a high-cardinality Loki label.",
           "gridPos": {"x": 8, "y": 19, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip != \"\" [$__range])))", "instant": true}],
+          "targets": [{"refId": "A", "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | msg=\"handled request\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip != \"\" [$__range])))", "instant": true}],
           "options": {"showHeader": true},
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
@@ -391,7 +391,7 @@ data:
           "title": "Recent access logs",
           "gridPos": {"x": 16, "y": 19, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri=~\".+\" | line_format `{{.status}} {{.request_method}} {{.request_uri}} ip={{.client_ip}} duration={{.duration}}s`"}],
+          "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} | json | msg=\"handled request\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri=~\".+\" | line_format `{{.status}} {{.request_method}} {{.request_uri}} ip={{.client_ip}} duration={{.duration}}s`"}],
           "options": {"showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLines": true, "prettifyLogMessage": false, "enableLogDetails": true}
         }
       ]
@@ -541,6 +541,27 @@ data:
           "gridPos": {"x": 16, "y": 22, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} | json | __error__=\"\" | msg=\"handled request\" | status=429 | rate_limit_zone=~\".+\" | line_format `{{.status}} {{.request_method}} {{.request_uri}} ip={{.client_ip}} zone={{.rate_limit_zone}} duration={{.duration}}s`"}],
+          "options": {"showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLines": true, "prettifyLogMessage": false, "enableLogDetails": true}
+        },
+        {
+          "id": 11,
+          "type": "stat",
+          "title": "Identity drift — client_ip in pod CIDR",
+          "description": "Nonzero means the resolved client IP fell back to a pod-range address (the trusted cilium_host peer no longer matches), so per-client buckets are shared. Re-run the runbook Stage 0 and update trusted_proxies. Probes are excluded; expected value is 0.",
+          "gridPos": {"x": 0, "y": 30, "w": 8, "h": 6},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} | json | __error__=\"\" | msg=\"handled request\" | request_uri != \"/waf-healthz\" | client_ip=~\"10\\.42\\..*\" [5m]))"}],
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "colorMode": "value", "graphMode": "none"},
+          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []}
+        },
+        {
+          "id": 12,
+          "type": "logs",
+          "title": "Suspicious identity samples (client_ip in pod CIDR)",
+          "description": "Access-log samples whose resolved client_ip is in the pod CIDR; inspect before/after a node change.",
+          "gridPos": {"x": 8, "y": 30, "w": 16, "h": 6},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} | json | __error__=\"\" | msg=\"handled request\" | request_uri != \"/waf-healthz\" | client_ip=~\"10\\.42\\..*\" | line_format `{{.status}} {{.request_method}} {{.request_uri}} ip={{.client_ip}} zone={{.rate_limit_zone}}`"}],
           "options": {"showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLines": true, "prettifyLogMessage": false, "enableLogDetails": true}
         }
       ]

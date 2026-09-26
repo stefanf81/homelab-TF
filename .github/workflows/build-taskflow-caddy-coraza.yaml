@@ -35,6 +35,39 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0 # the revision guard compares the Dockerfile across the push
+
+      # A changed build recipe must ship under a new revision tag; otherwise the
+      # "revision tag already published" check below would silently keep the old
+      # image. Compare the Dockerfile across the pushed range (or the PR diff).
+      - name: Require a new IMAGE_REVISION when the Dockerfile changes
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          DOCKERFILE=gitops/images/taskflow-caddy-coraza/Dockerfile
+          base=""
+          if [ -n "${BEFORE:-}" ] && git rev-parse --verify --quiet "$BEFORE" >/dev/null; then
+            base="$BEFORE"
+          elif git rev-parse --verify --quiet HEAD^ >/dev/null; then
+            base="HEAD^"
+          fi
+          if [ -z "$base" ]; then
+            echo "no base commit; skipping revision guard"
+            exit 0
+          fi
+          if ! git diff --name-only "$base" HEAD -- "$DOCKERFILE" | grep -q .; then
+            echo "Dockerfile unchanged since $base; no revision bump required"
+            exit 0
+          fi
+          old=$(git show "$base:$DOCKERFILE" | grep '^ARG IMAGE_REVISION=' | cut -d= -f2 | tr -d ' "')
+          new=$(grep '^ARG IMAGE_REVISION=' "$DOCKERFILE" | cut -d= -f2 | tr -d ' "')
+          if [ "$old" = "$new" ]; then
+            echo "::error::Dockerfile changed but IMAGE_REVISION is still '$new'; bump it so the image is republished"
+            exit 1
+          fi
+          echo "recipe changed and IMAGE_REVISION bumped: $old -> $new"
 
       - name: Extract versions from Dockerfile
         id: versions

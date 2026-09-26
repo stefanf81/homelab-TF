@@ -171,10 +171,18 @@ It asserts:
 - exceeding the window returns 429 with `Retry-After`, allowed requests reach
   the upstream exactly once, another client is unaffected, `/waf-healthz` stays
   available, and the 429 access log carries `rate_limit_zone`;
+- the stricter `authentication` zone fires and is attributed on `/api/v1/auth/*`;
+- two IPv6 addresses in one `/64` share a bucket while a different `/64` is fresh
+  (the edge proxy reports a `X-Test-Client` value to simulate the IPv6 client);
 - Coraza still blocks a SQLi probe in the same fixed image.
 
-The workflow runs the suite on every PR and before any publish, and skips the
-push when the revision tag already exists (bump `IMAGE_REVISION` to publish).
+`tests/validate-configs.sh` is a separate, substitution-free check used by the
+"Validate WAF config and dashboards" workflow: it validates the ConfigMaps'
+**unmodified** Caddyfiles (real trusted list and zones) and every provisioned
+dashboard JSON, so ConfigMap-only changes are covered even though they do not
+trigger the image build. The image workflow runs the suite on every PR and before
+any publish, requires a new `IMAGE_REVISION` when the Dockerfile recipe changes,
+and skips the push when the revision tag already exists.
 
 ## Kubernetes Resources
 
@@ -306,6 +314,10 @@ same xcaddy image as Coraza (pinned commit
 |-----|------|-----|-------|--------|---------------|
 | `taskflow-frontend-waf` | `general` | `{client_ip}` | 180 requests | 60s | `/64` |
 | `taskflow-backend-waf` | `api` | `{client_ip}` | 300 requests | 60s | `/64` |
+| `taskflow-backend-waf` | `authentication` (`/api/v1/auth/*`) | `{client_ip}` | 20 requests | 60s | `/64` |
+
+Every matching zone is enforced; the `authentication` zone is tighter than `api`
+and applies on top of it.
 
 ### How `{client_ip}` is derived
 
@@ -607,10 +619,14 @@ rejections additionally carry the `rate_limit_zone` field.
 
 Provisioned by `gitops/monitoring/logging/grafana-provisioning.yaml` and derived
 entirely from Caddy access logs in Loki (`status=429`). It shows rate-limited
-requests for 5m/1h/24h, 429 rate over time by application, WAF 403 blocks vs
-rate-limit 429s, total Caddy request rate, and the top paths / client IPs / hosts
-receiving 429. Client IPs and URIs are parsed at query time (`| json`) and are
-not Loki labels, so no high-cardinality series are created.
+requests for 5m/1h/24h, rate-limiter 429s over time by application, the rejection
+mix (Coraza blocks vs limiter vs upstream 429s), total Caddy request rate, and
+the top paths / client IPs / hosts receiving 429. It also carries an "Identity
+drift — client_ip in pod CIDR" stat that must stay at 0: a nonzero value means
+the resolved client fell back to a pod-range address (the trusted `cilium_host`
+peer changed), so buckets are shared and the runbook Stage 0 must be re-run.
+Client IPs and URIs are parsed at query time (`| json`) and are not Loki labels,
+so no high-cardinality series are created.
 
 ### Access
 

@@ -18,6 +18,7 @@ import urllib.request
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     upstream = ""
+    client_header = ""
 
     def _forward(self) -> None:
         body = b""
@@ -26,6 +27,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body = self.rfile.read(length)
 
         peer = self.client_address[0]
+
+        # Test hook: pretend this hop saw a different client address (e.g. an
+        # IPv6 client behind Cloudflare) by reporting the value of a header
+        # instead of the real TCP peer. Downstream trusted hops are still skipped
+        # by Caddy's right-to-left walk, so the reported value is selected.
+        if self.client_header:
+            reported = (self.headers.get(self.client_header) or "").strip()
+            if reported:
+                peer = reported
+
         xff = self.headers.get("X-Forwarded-For")
         xff = f"{xff}, {peer}" if xff else peer
 
@@ -74,9 +85,15 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--listen", type=int, default=8080)
     parser.add_argument("--upstream", required=True)
+    parser.add_argument(
+        "--client-header",
+        default="",
+        help="header whose value is reported as this hop's client address",
+    )
     args = parser.parse_args()
 
     Handler.upstream = args.upstream
+    Handler.client_header = args.client_header
     server = http.server.ThreadingHTTPServer(("0.0.0.0", args.listen), Handler)
     server.serve_forever()
 
