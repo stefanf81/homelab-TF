@@ -2,14 +2,20 @@
 
 ARG CADDY_VERSION=2.11.4
 ARG CORAZA_CADDY_VERSION=v2.6.0
-ARG IMAGE_REVISION=r1
+# github.com/mholt/caddy-ratelimit has no tagged release with ipv4_prefix/
+# ipv6_prefix, disable_metrics, or the metrics re-registration fix, so it is
+# pinned to an immutable commit (post-dates the Caddy 2.11.4 release).
+ARG RATE_LIMIT_VERSION=5625512f24f6f59d6f64fb3aafe5eecff0b286db
+ARG IMAGE_REVISION=r3
 
 FROM caddy:${CADDY_VERSION}-builder-alpine AS builder
 
 ARG CORAZA_CADDY_VERSION
+ARG RATE_LIMIT_VERSION
 
 RUN xcaddy build \
-    --with github.com/corazawaf/coraza-caddy/v2@${CORAZA_CADDY_VERSION}
+    --with github.com/corazawaf/coraza-caddy/v2@${CORAZA_CADDY_VERSION} \
+    --with github.com/mholt/caddy-ratelimit@${RATE_LIMIT_VERSION}
 
 FROM caddy:${CADDY_VERSION}-alpine
 

@@ -92,15 +92,17 @@ Consequences:
   why both sinks exist.
 * Cilium L7 header matching cannot substitute for the edge sink: it does not
   support CIDR/regex and one rule per IP is explicitly out of scope.
-* The real client IP remains visible downstream via `CF-Connecting-IP` /
-  `X-Forwarded-For` and is used by Caddy/Coraza and the Taskflow WAF dashboards.
+* The real client IP remains visible downstream in `X-Forwarded-For` and is used
+  by Caddy/Coraza and the Taskflow WAF dashboards. Caddy resolves `{client_ip}`
+  from the right-to-left XFF walk, skipping the trusted Cloudflare ranges and the
+  peer; `CF-Connecting-IP` is deliberately ignored because a direct-to-origin
+  client can supply it. See `docs/CORAZA_CONFIGURATION.md` § "Client IP
+  Forwarding" for the interim trusted-proxy caveat.
 
 TLS terminates **at the Cilium Gateway** (`mode: Terminate`, cert
 `taskflow-tls-secret` managed by cert-manager/Let's Encrypt HTTP-01). Caddy
 receives plain HTTP from Envoy; Envoy appends the visible source address to
-`X-Forwarded-For` and passes `CF-Connecting-IP` through. The WAFs trust the pod
-CIDR (`10.42.0.0/16`) and prefer `CF-Connecting-IP`; never widen that without
-also tightening the WAF ingress policy.
+`X-Forwarded-For` and passes `CF-Connecting-IP` through (unused by the WAFs).
 
 ## Synchronizer behavior
 

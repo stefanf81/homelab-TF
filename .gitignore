@@ -66,6 +66,10 @@ Desktop.ini
 *.log
 diagnostics.log
 
+# Python bytecode caches (image test helpers)
+__pycache__/
+*.pyc
+
 # ==============================================================================
 # SOPS / Age Encryption Keys
 # ==============================================================================

@@ -76,6 +76,47 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up test Python (PyYAML)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/testvenv"
+          "$RUNNER_TEMP/testvenv/bin/pip" install --quiet pyyaml
+          echo "$RUNNER_TEMP/testvenv/bin" >> "$GITHUB_PATH"
+
+      - name: Build image for tests (no push)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: gitops/images/taskflow-caddy-coraza
+          file: gitops/images/taskflow-caddy-coraza/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: taskflow-caddy-coraza:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run identity and rate-limit tests
+        env:
+          TEST_IMAGE: taskflow-caddy-coraza:test
+        run: gitops/images/taskflow-caddy-coraza/tests/run-tests.sh
+
+      # Published revision tags are immutable: never silently overwrite one.
+      # If the tag already exists the image was published before (e.g. a manual
+      # publish, or a change that did not touch the build recipe), so the push is
+      # skipped. To publish a genuinely new image, bump IMAGE_REVISION.
+      - name: Check whether the revision tag is already published
+        id: tagcheck
+        if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${{ steps.versions.outputs.repo_owner }}/taskflow-caddy-coraza"
+          TAG="${{ steps.versions.outputs.image_tag }}"
+          if docker buildx imagetools inspect "${IMAGE}:${TAG}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::${IMAGE}:${TAG} is already published; skipping push. Bump IMAGE_REVISION to publish a new revision."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
@@ -94,7 +135,7 @@ jobs:
           context: gitops/images/taskflow-caddy-coraza
           file: gitops/images/taskflow-caddy-coraza/Dockerfile
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
+          push: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) && steps.tagcheck.outputs.exists != 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -105,12 +146,13 @@ jobs:
           DIGEST="${{ steps.build.outputs.digest }}"
           IMAGE="ghcr.io/${{ steps.versions.outputs.repo_owner }}/taskflow-caddy-coraza"
           TAG="${{ steps.versions.outputs.image_tag }}"
+          PUSHED="${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) && steps.tagcheck.outputs.exists != 'true' }}"
 
           echo "### Container Image Build Succeeded 🚀" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Image**: \`${IMAGE}:${TAG}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Platform**: \`linux/amd64\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Pushed to GHCR**: \`${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Pushed to GHCR**: \`${PUSHED}\`" >> "$GITHUB_STEP_SUMMARY"
 
           if [ -n "$DIGEST" ]; then
             echo "- **Digest**: \`${DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"

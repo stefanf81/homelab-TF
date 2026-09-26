@@ -2,9 +2,9 @@
 
 ## Overview
 
-Taskflow uses a **Caddy + Coraza WAF** (Web Application Firewall) to inspect all incoming HTTP traffic before it reaches the application services. Coraza runs as a Coraza-Caddy plugin, using the **OWASP Core Rule Set (CRS)** to detect and optionally block common web attacks (SQL injection, XSS, path traversal, etc.).
+Taskflow uses a **Caddy + Coraza WAF** (Web Application Firewall) to inspect all incoming HTTP traffic before it reaches the application services. Coraza runs as a Coraza-Caddy plugin, using the **OWASP Core Rule Set (CRS)** to detect and optionally block common web attacks (SQL injection, XSS, path traversal, etc.). Caddy additionally carries **per-client HTTP rate limiting** (HTTP 429, `caddy-ratelimit`), currently **staged off** until the client-IP identity has been verified live (the trusted proxy range is already narrowed to the observed Envoy peer). Rate limiting complements — and does not replace — IP reputation enforcement (Cloudflare edge + Cilium) or CRS inspection. See [Rate Limiting](#rate-limiting-staged).
 
-Audit logs from the WAF are collected by **Grafana Alloy**, stored in **Grafana Loki** (30-day retention), and visualized in a **Grafana dashboard**.
+Audit logs, access logs (including rate-limit 429s), and Coraza records from the WAFs are collected by **Grafana Alloy**, stored in **Grafana Loki** (30-day retention), and visualized in Grafana dashboards.
 
 > **IP reputation is not a WAF concern here.** Known-malicious source IPs are
 > enforced **before** this stack: at the Cloudflare edge for proxied traffic
@@ -26,27 +26,30 @@ Audit logs from the WAF are collected by **Grafana Alloy**, stored in **Grafana 
               /api         /            │
               │            │            │
          ┌────▼─────┐ ┌───▼──────┐    │
-         │ Backend  │ │ Frontend │    │
-         │   WAF    │ │   WAF    │    │
-         │ Caddy +  │ │ Caddy +  │    │
-         │ Coraza   │ │ Coraza   │    │
-         │ + CRS    │ │ + CRS    │    │
-         └────┬─────┘ └───┬──────┘    │
-              │            │           │
-         ┌────▼─────┐ ┌───▼──────┐   │
-         │ Backend  │ │ Frontend │   │
-         │   App    │ │   App    │   │
-         │ :8080    │ │ :8080    │   │
-         └──────────┘ └──────────┘   │
+          │ Backend  │ │ Frontend │    │
+          │   WAF    │ │   WAF    │    │
+          │ Caddy +  │ │ Caddy +  │    │
+          │ Coraza   │ │ Coraza   │    │
+          │ + CRS    │ │ + CRS    │    │
+          │ + rate   │ │ + rate   │    │
+          │   limit  │ │   limit  │    │
+          └────┬─────┘ └───┬──────┘    │
+               │            │           │
+          ┌────▼─────┐ ┌───▼──────┐   │
+          │ Backend  │ │ Frontend │   │
+          │   App    │ │   App    │   │
+          │ :8080    │ │ :8080    │   │
+          └──────────┘ └──────────┘   │
                                      │
               ┌──────────────────────┘
               │
-         ┌────▼─────────────────────────────┐
-         │  Observability Stack             │
-         │  Alloy → Loki → Grafana         │
-         │  (job="coraza-waf")              │
-         │  Dashboard: /d/taskflow-waf      │
-         └─────────────────────────────────┘
+         ┌────▼──────────────────────────────────┐
+         │  Observability Stack                  │
+         │  Alloy → Loki → Grafana              │
+         │  (job="coraza-waf")                   │
+         │  Dashboards: /d/taskflow-waf,         │
+         │              /d/taskflow-rate-limits  │
+         └──────────────────────────────────────┘
 ```
 
 ## Components
@@ -56,6 +59,7 @@ Audit logs from the WAF are collected by **Grafana Alloy**, stored in **Grafana 
 | Caddy | `taskflow` | 2.11.4 | HTTP server + reverse proxy |
 | Coraza | `taskflow` | v2.6.0 | WAF engine (OWASP ModSecurity compatible) |
 | OWASP CRS | `taskflow` | v4.25.0 | Core Rule Set for attack detection |
+| caddy-ratelimit | `taskflow` | commit `5625512f24` | Sliding-window per-client HTTP rate limiting (429) |
 | Alloy | `monitoring` | 1.12.1 (chart) | Log collection agent |
 | Loki | `monitoring` | 18.12.1 (chart) | Log aggregation and storage |
 | Grafana | `monitoring` | via victoria-metrics-k8s-stack | Dashboard visualization |
@@ -95,10 +99,11 @@ to GHCR. Builds are automated by
 as a fallback:
 
 - **Repository**: `ghcr.io/stefanf81/taskflow-caddy-coraza`
-- **Tag**: `2.11.4-coraza2.6.0-r1`
+- **Tag**: `2.11.4-coraza2.6.0-r3`
+- **Digest**: `sha256:944074acac9fcc9fbeaf1aed373a283dfe579086414ad75948fb1f012512f6bd` (pinned in both WAF Deployments)
 - **Dockerfile**: `gitops/images/taskflow-caddy-coraza/Dockerfile`
 - **Platform**: `linux/amd64` (k3s node architecture)
-- **Digest**: Pinned in both WAF Deployments
+- **Modules**: `github.com/corazawaf/coraza-caddy/v2@v2.6.0`, `github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db`
 
 ### Build & Push (Manual)
 
@@ -111,34 +116,66 @@ The release tag is derived from the Dockerfile's `CADDY_VERSION`,
 overwritten. A publishing account needs package write permission; the pull secret
 used by the cluster needs only package read permission.
 
+`github.com/mholt/caddy-ratelimit` has no tagged release with `ipv4_prefix`/
+`ipv6_prefix`, `disable_metrics`, or the metrics re-registration fix, so
+`RATE_LIMIT_VERSION` pins an immutable commit instead of a tag.
+
 Manual local build if needed:
 
 ```bash
-docker build --platform linux/amd64 \
-  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1 \
+docker buildx build --platform linux/amd64 --load \
+  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3 \
   gitops/images/taskflow-caddy-coraza/
 
 # Authenticate to GHCR (requires write:packages scope)
-echo $(gh auth token) | docker login ghcr.io -u stefanf81 --password-stdin
+read -r -s GITHUB_TOKEN
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u stefanf81 --password-stdin
+unset GITHUB_TOKEN
 
-docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1
+docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3
 
-# Get digest for pinning
+# Verify both modules and get the digest for pinning
+docker run --rm ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3 list-modules \
+  | grep -E 'http.handlers.waf|http.handlers.rate_limit'
 docker inspect --format='{{index .RepoDigests 0}}' \
-  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1
+  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3
 ```
 
 ### Image Build Details
 
 The Dockerfile uses a multi-stage build:
 
-1. **Builder stage**: Uses `caddy:2.11.4-builder-alpine` to compile Caddy with the Coraza WAF plugin via `xcaddy`
+1. **Builder stage**: Uses `caddy:2.11.4-builder-alpine` to compile Caddy with the Coraza WAF plugin and the rate-limit plugin via `xcaddy` (`http.handlers.waf`, `http.handlers.rate_limit`)
 2. **Runtime stage**: Based on `caddy:2.11.4-alpine`, copies the compiled binary
 3. **Key steps**:
     - `setcap -r /usr/bin/caddy` — strips file capabilities (required for `allowPrivilegeEscalation: false`)
     - Creates `caddy` user (UID 100) for non-root execution
     - Adds `jq` (kept for ad-hoc debugging; the audit pipeline no longer needs it)
     - Exposes port 8080
+
+### Automated tests
+
+`gitops/images/taskflow-caddy-coraza/tests/` builds a disposable Docker network
+that mirrors the production chain — client → Cloudflare edge sim → Cilium Envoy
+sim → Caddy → upstream — and runs the **production Caddyfile** (extracted from
+the WAF ConfigMaps, with only the trusted list and upstream target substituted).
+It asserts:
+
+- both the shipped (staged, comments-only) config and the enforcement-enabled
+  config pass `caddy validate`, and the two WAF ConfigMaps carry identical
+  trusted-proxy lists;
+- proxied clients resolve to their real address;
+- forged `X-Forwarded-For` / `CF-Connecting-IP` cannot win the identity, on both
+  the proxied and direct paths;
+- an address that is not in the trusted list (e.g. a pod) is **not** skipped, so
+  it cannot spoof a forged value to its left;
+- exceeding the window returns 429 with `Retry-After`, allowed requests reach
+  the upstream exactly once, another client is unaffected, `/waf-healthz` stays
+  available, and the 429 access log carries `rate_limit_zone`;
+- Coraza still blocks a SQLi probe in the same fixed image.
+
+The workflow runs the suite on every PR and before any publish, and skips the
+push when the revision tag already exists (bump `IMAGE_REVISION` to publish).
 
 ## Kubernetes Resources
 
@@ -248,6 +285,121 @@ ingest (see `gitops/monitoring/logging/alloy-release.yaml`).
 | C | Request body |
 | K | Matched rule IDs |
 | Z | End of audit log entry |
+
+## Rate Limiting (staged)
+
+Caddy can enforce a sliding-window request limit per real client IP using
+[`caddy-ratelimit`](https://github.com/mholt/caddy-ratelimit), built into the
+same xcaddy image as Coraza (pinned commit
+`5625512f24f6f59d6f64fb3aafe5eecff0b286db`). Exceeding a zone returns
+**HTTP 429** with a `Retry-After` header.
+
+> **Status: enforcement is OFF in Git.** The Caddyfile imports
+> `/etc/caddy/rate-limit.conf`, which is mounted from the ConfigMap and contains
+> only comments. This is deliberate: the client-IP identity must be verified
+> first. The trusted proxy range is already narrowed to the observed Envoy peer
+> (`10.42.0.148/32`) plus the Cloudflare ranges. The full procedure is in
+> `docs/TASKFLOW_WAF_RUNBOOK.md` § "Rate limiting"; enabling is a ConfigMap edit
+> plus a rollout restart.
+
+### Zones (target configuration)
+
+| WAF | Zone | Key | Limit | Window | IPv6 grouping |
+|-----|------|-----|-------|--------|---------------|
+| `taskflow-frontend-waf` | `general` | `{client_ip}` | 180 requests | 60s | `/64` |
+| `taskflow-backend-waf` | `api` | `{client_ip}` | 300 requests | 60s | `/64` |
+
+### How `{client_ip}` is derived
+
+Caddy parses **`X-Forwarded-For` only**, right-to-left, skipping trusted hops
+(`trusted_proxies_strict`). The trusted list contains:
+
+- the **Cloudflare proxy ranges** (snapshot of Cloudflare's published lists, kept
+  in Git), so the Cloudflare edge hop is skipped and the real visitor is used;
+- the **observed Cilium Envoy peer** (`10.42.0.148/32`, the node's `cilium_host`
+  address, verified 2026-09-26) so Caddy parses headers at all. It is a /32, not
+  the Pod CIDR: trusting the pod network would let a pod that reaches the Gateway
+  be skipped as a trusted hop and a forged address to its left selected. Re-verify
+  if the node is replaced (runbook Stage 0).
+
+`CF-Connecting-IP` is deliberately **not** consulted: Cilium Envoy forwards a
+client-supplied value verbatim, so on the direct-to-origin path it would let a
+client choose its own limiter identity. The right-to-left `X-Forwarded-For` walk
+is robust to forged prefixes because Cloudflare and Envoy *append* the real
+connecting address after any client-supplied values.
+
+Coraza reads the same resolved `client_ip` variable, so WAF audit records and the
+limiter always agree on the visitor identity.
+
+### Zones: operational notes
+
+- IPv6 addresses are masked to `/64` before keying, so rotating addresses within
+  one prefix cannot mint new buckets.
+- Limits are per Caddy replica and held in memory (there is exactly one replica
+  per WAF and no shared Caddy storage), so no distributed mode, Redis, or extra
+  datastore is involved.
+- `/waf-healthz` is served by its own handler before the rate-limited handler
+  and is never counted. Kubernetes probes therefore cannot trip the limiter.
+- Rate limiting protects the *applications* from abusive request volume. It is
+  deliberately keyed on the network client, not user identity: per-account
+  quotas (e.g. "100 API calls/day per user") belong in the application/API layer.
+- The long-lived SSE endpoint `/api/v1/appointments/events` counts as one event
+  per connection, so the backend `api` zone does not interfere with the stream.
+
+### Handler Order
+
+```
+log_append (client_ip, rate_limit_zone)  →  coraza_waf (CRS)  →  rate_limit (429)  →  reverse_proxy
+```
+
+`order coraza_waf first` is intentionally unchanged, so **Coraza always runs
+before the limiter**. A rate-limited request has therefore already consumed WAF
+inspection CPU; the AbuseIPDB/Cilium and Cloudflare layers drop known-bad
+sources earlier, which keeps obvious floods away from Caddy entirely. Correct
+WAF behavior takes priority over saving CPU.
+
+Two access-log fields make rejections attributable:
+
+| Field | Set by | Notes |
+|-------|--------|-------|
+| `client_ip` | `log_append <client_ip` (early) | Resolved visitor, present even when Coraza interrupts |
+| `rate_limit_zone` | `log_append rate_limit_zone` (late) | `general`/`api` when the limiter rejected; empty otherwise |
+
+`is_interrupted: true` in Coraza audit records identifies WAF blocks. HTTP 403 is
+**not** used as the WAF signal: applications can legitimately return 403 too.
+
+### Metrics and cardinality
+
+The image does **not** expose Caddy metrics (no `metrics` global option, no
+Prometheus scrape). The plugin is configured with `disable_metrics` as a
+safeguard, because its Prometheus collectors label every series with the
+rate-limit key — for `{client_ip}` that would create one time series per
+Internet client. Do not enable Caddy metrics without accounting for that.
+Individual 429 events are observed through the access logs → Loki path instead
+(see [Rate Limits Dashboard](#rate-limits-dashboard)).
+
+### Performance notes
+
+The limiter is a map lookup plus a ring-buffer reservation and runs *after*
+Coraza, so its CPU cost is negligible compared with CRS inspection. Memory is
+`O(max_events × distinct keys)`; expired limiters are swept every minute. Watch
+the WAF pod CPU/memory panels on the Taskflow WAF dashboard after rollout.
+
+### Disable / rollback
+
+Enforcement lives entirely in the ConfigMap `rate-limit.conf` key. Disabling it
+does not touch Cilium, Gateway API, Coraza, CRS, or the applications:
+
+1. Restore the comments-only `rate-limit.conf` (or delete the `rate_limit`
+   block) in `gitops/apps/taskflow/{frontend,backend}-waf.yaml`.
+2. `flux reconcile kustomization taskflow-app -n flux-system --with-source`
+3. `kubectl -n taskflow rollout restart deployment/taskflow-backend-waf deployment/taskflow-frontend-waf`
+   (Caddy runs with `admin off`; a ConfigMap change alone does not reload it).
+4. After the rollout Caddy runs without the limiter. The image can stay at `r3`
+   — the module is simply unused.
+
+Keep the narrowed trusted-proxy configuration during rollback. To roll the image
+back as well, restore the previous digest in both WAF Deployments.
 
 ## Logging Stack
 
@@ -444,10 +596,23 @@ available for `application` and `pod`; `namespace` is fixed to `taskflow` and
 
 Each WAF uses `log_append <client_ip {client_ip}` before `coraza_waf`, so Caddy
 access logs include the resolved visitor IP even when Coraza blocks the request.
-The value is derived only from `X-Forwarded-For` received from the trusted Cilium
-Gateway Pod CIDR. It is parsed at query time and is not a Loki label. Coraza audit
-records continue to expose the same value as `transaction_client_ip` for
-`RelevantOnly` transactions.
+The value is derived from the right-to-left `X-Forwarded-For` walk (trusted hops
+skipped) received from the Cilium Gateway; `CF-Connecting-IP` is not consulted.
+It is parsed at query time and is not a Loki label. Coraza audit records
+continue to expose the same value as `transaction_client_ip` for `RelevantOnly`
+transactions. The rate limiter uses the same `{client_ip}` as its key, and
+rejections additionally carry the `rate_limit_zone` field.
+
+### Rate Limits Dashboard
+
+**Dashboard**: "Taskflow Rate Limits" (`/d/taskflow-rate-limits`)
+
+Provisioned by `gitops/monitoring/logging/grafana-provisioning.yaml` and derived
+entirely from Caddy access logs in Loki (`status=429`). It shows rate-limited
+requests for 5m/1h/24h, 429 rate over time by application, WAF 403 blocks vs
+rate-limit 429s, total Caddy request rate, and the top paths / client IPs / hosts
+receiving 429. Client IPs and URIs are parsed at query time (`| json`) and are
+not Loki labels, so no high-cardinality series are created.
 
 ### Access
 
@@ -495,6 +660,16 @@ topk(10, sum by (client_ip) (
 
 # Detections introduced by paranoia level 2 (rules ignored on PL 1)
 {job="coraza-waf"} |= "\"messages\"" |= "paranoia-level/2"
+
+# Rate-limited requests (HTTP 429) with the resolved client IP
+{job="coraza-waf", container="waf"} | json | __error__="" | status=429
+  | line_format `{{.status}} {{.request_method}} {{.request_uri}} ip={{.client_ip}}`
+
+# Top client IPs receiving 429 (query-time aggregation, not a Loki label)
+topk(10, sum by (client_ip) (
+  count_over_time({job="coraza-waf", container="waf"} | json | __error__="" |
+    status=429 | client_ip != "" [24h])
+))
 ```
 
 ## Caddy Access Logs
@@ -595,19 +770,29 @@ kubectl run loki-query --image=curlimages/curl --rm -i --restart=Never -n monito
 
 ### Test WAF Internally
 
+A test pod cannot reach the WAF Services directly: `allow-gateway-to-waf` admits
+only the Gateway/Envoy (`reserved:ingress`) identity. Use `kubectl port-forward`
+(node-originated traffic is allowed by the network policy):
+
 ```bash
 # Frontend WAF health
-kubectl run curl-test --rm -i --restart=Never -n taskflow --image=curlimages/curl -- \
-  curl -s http://taskflow-frontend-waf.taskflow.svc.cluster.local:8080/waf-healthz
+kubectl -n taskflow port-forward svc/taskflow-frontend-waf 8080:8080 &
+PF=$!; sleep 1
+curl -s http://localhost:8080/waf-healthz
+kill "$PF"
 
 # Backend WAF health
-kubectl run curl-test --rm -i --restart=Never -n taskflow --image=curlimages/curl -- \
-  curl -s http://taskflow-backend-waf.taskflow.svc.cluster.local:8080/waf-healthz
+kubectl -n taskflow port-forward svc/taskflow-backend-waf 8081:8080 &
+PF=$!; sleep 1
+curl -s http://localhost:8081/waf-healthz
+kill "$PF"
 
 # SQL injection test (blocking mode - may return a WAF block status)
-kubectl run curl-test --rm -i --restart=Never -n taskflow --image=curlimages/curl -- \
-  curl -s -o /dev/null -w "%{http_code}" \
-  'http://taskflow-backend-waf.taskflow.svc.cluster.local:8080/api?test=1%20UNION%20SELECT%201'
+kubectl -n taskflow port-forward svc/taskflow-backend-waf 8082:8080 &
+PF=$!; sleep 1
+curl -s -o /dev/null -w "%{http_code}" \
+  'http://localhost:8082/api?test=1%20UNION%20SELECT%201'
+kill "$PF"
 ```
 
 ### Reconcile
@@ -681,12 +866,15 @@ kubectl logs -n monitoring deploy/alloy -c alloy
 - **No public exposure**: Loki and Alloy have no Gateway, LoadBalancer, or public route
 - **Sensitive data redaction**: Caddy access logs redact credentials and tokens
 - **Audit log privacy**: Coraza audit parts exclude request bodies; Alloy removes sensitive request headers and query parameters at ingest
+- **Rate-limit identity**: The limiter keys on Caddy's validated `{client_ip}`, resolved from `X-Forwarded-For` only, right-to-left, skipping the Cloudflare ranges and the trusted peer (`10.42.0.148/32`, the node's `cilium_host` address). `CF-Connecting-IP` is ignored, so a direct-to-origin client cannot choose its identity through it; forged `X-Forwarded-For` prefixes are ignored because Cloudflare and Envoy append the real connecting address. `trusted_proxies_strict` makes the trust check mandatory (an untrusted peer yields no header parsing at all). Because the peer entry is a /32 rather than the Pod CIDR, an in-cluster pod that reaches the Gateway is not skipped as a trusted hop. Re-verify the peer with the runbook Stage 0 if the node is replaced. IP reputation blocking at Cloudflare/Cilium remains the outer layer.
+- **Not an account quota**: Rate limiting is per network client and cannot enforce per-user entitlements; those belong in the application/API layer
 
 ## File Reference
 
 | File | Purpose |
 |------|---------|
-| `gitops/images/taskflow-caddy-coraza/Dockerfile` | Custom Caddy+Coraza image build |
+| `gitops/images/taskflow-caddy-coraza/Dockerfile` | Custom Caddy+Coraza+rate-limit image build |
+| `gitops/images/taskflow-caddy-coraza/tests/` | Identity and rate-limit test suite (CI + local) |
 | `gitops/apps/taskflow/frontend-waf.yaml` | Frontend WAF ConfigMap, Deployment, Service |
 | `gitops/apps/taskflow/backend-waf.yaml` | Backend WAF ConfigMap, Deployment, Service |
 | `gitops/apps/taskflow/httproute.yaml` | HTTPRoute routing through WAF services |
@@ -694,7 +882,7 @@ kubectl logs -n monitoring deploy/alloy -c alloy
 | `gitops/monitoring/logging/repositories.yaml` | HelmRepos for Loki and Alloy |
 | `gitops/monitoring/logging/loki-release.yaml` | Loki HelmRelease |
 | `gitops/monitoring/logging/alloy-release.yaml` | Alloy HelmRelease with log collection |
-| `gitops/monitoring/logging/grafana-provisioning.yaml` | Loki datasource + WAF and access-log dashboards |
+| `gitops/monitoring/logging/grafana-provisioning.yaml` | Loki datasource + WAF, access-log, and rate-limit dashboards |
 | `gitops/monitoring/logging/vmservicescrapes.yaml` | VMServiceScrape for Loki/Alloy metrics |
 | `gitops/clusters/taskflow/monitoring-logging.yaml` | Flux Kustomization for logging stack |
 | `docs/TASKFLOW_WAF_RUNBOOK.md` | Operational runbook |
