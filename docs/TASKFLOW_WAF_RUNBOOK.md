@@ -29,11 +29,17 @@ commit (no tagged release has the required options).
 CI builds the image, runs the identity and rate-limit suite in
 `gitops/images/taskflow-caddy-coraza/tests/` on every PR, and **skips the push**
 if the revision tag is already published (bump `IMAGE_REVISION`) so published
-tags are never overwritten. Run the suite locally with:
+tags are never overwritten. A changed Dockerfile recipe with an unchanged
+`IMAGE_REVISION` fails the run. ConfigMap-only changes do not trigger that
+workflow, so a second workflow ("Validate WAF config and dashboards") runs
+`tests/validate-configs.sh` on any change to `gitops/apps/taskflow/*-waf.yaml`
+or `grafana-provisioning.yaml`; it validates the unmodified Caddyfiles and every
+dashboard JSON. Run either locally with:
 
 ```bash
 TEST_IMAGE=ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3 \
   gitops/images/taskflow-caddy-coraza/tests/run-tests.sh
+gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh
 ```
 
 For a manual publish, the account or token used by `docker push` needs package
@@ -119,10 +125,13 @@ after a node change, a trusted-proxy change, or when tuning the zones.
 
 Zones (see `gitops/apps/taskflow/*-waf.yaml`, `rate-limit.conf` key):
 
-| WAF | Zone | Limit | Window | Key |
-|-----|------|-------|--------|-----|
-| `taskflow-frontend-waf` | `general` | 180 | 60s | `{client_ip}` (IPv6 `/64`) |
-| `taskflow-backend-waf` | `api` | 300 | 60s | `{client_ip}` (IPv6 `/64`) |
+| WAF | Zone | Match | Limit | Window | Key |
+|-----|------|-------|-------|--------|-----|
+| `taskflow-frontend-waf` | `general` | (all) | 180 | 60s | `{client_ip}` (IPv6 `/64`) |
+| `taskflow-backend-waf` | `api` | (all) | 300 | 60s | `{client_ip}` (IPv6 `/64`) |
+| `taskflow-backend-waf` | `authentication` | `/api/v1/auth/*` | 20 | 60s | `{client_ip}` (IPv6 `/64`) |
+
+Every matching zone is enforced, so a login request is limited by both `authentication` (20/min) and `api` (300/min): the tighter one wins.
 
 ### Prerequisite — Cloudflare settings
 
@@ -153,9 +162,11 @@ kubectl -n kube-system exec ds/cilium -c cilium-agent -- ip -4 addr show cilium_
 ```
 
 Re-run this if the node is replaced or if `client_ip` starts resolving to a
-`10.42.x.x`/peer address. Trust only the address(es) that actually carry Gateway
-traffic; do **not** trust the whole Pod CIDR, or a pod that reaches the Gateway
-could be skipped as a trusted hop.
+`10.42.x.x`/peer address. The "Identity drift — client_ip in pod CIDR" panel on
+the Taskflow Rate Limits dashboard turns red when real requests resolve to a
+pod-range address, which is the signal that the trusted peer changed. Trust only
+the address(es) that actually carry Gateway traffic; do **not** trust the whole
+Pod CIDR, or a pod that reaches the Gateway could be skipped as a trusted hop.
 
 ### Stage 1 — narrow the trusted proxy range (applied 2026-09-26)
 
@@ -238,8 +249,9 @@ sum by (rate_limit_zone) (
     | msg="handled request" | status=429 | rate_limit_zone=~".+" [5m]))
 ```
 
-Then confirm that a second client is unaffected and that `403` Coraza blocks
-still occur (`is_interrupted:true` audit records).
+Then confirm that a second client is unaffected, that `/api/v1/auth/*` is held
+to the tighter `authentication` budget (429 with `rate_limit_zone=authentication`),
+and that `403` Coraza blocks still occur (`is_interrupted:true` audit records).
 
 ### Tune or disable
 
