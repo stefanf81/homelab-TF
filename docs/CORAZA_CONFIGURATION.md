@@ -203,23 +203,47 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
    - `variable_name`: which input triggered it (e.g., `ARGS:message`)
    - `matched_data`: the actual payload
 4. Write the narrowest possible exclusion in the exclusion file.
-5. Validate the Caddyfile locally:
+5. Validate the Caddyfile locally. The image entrypoint is already `caddy`, the
+   Caddyfile imports `/etc/caddy/rate-limit.conf`, and Coraza reads the
+   exclusions file, so mount the extracted ConfigMap keys (the rate-limit file
+   may be comments-only while enforcement is staged):
    ```
+   tmp=$(mktemp -d) && mkdir -p "$tmp/caddy" "$tmp/coraza"
    ruby -ryaml -e 'puts YAML.load_file(ARGV[0]).fetch("data").fetch("Caddyfile")' \
-     gitops/apps/taskflow/frontend-waf.yaml | \
-      docker run --rm -i ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r1 \
-     caddy validate --config /dev/stdin --adapter caddyfile
+     gitops/apps/taskflow/frontend-waf.yaml > "$tmp/caddy/Caddyfile"
+   ruby -ryaml -e 'puts YAML.load_file(ARGV[0]).fetch("data").fetch("rate-limit.conf")' \
+     gitops/apps/taskflow/frontend-waf.yaml > "$tmp/caddy/rate-limit.conf"
+   ruby -ryaml -e 'puts YAML.load_file(ARGV[0]).fetch("data").fetch("frontend-exclusions.conf")' \
+     gitops/apps/taskflow/frontend-waf.yaml > "$tmp/coraza/frontend-exclusions.conf"
+   docker run --rm -v "$tmp/caddy:/etc/caddy:ro" -v "$tmp/coraza:/etc/coraza:ro" \
+     ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3 \
+     validate --config /etc/caddy/Caddyfile --adapter caddyfile
+   rm -rf "$tmp"
    ```
 6. Reconcile and replay the test request. Confirm the false positive is gone and the rule still fires on other inputs.
 7. Reconcile and repeat the replay tests after every exclusion or CRS change.
 
 ## Client IP Forwarding
 
-The WAF receives requests only from the Cilium Gateway. Its Caddy global options trust
-the K3s Pod CIDR (`10.42.0.0/16`), prefer Cloudflare's `CF-Connecting-IP`, and fall back to
-right-to-left `X-Forwarded-For` parsing to resolve `{client_ip}`. Each WAF writes that resolved value as `client_ip` in
-the Caddy access log before Coraza executes, including blocked requests. The WAF also
-passes `{client_ip}` upstream as `X-Real-IP`.
+The WAF receives requests only from the Cilium Gateway. Caddy resolves `{client_ip}`
+from `X-Forwarded-For` only, parsed right-to-left while skipping trusted hops
+(`trusted_proxies_strict`). The trusted list contains the Cloudflare proxy ranges
+(so the Cloudflare edge hop is skipped and the real visitor is selected) plus a
+single interim peer range. `CF-Connecting-IP` is deliberately **not** consulted:
+Envoy forwards a client-supplied value verbatim, so on the direct-to-origin path
+it would let a client choose its own identity.
+
+> **Interim peer range.** The Caddyfile currently trusts `10.42.0.0/16` (K3s Pod
+> CIDR) because the exact Cilium Envoy source address has not yet been verified
+> from live logs. Before rate-limit enforcement is enabled this must be narrowed
+> to the observed Envoy source `/32` (`/128`) — otherwise a pod that reaches the
+> Gateway could be skipped as a trusted hop. Procedure:
+> `docs/TASKFLOW_WAF_RUNBOOK.md` § "Narrow the trusted proxy range".
+
+Each WAF writes the resolved value as `client_ip` in the Caddy access log before
+Coraza executes, including blocked requests, and passes `{client_ip}` upstream as
+`X-Real-IP`. Coraza reads the same Caddy `client_ip` variable, so its audit
+records and detections use the identical identity.
 The HTTPRoute attaches application traffic exclusively to the HTTPS Gateway listener,
 so each WAF explicitly passes `X-Forwarded-Proto: https` upstream. Do not widen the
 trusted proxy CIDR without also tightening the WAF ingress policy.
