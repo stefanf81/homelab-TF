@@ -6,7 +6,7 @@
 - `taskflow-backend-waf` receives `www.jokelab.dev/api` traffic.
 - Both WAFs use Caddy `2.11.4`, Coraza Caddy `v2.6.0`, OWASP CRS, and `caddy-ratelimit` (single container, no sidecars).
 - Both WAFs run with `SecRuleEngine On` and paranoia level 2.
-- Per-client HTTP rate limiting (staged; enforcement is off in Git until the "Rate limiting" procedure passes): frontend `general` 180/min, backend `api` 300/min, key `{client_ip}`, IPv6 grouped per `/64` (429 + `Retry-After` when exceeded).
+- Per-client HTTP rate limiting (enabled 2026-09-26): frontend `general` 180/min, backend `api` 300/min, key `{client_ip}`, IPv6 grouped per `/64` (429 + `Retry-After` when exceeded).
 - Coraza audit JSON goes straight to stdout; Alloy redacts credentials at ingest.
 - Loki runs as one monolithic replica in `monitoring` with 30-day retention.
 - Alloy collects WAF logs plus all other Taskflow workload logs and sends them to Loki.
@@ -111,10 +111,13 @@ should match (or confirm fresh audit timestamps in Loki).
 
 Caddy carries per-client HTTP rate limits (HTTP 429 + `Retry-After`) via the
 `caddy-ratelimit` module, keyed on the resolved `{client_ip}`. **Enforcement is
-OFF in Git** (`rate-limit.conf` is comments-only) until the steps below pass.
-Coraza always runs before the limiter; `/waf-healthz` is never rate limited.
+ON** (enabled 2026-09-26 after the stages below passed). Coraza always runs
+before the limiter; `/waf-healthz` is never rate limited.
 
-Target zones (see `gitops/apps/taskflow/*-waf.yaml`, `rate-limit.conf` key):
+The stages below document the rollout and remain the re-verification procedure
+after a node change, a trusted-proxy change, or when tuning the zones.
+
+Zones (see `gitops/apps/taskflow/*-waf.yaml`, `rate-limit.conf` key):
 
 | WAF | Zone | Limit | Window | Key |
 |-----|------|-------|--------|-----|
@@ -154,7 +157,7 @@ Re-run this if the node is replaced or if `client_ip` starts resolving to a
 traffic; do **not** trust the whole Pod CIDR, or a pod that reaches the Gateway
 could be skipped as a trusted hop.
 
-### Stage 1 — narrow the trusted proxy range (already applied)
+### Stage 1 — narrow the trusted proxy range (applied 2026-09-26)
 
 Both WAF ConfigMaps trust `10.42.0.148/32` plus the Cloudflare ranges. If Stage 0
 yields a different address:
@@ -165,7 +168,7 @@ yields a different address:
    then `kubectl -n taskflow rollout restart deployment/taskflow-backend-waf deployment/taskflow-frontend-waf`.
 3. Run the identity checks below.
 
-### Stage 2 — verify the client identity (required before enforcement)
+### Stage 2 — verify the client identity (passed 2026-09-26; re-run after changes)
 
 ```bash
 # 1) Different external clients must resolve to different client_ip values
@@ -204,7 +207,7 @@ Confirm on the Taskflow Access Logs dashboard (or via the LogQL above) that
 `10.42.x.x`/peer address, the trust list is wrong — stop and fix it before
 enabling enforcement.
 
-### Stage 3 — enable enforcement
+### Stage 3 — enable enforcement (applied 2026-09-26)
 
 1. **Prerequisite: Stage 1 and Stage 2 must have passed.** The trust list is
    already narrowed to the observed Envoy peer (`10.42.0.148/32`); if it is ever
