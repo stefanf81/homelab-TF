@@ -124,11 +124,9 @@ data:
                 `
             }
 
-            # Rate limiting is staged: this file is mounted from the ConfigMap
-            # and stays comments-only until the identity verification in
-            # docs/TASKFLOW_WAF_RUNBOOK.md passes and the trusted proxy range
-            # has been narrowed. See the rate-limit.conf key below for the
-            # ready-to-enable zone block (backend: `api`, 300/min).
+            # Rate limiting: the zones live in the ConfigMap's rate-limit.conf
+            # key (mounted next to this file) and are enabled (2026-09-26).
+            # Tuning and rollback: docs/TASKFLOW_WAF_RUNBOOK.md ("Rate limiting").
             import /etc/caddy/rate-limit.conf
 
             reverse_proxy http://backend.taskflow.svc.cluster.local:8080 {

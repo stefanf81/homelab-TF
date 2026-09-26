@@ -8,9 +8,9 @@
 #
 # and asserts against the *production* Caddyfile extracted from the WAF
 # ConfigMaps, substituting only the trusted_proxies list and the upstream target
-# for the test topology. Enforcement is enabled with a small window so the suite
-# runs in seconds; the production zone values live in the ConfigMaps and are
-# enabled by the runbook procedure.
+# for the test topology. The production zones are overridden with a small window
+# so the suite runs in seconds; the production values (180/300 per minute) live
+# in the ConfigMaps.
 #
 # Usage: TEST_IMAGE=<image> ./run-tests.sh
 # Requires: docker, python3 with PyYAML (used to extract the ConfigMaps).
@@ -138,16 +138,16 @@ run_suite() { # waf
   python3 "$HERE/gen-config.py" \
     "$REPO_ROOT/gitops/apps/taskflow/$waf-waf.yaml" "$cfg" "$waf" "$TRUSTED" "$upstream"
 
-  # First validate the config exactly as Git ships it (comments-only limiter):
-  # a typo in the staged import or rate-limit.conf must fail CI here.
-  say "$waf: validating production (staged) config"
+  # First validate the config exactly as Git ships it (production zones): a typo
+  # in the import or rate-limit.conf must fail CI here.
+  say "$waf: validating shipped config"
   docker run --rm -v "$cfg/caddy:/etc/caddy:ro" -v "$cfg/coraza:/etc/coraza:ro" \
     "$TEST_IMAGE" validate --config /etc/caddy/Caddyfile --adapter caddyfile \
     >/dev/null 2>&1 || fail "$waf: caddy validate rejected the production config"
 
-  # Enable the limiter for the test only, with a window long enough that a slow
+  # Override the zones for the test only, with a window long enough that a slow
   # runner cannot slide it during the burst. Production values (180/300 per
-  # minute) live in the ConfigMaps and are enabled by the runbook procedure.
+  # minute) live in the ConfigMaps.
   cat > "$cfg/caddy/rate-limit.conf" <<EOF
 rate_limit {
     disable_metrics

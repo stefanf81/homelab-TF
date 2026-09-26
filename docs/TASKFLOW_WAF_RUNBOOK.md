@@ -212,9 +212,10 @@ enabling enforcement.
 1. **Prerequisite: Stage 1 and Stage 2 must have passed.** The trust list is
    already narrowed to the observed Envoy peer (`10.42.0.148/32`); if it is ever
    back to a broad range (e.g. the Pod CIDR), narrow it first.
-2. Put the zone block into the `rate-limit.conf` key of each WAF ConfigMap
-   (frontend `general` 180/min, backend `api` 300/min; the exact block is in the
-   comments of that key).
+2. Ensure the zone block is enabled in the `rate-limit.conf` key of each WAF
+   ConfigMap (frontend `general` 180/min, backend `api` 300/min). It is enabled
+   in Git; after a rollback, restore it by removing the `#` comment markers from
+   the zone block.
 3. Reconcile and roll (same commands as Stage 1).
 4. Verify enforcement from one external client:
 
@@ -244,9 +245,9 @@ still occur (`is_interrupted:true` audit records).
 
 - **Tune:** edit the zone `events` in the `rate-limit.conf` key, reconcile, and
   roll. A ConfigMap edit alone changes nothing in the running pods.
-- **Disable:** restore the comments-only `rate-limit.conf`, reconcile, and roll.
-  The `r3` image can stay; the module is simply unused. Keep the narrowed
-  trusted-proxy configuration.
+- **Disable:** comment out the `rate_limit { ... }` block in both `rate-limit.conf`
+  keys, reconcile, and roll. The `r3` image can stay; the module is simply
+  unused. Keep the narrowed trusted-proxy configuration.
 
 ### Rate-limit troubleshooting
 
@@ -368,8 +369,8 @@ three route backends in `gitops/apps/taskflow/httproute.yaml`:
 Then reconcile `taskflow-app`. To disable one WAF without changing the other, restore
 only its route backend and leave the other WAF route unchanged.
 
-To roll back **rate limiting only**, restore the comments-only `rate-limit.conf`
-in the WAF ConfigMap(s), reconcile `taskflow-app`, and rollout restart both WAF
+To roll back **rate limiting only**, comment out the `rate_limit { ... }` block in
+the WAF ConfigMap(s), reconcile `taskflow-app`, and rollout restart both WAF
 Deployments (see "Rate limiting" -> "Tune or disable"). This does not affect
 Cilium, the Gateway, Coraza, CRS, or the applications. Keep the narrowed
 trusted-proxy configuration. To also roll back the image, restore the previous

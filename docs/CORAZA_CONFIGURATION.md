@@ -206,7 +206,7 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
 5. Validate the Caddyfile locally. The image entrypoint is already `caddy`, the
    Caddyfile imports `/etc/caddy/rate-limit.conf`, and Coraza reads the
    exclusions file, so mount the extracted ConfigMap keys (the rate-limit file
-   may be comments-only while enforcement is staged):
+   contains the active zones):
    ```
    tmp=$(mktemp -d) && mkdir -p "$tmp/caddy" "$tmp/coraza"
    ruby -ryaml -e 'puts YAML.load_file(ARGV[0]).fetch("data").fetch("Caddyfile")' \
@@ -228,10 +228,10 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
 The WAF receives requests only from the Cilium Gateway. Caddy resolves `{client_ip}`
 from `X-Forwarded-For` only, parsed right-to-left while skipping trusted hops
 (`trusted_proxies_strict`). The trusted list contains the Cloudflare proxy ranges
-(so the Cloudflare edge hop is skipped and the real visitor is selected) plus a
-single interim peer range. `CF-Connecting-IP` is deliberately **not** consulted:
-Envoy forwards a client-supplied value verbatim, so on the direct-to-origin path
-it would let a client choose its own identity.
+(so the Cloudflare edge hop is skipped and the real visitor is selected) plus the
+observed Cilium Envoy peer `/32` (`10.42.0.148/32`). `CF-Connecting-IP` is
+deliberately **not** consulted: Envoy forwards a client-supplied value verbatim,
+so on the direct-to-origin path it would let a client choose its own identity.
 
 > **Peer range.** The Caddyfile trusts `10.42.0.148/32`, the node's `cilium_host`
 > address that SNATs host→pod traffic (the Cilium Envoy dials the WAFs from the

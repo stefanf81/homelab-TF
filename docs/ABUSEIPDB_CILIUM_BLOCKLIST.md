@@ -97,7 +97,7 @@ Consequences:
   from the right-to-left XFF walk, skipping the trusted Cloudflare ranges and the
   peer; `CF-Connecting-IP` is deliberately ignored because a direct-to-origin
   client can supply it. See `docs/CORAZA_CONFIGURATION.md` § "Client IP
-  Forwarding" for the interim trusted-proxy caveat.
+  Forwarding" for the trusted-proxy details.
 
 TLS terminates **at the Cilium Gateway** (`mode: Terminate`, cert
 `taskflow-tls-secret` managed by cert-manager/Let's Encrypt HTTP-01). Caddy

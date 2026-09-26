@@ -47,7 +47,7 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 
 ### 3.1 Runtime
 - **Distribution**: k3s (single-node cluster)
-- **CNI**: Cilium v1.20.1 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
+- **CNI**: Cilium v1.20.2 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
 - **Storage**: Proxmox CSI (dynamic VM virtual disk provisioning)
 
 ### 3.2 Cilium Configuration (`gitops/infrastructure/controllers/cilium/release.yaml`)
@@ -168,7 +168,7 @@ VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 | OOM Policy | `-XX:+ExitOnOutOfMemoryError` (fail fast) |
 | Resources | CPU: 2 cores (req=limit), Memory: 2Gi (Guaranteed QoS, req==limit) |
 | SecurityContext | readOnlyRootFS, runAsNonRoot UID/GID 10001, drop ALL capabilities |
-| Init Container | `alpine:3.24.1` — waits for DB (port 5432) + Redis (port 6379) via nc |
+| Init Container | `alpine:3.24.2` — waits for DB (port 5432) + Redis (port 6379) via nc |
 | Probes | Startup: `/actuator/health/liveness`, Liveness: same, Readiness: `/actuator/health/readiness` |
 | Termination Grace Period | 45s (for Spring graceful shutdown) |
 
@@ -205,7 +205,7 @@ VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 ### 5.6 Jaeger Deployment (`gitops/apps/taskflow/jaeger.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `jaegertracing/jaeger:2.20.0` |
+| Image | `jaegertracing/jaeger:2.21.0` |
 | Replicas | 1 |
 | Memory Guard | `--set=extensions.jaeger_storage.backends.some_storage.memory.max_traces=5000` |
 | Ports | UI: 16686, OTLP-gRPC: 4317, OTLP-HTTP: 4318 |
@@ -315,7 +315,7 @@ TF/
 │   │
 │   ├── infrastructure/
 │   │   ├── controllers/             # HelmRelease + Repository for platform add-ons
-│   │   │   ├── cilium/release.yaml  # Cilium v1.20.1 (eBPF, Gateway API, L2 announcements)
+│   │   │   ├── cilium/release.yaml  # Cilium v1.20.2 (eBPF, Gateway API, L2 announcements)
 │   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.1) with Let's Encrypt certificate automation
 │   │   │   ├── coredns/             # CoreDNS HelmRelease (v1.47.1) — replaces K3s packaged addon
 │   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
@@ -489,7 +489,7 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
 ```
 
 - **`infra-controllers`** (`gitops/infrastructure/controllers/`) installs the platform via HelmRelease objects:
-  - `cilium/release.yaml` — Cilium 1.20.1 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
+  - `cilium/release.yaml` — Cilium 1.20.2 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
   - `cert-manager/release.yaml` — cert-manager 1.21.1 (fully active, managing TLS certificates).
   - `coredns/release.yaml` — CoreDNS 1.47.1 (replaces K3s packaged addon, manages DNS with custom LAN hairpin-NAT overrides).
   - `proxmox-csi/` — Proxmox CSI driver (dynamic storage provisioning of virtual disks with native hypervisor backup integration).
