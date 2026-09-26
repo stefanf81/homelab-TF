@@ -8,12 +8,11 @@
 # There is intentionally no FIFO/redactor sidecar — a stalled reader could
 # otherwise block every audited request while /waf-healthz stayed green.
 #
-# Rate limiting (STAGED): caddy-ratelimit keys on Caddy's validated {client_ip}
-# (real visitor, resolved from X-Forwarded-For via trusted_proxies). Coraza
-# remains first (`order coraza_waf first`), so the limiter runs after WAF
-# inspection and before reverse_proxy, and /waf-healthz is never limited.
-# Enforcement is intentionally OFF until the client-IP identity has been
-# verified and the trusted proxy range narrowed; see the rate-limit.conf key
+# Rate limiting: caddy-ratelimit keys on Caddy's validated {client_ip} (real
+# visitor, resolved from X-Forwarded-For via trusted_proxies). Coraza remains
+# first (`order coraza_waf first`), so the limiter runs after WAF inspection and
+# before reverse_proxy, and /waf-healthz is never limited. Enabled 2026-09-26
+# after the runbook client-IP verification passed; see the rate-limit.conf key
 # below and docs/TASKFLOW_WAF_RUNBOOK.md ("Rate limiting").
 apiVersion: v1
 kind: ConfigMap
@@ -143,23 +142,19 @@ data:
     # No frontend CRS exclusions are configured initially.
     # Add only request-scoped exclusions after observing a legitimate false positive.
   rate-limit.conf: |
-    # Rate limiting is intentionally DISABLED until the client-IP identity has
-    # been verified (Stage 2 of "Rate limiting" in docs/TASKFLOW_WAF_RUNBOOK.md).
-    # The trusted proxy range is already narrowed to the observed Cilium Envoy
-    # peer (10.42.0.148/32) plus the Cloudflare ranges.
-    #
-    # To enable, replace this comment block with the zone below and roll the WAF:
-    #
-    # rate_limit {
-    #     disable_metrics
-    #
-    #     zone general {
-    #         key         {client_ip}
-    #         events      180
-    #         window      1m
-    #         ipv6_prefix 64
-    #     }
-    # }
+    # Frontend general zone: at most 180 requests per 60s per real client IP,
+    # IPv6 grouped per /64. disable_metrics avoids per-IP Prometheus series.
+    # Tuning and rollback: docs/TASKFLOW_WAF_RUNBOOK.md ("Rate limiting").
+    rate_limit {
+        disable_metrics
+
+        zone general {
+            key         {client_ip}
+            events      180
+            window      1m
+            ipv6_prefix 64
+        }
+    }
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Taskflow uses a **Caddy + Coraza WAF** (Web Application Firewall) to inspect all incoming HTTP traffic before it reaches the application services. Coraza runs as a Coraza-Caddy plugin, using the **OWASP Core Rule Set (CRS)** to detect and optionally block common web attacks (SQL injection, XSS, path traversal, etc.). Caddy additionally carries **per-client HTTP rate limiting** (HTTP 429, `caddy-ratelimit`), currently **staged off** until the client-IP identity has been verified live (the trusted proxy range is already narrowed to the observed Envoy peer). Rate limiting complements — and does not replace — IP reputation enforcement (Cloudflare edge + Cilium) or CRS inspection. See [Rate Limiting](#rate-limiting-staged).
+Taskflow uses a **Caddy + Coraza WAF** (Web Application Firewall) to inspect all incoming HTTP traffic before it reaches the application services. Coraza runs as a Coraza-Caddy plugin, using the **OWASP Core Rule Set (CRS)** to detect and optionally block common web attacks (SQL injection, XSS, path traversal, etc.). Caddy additionally enforces **per-client HTTP rate limiting** (HTTP 429, `caddy-ratelimit`): frontend `general` 180/min and backend `api` 300/min, enabled 2026-09-26 after the live client-IP verification passed. Rate limiting complements — and does not replace — IP reputation enforcement (Cloudflare edge + Cilium) or CRS inspection. See [Rate Limiting](#rate-limiting).
 
 Audit logs, access logs (including rate-limit 429s), and Coraza records from the WAFs are collected by **Grafana Alloy**, stored in **Grafana Loki** (30-day retention), and visualized in Grafana dashboards.
 
@@ -286,23 +286,22 @@ ingest (see `gitops/monitoring/logging/alloy-release.yaml`).
 | K | Matched rule IDs |
 | Z | End of audit log entry |
 
-## Rate Limiting (staged)
+## Rate Limiting
 
-Caddy can enforce a sliding-window request limit per real client IP using
+Caddy enforces a sliding-window request limit per real client IP using
 [`caddy-ratelimit`](https://github.com/mholt/caddy-ratelimit), built into the
 same xcaddy image as Coraza (pinned commit
 `5625512f24f6f59d6f64fb3aafe5eecff0b286db`). Exceeding a zone returns
 **HTTP 429** with a `Retry-After` header.
 
-> **Status: enforcement is OFF in Git.** The Caddyfile imports
-> `/etc/caddy/rate-limit.conf`, which is mounted from the ConfigMap and contains
-> only comments. This is deliberate: the client-IP identity must be verified
-> first. The trusted proxy range is already narrowed to the observed Envoy peer
-> (`10.42.0.148/32`) plus the Cloudflare ranges. The full procedure is in
-> `docs/TASKFLOW_WAF_RUNBOOK.md` § "Rate limiting"; enabling is a ConfigMap edit
-> plus a rollout restart.
+> **Status: enforcement is ON** (since 2026-09-26). The zones live in the
+> ConfigMap's `rate-limit.conf` key, imported by the Caddyfile. They were enabled
+> only after the trusted proxy range was narrowed to the observed Envoy peer
+> (`10.42.0.148/32`) plus the Cloudflare ranges and the client-IP canaries
+> passed. The re-verification procedure and rollback are in
+> `docs/TASKFLOW_WAF_RUNBOOK.md` § "Rate limiting".
 
-### Zones (target configuration)
+### Zones
 
 | WAF | Zone | Key | Limit | Window | IPv6 grouping |
 |-----|------|-----|-------|--------|---------------|
