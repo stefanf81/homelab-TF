@@ -161,9 +161,8 @@ sim → Caddy → upstream — and runs the **production Caddyfile** (extracted 
 the WAF ConfigMaps, with only the trusted list and upstream target substituted).
 It asserts:
 
-- both the shipped (staged, comments-only) config and the enforcement-enabled
-  config pass `caddy validate`, and the two WAF ConfigMaps carry identical
-  trusted-proxy lists;
+- both the shipped config and a test-window config pass `caddy validate`, and
+  the two WAF ConfigMaps carry identical trusted-proxy lists;
 - proxied clients resolve to their real address;
 - forged `X-Forwarded-For` / `CF-Connecting-IP` cannot win the identity, on both
   the proxied and direct paths;
@@ -389,8 +388,8 @@ the WAF pod CPU/memory panels on the Taskflow WAF dashboard after rollout.
 Enforcement lives entirely in the ConfigMap `rate-limit.conf` key. Disabling it
 does not touch Cilium, Gateway API, Coraza, CRS, or the applications:
 
-1. Restore the comments-only `rate-limit.conf` (or delete the `rate_limit`
-   block) in `gitops/apps/taskflow/{frontend,backend}-waf.yaml`.
+1. Comment out or delete the `rate_limit` block in the `rate-limit.conf` keys of
+   `gitops/apps/taskflow/{frontend,backend}-waf.yaml`.
 2. `flux reconcile kustomization taskflow-app -n flux-system --with-source`
 3. `kubectl -n taskflow rollout restart deployment/taskflow-backend-waf deployment/taskflow-frontend-waf`
    (Caddy runs with `admin off`; a ConfigMap change alone does not reload it).
