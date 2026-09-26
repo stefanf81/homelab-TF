@@ -129,34 +129,38 @@ pseudo-IPv4 value, which changes the resolved identity and defeats the IPv6
 `/64` grouping. "Off" (the default) or "Add Header" is fine. Also confirm no
 Worker or Transform Rule rewrites `X-Forwarded-For`.
 
-### Stage 0 — record the current peer address (before changing anything)
+### Stage 0 — the peer address (already recorded: `10.42.0.148/32`)
 
 The Caddyfile resolves the visitor from `X-Forwarded-For`, right-to-left,
-skipping trusted hops. The trusted list already contains the Cloudflare ranges
-plus an **interim** `10.42.0.0/16`. That interim entry must become the exact
-Cilium Envoy source address, otherwise a pod that reaches the Gateway could be
-skipped as a trusted hop. Collect it from the currently running WAFs:
+skipping trusted hops. Every Gateway request arrives from the node's
+`cilium_host` address because the Cilium Envoy dials the WAFs from the host
+namespace, and Cilium SNATs host→pod traffic to it. Observed on 2026-09-26 as
+`10.42.0.148/32` (confirmed both in the access logs and directly):
 
 ```bash
+# From the logs: the dominant remote_ip for real (non-probe) requests.
 for d in taskflow-frontend-waf taskflow-backend-waf; do
   kubectl -n taskflow logs deploy/$d --since=24h \
     | jq -r 'select(.msg=="handled request" and .request.uri != "/waf-healthz") | .request.remote_ip' \
     | sort | uniq -c | sort -rn | head
 done
+
+# From the node: the cilium_host address itself.
+kubectl -n kube-system exec ds/cilium -c cilium-agent -- ip -4 addr show cilium_host
 ```
 
-Every request here is proxied by the Cilium Gateway, so the dominant address is
-the Envoy/peer source. (Health-check probes are excluded; they originate from
-the node and may show the same address.) If more than one address appears,
-confirm each one (e.g. with
-`kubectl get ciliumnodes -o custom-columns=NAME:.metadata.name,INGRESS4:.spec.ingress.ipv4,INGRESS6:.spec.ingress.ipv6`)
-and trust only the addresses that actually originate Gateway traffic. Record the
-result as `<PEER_CIDR>`.
+Re-run this if the node is replaced or if `client_ip` starts resolving to a
+`10.42.x.x`/peer address. Trust only the address(es) that actually carry Gateway
+traffic; do **not** trust the whole Pod CIDR, or a pod that reaches the Gateway
+could be skipped as a trusted hop.
 
-### Stage 1 — narrow the trusted proxy range (enforcement still off)
+### Stage 1 — narrow the trusted proxy range (already applied)
 
-1. Replace `10.42.0.0/16` in the `trusted_proxies` line of both WAF ConfigMaps
-   with `<PEER_CIDR>` (keep the Cloudflare ranges).
+Both WAF ConfigMaps trust `10.42.0.148/32` plus the Cloudflare ranges. If Stage 0
+yields a different address:
+
+1. Replace the peer entry in the `trusted_proxies` line of both WAF ConfigMaps
+   (keep the Cloudflare ranges) and update the "OBSERVED PEER" comment.
 2. Reconcile and roll: `flux reconcile kustomization taskflow-app -n flux-system --with-source`
    then `kubectl -n taskflow rollout restart deployment/taskflow-backend-waf deployment/taskflow-frontend-waf`.
 3. Run the identity checks below.
@@ -187,9 +191,8 @@ curl -s -H 'X-Forwarded-For: 1.2.3.4' -H 'CF-Connecting-IP: 5.6.7.8' \
 #    pod address, not a forged value to its left. Pods cannot reach the WAF
 #    Service directly (`allow-gateway-to-waf` admits only the Gateway/Envoy
 #    identity), so send the canary through the Gateway VIP like any client.
-#    With <PEER_CIDR> narrowed to the Envoy /32 the logged client_ip is the pod
-#    address; with 10.42.0.0/16 it is the forged value — that is the signal to
-#    complete Stage 1 first.
+#    The trusted peer is the cilium_host /32, so the pod address is not skipped
+#    as a trusted hop and the forged value is ignored.
 kubectl run rl-canary --rm -i --restart=Never --image=curlimages/curl -- \
   curl -sk --resolve www.jokelab.dev:443:192.168.50.201 \
     -H 'X-Forwarded-For: 1.2.3.4' -o /dev/null -w '%{http_code}\n' \
@@ -203,9 +206,9 @@ enabling enforcement.
 
 ### Stage 3 — enable enforcement
 
-1. **Prerequisite: Stage 1 and Stage 2 must have passed** (trust list narrowed to
-   the observed Envoy `/32` and the identity canaries verified). Do not enable
-   enforcement while the interim `10.42.0.0/16` is still trusted.
+1. **Prerequisite: Stage 1 and Stage 2 must have passed.** The trust list is
+   already narrowed to the observed Envoy peer (`10.42.0.148/32`); if it is ever
+   back to a broad range (e.g. the Pod CIDR), narrow it first.
 2. Put the zone block into the `rate-limit.conf` key of each WAF ConfigMap
    (frontend `general` 180/min, backend `api` 300/min; the exact block is in the
    comments of that key).

@@ -233,12 +233,13 @@ single interim peer range. `CF-Connecting-IP` is deliberately **not** consulted:
 Envoy forwards a client-supplied value verbatim, so on the direct-to-origin path
 it would let a client choose its own identity.
 
-> **Interim peer range.** The Caddyfile currently trusts `10.42.0.0/16` (K3s Pod
-> CIDR) because the exact Cilium Envoy source address has not yet been verified
-> from live logs. Before rate-limit enforcement is enabled this must be narrowed
-> to the observed Envoy source `/32` (`/128`) — otherwise a pod that reaches the
-> Gateway could be skipped as a trusted hop. Procedure:
-> `docs/TASKFLOW_WAF_RUNBOOK.md` § "Narrow the trusted proxy range".
+> **Peer range.** The Caddyfile trusts `10.42.0.148/32`, the node's `cilium_host`
+> address that SNATs host→pod traffic (the Cilium Envoy dials the WAFs from the
+> host namespace). It was verified from live access logs and
+> `ip -4 addr show cilium_host` on 2026-09-26; re-verify with
+> `docs/TASKFLOW_WAF_RUNBOOK.md` § Stage 0 if the node is replaced or identity
+> resolution degrades. Do not widen it to the Pod CIDR — a pod that reaches the
+> Gateway could then be skipped as a trusted hop.
 
 Each WAF writes the resolved value as `client_ip` in the Caddy access log before
 Coraza executes, including blocked requests, and passes `{client_ip}` upstream as

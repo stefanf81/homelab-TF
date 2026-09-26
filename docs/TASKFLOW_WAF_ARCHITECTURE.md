@@ -2,7 +2,7 @@
 
 ## Overview
 
-Taskflow uses a **Caddy + Coraza WAF** (Web Application Firewall) to inspect all incoming HTTP traffic before it reaches the application services. Coraza runs as a Coraza-Caddy plugin, using the **OWASP Core Rule Set (CRS)** to detect and optionally block common web attacks (SQL injection, XSS, path traversal, etc.). Caddy additionally carries **per-client HTTP rate limiting** (HTTP 429, `caddy-ratelimit`), currently **staged off** until the client-IP identity has been verified and the trusted proxy range narrowed. Rate limiting complements — and does not replace — IP reputation enforcement (Cloudflare edge + Cilium) or CRS inspection. See [Rate Limiting](#rate-limiting-staged).
+Taskflow uses a **Caddy + Coraza WAF** (Web Application Firewall) to inspect all incoming HTTP traffic before it reaches the application services. Coraza runs as a Coraza-Caddy plugin, using the **OWASP Core Rule Set (CRS)** to detect and optionally block common web attacks (SQL injection, XSS, path traversal, etc.). Caddy additionally carries **per-client HTTP rate limiting** (HTTP 429, `caddy-ratelimit`), currently **staged off** until the client-IP identity has been verified live (the trusted proxy range is already narrowed to the observed Envoy peer). Rate limiting complements — and does not replace — IP reputation enforcement (Cloudflare edge + Cilium) or CRS inspection. See [Rate Limiting](#rate-limiting-staged).
 
 Audit logs, access logs (including rate-limit 429s), and Coraza records from the WAFs are collected by **Grafana Alloy**, stored in **Grafana Loki** (30-day retention), and visualized in Grafana dashboards.
 
@@ -296,8 +296,9 @@ same xcaddy image as Coraza (pinned commit
 
 > **Status: enforcement is OFF in Git.** The Caddyfile imports
 > `/etc/caddy/rate-limit.conf`, which is mounted from the ConfigMap and contains
-> only comments. This is deliberate: the trusted proxy range must be narrowed and
-> the client-IP identity verified first. The full procedure is in
+> only comments. This is deliberate: the client-IP identity must be verified
+> first. The trusted proxy range is already narrowed to the observed Envoy peer
+> (`10.42.0.148/32`) plus the Cloudflare ranges. The full procedure is in
 > `docs/TASKFLOW_WAF_RUNBOOK.md` § "Rate limiting"; enabling is a ConfigMap edit
 > plus a rollout restart.
 
@@ -315,10 +316,11 @@ Caddy parses **`X-Forwarded-For` only**, right-to-left, skipping trusted hops
 
 - the **Cloudflare proxy ranges** (snapshot of Cloudflare's published lists, kept
   in Git), so the Cloudflare edge hop is skipped and the real visitor is used;
-- a **peer entry** so Caddy parses headers at all. Currently this is the interim
-  `10.42.0.0/16` Pod CIDR. Before enforcement it must be narrowed to the observed
-  Cilium Envoy source `/32` (`/128`), otherwise a pod that reaches the Gateway
-  can be skipped as a trusted hop and a forged address to its left selected.
+- the **observed Cilium Envoy peer** (`10.42.0.148/32`, the node's `cilium_host`
+  address, verified 2026-09-26) so Caddy parses headers at all. It is a /32, not
+  the Pod CIDR: trusting the pod network would let a pod that reaches the Gateway
+  be skipped as a trusted hop and a forged address to its left selected. Re-verify
+  if the node is replaced (runbook Stage 0).
 
 `CF-Connecting-IP` is deliberately **not** consulted: Cilium Envoy forwards a
 client-supplied value verbatim, so on the direct-to-origin path it would let a
@@ -864,7 +866,7 @@ kubectl logs -n monitoring deploy/alloy -c alloy
 - **No public exposure**: Loki and Alloy have no Gateway, LoadBalancer, or public route
 - **Sensitive data redaction**: Caddy access logs redact credentials and tokens
 - **Audit log privacy**: Coraza audit parts exclude request bodies; Alloy removes sensitive request headers and query parameters at ingest
-- **Rate-limit identity**: The limiter keys on Caddy's validated `{client_ip}`, resolved from `X-Forwarded-For` only, right-to-left, skipping the Cloudflare ranges and the trusted peer. `CF-Connecting-IP` is ignored, so a direct-to-origin client cannot choose its identity through it; forged `X-Forwarded-For` prefixes are ignored because Cloudflare and Envoy append the real connecting address. `trusted_proxies_strict` makes the trust check mandatory (an untrusted peer yields no header parsing at all). **Interim limitation:** the peer entry is currently the whole Pod CIDR, so before enforcement it must be narrowed to the observed Cilium Envoy `/32` (`/128`), otherwise a pod reaching the Gateway could be skipped as a trusted hop (runbook: "Narrow the trusted proxy range"). IP reputation blocking at Cloudflare/Cilium remains the outer layer.
+- **Rate-limit identity**: The limiter keys on Caddy's validated `{client_ip}`, resolved from `X-Forwarded-For` only, right-to-left, skipping the Cloudflare ranges and the trusted peer (`10.42.0.148/32`, the node's `cilium_host` address). `CF-Connecting-IP` is ignored, so a direct-to-origin client cannot choose its identity through it; forged `X-Forwarded-For` prefixes are ignored because Cloudflare and Envoy append the real connecting address. `trusted_proxies_strict` makes the trust check mandatory (an untrusted peer yields no header parsing at all). Because the peer entry is a /32 rather than the Pod CIDR, an in-cluster pod that reaches the Gateway is not skipped as a trusted hop. Re-verify the peer with the runbook Stage 0 if the node is replaced. IP reputation blocking at Cloudflare/Cilium remains the outer layer.
 - **Not an account quota**: Rate limiting is per network client and cannot enforce per-user entitlements; those belong in the application/API layer
 
 ## File Reference

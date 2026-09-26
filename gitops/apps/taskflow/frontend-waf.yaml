@@ -38,13 +38,14 @@ data:
             # (2) trusted hops are skipped when walking X-Forwarded-For from
             # right to left.
             #
-            # INTERIM — NARROW BEFORE ENABLING ENFORCEMENT: 10.42.0.0/16 (K3s Pod
-            # CIDR) is the only repo-grounded peer range, but trusting the whole
-            # pod network also lets an in-cluster pod that reaches the Gateway be
-            # skipped as a trusted hop, so a forged address to its left would be
-            # selected as the limiter identity. Replace it with the observed
-            # Cilium Envoy source /32(s) first (runbook: "Narrow the trusted
-            # proxy range").
+            # OBSERVED PEER (verified 2026-09-26): 10.42.0.148/32 is the
+            # cilium_host address that SNATs host->pod traffic. The Cilium Envoy
+            # dials the WAFs from the host namespace, so every Gateway request
+            # arrives from this single address (confirmed against access logs and
+            # `ip -4 addr show cilium_host` in the cilium-agent). Re-run the
+            # runbook Stage 0 if the node is replaced or client-IP resolution
+            # degrades; trusting a wider range (e.g. the Pod CIDR) would let an
+            # in-cluster pod that reaches the Gateway be skipped as a trusted hop.
             #
             # The Cloudflare ranges are a Git-reviewed snapshot (retrieved
             # 2026-09-22) of https://www.cloudflare.com/ips-v4 and
@@ -54,7 +55,7 @@ data:
             # requests (coarser buckets), it does not break routing.
             # This list is duplicated in the other WAF ConfigMap: update both
             # together (the image test suite fails if they diverge).
-            trusted_proxies static 10.42.0.0/16 \
+            trusted_proxies static 10.42.0.148/32 \
                 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 \
                 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 \
                 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 \
@@ -143,10 +144,9 @@ data:
     # Add only request-scoped exclusions after observing a legitimate false positive.
   rate-limit.conf: |
     # Rate limiting is intentionally DISABLED until the client-IP identity has
-    # been verified and the trusted proxy range narrowed (the interim
-    # 10.42.0.0/16 entry in the Caddyfile must become the observed Cilium Envoy
-    # source /32(s)). Do not enable enforcement before the "Rate limiting"
-    # procedure in docs/TASKFLOW_WAF_RUNBOOK.md has passed.
+    # been verified (Stage 2 of "Rate limiting" in docs/TASKFLOW_WAF_RUNBOOK.md).
+    # The trusted proxy range is already narrowed to the observed Cilium Envoy
+    # peer (10.42.0.148/32) plus the Cloudflare ranges.
     #
     # To enable, replace this comment block with the zone below and roll the WAF:
     #
