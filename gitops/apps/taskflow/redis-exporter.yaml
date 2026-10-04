@@ -20,6 +20,11 @@ spec:
       labels:
         app: redis-exporter
     spec:
+      # No workload here talks to the Kubernetes API, so no token is mounted.
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: redis-exporter
           # Pin a specific tag; rotate to a @sha256 digest for full hermeticity.

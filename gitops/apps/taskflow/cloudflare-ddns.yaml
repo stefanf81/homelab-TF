@@ -17,6 +17,11 @@ spec:
       labels:
         app: cloudflare-ddns
     spec:
+      # No workload here talks to the Kubernetes API, so no token is mounted.
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: cloudflare-ddns
           image: favonia/cloudflare-ddns:1.17.1

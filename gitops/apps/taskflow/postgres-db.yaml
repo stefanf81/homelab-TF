@@ -19,10 +19,13 @@ spec:
       labels:
         app: postgres-db
     spec:
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 70
         # Skip recursive chown when permissions already match (k8s ≥1.28).
         fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgres
           image: postgres:18.6-alpine
@@ -43,9 +46,9 @@ spec:
             - "-c"
             - "maintenance_work_mem=64MB"
             # PostgreSQL 18 VACUUM uses a compact radix-tree index memory structure that needs
-            # up to ~20x less memory than PG16. Allow up to 4 parallel workers for VACUUM /
+            # up to ~20x less memory than PG16. Allow up to 2 parallel workers for VACUUM /
             # CREATE INDEX so maintenance finishes faster while staying inside the 1024Mi cap
-            # (peak ~4 × maintenance_work_mem during parallel vacuum). This is the zero-config
+            # (peak ~2 × maintenance_work_mem during parallel vacuum). This is the zero-config
             # win unlocked by the PG18 engine upgrade.
             - "-c"
             - "max_parallel_maintenance_workers=2"

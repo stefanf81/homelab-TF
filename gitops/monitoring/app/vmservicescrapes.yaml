@@ -6,8 +6,8 @@
 # platform Kustomization, so the VMServiceScrape CRD already exists when these apply.
 ---
 # --- Backend (Spring Boot Actuator /actuator/prometheus) -----------------------
-# INERT UNTIL THE APP REPO ADDS micrometer-registry-prometheus.
-# See docs/BACKEND_INTEGRATION_CONTEXT.md for the exact backend change required.
+# Requires micrometer-registry-prometheus and an unauthenticated /actuator/prometheus in
+# the backend; see docs/BACKEND_INTEGRATION_CONTEXT.md.
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMServiceScrape
 metadata:

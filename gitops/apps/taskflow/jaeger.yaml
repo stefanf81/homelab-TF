@@ -16,6 +16,11 @@ spec:
       labels:
         app: jaeger
     spec:
+      # No workload here talks to the Kubernetes API, so no token is mounted.
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: jaeger
           image: jaegertracing/jaeger:2.21.0
@@ -47,9 +52,10 @@ spec:
             - containerPort: 4318
               name: otlp-http
           resources:
-            # Guaranteed QoS: requests == limits so OTLP trace ingestion is never
-            # CPU-throttled under node pressure (throttling here back-pressures the
-            # backend's trace exporter and adds latency). 256Mi still caps RSS.
+            # Burstable QoS by design: CPU requests == limits so OTLP trace ingestion is
+            # never CPU-throttled (throttling here back-pressures the backend's trace
+            # exporter and adds latency), while memory may burst from 128Mi up to the
+            # 256Mi RSS cap.
             limits:
               cpu: "250m"
               memory: 256Mi
@@ -121,7 +127,7 @@ spec:
     - Ingress
   ingress:
     # Allow ONLY the backend to submit OTLP trace data. The Jaeger UI (16686) is
-    # NOT in this list, and default-deny-datastore-ingress.yaml now denies all
+    # NOT in this list, and default-deny.yaml now denies all
     # other ingress to this pod — so no in-cluster pod can reach the UI. Admin
     # access still works via `kubectl port-forward svc/jaeger-ui 16686:16686`
     # because that traffic originates from the node (Cilium host exemption), not
