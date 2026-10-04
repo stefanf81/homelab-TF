@@ -70,14 +70,17 @@ spec:
         limits:
           memory: "256Mi"
           cpu: "200m"
-    # Exclude platform/system namespaces from all policy enforcement.
+    # Make Kyverno skip platform namespaces entirely. kube-system, kube-public,
+    # kube-node-lease and Kyverno's own namespace are already in the chart's default
+    # resourceFilters, so only the extra ones are listed.
+    #
+    # Do NOT use `resourceFiltersExcludeNamespaces` for this: despite the name it
+    # REMOVES a namespace from those default filters (the template drops every filter
+    # containing `,<ns>,`), i.e. it makes Kyverno evaluate that namespace.
     config:
-      resourceFiltersExcludeNamespaces:
-        - kube-system
-        - kyverno
+      resourceFiltersIncludeNamespaces:
         - flux-system
         - cert-manager
-        - cilium
     features:
       policyExceptions:
         enabled: true
