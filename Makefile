@@ -1,6 +1,5 @@
-SHELL := /bin/zsh
-
-.PHONY: init plan apply destroy provision kubeconfig all cache cache-clean
+# Recipes are POSIX sh only; the default shell keeps this portable (no zsh required).
+.PHONY: init plan apply destroy provision kubeconfig all cache cache-clean ensure-cache fmt validate
 
 ROOT := .
 
@@ -28,6 +27,14 @@ ensure-cache:
 
 init: ensure-cache
 	tofu -chdir=$(ROOT) init
+
+# Formatting gate (CI-friendly: exits non-zero on drift). `tofu fmt -recursive` fixes it.
+fmt:
+	tofu -chdir=$(ROOT) fmt -check -recursive
+
+# Static validation of the root module and both child modules (needs `make init` first).
+validate: ensure-cache
+	tofu -chdir=$(ROOT) validate
 
 # Non-mutating OpenTofu preview. Use `make provision` or `make apply` to change infrastructure.
 plan: ensure-cache

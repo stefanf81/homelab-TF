@@ -69,7 +69,7 @@ Already changed but uncommitted (for context, do not redo):
   - Add policies for runAsNonRoot/seccomp/drop-ALL, no `hostPath`/`hostNetwork`/privileged,
     registry allow-list.
   - Add PSS labels to every namespace (`pod-security.kubernetes.io/enforce: baseline|restricted`).
-  - Add `seccompProfile: RuntimeDefault` + `automountServiceAccountToken: false` to taskflow workloads.
+  - ✅ Done: `seccompProfile: RuntimeDefault` + `automountServiceAccountToken: false` on all taskflow workloads.
 
 - [ ] **9. Default-SC follow-through for the current node.** Add `--disable local-storage` to the
   running k3s (SSH + restart + delete the SC) so `local-path` cannot silently return.
@@ -78,7 +78,7 @@ Already changed but uncommitted (for context, do not redo):
 - [ ] **10. Small fixes:**
   - metrics-server: `--kubelet-certificate-authority` instead of `--kubelet-insecure-tls`.
   - CoreDNS pinned image (`1.14.7` vs chart `1.14.6`): align or annotate with a `# renovate:` marker.
-  - Fix the Jaeger QoS comment (Burstable, not Guaranteed).
+  - ✅ Done: Jaeger QoS comment fixed (Burstable, not Guaranteed).
   - Widen the L2 interface regex (`ens*`, `eno*`).
   - Reserve `192.168.50.201` (dedicated pool or Cilium LB-IPAM `serviceSelector`).
   - Narrow oauth2-proxy scopes to `user:email`.
@@ -95,7 +95,7 @@ Already changed but uncommitted (for context, do not redo):
   (keep proxmox-csi + PBS, or replicated Longhorn/democratic-csi).
 
 - [ ] **13. Supply chain.** GH Action: `id-token: write`, cosign keyless signing + `syft` SBOM +
-  SLSA provenance, `timeout-minutes`, `persist-credentials: false`; pin Dockerfile base images
+  SLSA provenance (✅ `timeout-minutes` and `persist-credentials: false` are already set); pin Dockerfile base images
   by digest; add Kyverno `ImageValidatingPolicy` to verify signatures + registry allow-list;
   branch-protect `main` and move image updates to PRs (Flux `ImageUpdateAutomation` → PR branch,
   or keep direct commits with a documented threat model).
