@@ -84,7 +84,7 @@ runcmd:
             - "${var.docker_hub_mirror}"
     MIRROR_EOF
     fi
-  - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=${var.k3s_version} K3S_TOKEN=${var.k3s_token} sh -s - server --tls-san=${split("/", var.ip_address)[0]} --kubelet-arg="system-reserved=cpu=200m,memory=500Mi" --kubelet-arg="kube-reserved=cpu=200m,memory=500Mi" --node-label="topology.kubernetes.io/region=homelab" --node-label="topology.kubernetes.io/zone=${var.proxmox_node}" --disable servicelb --disable traefik --disable coredns --disable metrics-server --disable local-storage --flannel-backend=none --disable-network-policy
+  - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=${var.k3s_version} K3S_TOKEN='${var.k3s_token}' sh -s - server --tls-san=${split("/", var.ip_address)[0]} --kubelet-arg="system-reserved=cpu=200m,memory=500Mi" --kubelet-arg="kube-reserved=cpu=200m,memory=500Mi" --node-label="topology.kubernetes.io/region=homelab" --node-label="topology.kubernetes.io/zone=${var.proxmox_node}" --disable servicelb --disable traefik --disable coredns --disable metrics-server --disable local-storage --flannel-backend=none --disable-network-policy
 EOF
     file_name = "k3s-cloud-config.yaml"
   }
@@ -156,7 +156,11 @@ resource "proxmox_virtual_environment_vm" "k3s_node" {
 }
 
 output "k3s_node_ip" {
-  value       = proxmox_virtual_environment_vm.k3s_node.ipv4_addresses[1][0]
+  # The address is assigned statically through cloud-init, so take it from the input.
+  # Indexing the guest agent's interface list (ipv4_addresses[1][0]) fails plan/destroy
+  # with "Invalid index" whenever the agent is not reporting (VM stopped or still booting)
+  # and silently depends on the NIC being the second interface.
+  value       = split("/", var.ip_address)[0]
   description = "The IP address of the deployed VM"
 }
 

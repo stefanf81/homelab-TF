@@ -52,6 +52,11 @@ variable "vm_id" {
 variable "ip_address" {
   type        = string
   description = "The static IP address and CIDR for the VM (e.g. 192.168.1.50/24)"
+
+  validation {
+    condition     = can(cidrhost(var.ip_address, 0))
+    error_message = "ip_address must include the prefix length, e.g. 192.168.1.50/24."
+  }
 }
 
 variable "gateway" {
@@ -93,6 +98,11 @@ variable "k3s_version" {
   type        = string
   description = "The k3s release to install on newly provisioned nodes"
   default     = "v1.36.4+k3s1"
+
+  validation {
+    condition     = can(regex("^v[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?\\+k3s[0-9]+$", var.k3s_version))
+    error_message = "k3s_version must look like v1.36.4+k3s1 (the INSTALL_K3S_VERSION format)."
+  }
 }
 
 variable "docker_hub_mirror" {
