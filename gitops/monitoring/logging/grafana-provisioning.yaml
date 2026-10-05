@@ -37,7 +37,7 @@ data:
       "title": "Taskflow WAF",
       "description": "Coraza and Caddy telemetry for the Taskflow frontend and backend WAFs.",
       "schemaVersion": 39,
-      "version": 5,
+      "version": 6,
       "refresh": "30s",
       "time": {"from": "now-6h", "to": "now"},
       "templating": {
@@ -79,8 +79,8 @@ data:
         {
           "id": 3,
           "type": "bargauge",
-          "title": "Top triggered CRS rules",
-          "description": "The rule_id label is added by Alloy for newly ingested Coraza audit records.",
+          "title": "Top first-matched CRS rules",
+          "description": "Audit records grouped by the first rule ID extracted by Alloy. A transaction can match multiple rules; this does not count every rule match.",
           "gridPos": {"x": 16, "y": 0, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [{"refId": "A", "expr": "topk(10, sum by (rule_id) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\".+\"}[${__range}])) )", "legendFormat": "{{rule_id}}", "instant": true}],
@@ -90,11 +90,12 @@ data:
         {
           "id": 4,
           "type": "piechart",
-          "title": "Detection categories",
+          "title": "First-matched rule categories",
+          "description": "Selected CRS families based on each audit record's first extracted rule ID. Protocol and other families are not included; percentages apply only to the categories shown.",
           "gridPos": {"x": 0, "y": 8, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [
-            {"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"94[0-9]{4}\"}[$__range]))", "legendFormat": "SQL injection", "instant": true},
+            {"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"942[0-9]{3}\"}[$__range]))", "legendFormat": "SQL injection", "instant": true},
             {"refId": "B", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"941[0-9]{3}\"}[$__range]))", "legendFormat": "Cross-site scripting", "instant": true},
             {"refId": "C", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"93[0-1][0-9]{3}\"}[$__range]))", "legendFormat": "Path traversal", "instant": true},
             {"refId": "D", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"93[2-4][0-9]{3}\"}[$__range]))", "legendFormat": "Command injection", "instant": true}
@@ -121,9 +122,9 @@ data:
         },
         {
           "id": 15,
-          "type": "piechart",
-          "title": "Detections by paranoia level",
-          "description": "OWASP CRS rule matches grouped by paranoia level tag. PL2+ rules are detections that would have been ignored on PL1.",
+          "type": "bargauge",
+          "title": "Audit records containing each paranoia level",
+          "description": "Counts audit records containing each CRS paranoia-level tag. A record can contain matches at several levels and is counted in each; these are overlapping counts, not a percentage breakdown or individual rule-match totals.",
           "gridPos": {"x": 16, "y": 8, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [
@@ -132,7 +133,7 @@ data:
             {"refId": "C", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |= \"paranoia-level/3\" [$__range]))", "legendFormat": "PL 3 (High)", "instant": true},
             {"refId": "D", "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |= \"paranoia-level/4\" [$__range]))", "legendFormat": "PL 4 (Extreme)", "instant": true}
           ],
-          "options": {"displayLabels": ["name", "percent"], "legend": {"displayMode": "list", "placement": "right", "showLegend": true}, "pieType": "donut", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "tooltip": {"mode": "single", "sort": "none"}},
+          "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": false},
           "fieldConfig": {
             "defaults": {"unit": "short"},
             "overrides": [
@@ -167,10 +168,10 @@ data:
         {
           "id": 8,
           "type": "timeseries",
-          "title": "SQL injection family detections",
+          "title": "Audit records first matching SQL injection rules",
           "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"94[0-9]{4}\"}[5m]))", "legendFormat": "{{application}}"}],
+          "targets": [{"refId": "A", "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"942[0-9]{3}\"}[5m]))", "legendFormat": "{{application}}"}],
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
         {
@@ -186,17 +187,17 @@ data:
           "id": 16,
           "type": "stat",
           "title": "WAF block rate",
-          "description": "Percentage of detected threats that resulted in an active block (403 Forbidden).",
+          "description": "Percentage of audit records containing rule detections that were interrupted by Coraza. This is not the fraction of all requests blocked, and interrupted responses need not use HTTP 403.",
           "gridPos": {"x": 0, "y": 32, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "(sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"is_interrupted\\\":true\" [$__range])) / sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" [$__range]))) * 100"}],
+          "targets": [{"refId": "A", "expr": "(sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |= \"\\\"is_interrupted\\\":true\" [$__range])) / sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" [$__range]))) * 100", "instant": true}],
           "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "thresholds"}}, "overrides": []}
         },
         {
           "id": 17,
           "type": "table",
           "title": "Top targeted URIs",
-          "description": "Request URIs triggering the highest volume of WAF rule matches.",
+          "description": "Request URIs with the most audit records containing WAF detections. A record may contain multiple rule matches.",
           "gridPos": {"x": 8, "y": 32, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [{"refId": "A", "expr": "topk(10, sum by (transaction_request_uri) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json [$__range])))", "instant": true}],
@@ -210,7 +211,7 @@ data:
           "description": "User-Agents sending traffic that triggers WAF rules.",
           "gridPos": {"x": 16, "y": 32, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "topk(10, sum by (user_agent) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json | user_agent := transaction_request_headers_user_agent [$__range])))", "instant": true}],
+          "targets": [{"refId": "A", "expr": "topk(10, sum by (user_agent) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json user_agent=`transaction.request.headers[\"user-agent\"][0]` | __error__=\"\" | user_agent!=\"\" [$__range])))", "instant": true}],
           "options": {"showHeader": true},
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
         },
@@ -218,10 +219,10 @@ data:
           "id": 19,
           "type": "timeseries",
           "title": "WAF inspection latency (p95)",
-          "description": "95th percentile Coraza rule processing duration in milliseconds extracted from audit log stopwatch metadata.",
+          "description": "Per-application p95 Coraza processing time in milliseconds from audited requests only. RelevantOnly auditing does not sample all normal traffic.",
           "gridPos": {"x": 0, "y": 40, "w": 24, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "quantile_over_time(0.95, {job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"stopwatch\\\"\" | regexp \"combined=(?P<waf_latency_ns>[0-9]+)\" | unwrap waf_latency_ns / 1000000 [$__interval])"}],
+          "targets": [{"refId": "A", "expr": "quantile_over_time(0.95, {job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"stopwatch\\\"\" | regexp \"combined=(?P<waf_latency_ns>[0-9]+)\" | waf_latency_ns!=\"\" | unwrap waf_latency_ns | __error__=\"\" [$__interval]) by (application) / 1000000", "legendFormat": "{{application}}"}],
           "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []}
         },
         {
@@ -230,7 +231,7 @@ data:
           "title": "WAF pod CPU",
           "gridPos": {"x": 0, "y": 48, "w": 12, "h": 8},
           "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
-          "targets": [{"refId": "A", "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\", container=\"waf\"}[5m]))", "legendFormat": "{{pod}}"}],
+          "targets": [{"refId": "A", "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\", container=\"waf\", metrics_path=\"/metrics/cadvisor\"}[$__rate_interval]))", "legendFormat": "{{pod}}"}],
           "fieldConfig": {"defaults": {"unit": "cores"}, "overrides": []}
         },
         {
@@ -239,7 +240,7 @@ data:
           "title": "WAF pod memory",
           "gridPos": {"x": 12, "y": 48, "w": 12, "h": 8},
           "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
-          "targets": [{"refId": "A", "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\", container=\"waf\"})", "legendFormat": "{{pod}}"}],
+          "targets": [{"refId": "A", "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\", container=\"waf\", metrics_path=\"/metrics/cadvisor\"})", "legendFormat": "{{pod}}"}],
           "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []}
         },
         {
@@ -254,11 +255,12 @@ data:
         {
           "id": 13,
           "type": "stat",
-          "title": "Loki ingester append timeouts",
+          "title": "Loki ingester flush failures/s",
+          "description": "Chunk flush failures per second, deduplicated across the Loki service and headless-service scrapes. This measures storage flush health, not append timeouts.",
           "gridPos": {"x": 12, "y": 56, "w": 6, "h": 8},
           "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
-          "targets": [{"refId": "A", "expr": "sum(rate(loki_distributor_ingester_append_timeouts_total[5m]))"}],
-          "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}}, "overrides": []}
+          "targets": [{"refId": "A", "expr": "sum(max by (instance) (rate(loki_ingester_chunks_flush_failures_total{namespace=\"monitoring\",job=\"loki\"}[$__rate_interval])))", "instant": true}],
+          "fieldConfig": {"defaults": {"unit": "ops", "noValue": "Unavailable", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "red", "value": 0.000001}]}}, "overrides": []}
         },
         {
           "id": 14,
@@ -414,7 +416,7 @@ data:
       "title": "Taskflow Rate Limits",
       "description": "Caddy HTTP rate-limit activity (HTTP 429) for the Taskflow WAFs, derived from Caddy access logs in Loki. Individual client IPs and URIs are parsed at query time and are not Loki labels.",
       "schemaVersion": 39,
-      "version": 1,
+      "version": 2,
       "refresh": "30s",
       "time": {"from": "now-6h", "to": "now"},
       "templating": {
@@ -440,7 +442,7 @@ data:
           "description": "All HTTP 429 responses in Caddy access logs (last 5 minutes). The rejection-mix panel below separates rate-limiter 429s from other sources.",
           "gridPos": {"x": 0, "y": 0, "w": 8, "h": 6},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} | json | __error__=\"\" | msg=\"handled request\" | status=429 [5m]))"}],
+          "targets": [{"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} | json | __error__=\"\" | msg=\"handled request\" | status=429 [5m]))", "instant": true}],
           "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "colorMode": "value", "graphMode": "none"},
           "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}]}}, "overrides": []}
         },
@@ -451,7 +453,7 @@ data:
           "description": "All HTTP 429 responses in Caddy access logs (last hour).",
           "gridPos": {"x": 8, "y": 0, "w": 8, "h": 6},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} | json | __error__=\"\" | msg=\"handled request\" | status=429 [1h]))"}],
+          "targets": [{"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} | json | __error__=\"\" | msg=\"handled request\" | status=429 [1h]))", "instant": true}],
           "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "colorMode": "value", "graphMode": "none"},
           "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}]}}, "overrides": []}
         },
@@ -462,7 +464,7 @@ data:
           "description": "All HTTP 429 responses in Caddy access logs (last 24 hours).",
           "gridPos": {"x": 16, "y": 0, "w": 8, "h": 6},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} | json | __error__=\"\" | msg=\"handled request\" | status=429 [24h]))"}],
+          "targets": [{"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} | json | __error__=\"\" | msg=\"handled request\" | status=429 [24h]))", "instant": true}],
           "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "colorMode": "value", "graphMode": "none"},
           "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}]}}, "overrides": []}
         },
@@ -550,7 +552,7 @@ data:
           "description": "Requests resolving into the pod CIDR (probes excluded). Legitimate in-cluster Gateway clients appear here occasionally; a sustained value that is not a known internal client means the trusted cilium_host peer changed, so per-client buckets are shared — re-run runbook Stage 0 and update trusted_proxies.",
           "gridPos": {"x": 0, "y": 30, "w": 8, "h": 6},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} | json | __error__=\"\" | msg=\"handled request\" | request_uri != \"/waf-healthz\" | client_ip=~\"10\\.42\\..*\" [5m]))"}],
+          "targets": [{"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} | json | __error__=\"\" | msg=\"handled request\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*` [5m]))", "instant": true}],
           "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "colorMode": "value", "graphMode": "none"},
           "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []}
         },
@@ -561,7 +563,7 @@ data:
           "description": "Access-log samples whose resolved client_ip is in the pod CIDR: known in-cluster clients, or the trusted-peer fallback after a node change.",
           "gridPos": {"x": 8, "y": 30, "w": 16, "h": 6},
           "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} | json | __error__=\"\" | msg=\"handled request\" | request_uri != \"/waf-healthz\" | client_ip=~\"10\\.42\\..*\" | line_format `{{.status}} {{.request_method}} {{.request_uri}} ip={{.client_ip}} zone={{.rate_limit_zone}}`"}],
+          "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} | json | __error__=\"\" | msg=\"handled request\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*` | line_format `{{.status}} {{.request_method}} {{.request_uri}} ip={{.client_ip}} zone={{.rate_limit_zone}}`"}],
           "options": {"showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLines": true, "prettifyLogMessage": false, "enableLogDetails": true}
         }
       ]

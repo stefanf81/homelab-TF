@@ -40,7 +40,7 @@ data:
       "title": "AbuseIPDB Security",
       "description": "Feed health, change tracking and Cilium enforcement for the runtime-managed AbuseIPDB denylist. Detailed per-IP investigation is done in Loki / Hubble, not as metric labels.",
       "schemaVersion": 39,
-      "version": 1,
+      "version": 2,
       "refresh": "30s",
       "time": {"from": "now-24h", "to": "now"},
       "panels": [
@@ -95,7 +95,7 @@ data:
           "gridPos": {"x": 16, "y": 0, "w": 4, "h": 5},
           "datasource": {"type": "prometheus", "uid": "VictoriaMetrics"},
           "targets": [{"refId": "A", "expr": "abuseipdb_last_http_status", "instant": true}],
-          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 200}]}}, "overrides": []},
+          "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "mappings": [{"type": "value", "options": {"0": {"text": "No HTTP response", "color": "orange"}, "200": {"text": "200 OK", "color": "green"}, "401": {"text": "401 Unauthorized", "color": "red"}, "422": {"text": "422 Invalid request", "color": "red"}, "429": {"text": "429 Rate limited", "color": "orange"}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red"}]}}, "overrides": []},
           "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}}
         },
         {

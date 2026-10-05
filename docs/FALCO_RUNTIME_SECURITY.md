@@ -206,7 +206,7 @@ The Falco Helm chart ships with a native Grafana dashboard that queries the corr
 https://raw.githubusercontent.com/falcosecurity/charts/master/charts/falco/dashboards/falco-dashboard.json
 ```
 
-A local copy is saved in this repository at **`docs/dashboards/falco-official.json`**. See [Section 4](#4-importing-the-correct-grafana-dashboard) for import instructions.
+A homelab-adapted copy is saved at **`gitops/monitoring/logging/dashboards/falco-official.json`** and provisioned through the `monitoring-logging` Flux Kustomization. It defaults to VictoriaMetrics, preserves the existing Falco dashboard UID, and uses native metrics available with the modern eBPF driver. See [Section 4](#4-importing-the-correct-grafana-dashboard) for access and optional manual-import instructions.
 
 ---
 
@@ -220,13 +220,21 @@ Navigate to **`https://grafana.jokelab.dev`** and log in.
 2. Find the imported dashboard (it may be named "Falco Hints" or "Falco Dashboard 11914").
 3. Click it, then click **Dashboard settings (gear icon) → Remove Dashboard**.
 
-### Step 3: Import the Official Dashboard
+### Step 3: Open the Provisioned Dashboard
+The dashboard is generated as `ConfigMap/monitoring/falco-dashboard` with the
+`grafana_dashboard: "1"` label. After the GitOps changes are deployed, Grafana's
+sidecar loads it automatically; open **Dashboards → Falco**. Edit its JSON in Git
+for persistent changes. The existing UID is retained to adopt the earlier
+manual import instead of creating another Falco dashboard.
+
+For a separate Grafana installation without this provisioning, manual import is
+still possible:
 1. Click **Dashboards → New → Import**.
-2. Select **Upload dashboard JSON file** and pick `docs/dashboards/falco-official.json` from this repository.
+2. Select **Upload dashboard JSON file** and pick `gitops/monitoring/logging/dashboards/falco-official.json` from this repository.
 3. In the **Prometheus / VictoriaMetrics** drop-down, select the default **VictoriaMetrics** datasource.
 4. Click **Import**.
 
-### Dashboard Layout (18 panels, 3 rows)
+### Dashboard Layout (20 visualizations, plus section headers)
 
 #### Row 1: Events (3 pie charts + 3 time series)
 | Panel | Type | Query |
@@ -241,7 +249,7 @@ Navigate to **`https://grafana.jokelab.dev`** and log in.
 #### Row 2: Performances (8 time series)
 | Panel | Type | Primary Query |
 |-------|------|------|
-| **Scap events by instance over time** | Time series | `sum by(pod) (increase(falcosecurity_scap_n_evts_total[...]))` |
+| **Scap events/s by instance** | Time series | `sum by(pod) (rate(falcosecurity_scap_n_evts_total[...]))` |
 | **Memory RSS** | Time series | `avg by(pod) (falcosecurity_falco_memory_rss_bytes)` |
 | **Memory VSZ** | Time series | `avg by(pod) (falcosecurity_falco_memory_vsz_bytes)` |
 | **CPU** | Time series | `avg by(pod) (falcosecurity_falco_cpu_usage_ratio)` |
@@ -253,21 +261,22 @@ Navigate to **`https://grafana.jokelab.dev`** and log in.
 #### Row 3: Fleet (5 panels)
 | Panel | Type | Primary Query |
 |-------|------|------|
-| **Scap Drops CPU** | Time series | `sum by(pod) (increase(falcosecurity_scap_n_drops_cpu_total[...]))` |
+| **Scap Drops Auxmap Pool Full** | Time series | `sum by(pod) (increase(falcosecurity_scap_n_drops_auxmap_pool_full_total[...]))` |
 | **Scap Drops Full Threadtable** | Time series | `sum by(pod) (increase(falcosecurity_scap_n_drops_full_threadtable_total[...]))` |
 | **Scap Drops Scratch Map** | Time series | `sum by(pod) (increase(falcosecurity_scap_n_drops_scratch_map_total[...]))` |
 | **Versions** | Pie chart | `count by(version) (falcosecurity_falco_version_info)` |
 | **Engines** | Pie chart | `count by(engine_name) (falcosecurity_scap_engine_name_info)` |
 
 ### Dashboard Variables
-The dashboard defines four template variables that become dropdown filters at the top:
+The dashboard defines five template variables that become dropdown filters at the top. Namespace and pod select the Falco exporter deployment, not the namespace of each detected workload:
 
 | Variable | Definition | Source |
 |----------|-----------|--------|
-| `$datasource` | Prometheus | Grafana datasource (set to VictoriaMetrics on import) |
+| `$datasource` | Prometheus | Grafana datasource (defaults to VictoriaMetrics) |
+| `$namespace` | `label_values(falcosecurity_falco_cpu_usage_ratio, namespace)` | Falco exporter namespaces |
 | `$source` | `label_values(falcosecurity_falco_rules_matches_total, source)` | All event sources |
 | `$priority` | `label_values(falcosecurity_falco_rules_matches_total, priority)` | All alert priorities |
-| `$pod` | `label_values(up{job="falco"}, instance)` | All Falco pod instances |
+| `$pod` | `label_values(falcosecurity_falco_cpu_usage_ratio{namespace=~"$namespace"}, pod)` | Falco exporter pods |
 
 ---
 

@@ -6,5 +6,6 @@ resources:
   - alloy-pvc.yaml
   - alloy-release.yaml
   - grafana-provisioning.yaml
+  - dashboards
   - trivy-dashboard.yaml
   - vmservicescrapes.yaml
