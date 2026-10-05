@@ -28,6 +28,7 @@ jobs:
   build-and-push:
     name: Build & Push Image
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -37,6 +38,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0 # the revision guard compares the Dockerfile across the push
+          persist-credentials: false # git is only used read-only here
 
       # A changed build recipe must ship under a new revision tag; otherwise the
       # "revision tag already published" check below would silently keep the old

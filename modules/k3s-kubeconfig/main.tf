@@ -16,17 +16,30 @@ resource "null_resource" "fetch_kubeconfig" {
   }
 
   provisioner "local-exec" {
+    # `set -o pipefail` below is not POSIX; the default /bin/sh (dash on Debian/Ubuntu)
+    # may reject it.
+    interpreter = ["bash", "-c"]
     # SECURITY NOTE: StrictHostKeyChecking is disabled and UserKnownHostsFile=/dev/null so
     # the first boot (unknown host key) doesn't hang. This is acceptable for a single-node
     # homelab but is MITM-exposed. For anything shared, pin the host key: capture it from
     # the VM's cloud-init (echo /etc/ssh/ssh_host_ed25519_key.pub) and use a known_hosts file.
     command = <<-EOT
       set -euo pipefail
-      SSH_OPTS='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+      # BatchMode: never block on a prompt; ConnectTimeout: a dead host fails the attempt
+      # instead of hanging on the TCP handshake.
+      SSH_OPTS='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=10'
       SSH_TARGET='${var.ssh_user}@${local.node_ip}'
 
+      # Bounded wait (about 10 minutes) so a failed cloud-init/k3s install surfaces as an
+      # error instead of an endless loop.
+      tries=0
       until ssh $SSH_OPTS "$SSH_TARGET" 'sudo test -f /etc/rancher/k3s/k3s.yaml'; do
-        echo "Waiting for cloud-init to finish installing k3s on ${local.node_ip}..."
+        tries=$((tries + 1))
+        if [ "$tries" -ge 120 ]; then
+          echo "Timed out waiting for k3s on ${local.node_ip}; check 'cloud-init status --long' and /var/log/cloud-init-output.log on the node." >&2
+          exit 1
+        fi
+        echo "Waiting for cloud-init to finish installing k3s on ${local.node_ip}... ($tries/120)"
         sleep 5
       done
 

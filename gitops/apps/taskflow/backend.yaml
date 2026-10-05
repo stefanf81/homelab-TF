@@ -16,6 +16,11 @@ spec:
       labels:
         app: taskflow-backend
     spec:
+      # The backend never calls the Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       imagePullSecrets:
         - name: ghcr-pull-secret
       # Allow in-flight requests to drain on rollout. Pair with server.shutdown=graceful in the
@@ -28,6 +33,7 @@ spec:
         - name: wait-for-db
           image: alpine:3.24.2
           securityContext:
+            readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             runAsNonRoot: true
             runAsUser: 10001
@@ -35,6 +41,16 @@ spec:
             capabilities:
               drop:
                 - ALL
+          # Pod QoS is computed over init containers too. Without explicit values the
+          # namespace LimitRange injects 100m/128Mi requests with 500m/512Mi limits,
+          # which silently downgrades the whole pod from Guaranteed to Burstable.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
           command: ["sh", "-c", "until nc -z -w 2 db 5432 && nc -z -w 2 redis 6379; do echo 'Waiting for database and redis...'; sleep 2; done;"]
       containers:
         - name: backend
@@ -56,52 +72,12 @@ spec:
           volumeMounts:
             - name: tmp-volume
               mountPath: /tmp
+          # Every key of backend-config is exported 1:1, so a new key added to the
+          # ConfigMap reaches the pod without a second edit here.
+          envFrom:
+            - configMapRef:
+                name: backend-config
           env:
-            - name: SPRING_PROFILES_ACTIVE
-              valueFrom:
-                configMapKeyRef:
-                  name: backend-config
-                  key: SPRING_PROFILES_ACTIVE
-            - name: APP_CORS_ALLOWED_ORIGINS
-              valueFrom:
-                configMapKeyRef:
-                  name: backend-config
-                  key: APP_CORS_ALLOWED_ORIGINS
-            - name: APP_TRUSTED_PROXY_REGEX
-              valueFrom:
-                configMapKeyRef:
-                  name: backend-config
-                  key: APP_TRUSTED_PROXY_REGEX
-            - name: SERVER_COMPRESSION_ENABLED
-              valueFrom:
-                configMapKeyRef:
-                  name: backend-config
-                  key: SERVER_COMPRESSION_ENABLED
-            - name: SERVER_COMPRESSION_MIN_RESPONSE_SIZE
-              valueFrom:
-                configMapKeyRef:
-                  name: backend-config
-                  key: SERVER_COMPRESSION_MIN_RESPONSE_SIZE
-            - name: SERVER_COMPRESSION_MIME_TYPES
-              valueFrom:
-                configMapKeyRef:
-                  name: backend-config
-                  key: SERVER_COMPRESSION_MIME_TYPES
-            - name: SERVER_TOMCAT_KEEP_ALIVE_TIMEOUT
-              valueFrom:
-                configMapKeyRef:
-                  name: backend-config
-                  key: SERVER_TOMCAT_KEEP_ALIVE_TIMEOUT
-            - name: SERVER_TOMCAT_MAX_KEEP_ALIVE_REQUESTS
-              valueFrom:
-                configMapKeyRef:
-                  name: backend-config
-                  key: SERVER_TOMCAT_MAX_KEEP_ALIVE_REQUESTS
-            - name: SERVER_TOMCAT_CONNECTION_TIMEOUT
-              valueFrom:
-                configMapKeyRef:
-                  name: backend-config
-                  key: SERVER_TOMCAT_CONNECTION_TIMEOUT
             - name: SPRING_SECURITY_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -230,9 +206,10 @@ spec:
     - name: http
       port: 8080
       targetPort: http
-      # Advertise HTTP/2 (h2c) to the Cilium Gateway so it multiplexes requests to the
-      # backend over a single connection. The backend already enables server.http2.enabled=true
-      # (application.properties); without this the Gateway would speak HTTP/1.1 upstream.
+      # Advertise HTTP/2 (h2c) to any L7 proxy that dials this Service directly. The
+      # public routes go through taskflow-backend-waf, whose Caddy upstream is pinned to
+      # HTTP/1.1, so this only matters if a route targets `backend` without the WAF. The
+      # backend itself enables server.http2.enabled=true (application.properties).
       appProtocol: kubernetes.io/h2c
   selector:
     app: taskflow-backend

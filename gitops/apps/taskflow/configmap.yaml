@@ -27,8 +27,8 @@ data:
   SERVER_COMPRESSION_ENABLED: "true"
   SERVER_COMPRESSION_MIN_RESPONSE_SIZE: "1024"
   SERVER_COMPRESSION_MIME_TYPES: "application/json,application/xml,text/plain,text/html,text/css,application/javascript,application/x-javascript"
-  # Upstream keep-alive (Cilium Gateway -> backend): keep idle HTTP/1.1 connections
-  # open so the Envoy/Gateway hop reuses sockets instead of re-handshaking per request.
+  # Upstream keep-alive (backend WAF -> backend): keep idle HTTP/1.1 connections
+  # open so the Caddy hop reuses sockets instead of re-handshaking per request.
   # keep-alive-timeout=60s holds idle sockets; max-keep-alive-requests caps reuse per
   # socket (100 is a sane cap that still amortizes TCP+TLS-less handshake cost);
   # connection-timeout=5s bounds how long a socket may stay half-open.

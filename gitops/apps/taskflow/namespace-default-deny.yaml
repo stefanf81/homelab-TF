@@ -152,8 +152,8 @@ spec:
               protocol: TCP
 ---
 # 7) Allow the monitoring stack (VictoriaMetrics vmagent, in `monitoring`) to
-#    scrape the metrics endpoints. Without this, Postgres/Redis (and the inert
-#    backend) metrics go dark.
+#    scrape the metrics endpoints. Without this, backend, Postgres and Redis
+#    metrics go dark.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -177,7 +177,7 @@ spec:
               kubernetes.io/metadata.name: monitoring
       ports:
         - protocol: TCP
-          port: 8080 # backend actuator/prometheus (inert until micrometer added)
+          port: 8080 # backend actuator/prometheus
         - protocol: TCP
           port: 9187 # postgres-exporter
         - protocol: TCP

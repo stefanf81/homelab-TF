@@ -16,6 +16,11 @@ spec:
       labels:
         app: redis
     spec:
+      # No workload here talks to the Kubernetes API, so no token is mounted.
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: redis
           # Redis 8.10 — major upgrade from 7.4. Redis 8 integrates previously
@@ -147,7 +152,7 @@ spec:
     - Ingress
   ingress:
     # Allow ingress to Redis ONLY from the backend and the Redis exporter.
-    # Effective only because default-deny-datastore-ingress.yaml denies all other
+    # Effective only because default-deny.yaml denies all other
     # ingress to this pod first.
     - from:
         - podSelector:

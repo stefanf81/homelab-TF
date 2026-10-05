@@ -27,5 +27,3 @@ module "k3s_kubeconfig" {
 
   depends_on = [module.proxmox]
 }
-
-

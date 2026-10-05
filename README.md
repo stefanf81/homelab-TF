@@ -223,4 +223,6 @@ OpenTofu is configured via `Makefile` to use project-local plugin caching (`.ter
 make cache        # Show cache size
 make cache-clean  # Wipe cached provider binaries
 make all          # Convenience: init + provision + kubeconfig
+make fmt          # Fail on formatting drift (`tofu fmt -recursive` fixes it)
+make validate     # Static validation of the root module and child modules (after `make init`)
 ```
