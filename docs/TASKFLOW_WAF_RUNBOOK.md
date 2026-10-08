@@ -270,6 +270,52 @@ and that `403` Coraza blocks still occur (`is_interrupted:true` audit records).
 | 429s exist but every one has an empty `rate_limit_zone` | They come from the application/upstream, not the limiter (see the "Rejection mix" dashboard panel). |
 | `unrecognized directive: rate_limit` at startup | The pod runs an image without the module. Pin both WAF Deployments to the `r3` digest. |
 
+## Empty WAF and rate-limit dashboards
+
+Coraza uses `SecAuditEngine RelevantOnly`: normal successful requests produce
+Caddy access logs, but generally no audit records. Rule panels require matched
+Coraza rules, and rate-limit panels require HTTP 429 responses. A quiet time
+range can therefore legitimately leave rule breakdowns and recent-event panels
+empty. Expand the range to 7 days to look for historical events.
+
+LogQL `count_over_time` returns an empty result when no logs match, rather than
+a numeric zero. The main WAF event timelines, 429 counters, rate-limit timeline,
+request-rate panel, and identity-drift counter use all selected WAF logs
+(including health probes) as a zero-valued baseline. They show **0** when logs
+are arriving without matching events, and **No data** when that baseline is
+also absent. This confirms collection activity, not WAF enforcement; use the
+canary checks below to verify enforcement end to end.
+
+### Rendering and query behavior
+
+- Loki totals, rankings, categories and percentages use `queryType: instant`.
+  Prometheus's `instant: true` option does not select an instant Loki query.
+  A range query combined with `lastNotNull` can retain a count from before the
+  selected window, so it is unsuitable for these summaries.
+- Loki instant results are rendered as table rows. Rule/category/route gauges
+  convert rows to separate fields; ranking tables hide evaluation timestamps
+  and label their numeric columns explicitly.
+- Event charts use adaptive buckets (`$__interval`, minimum 5 minutes), capped
+  at 300 points. The bucket widens with the query step for long time ranges,
+  preventing sparse detections from disappearing between samples. Counts are
+  per displayed interval, not a fixed 5-minute total at every zoom level.
+- The category donut includes protocol enforcement, scanner detection and
+  Other CRS, so its percentages cover all extracted first-matched rules.
+  Paranoia-level counts still overlap and should not be added together.
+- Rule-family trends and runtime/log-pipeline details are in collapsed rows,
+  keeping the overview compact and deferring those queries until expanded.
+- Recent-log panels fetch at most 100 records, hide inline label badges, and
+  use `wrapLogMessage` to wrap request text. Expand a record for its labels and
+  original evidence. Access-log durations are displayed in milliseconds, and
+  rate-limit rows include the rejecting zone and `Retry-After`.
+- Access/429 queries filter compact Caddy JSON lines before parsing and extract
+  only the fields used by that panel. Dashboards refresh every minute and have
+  navigation links that preserve the selected time range and application.
+- Access-log route volume uses bounded route groups rather than arbitrary URI
+  rankings: scanner traffic can exceed Loki's 5,000-series limit even after
+  query strings are removed. Transient URI/path labels are dropped before the
+  range aggregation; exact sanitized URIs remain in the recent access logs.
+
 ## Internal tests
 
 Test each WAF before relying on the public route. A test pod cannot reach the

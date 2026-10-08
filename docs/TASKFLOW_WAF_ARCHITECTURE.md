@@ -567,25 +567,34 @@ datasources:
 
 | Panel | Type | Data Source | Query |
 |-------|------|-------------|-------|
-| WAF audit events | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf"} |= "\"transaction\"" [5m]))` |
-| WAF rule detections | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf"} |= "\"messages\"" [5m]))` |
-| Top triggered CRS rules | bar gauge | Loki | `topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[${__range}])))` |
-| Detection categories | pie chart | Loki | Named SQL injection (`94[0-9]{4}`), Cross-site scripting (`941[0-9]{3}`), Path traversal (`93[0-1][0-9]{3}`), and Command injection (`93[2-4][0-9]{3}`) slices |
-| Detections by HTTP method | timeseries | Loki | `sum by (method) (count_over_time({job="coraza-waf", method=~".+"} |= "\"messages\"" [5m]))` |
-| Detections by paranoia level | pie chart | Loki | Grouped by `paranoia-level/1`, `paranoia-level/2`, `paranoia-level/3`, and `paranoia-level/4` tags |
-| Top source IPs | table | Loki | `topk(10, sum by (transaction_client_ip) (count_over_time({job="coraza-waf"} |= "\"messages\"" | json [${__range}])))` |
-| Recent WAF detections | logs | Loki | `{job="coraza-waf"} |= "\"messages\"" | json | regexp ... | line_format "{{.transaction_request_method}} {{.transaction_request_uri}} [rule={{.rule_id}}: {{.rule_msg}}] ip={{.transaction_client_ip}}"` |
-| SQL injection detections | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf", rule_id=~"94[0-9]{4}"}[5m]))` |
-| XSS, command injection, path traversal | timeseries | Loki | `sum by (application) (count_over_time({job="coraza-waf", rule_id=~"941[0-9]{3}|93[0-4][0-9]{3}"}[5m]))` |
-| WAF block rate | stat | Loki | `(sum(count_over_time({job="coraza-waf"} |= "\"is_interrupted\":true" [$__range])) / sum(count_over_time({job="coraza-waf"} |= "\"messages\"" [$__range]))) * 100` |
-| Top targeted URIs | table | Loki | `topk(10, sum by (transaction_request_uri) (count_over_time({job="coraza-waf"} |= "\"messages\"" | json [$__range])))` |
-| Top attacking user agents | table | Loki | `topk(10, sum by (user_agent) (count_over_time({job="coraza-waf"} |= "\"messages\"" | json | user_agent := transaction_request_headers_user_agent [$__range])))` |
-| WAF inspection latency (p95) | timeseries | Loki | `quantile_over_time(0.95, {job="coraza-waf"} |= "\"stopwatch\"" | regexp "combined=(?P<waf_latency_ns>[0-9]+)" | unwrap waf_latency_ns / 1000000 [$__interval])` |
+| WAF audit events | timeseries | Loki | Counts `"transaction"` records per adaptive `$__interval`, with a zero baseline while WAF logs arrive |
+| WAF rule detections | timeseries | Loki | Counts `"messages"` records per adaptive `$__interval`, with a zero baseline while WAF logs arrive |
+| Top first-matched CRS rules | bar gauge | Loki | Instant `topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[$__range])))`; one labeled bar per result row |
+| First-matched rule categories | donut | Loki | One instant query categorizes all first rule IDs, including protocol enforcement, scanners and Other CRS |
+| Detections by HTTP method | timeseries | Loki | Counts detected audit records by indexed `method` per `$__interval` |
+| Audit records containing each paranoia level | bar gauge | Loki | Instant counts for `paranoia-level/1` through `/4`; a record can contribute to several levels |
+| Top source IPs | table | Loki | Instant top 10, extracting only `transaction.client_ip`; Client IP and Detections columns |
+| Recent WAF detections | logs | Loki | Latest 100 detections with BLOCK/DETECT, application, method, URI, first rule description and IP |
+| First-matched SQL injection | timeseries | Loki | Indexed first rule ID matches `942[0-9]{3}`; counts per `$__interval` |
+| First-matched XSS, injection & traversal | timeseries | Loki | Indexed first rule ID matches `941[0-9]{3}` or `93[0-4][0-9]{3}`; counts per `$__interval` |
+| Detected transactions blocked | stat | Loki | Instant percentage of detected records that were interrupted; guarded denominator; No detections when undefined |
+| Top targeted URIs | table | Loki | Instant top 10, extracting only `transaction.request.uri` |
+| Top attacking user agents | table | Loki | Instant top 10, extracting `transaction.request.headers["user-agent"][0]` |
+| WAF inspection latency (p95) | timeseries | Loki | Unwraps `combined` nanoseconds from stopwatch records, calculates per-application p95, and converts to milliseconds |
 | WAF pod CPU | timeseries | VictoriaMetrics | `rate(container_cpu_usage_seconds_total{...}[5m])` |
 | WAF pod memory | timeseries | VictoriaMetrics | `container_memory_working_set_bytes{...}` |
 | WAF pod restarts | timeseries | VictoriaMetrics | `increase(kube_pod_container_status_restarts_total{...}[1h])` |
-| Loki ingester append timeouts | stat | VictoriaMetrics | `sum(rate(loki_distributor_ingester_append_timeouts_total[5m]))` |
+| Loki ingester flush failures/s | stat | VictoriaMetrics | `sum(max by (instance) (rate(loki_ingester_chunks_flush_failures_total{namespace="monitoring",job="loki"}[$__rate_interval])))` |
 | Alloy forwarding errors | stat | VictoriaMetrics | `sum(rate(loki_write_dropped_bytes_total[5m]))` |
+
+Loki summaries use `queryType: instant`; the Prometheus `instant` flag is not a
+Loki query option. Event charts use buckets of at least 5 minutes that widen
+with the displayed query step, with a 300-point budget to avoid gaps on long
+ranges. The dashboards refresh every minute. Recent-log panels wrap lines,
+hide inline label badges and retain expandable evidence. See the runbook's
+"Rendering and query behavior" section for the full rendering conventions.
+Rule-family trends and runtime/log-pipeline panels are grouped in collapsed
+rows so the overview loads only its primary queries.
 
 ### Template Variables
 
@@ -599,8 +608,10 @@ datasources:
 
 This dashboard uses only Caddy access logs from `container="waf"`; it excludes
 `/waf-healthz` probes and keeps normal traffic separate from Coraza audit records.
-It provides request volume by application, response status and method trends, top
-sanitized request URIs, request outcomes, and recent access logs. Filters are
+It provides request volume by application, response status and method trends,
+bounded route groups, request outcomes, and recent access logs. Exact sanitized
+URIs remain in log rows; route grouping avoids exceeding Loki's query-series
+limit during scans with thousands of unique paths. Filters are
 available for `application` and `pod`; `namespace` is fixed to `taskflow` and
 `container` is fixed to `waf`.
 
