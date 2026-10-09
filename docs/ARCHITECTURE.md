@@ -205,7 +205,7 @@ VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 ### 5.6 Jaeger Deployment (`gitops/apps/taskflow/jaeger.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `jaegertracing/jaeger:2.21.0` |
+| Image | `jaegertracing/jaeger:2.22.0` |
 | Replicas | 1 |
 | Memory Guard | `--set=extensions.jaeger_storage.backends.some_storage.memory.max_traces=5000` |
 | Ports | UI: 16686, OTLP-gRPC: 4317, OTLP-HTTP: 4318 |
@@ -235,7 +235,7 @@ image with a SOPS-encrypted Cloudflare API token.
 ### 5.10 Monitoring Stack (`gitops/monitoring/`)
 | Component | Implementation |
 |-----------|----------------|
-| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.92.1) in namespace `monitoring` |
+| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.95.2) in namespace `monitoring` |
 | CRDs | Installed by the chart (VMServiceScrape, VMSingle, …) |
 | Persistence | VictoriaMetrics TSDB on a **Proxmox CSI-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `proxmox-csi`) |
 | Grafana auth | GitHub OAuth authentication (`auth.github`) with credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana UI is routed via the Gateway API (see `routes.yaml`); VictoriaMetrics UI is kept strictly internal and accessed via port-forwarding |
