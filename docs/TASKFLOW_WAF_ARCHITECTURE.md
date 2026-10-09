@@ -572,26 +572,29 @@ datasources:
 | Top first-matched CRS rules | bar gauge | Loki | Instant `topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[$__range])))`; one labeled bar per result row |
 | First-matched rule categories | donut | Loki | One instant query categorizes all first rule IDs, including protocol enforcement, scanners and Other CRS |
 | Detections by HTTP method | timeseries | Loki | Counts detected audit records by indexed `method` per `$__interval` |
-| Audit records containing each paranoia level | bar gauge | Loki | Instant counts for `paranoia-level/1` through `/4`; a record can contribute to several levels |
+| Audit records containing each paranoia level | bar gauge | Loki | Selected-range counts for `paranoia-level/1` through `/4`; overlapping counts; absent levels use a 5-minute liveness fallback |
 | Top source IPs | table | Loki | Instant top 10, extracting only `transaction.client_ip`; Client IP and Detections columns |
 | Recent WAF detections | logs | Loki | Latest 100 detections with BLOCK/DETECT, application, method, URI, first rule description and IP |
+| Raw WAF detection records | logs (collapsed row) | Loki | Latest 100 detection-bearing audit records without `line_format`, retaining the complete stored, redacted JSON |
 | First-matched SQL injection | timeseries | Loki | Indexed first rule ID matches `942[0-9]{3}`; counts per `$__interval` |
 | First-matched XSS, injection & traversal | timeseries | Loki | Indexed first rule ID matches `941[0-9]{3}` or `93[0-4][0-9]{3}`; counts per `$__interval` |
 | Detected transactions blocked | stat | Loki | Instant percentage of detected records that were interrupted; guarded denominator; No detections when undefined |
 | Top targeted URIs | table | Loki | Instant top 10, extracting only `transaction.request.uri` |
 | Top attacking user agents | table | Loki | Instant top 10, extracting `transaction.request.headers["user-agent"][0]` |
 | WAF inspection latency (p95) | timeseries | Loki | Unwraps `combined` nanoseconds from stopwatch records, calculates per-application p95, and converts to milliseconds |
-| WAF pod CPU | timeseries | VictoriaMetrics | `rate(container_cpu_usage_seconds_total{...}[5m])` |
+| WAF pod CPU | timeseries | VictoriaMetrics | `rate(container_cpu_usage_seconds_total{...}[$__rate_interval])` |
 | WAF pod memory | timeseries | VictoriaMetrics | `container_memory_working_set_bytes{...}` |
 | WAF pod restarts | timeseries | VictoriaMetrics | `increase(kube_pod_container_status_restarts_total{...}[1h])` |
 | Loki ingester flush failures/s | stat | VictoriaMetrics | `sum(max by (instance) (rate(loki_ingester_chunks_flush_failures_total{namespace="monitoring",job="loki"}[$__rate_interval])))` |
 | Alloy forwarding errors | stat | VictoriaMetrics | `sum(rate(loki_write_dropped_bytes_total[5m]))` |
 
 Loki summaries use `queryType: instant`; the Prometheus `instant` flag is not a
-Loki query option. Event charts use buckets of at least 5 minutes that widen
-with the displayed query step, with a 300-point budget to avoid gaps on long
-ranges. The dashboards refresh every minute. Recent-log panels wrap lines,
-hide inline label badges and retain expandable evidence. See the runbook's
+Loki query option. Event-count and request-rate charts use buckets of at least
+5 minutes; inspection latency uses at least 1 minute. Buckets widen with the
+displayed query step, with a 300-point budget to avoid gaps on long ranges. The
+dashboards refresh every minute. Summary logs wrap lines and expose extracted
+labels; collapsed Raw JSON evidence rows return complete stored records without
+`line_format`. These records retain ingestion redaction. See the runbook's
 "Rendering and query behavior" section for the full rendering conventions.
 Rule-family trends and runtime/log-pipeline panels are grouped in collapsed
 rows so the overview loads only its primary queries.
@@ -610,8 +613,9 @@ This dashboard uses only Caddy access logs from `container="waf"`; it excludes
 `/waf-healthz` probes and keeps normal traffic separate from Coraza audit records.
 It provides request volume by application, response status and method trends,
 bounded route groups, request outcomes, and recent access logs. Exact sanitized
-URIs remain in log rows; route grouping avoids exceeding Loki's query-series
-limit during scans with thousands of unique paths. Filters are
+URIs remain in log rows; route grouping bounds grouping cardinality during scans
+with thousands of unique paths, including downstream split queries. A collapsed
+Raw JSON evidence row exposes complete stored access records. Filters are
 available for `application` and `pod`; `namespace` is fixed to `taskflow` and
 `container` is fixed to `waf`.
 
@@ -633,11 +637,12 @@ entirely from Caddy access logs in Loki (`status=429`). It shows rate-limited
 requests for 5m/1h/24h, rate-limiter 429s over time by application, the rejection
 mix (Coraza blocks vs limiter vs upstream 429s), total Caddy request rate, and
 the top paths / client IPs / hosts receiving 429. It also carries an "Identity
-drift — client_ip in pod CIDR" stat that must stay at 0: a nonzero value means
-the resolved client fell back to a pod-range address (the trusted `cilium_host`
-peer changed), so buckets are shared and the runbook Stage 0 must be re-run.
-Client IPs and URIs are parsed at query time (`| json`) and are not Loki labels,
-so no high-cardinality series are created.
+drift — client_ip in pod CIDR" stat: known internal clients can contribute;
+sustained unexpected values warrant checking the trusted `cilium_host` peer and
+re-running runbook Stage 0. A collapsed Raw JSON evidence row contains separate
+limiter-rejection and pod-CIDR identity records. Client IPs and URIs are parsed
+at query time (`| json`) and are not indexed stream labels, avoiding ingest
+cardinality; query-time rankings can still produce high-cardinality groups.
 
 ### Access
 
@@ -666,33 +671,37 @@ so no high-cardinality series are created.
 topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[1h])))
 
 # Client IPs with the most detections; parsed at query time, not indexed
-topk(10, sum by (transaction_client_ip) (
-  count_over_time({job="coraza-waf"} |= "\"messages\"" | json [1h])
+topk(10, sum by (client_ip) (
+  count_over_time({job="coraza-waf"} |= "\"messages\"" |
+    json client_ip="transaction.client_ip" | __error__="" | client_ip!="" [1h])
 ))
 
 # Client IPs across all Caddy access logs, including requests that do not produce
 # a Coraza audit event.
 topk(10, sum by (client_ip) (
-  count_over_time({job="coraza-waf", container="waf"} | json | __error__="" |
-    client_ip != "" [1h])
+  count_over_time({job="coraza-waf", container="waf"} |= "\"handled request\"" |
+    json client_ip="client_ip" | __error__="" | client_ip!="" [1h])
 ))
 
-# SQL injection detections
-{job="coraza-waf"} |= "\"messages\"" |~ "\"id\":94[0-9]{4}"
+# First-matched SQL injection detections (other matches in the record are not selected)
+{job="coraza-waf", rule_id=~"942[0-9]{3}"}
 
-# XSS detections
-{job="coraza-waf"} |= "\"messages\"" |~ "\"id\":941[0-9]{3}"
+# First-matched XSS detections
+{job="coraza-waf", rule_id=~"941[0-9]{3}"}
 
 # Detections introduced by paranoia level 2 (rules ignored on PL 1)
 {job="coraza-waf"} |= "\"messages\"" |= "paranoia-level/2"
 
 # Rate-limited requests (HTTP 429) with the resolved client IP
-{job="coraza-waf", container="waf"} | json | __error__="" | status=429
+{job="coraza-waf", container="waf"} |= "\"handled request\"" |= "\"status\":429" |
+  json status="status", request_method="request.method", request_uri="request.uri", client_ip="client_ip" |
+  __error__="" | status=429
   | line_format `{{.status}} {{.request_method}} {{.request_uri}} ip={{.client_ip}}`
 
 # Top client IPs receiving 429 (query-time aggregation, not a Loki label)
 topk(10, sum by (client_ip) (
-  count_over_time({job="coraza-waf", container="waf"} | json | __error__="" |
+  count_over_time({job="coraza-waf", container="waf"} |= "\"handled request\"" |= "\"status\":429" |
+    json status="status", client_ip="client_ip" | __error__="" |
     status=429 | client_ip != "" [24h])
 ))
 ```

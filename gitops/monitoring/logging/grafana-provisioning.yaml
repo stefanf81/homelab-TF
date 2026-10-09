@@ -37,7 +37,7 @@ data:
       "title": "Taskflow WAF",
       "description": "Coraza and Caddy telemetry for the Taskflow frontend and backend WAFs. RelevantOnly auditing emits no records for normal successful traffic. Event timelines show zero while WAF logs are arriving; rule breakdowns and recent detections are empty when no rules matched in the selected time range.",
       "schemaVersion": 39,
-      "version": 8,
+      "version": 9,
       "refresh": "1m",
       "tags": ["taskflow", "security", "loki"],
       "links": [{"title": "Rate limits", "type": "link", "url": "/d/taskflow-rate-limits", "keepTime": true, "includeVars": true}, {"title": "Access logs", "type": "link", "url": "/d/taskflow-access-logs", "keepTime": true, "includeVars": true}],
@@ -125,7 +125,7 @@ data:
           "id": 15,
           "type": "bargauge",
           "title": "Audit records containing each paranoia level",
-          "description": "Counts audit records containing each CRS paranoia-level tag. A record can contain matches at several levels and is counted in each; these are overlapping counts, not a percentage breakdown or individual rule-match totals.",
+          "description": "Counts audit records containing each CRS paranoia-level tag over the selected range. A record can count at several levels; do not add these counts together. An absent count becomes zero only if WAF logs arrived in the 5 minutes ending at the selected range's end; otherwise that level has no data. Historical nonzero counts remain visible.",
           "gridPos": {"x": 16, "y": 8, "w": 8, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [
@@ -161,7 +161,7 @@ data:
           "id": 7,
           "type": "logs",
           "title": "Recent WAF detections",
-          "description": "Latest 100 matched audit records with method, URI, first rule and client IP. Expand a row for its labels and original JSON evidence. Loopback IPs can be local port-forward canaries.",
+          "description": "Latest 100 matched audit records with method, URI, first rule and client IP. Expand a row for extracted labels; open the Raw JSON evidence row below for the stored, redacted audit record. Loopback IPs can be local port-forward canaries.",
           "gridPos": {"x": 8, "y": 16, "w": 16, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json request_method=\"transaction.request.method\", request_uri=\"transaction.request.uri\", client_ip=\"transaction.client_ip\", interrupted=\"transaction.is_interrupted\" | __error__=\"\" | regexp `\\[msg \\\\\"(?P<rule_msg>[^\\\\\"]+)\\\\\"\\]` | line_format `{{if eq .interrupted \"true\"}}BLOCK{{else}}DETECT{{end}} {{.application}} | {{.request_method}} {{.request_uri}} | CRS {{.rule_id}}: {{.rule_msg}} | ip={{.client_ip}}`", "queryType": "range", "maxLines": 100}],
@@ -313,6 +313,25 @@ data:
           "fieldConfig": {"defaults": {"unit": "Bps", "min": 0, "noValue": "Unavailable", "color": {"mode": "thresholds"}}, "overrides": []}
         }
           ]
+        },
+        {
+          "id": 23,
+          "type": "row",
+          "title": "Raw JSON evidence",
+          "collapsed": true,
+          "gridPos": {"x": 0, "y": 35, "w": 24, "h": 1},
+          "panels": [
+            {
+              "id": 24,
+              "type": "logs",
+              "title": "Raw WAF detection records",
+              "description": "Latest 100 detection-bearing audit records as stored in Loki, after ingestion redaction. No line_format or rule-description regexp is applied, so the complete stored JSON is available even when a summary field cannot be extracted.",
+              "gridPos": {"x": 0, "y": 36, "w": 24, "h": 10},
+              "datasource": {"type": "loki", "uid": "loki"},
+              "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\"", "queryType": "range", "maxLines": 100}],
+              "options": {"showTime": true, "showLabels": false, "showLevel": false, "showCommonLabels": false, "wrapLogMessage": true, "sortOrder": "Descending", "prettifyLogMessage": true, "enableLogDetails": true}
+            }
+          ]
         }
       ]
     }
@@ -334,7 +353,7 @@ data:
       "title": "Taskflow Access Logs",
       "description": "Caddy access-log activity for normal Taskflow traffic. Coraza audit records and WAF detections are shown separately on the Taskflow WAF dashboard.",
       "schemaVersion": 39,
-      "version": 3,
+      "version": 4,
       "refresh": "1m",
       "tags": ["taskflow", "traffic", "loki"],
       "links": [{"title": "WAF detections", "type": "link", "url": "/d/taskflow-waf", "keepTime": true, "includeVars": true}, {"title": "Rate limits", "type": "link", "url": "/d/taskflow-rate-limits", "keepTime": true, "includeVars": true}],
@@ -416,7 +435,7 @@ data:
           "id": 5,
           "type": "bargauge",
           "title": "Requests by route group",
-          "description": "Bounded route groups keep long-range queries below Loki's series limit even during scans with thousands of unique paths or query strings. Other paths / scans includes routes outside the listed groups. Open recent access-log rows for exact sanitized URIs.",
+          "description": "Bounded route groups limit grouping cardinality during scans with thousands of unique paths or query strings, including downstream split queries. Other paths / scans includes routes outside the listed groups. Open recent access-log rows for exact sanitized URIs.",
           "gridPos": {"x": 12, "y": 11, "w": 12, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [{"refId": "A", "expr": "sum by (route) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\" | __error__=\"\" | request_uri!=\"\" | label_format request_path=`{{ regexReplaceAll \"\\\\?.*$\" .request_uri \"\" }}` | label_format route=`{{ if eq .request_path \"/\" }}/{{ else if hasPrefix \"/api/v1/auth/\" .request_path }}/api/v1/auth/*{{ else if hasPrefix \"/api/v1/appointments/\" .request_path }}/api/v1/appointments/*{{ else if or (hasPrefix \"/api/\" .request_path) (eq .request_path \"/api\") }}/api/*{{ else if hasPrefix \"/assets/\" .request_path }}/assets/*{{ else if eq .request_path \"/favicon.ico\" }}/favicon.ico{{ else }}Other paths / scans{{ end }}` | drop request_uri, request_path [$__range]))", "legendFormat": "{{route}}", "queryType": "instant"}],
@@ -451,10 +470,30 @@ data:
           "id": 8,
           "type": "logs",
           "title": "Recent access logs",
+          "description": "Latest 100 non-probe requests with durations in milliseconds. Expand a row for extracted labels; open the Raw JSON evidence row below for the complete stored, redacted access record.",
           "gridPos": {"x": 0, "y": 27, "w": 24, "h": 10},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json status=\"status\", request_method=\"request.method\", request_uri=\"request.uri\", client_ip=\"client_ip\", duration=\"duration\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri!=\"\" | line_format `{{.status}} {{.application}} | {{.request_method}} {{.request_uri}} | ip={{.client_ip}} duration={{printf \"%.1f\" (mulf .duration 1000)}}ms`", "queryType": "range", "maxLines": 100}],
           "options": {"showTime": true, "showLabels": false, "showLevel": false, "showCommonLabels": false, "wrapLogMessage": true, "sortOrder": "Descending", "prettifyLogMessage": false, "enableLogDetails": true}
+        },
+        {
+          "id": 9,
+          "type": "row",
+          "title": "Raw JSON evidence",
+          "collapsed": true,
+          "gridPos": {"x": 0, "y": 37, "w": 24, "h": 1},
+          "panels": [
+            {
+              "id": 10,
+              "type": "logs",
+              "title": "Raw access records",
+              "description": "Latest 100 non-probe access records as stored in Loki, after Caddy redaction. Application and pod filters are preserved; JSON parsing filters the records but does not rewrite their content.",
+              "gridPos": {"x": 0, "y": 38, "w": 24, "h": 10},
+              "datasource": {"type": "loki", "uid": "loki"},
+              "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri!=\"\"", "queryType": "range", "maxLines": 100}],
+              "options": {"showTime": true, "showLabels": false, "showLevel": false, "showCommonLabels": false, "wrapLogMessage": true, "sortOrder": "Descending", "prettifyLogMessage": true, "enableLogDetails": true}
+            }
+          ]
         }
       ]
     }
@@ -476,7 +515,7 @@ data:
       "title": "Taskflow Rate Limits",
       "description": "Caddy HTTP rate-limit activity (HTTP 429) for the Taskflow WAFs, derived from Caddy access logs in Loki. Counts show zero while WAF logs are arriving; breakdowns and recent requests are empty when no rejections occurred. Individual client IPs and URIs are parsed at query time and are not Loki labels.",
       "schemaVersion": 39,
-      "version": 4,
+      "version": 5,
       "refresh": "1m",
       "tags": ["taskflow", "security", "loki"],
       "links": [{"title": "WAF detections", "type": "link", "url": "/d/taskflow-waf", "keepTime": true, "includeVars": true}, {"title": "Access logs", "type": "link", "url": "/d/taskflow-access-logs", "keepTime": true, "includeVars": true}],
@@ -512,7 +551,7 @@ data:
           "id": 2,
           "type": "stat",
           "title": "429 responses — 1 h",
-          "description": "All HTTP 429 responses in Caddy access logs (last hour).",
+          "description": "All HTTP 429 responses in Caddy access logs (last hour). Zero means no 429s while WAF logs are arriving; no data means no WAF logs in that window. The rejection-mix panel below separates rate-limiter 429s from other sources.",
           "gridPos": {"x": 8, "y": 0, "w": 8, "h": 6},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [{"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\" | __error__=\"\" | status=429 [1h])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[1h])))", "queryType": "instant"}],
@@ -523,7 +562,7 @@ data:
           "id": 3,
           "type": "stat",
           "title": "429 responses — 24 h",
-          "description": "All HTTP 429 responses in Caddy access logs (last 24 hours).",
+          "description": "All HTTP 429 responses in Caddy access logs (last 24 hours). Zero means no 429s while WAF logs are arriving; no data means no WAF logs in that window. The rejection-mix panel below separates rate-limiter 429s from other sources.",
           "gridPos": {"x": 16, "y": 0, "w": 8, "h": 6},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [{"refId": "A", "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\" | __error__=\"\" | status=429 [24h])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[24h])))", "queryType": "instant"}],
@@ -613,7 +652,7 @@ data:
           "id": 10,
           "type": "logs",
           "title": "Recent rate-limited requests",
-          "description": "Access-log lines for Caddy rate-limiter rejections (rate_limit_zone set), including the resolved client IP and the Retry-After response header. Upstream/application 429s are excluded.",
+          "description": "Access-log summaries for Caddy rate-limiter rejections (rate_limit_zone set), including the resolved client IP and Retry-After response header. Upstream/application 429s are excluded. Open the Raw JSON evidence row below for the complete stored, redacted records.",
           "gridPos": {"x": 0, "y": 30, "w": 24, "h": 8},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_method=\"request.method\", request_uri=\"request.uri\", client_ip=\"client_ip\", rate_limit_zone=\"rate_limit_zone\", retry_after=`resp_headers[\"Retry-After\"][0]` | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | line_format `{{.status}} {{.application}} | {{.request_method}} {{.request_uri}} | ip={{.client_ip}} zone={{.rate_limit_zone}} retry-after={{.retry_after | default \"-\"}}s`", "queryType": "range", "maxLines": 100}],
@@ -634,11 +673,40 @@ data:
           "id": 12,
           "type": "logs",
           "title": "Pod-CIDR identity samples (client_ip in pod CIDR)",
-          "description": "Access-log samples whose resolved client_ip is in the pod CIDR: known in-cluster clients, or the trusted-peer fallback after a node change.",
+          "description": "Access-log summaries whose resolved client_ip is in the pod CIDR: known in-cluster clients, or the trusted-peer fallback after a node change. Open the Raw JSON evidence row below for the complete stored, redacted records.",
           "gridPos": {"x": 8, "y": 38, "w": 16, "h": 6},
           "datasource": {"type": "loki", "uid": "loki"},
           "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json status=\"status\", request_method=\"request.method\", request_uri=\"request.uri\", client_ip=\"client_ip\", rate_limit_zone=\"rate_limit_zone\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*` | line_format `{{.status}} {{.application}} | {{.request_method}} {{.request_uri}} | ip={{.client_ip}} zone={{.rate_limit_zone | default \"-\"}}`", "queryType": "range", "maxLines": 100}],
           "options": {"showTime": true, "showLabels": false, "showLevel": false, "showCommonLabels": false, "wrapLogMessage": true, "sortOrder": "Descending", "prettifyLogMessage": false, "enableLogDetails": true}
+        },
+        {
+          "id": 13,
+          "type": "row",
+          "title": "Raw JSON evidence",
+          "collapsed": true,
+          "gridPos": {"x": 0, "y": 44, "w": 24, "h": 1},
+          "panels": [
+            {
+              "id": 14,
+              "type": "logs",
+              "title": "Raw rate-limited access records",
+              "description": "Latest 100 Caddy rate-limiter rejections as stored in Loki, after Caddy redaction. Includes the full stored request and response fields without line_format; upstream/application 429s are excluded.",
+              "gridPos": {"x": 0, "y": 45, "w": 24, "h": 8},
+              "datasource": {"type": "loki", "uid": "loki"},
+              "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", rate_limit_zone=\"rate_limit_zone\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\"", "queryType": "range", "maxLines": 100}],
+              "options": {"showTime": true, "showLabels": false, "showLevel": false, "showCommonLabels": false, "wrapLogMessage": true, "sortOrder": "Descending", "prettifyLogMessage": true, "enableLogDetails": true}
+            },
+            {
+              "id": 15,
+              "type": "logs",
+              "title": "Raw pod-CIDR identity records",
+              "description": "Latest 100 non-probe access records with client_ip in the pod CIDR, as stored in Loki after Caddy redaction. JSON parsing filters the records without rewriting their content.",
+              "gridPos": {"x": 0, "y": 53, "w": 24, "h": 8},
+              "datasource": {"type": "loki", "uid": "loki"},
+              "targets": [{"refId": "A", "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*`", "queryType": "range", "maxLines": 100}],
+              "options": {"showTime": true, "showLabels": false, "showLevel": false, "showCommonLabels": false, "wrapLogMessage": true, "sortOrder": "Descending", "prettifyLogMessage": true, "enableLogDetails": true}
+            }
+          ]
         }
       ]
     }

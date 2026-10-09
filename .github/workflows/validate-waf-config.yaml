@@ -2,7 +2,7 @@ name: Validate WAF config and dashboards
 
 # ConfigMap-only changes do not trigger the image build workflow, so validate the
 # shipped WAF Caddyfiles (real trusted_proxies list and zones) and the Grafana
-# dashboard JSON here.
+# dashboard structure and LogQL syntax here.
 
 on:
   pull_request:
@@ -11,7 +11,10 @@ on:
     paths:
       - 'gitops/apps/taskflow/*-waf.yaml'
       - 'gitops/monitoring/logging/grafana-provisioning.yaml'
-      - 'gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh'
+      - 'gitops/monitoring/logging/loki-release.yaml'
+      - 'gitops/monitoring/logging/repositories.yaml'
+      - 'gitops/images/taskflow-caddy-coraza/tests/validate-*'
+      - 'gitops/images/taskflow-caddy-coraza/tests/loki-validation.yaml'
       - '.github/workflows/validate-waf-config.yaml'
   push:
     branches:
@@ -19,7 +22,10 @@ on:
     paths:
       - 'gitops/apps/taskflow/*-waf.yaml'
       - 'gitops/monitoring/logging/grafana-provisioning.yaml'
-      - 'gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh'
+      - 'gitops/monitoring/logging/loki-release.yaml'
+      - 'gitops/monitoring/logging/repositories.yaml'
+      - 'gitops/images/taskflow-caddy-coraza/tests/validate-*'
+      - 'gitops/images/taskflow-caddy-coraza/tests/loki-validation.yaml'
       - '.github/workflows/validate-waf-config.yaml'
 
 concurrency:

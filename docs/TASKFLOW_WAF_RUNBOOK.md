@@ -279,12 +279,20 @@ range can therefore legitimately leave rule breakdowns and recent-event panels
 empty. Expand the range to 7 days to look for historical events.
 
 LogQL `count_over_time` returns an empty result when no logs match, rather than
-a numeric zero. The main WAF event timelines, 429 counters, rate-limit timeline,
-request-rate panel, and identity-drift counter use all selected WAF logs
-(including health probes) as a zero-valued baseline. They show **0** when logs
-are arriving without matching events, and **No data** when that baseline is
-also absent. This confirms collection activity, not WAF enforcement; use the
-canary checks below to verify enforcement end to end.
+a numeric zero. The audit/detection and rule-family timelines, access-log
+requests-by-application chart, 429 counters, rate-limit and rejection-source
+timelines, request-rate panel, and identity-drift counter use all selected WAF
+logs (including health probes) as a zero-valued baseline in the same counting
+window. They show **0** when logs arrive without matching events, and **No data**
+when that baseline is also absent. This confirms collection activity, not WAF
+enforcement; use the canary checks below to verify enforcement end to end.
+
+The paranoia-level gauge deliberately has different liveness semantics: its
+counts cover the selected range, but an absent level becomes zero only if WAF
+logs arrived in the 5 minutes ending at the selected range's end. Otherwise that
+level has no data. Historical nonzero counts remain visible. The blocked
+percentage shows **No detections** when its denominator is undefined; it is not
+a collection-health indicator.
 
 ### Rendering and query behavior
 
@@ -295,10 +303,11 @@ canary checks below to verify enforcement end to end.
 - Loki instant results are rendered as table rows. Rule/category/route gauges
   convert rows to separate fields; ranking tables hide evaluation timestamps
   and label their numeric columns explicitly.
-- Event charts use adaptive buckets (`$__interval`, minimum 5 minutes), capped
-  at 300 points. The bucket widens with the query step for long time ranges,
-  preventing sparse detections from disappearing between samples. Counts are
-  per displayed interval, not a fixed 5-minute total at every zoom level.
+- Event-count and request-rate charts use adaptive buckets (`$__interval`,
+  minimum 5 minutes); inspection latency uses a minimum 1-minute bucket. These
+  charts have a 300-point budget. The bucket widens with the query step for long
+  time ranges, preventing sparse detections from disappearing between samples.
+  Counts are per displayed interval, not a fixed 5-minute total at every zoom.
 - The category donut includes protocol enforcement, scanner detection and
   Other CRS, so its percentages cover all extracted first-matched rules.
   Paranoia-level counts still overlap and should not be added together.
@@ -306,15 +315,53 @@ canary checks below to verify enforcement end to end.
   keeping the overview compact and deferring those queries until expanded.
 - Recent-log panels fetch at most 100 records, hide inline label badges, and
   use `wrapLogMessage` to wrap request text. Expand a record for its labels and
-  original evidence. Access-log durations are displayed in milliseconds, and
-  rate-limit rows include the rejecting zone and `Retry-After`.
+  extracted fields. `line_format` replaces the returned line, so expanding a
+  summary does not recover the complete stored JSON. Access-log durations are
+  displayed in milliseconds, and rate-limit rows include the rejecting zone and
+  `Retry-After`.
+- Open the collapsed **Raw JSON evidence** row on each dashboard to inspect
+  complete stored records without `line_format`. The WAF dashboard shows audit
+  detections; Access Logs preserves application/pod filters and excludes probes;
+  Rate Limits provides separate limiter-rejection and pod-CIDR identity records.
+  These panels also fetch at most 100 records, only when expanded. "Raw" means
+  the JSON stored in Loki **after redaction**, not unredacted request contents.
 - Access/429 queries filter compact Caddy JSON lines before parsing and extract
   only the fields used by that panel. Dashboards refresh every minute and have
   navigation links that preserve the selected time range and application.
 - Access-log route volume uses bounded route groups rather than arbitrary URI
-  rankings: scanner traffic can exceed Loki's 5,000-series limit even after
-  query strings are removed. Transient URI/path labels are dropped before the
-  range aggregation; exact sanitized URIs remain in the recent access logs.
+  rankings. This bounds grouping cardinality even during scans with thousands
+  of unique paths. Loki is configured with `max_query_series: 5000`: a direct
+  instant `topk(10, ...)` bounds its final result, but split execution can expose
+  larger grouped downstream results to the limit. Transient URI/path labels are
+  dropped before the route aggregation; exact sanitized URIs remain in log rows.
+
+### Dashboard validation
+
+Run `gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh` (Docker and
+Ruby required). It validates the shipped Caddyfiles, dashboard JSON and layout,
+panel/target identifiers, datasource-specific query modes, interval settings,
+and variable references against declared variables and supported Grafana
+built-ins. Bare, braced/formatted, and legacy references are recognized. Loki
+`label_values` queries are checked for valid wrapper syntax, and their selectors
+are parsed alongside every Loki panel target using a disposable Loki parser.
+Built-in variables are substituted with representative values for parsing.
+This checks syntax, not live field contents, rendering, query cost, or
+series-limit behavior. Validator regression tests also run in CI.
+
+The test image defaults to the pinned chart's `appVersion`, resolved from its
+HelmRepository index; an explicit release image tag takes precedence. The
+running container's build-info version must match that deployed version, even
+when `LOKI_IMAGE` is overridden or digest-pinned. For deliberate migration
+testing only, use `LOKI_IMAGE=<candidate> ALLOW_LOKI_VERSION_MISMATCH=1` to permit
+a different runtime version. Resolving chart metadata requires repository
+connectivity; no separate manually maintained test-image version is needed.
+
+After deployment, confirm Flux's applied revision and dashboard ConfigMap data,
+then inspect both summary and raw panels. Diagnose cardinality failures using
+the deployed Loki version and splitting settings before changing rankings or
+limits. Compare repeated query measurements over identical time windows before
+claiming a performance improvement; baseline aggregations add work but do not
+establish an exact cost multiplier.
 
 ## Internal tests
 
