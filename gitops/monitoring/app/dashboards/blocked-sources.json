@@ -3,7 +3,7 @@
   "title": "Blocked Sources",
   "description": "Per-IP traffic rejected by Cloudflare (proxied path) and Cilium (direct path). Client IPs are parsed from logs at query time, never metric labels.",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "30s",
   "time": {
     "from": "now-24h",
@@ -517,8 +517,8 @@
     {
       "id": 13,
       "type": "logs",
-      "title": "Recent Cloudflare blocks (latest 100)",
-      "description": "Raw aggregated Security Events (per client IP, rule source, minute). Displays at most the latest 100 records; the stat and time-series panels above count all matching events.",
+      "title": "Recent Cloudflare blocks",
+      "description": "Raw aggregated Security Events (per client IP, rule source, minute). Shows the most recent matching records up to the Loki datasource line limit (1,000 by default); the stat and time-series panels above count the events collected into Loki.",
       "gridPos": {
         "x": 0,
         "y": 26,
@@ -532,8 +532,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"cloudflare-firewall\"} | json | line_format `{{.action}} {{.source}} ip={{.client_ip}} host={{.host}} path={{.path}} ua={{.user_agent}} hits={{.count}}`",
-          "maxLines": 100
+          "expr": "{job=\"cloudflare-firewall\"} | json | line_format `{{.action}} {{.source}} ip={{.client_ip}} host={{.host}} path={{.path}} ua={{.user_agent}} hits={{.count}}`"
         }
       ],
       "options": {
@@ -548,8 +547,8 @@
     {
       "id": 14,
       "type": "logs",
-      "title": "Recent Cilium Gateway drops (latest 100)",
-      "description": "Non-reply dropped flows involving reserved:ingress, with POLICY_DENIED or no recorded reason. Uses the same filter as the overview. Displays at most the latest 100 records; the stat and time-series panels above count all matching events.",
+      "title": "Recent Cilium Gateway drops",
+      "description": "Non-reply dropped flows involving reserved:ingress, with POLICY_DENIED or no recorded reason. Uses the same filter as the overview. Shows the most recent matching records up to the Loki datasource line limit (1,000 by default); the stat and time-series panels above count the events collected into Loki.",
       "gridPos": {
         "x": 12,
         "y": 26,
@@ -563,8 +562,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_source_identity=\"8\" or flow_destination_identity=\"8\") | (flow_drop_reason_desc=\"POLICY_DENIED\" or flow_drop_reason_desc=\"\") | line_format `{{.flow_verdict}} {{.flow_drop_reason_desc}} src={{.flow_IP_source}} dst={{.flow_IP_destination}} port={{.flow_l4_TCP_destination_port}} dir={{.flow_traffic_direction}}`",
-          "maxLines": 100
+          "expr": "{job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_source_identity=\"8\" or flow_destination_identity=\"8\") | (flow_drop_reason_desc=\"POLICY_DENIED\" or flow_drop_reason_desc=\"\") | line_format `{{.flow_verdict}} {{.flow_drop_reason_desc}} src={{.flow_IP_source}} dst={{.flow_IP_destination}} port={{.flow_l4_TCP_destination_port}} dir={{.flow_traffic_direction}}`"
         }
       ],
       "options": {
@@ -588,7 +586,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Cloudflare (proxied path, real client IPs)** — collected by `abuseipdb-sync` from Security Events into Loki (`job=\"cloudflare-firewall\"`). Needs `Zone Analytics: Read`; free-plan API retention is 24h. Paths and user agents are first-event samples per client/rule/host/minute group, not exact rankings. `firewallCustom` is a rule source, not a unique AbuseIPDB rule identifier.\n\n**Cilium Gateway** — shows non-reply `DROPPED` flows with source or destination identity **8** (`reserved:ingress`) and either `POLICY_DENIED` or no recorded reason. The export omits L7/policy details: reasonless drops cannot be attributed to AbuseIPDB or default-deny from these records alone. Counts are flow events, not unique requests. For proxied traffic Cilium can see Cloudflare edge addresses; use the edge panels for real client IPs.\n\n**Display limits** — ranking tables show at most the top 20 entries and sample panels at most the latest 100 records; aggregate stat and time-series panels count every matching event in the selected range."
+        "content": "**Cloudflare (proxied path, real client IPs)** — collected by `abuseipdb-sync` from Security Events into Loki (`job=\"cloudflare-firewall\"`). Needs `Zone Analytics: Read`; free-plan API retention is 24h. Paths and user agents are first-event samples per client/rule/host/minute group, not exact rankings. `firewallCustom` is a rule source, not a unique AbuseIPDB rule identifier.\n\n**Cilium Gateway** — shows non-reply `DROPPED` flows with source or destination identity **8** (`reserved:ingress`) and either `POLICY_DENIED` or no recorded reason. The export omits L7/policy details: reasonless drops cannot be attributed to AbuseIPDB or default-deny from these records alone. Counts are flow events, not unique requests. For proxied traffic Cilium can see Cloudflare edge addresses; use the edge panels for real client IPs.\n\n**Display limits** — ranking tables show at most the top 20 entries, and recent-record panels show the newest records up to the Loki datasource line limit (1,000 by default). Aggregate stat and time-series panels count the events collected into Loki for the selected range; collector gaps, API retention, and Loki retention still apply."
       }
     }
   ],

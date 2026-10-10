@@ -16,6 +16,25 @@ module DashboardValidation
     "__timezone" => "UTC", "__dashboard" => "validation", "__org" => "1", "__user" => "validation"
   }.freeze
   PROMETHEUS_BUILTINS = %w[__rate_interval __rate_interval_ms].freeze
+  JSON_STAGE = /\|\s*json\b/
+  RANGE_SELECTOR = /\[(?:\$\{?__\w+(?::\w+)?\}?|\d+(?:ms|s|m|h|d|w))\]/
+  ERROR_FILTER = /__error__\s*=\s*""/
+
+  # Loki's json parser labels unparsable lines with __error__ instead of
+  # dropping them, and a metric query fails on those labels. Every json stage
+  # in a metric query must filter them before its range selector. Log panels
+  # are exempt so malformed records stay visible as evidence.
+  def self.parse_error_guard_errors(expression)
+    errors = []
+    position = 0
+    while (stage = JSON_STAGE.match(expression, position))
+      range = RANGE_SELECTOR.match(expression, stage.end(0))
+      pipeline = expression[stage.end(0)...(range ? range.begin(0) : expression.length)]
+      errors << 'metric query parses JSON without filtering parse errors (add | __error__="")' unless pipeline.match?(ERROR_FILTER)
+      position = stage.end(0)
+    end
+    errors.uniq
+  end
 
   def self.reference_names(expression)
     expression.scan(VARIABLE_REFERENCE).map do |bare, legacy, _format, braced, _field, _braced_format|
@@ -196,6 +215,9 @@ module DashboardValidation
             end
             if panel["type"] == "logs" && mode != "range"
               errors << "#{target_context}: log panels must use range queries"
+            end
+            unless panel["type"] == "logs"
+              errors.concat(parse_error_guard_errors(expression).map { |error| "#{target_context}: #{error}" })
             end
             if references.include?("__interval")
               unless panel["interval"].is_a?(String) && panel["interval"].match?(/\A[1-9]\d*(?:ms|s|m|h|d|w)\z/)

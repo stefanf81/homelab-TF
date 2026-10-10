@@ -307,6 +307,26 @@ class DashboardValidationTest < Minitest::Test
     assert_empty errors([latency])
   end
 
+  def test_metric_queries_must_filter_json_parse_errors
+    unguarded = panel(1)
+    unguarded["targets"][0]["expr"] = 'sum(count_over_time({job="test"} | json status="status" | status=429 [$__interval]))'
+    assert errors([unguarded]).any? { |error| error.include?("without filtering parse errors") }
+
+    guarded = panel(1)
+    guarded["targets"][0]["expr"] = 'sum(count_over_time({job="test"} | json status="status" | __error__="" | status=429 [$__interval]))'
+    assert_empty errors([guarded])
+
+    second_unguarded = panel(1)
+    second_unguarded["targets"][0]["expr"] =
+      'sum(count_over_time({job="a"} | json | __error__="" [$__interval])) / sum(count_over_time({job="b"} | json [$__interval]))'
+    assert errors([second_unguarded]).any? { |error| error.include?("without filtering parse errors") }
+
+    evidence = panel(1)
+    evidence["type"] = "logs"
+    evidence["targets"][0] = { "refId" => "A", "expr" => '{job="test"} | json status="status"', "queryType" => "range" }
+    assert_empty errors([evidence]), "log panels may keep malformed records visible"
+  end
+
   def test_allows_prometheus_instant_flags_but_not_loki_query_type
     prometheus = panel(1)
     prometheus["datasource"]["type"] = "prometheus"

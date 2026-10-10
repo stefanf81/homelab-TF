@@ -3,7 +3,7 @@
   "title": "Taskflow Rate Limits",
   "description": "Caddy HTTP rate-limit activity (HTTP 429) for the Taskflow WAFs, derived from Caddy access logs in Loki. Overview totals, breakdowns, and tables honor the Application and Client IP filters; the fixed-window cards do not. Rankings and log samples are limited subsets, not complete inventories. Individual client IPs and URIs are parsed at query time and are not Loki labels.",
   "schemaVersion": 39,
-  "version": 6,
+  "version": 7,
   "refresh": "1m",
   "tags": [
     "taskflow",
@@ -277,7 +277,7 @@
       "id": 104,
       "type": "stat",
       "title": "Rate-limit share of requests",
-      "description": "Caddy rate-limit rejections divided by recorded requests in the selected range. Shown only while WAF logs are arriving; 'No logged requests' means no matching access records in range.",
+      "description": "Caddy rate-limit rejections divided by recorded requests in the selected range. Shows 0% when WAF logs exist but no requests match the filters, and 'No logged requests' when no WAF logs exist in the range.",
       "gridPos": {
         "x": 18,
         "y": 1,
@@ -340,7 +340,7 @@
       "id": 1,
       "type": "stat",
       "title": "429 responses — 5 min",
-      "description": "Fixed window: the last 5 minutes ending at the current time. This window can include data outside the selected graph range. Zero means no 429s while WAF logs are arriving; no data means no WAF logs in that window. Not affected by the Client IP filter.",
+      "description": "Fixed window: the last 5 minutes ending at the selected range end. This window can include data outside the selected graph range. Zero means no 429s while WAF logs are arriving; no data means no WAF logs in that window. Not affected by the Client IP filter.",
       "gridPos": {
         "x": 0,
         "y": 7,
@@ -399,7 +399,7 @@
       "id": 2,
       "type": "stat",
       "title": "429 responses — 1 h",
-      "description": "Fixed window: the last hour ending at the current time. This window can include data outside the selected graph range. Zero means no 429s while WAF logs are arriving; no data means no WAF logs in that window. Not affected by the Client IP filter.",
+      "description": "Fixed window: the last hour ending at the selected range end. This window can include data outside the selected graph range. Zero means no 429s while WAF logs are arriving; no data means no WAF logs in that window. Not affected by the Client IP filter.",
       "gridPos": {
         "x": 8,
         "y": 7,
@@ -458,7 +458,7 @@
       "id": 3,
       "type": "stat",
       "title": "429 responses — 24 h",
-      "description": "Fixed window: the last 24 hours ending at the current time. This window can include data outside the selected graph range. Zero means no 429s while WAF logs are arriving; no data means no WAF logs in that window. Not affected by the Client IP filter.",
+      "description": "Fixed window: the last 24 hours ending at the selected range end. This window can include data outside the selected graph range. Zero means no 429s while WAF logs are arriving; no data means no WAF logs in that window. Not affected by the Client IP filter.",
       "gridPos": {
         "x": 16,
         "y": 7,
@@ -558,7 +558,8 @@
         {
           "refId": "A",
           "expr": "sum by (status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json status=\"status\", request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | status != \"\" | client_ip=~\"$client_ip\" [$__range]))",
-          "queryType": "instant"
+          "queryType": "instant",
+          "legendFormat": "HTTP {{status}}"
         }
       ],
       "transformations": [
@@ -613,7 +614,7 @@
           "unit": "none",
           "decimals": 0,
           "min": 0,
-          "displayName": "HTTP ${__field.labels.status}",
+          "displayName": "${__field.name}",
           "color": {
             "mode": "palette-classic"
           }
@@ -639,7 +640,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"is_interrupted\\\":true\" | json client_ip=\"transaction.client_ip\" | client_ip=~\"$client_ip\" [$__interval])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"is_interrupted\\\":true\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__interval])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
           "legendFormat": "Coraza block"
         },
         {
@@ -748,7 +749,8 @@
         {
           "refId": "A",
           "expr": "sum by (application, rate_limit_zone) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", rate_limit_zone=\"rate_limit_zone\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | client_ip=~\"$client_ip\" [$__range]))",
-          "queryType": "instant"
+          "queryType": "instant",
+          "legendFormat": "{{application}} / {{rate_limit_zone}}"
         }
       ],
       "transformations": [
@@ -802,7 +804,7 @@
         "defaults": {
           "unit": "none",
           "decimals": 0,
-          "displayName": "${__field.labels.application} / ${__field.labels.rate_limit_zone}",
+          "displayName": "${__field.name}",
           "color": {
             "mode": "palette-classic-by-name"
           }
@@ -1285,7 +1287,8 @@
         {
           "refId": "A",
           "expr": "sum by (category) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | request_uri!=\"\" | client_ip=~\"$client_ip\" | label_format path=`{{ regexReplaceAll \"\\\\?.*$\" .request_uri \"\" }}` | label_format category=`{{ if or (hasSuffix \".zip\" .path) (hasSuffix \".tar\" .path) (hasSuffix \".tgz\" .path) (hasSuffix \".gz\" .path) (hasSuffix \".bz2\" .path) (hasSuffix \".rar\" .path) (hasSuffix \".7z\" .path) (hasSuffix \".bak\" .path) (hasSuffix \".old\" .path) (hasSuffix \".orig\" .path) (hasSuffix \".save\" .path) (hasSuffix \".sql\" .path) (hasSuffix \".dump\" .path) (hasSuffix \".swp\" .path) }}Archive/backup{{ else if or (hasPrefix \"/.env\" .path) (hasPrefix \"/.git\" .path) (hasPrefix \"/.svn\" .path) (hasPrefix \"/.hg\" .path) (hasPrefix \"/.htpasswd\" .path) (hasPrefix \"/.htaccess\" .path) (hasPrefix \"/.DS_Store\" .path) (hasPrefix \"/.aws\" .path) (hasPrefix \"/.ssh\" .path) (hasSuffix \"wp-config\" .path) }}Config/source-control{{ else if or (hasSuffix \".php\" .path) (hasSuffix \".asp\" .path) (hasSuffix \".aspx\" .path) (hasSuffix \".jsp\" .path) (hasSuffix \".jspx\" .path) (hasSuffix \".cgi\" .path) (hasSuffix \".sh\" .path) (hasSuffix \".pl\" .path) (hasSuffix \".py\" .path) (hasSuffix \".rb\" .path) }}Script endpoints{{ else if or (hasPrefix \"/api\" .path) (hasPrefix \"/actuator\" .path) (hasPrefix \"/graphql\" .path) }}API routes{{ else if or (hasPrefix \"/assets/\" .path) (hasPrefix \"/static/\" .path) (hasSuffix \".js\" .path) (hasSuffix \".css\" .path) (hasSuffix \".png\" .path) (hasSuffix \".jpg\" .path) (hasSuffix \".jpeg\" .path) (hasSuffix \".gif\" .path) (hasSuffix \".svg\" .path) (hasSuffix \".ico\" .path) (hasSuffix \".woff\" .path) (hasSuffix \".woff2\" .path) (hasSuffix \".map\" .path) }}Static assets{{ else }}Other{{ end }}` | drop request_uri, path [$__range]))",
-          "queryType": "instant"
+          "queryType": "instant",
+          "legendFormat": "{{category}}"
         }
       ],
       "transformations": [
@@ -1339,7 +1342,7 @@
         "defaults": {
           "unit": "none",
           "decimals": 0,
-          "displayName": "${__field.labels.category}",
+          "displayName": "${__field.name}",
           "color": {
             "mode": "palette-classic-by-name"
           }
@@ -1585,7 +1588,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**What these numbers mean**\n\n- Totals count matching records retained in Loki for the selected range and filters; they are not a guarantee that every event was collected.\n- Top tables are ranked subsets (top 10); ties can hide most entries. Log panels show the latest 100 matching records as a sample.\n- A 200 response is not proof that sensitive content was served, and a 403 is not automatically a WAF block.\n- Credentials and selected query parameters are redacted before ingestion; WAF auditing is RelevantOnly, so normal traffic produces no audit records.\n- Cloudflare edge blocks and Cilium drops live on the **Blocked Sources** dashboard.\n- The Client IP filter is a regular expression applied at query time; leave it at `.*` for all clients.\n"
+        "content": "**What these numbers mean**\n\n- Totals count matching records retained in Loki for the selected range and filters; they are not a guarantee that every event was collected.\n- Top tables are ranked subsets (top 10); ties can hide most entries. Log panels show the latest 100 matching records as a sample.\n- A 200 response is not proof that sensitive content was served, and a 403 is not automatically a WAF block.\n- Credentials and selected query parameters are redacted before ingestion; WAF auditing is RelevantOnly, so normal traffic produces no audit records.\n- Cloudflare edge blocks and Cilium drops live on the **Blocked Sources** dashboard.\n- The Client IP filter is a regular expression applied at query time; use `.*` for all clients. An empty field matches nothing.\n"
       }
     },
     {
@@ -1710,7 +1713,7 @@
       "id": 27,
       "type": "stat",
       "title": "WAF log activity (last 5m)",
-      "description": "Caddy access records observed in the last 5 minutes (all applications, all clients). Zero with a healthy scrape can indicate an idle site or an ingestion gap.",
+      "description": "All WAF container log lines (Caddy access records and Coraza audit records) observed in the last 5 minutes, across applications and clients. Zero with a healthy scrape can indicate an idle site or an ingestion gap.",
       "gridPos": {
         "x": 12,
         "y": 63,
