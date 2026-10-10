@@ -361,25 +361,27 @@ TF/
 │   │   │   ├── namespace.yaml       # monitoring namespace
 │   │   │   ├── repository.yaml      # victoriametrics HelmRepository
 │   │   │   ├── grafana-secrets.yaml # SOPS-encrypted Grafana admin & GitHub OAuth (age-encrypted)
-│   │   │   ├── release.yaml         # victoria-metrics-k8s-stack HelmRelease (tuned)
+│   │   │   ├── release.yaml         # victoria-metrics-k8s-stack HelmRelease (tuned; sidecar folder provisioning)
 │   │   │   ├── routes.yaml          # HTTPRoute for Grafana
 │   │   │   ├── metrics-server-release.yaml  # metrics-server HelmRelease
 │   │   │   ├── metrics-server-repository.yaml # metrics-server HelmRepository
 │   │   │   ├── metrics-server-rbac.yaml       # metrics-server RBAC
 │   │   │   └── kustomization.yaml
-│   │   └── app/                     # VMServiceScrapes + dashboards (applied after CRDs exist)
-│   │       ├── vmservicescrapes.yaml # backend / postgres-exporter / redis-exporter / cilium / abuseipdb
-│   │       ├── abuseipdb.yaml        # AbuseIPDB Security dashboard + synchronizer scrape
-│   │       ├── blocked-sources-dashboard.yaml # Blocked Sources dashboard (Cloudflare + Cilium IPs)
-│   │       └── kustomization.yaml
-│   │
+│   │   ├── app/                     # VMServiceScrapes + dashboards (applied after CRDs exist)
+│   │   │   ├── vmservicescrapes.yaml # backend / postgres-exporter / redis-exporter / cilium / abuseipdb
+│   │   │   ├── abuseipdb.yaml        # AbuseIPDB synchronizer VMServiceScrape
+│   │   │   ├── dashboards/           # AbuseIPDB Security, Blocked Sources, TaskFlow Performance
+│   │   │   │                         # (standalone JSON + configMapGenerator + SOURCE.md)
+│   │   │   └── kustomization.yaml
+│   │   │
 │   └── logging/                     # Alloy + Loki for WAF audit + flow log collection
 │       ├── alloy-release.yaml       # Grafana Alloy Deployment (WAF logs, abuseipdb logs, Hubble flow file)
 │       ├── loki-release.yaml        # Grafana Loki (log storage, 30-day retention)
-│       ├── grafana-provisioning.yaml # Loki datasource auto-provisioned in Grafana
+│       ├── loki-datasource.yaml     # Loki datasource auto-provisioned in Grafana
+│       ├── dashboards/              # Falco, Trivy, WAF, access-log, rate-limit dashboards
+│       │                            # (standalone JSON + configMapGenerator + SOURCE.md)
 │       ├── repositories.yaml        # HelmRepository definitions
 │       ├── vmservicescrapes.yaml    # Alloy metrics scrape
-│       ├── trivy-dashboard.yaml     # Trivy findings Grafana dashboard
 │       └── kustomization.yaml
 ```
 

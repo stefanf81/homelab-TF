@@ -1,0 +1,684 @@
+{
+  "uid": "taskflow-access-logs",
+  "title": "Taskflow Access Logs",
+  "description": "Caddy access-log activity for normal Taskflow traffic. Coraza audit records and WAF detections are shown separately on the Taskflow WAF dashboard.",
+  "schemaVersion": 39,
+  "version": 4,
+  "refresh": "1m",
+  "tags": [
+    "taskflow",
+    "traffic",
+    "loki"
+  ],
+  "links": [
+    {
+      "title": "WAF detections",
+      "type": "link",
+      "url": "/d/taskflow-waf",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "Rate limits",
+      "type": "link",
+      "url": "/d/taskflow-rate-limits",
+      "keepTime": true,
+      "includeVars": true
+    }
+  ],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "text": "Loki",
+          "value": "loki"
+        },
+        "hide": 2,
+        "name": "lokiDatasource",
+        "options": [],
+        "query": "loki",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
+        "name": "application",
+        "label": "Application",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "${lokiDatasource}"
+        },
+        "query": "label_values({job=\"coraza-waf\", container=\"waf\"}, application)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 2
+      },
+      {
+        "name": "pod",
+        "label": "Pod",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "${lokiDatasource}"
+        },
+        "query": "label_values({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}, pod)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Scope",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Shows Caddy access logs from the `waf` container and excludes `/waf-healthz` probes. URIs and credential headers are redacted before Loki ingestion. `client_ip` is Caddy's resolved visitor address from `X-Forwarded-For`; it is parsed at query time and is not a Loki label."
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Requests by application",
+      "description": "Non-probe requests per displayed interval (minimum 5 minutes; wider for long time ranges). Zero is shown only while selected WAF logs are arriving.",
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri!=\"\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"}[$__interval])))",
+          "legendFormat": "{{application}}"
+        }
+      ],
+      "interval": "5m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "axisSoftMax": 1,
+            "drawStyle": "bars",
+            "fillOpacity": 65,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "taskflow-backend"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "taskflow-frontend"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Responses by HTTP status",
+      "description": "Non-probe responses per displayed interval (minimum 5 minutes), grouped by HTTP status.",
+      "gridPos": {
+        "x": 12,
+        "y": 3,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", status=\"status\" | __error__=\"\" | request_uri != \"/waf-healthz\" | status!=\"\" [$__interval]))",
+          "legendFormat": "HTTP {{status}}"
+        }
+      ],
+      "interval": "5m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "axisSoftMax": 1,
+            "drawStyle": "bars",
+            "fillOpacity": 65,
+            "lineWidth": 1,
+            "showPoints": "always",
+            "pointSize": 4,
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^HTTP 2[0-9]{2}$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^HTTP 3[0-9]{2}$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^HTTP 4[0-9]{2}$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^HTTP 5[0-9]{2}$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Requests by HTTP method",
+      "description": "Non-probe requests per displayed interval (minimum 5 minutes), grouped by method.",
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (request_method) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", request_method=\"request.method\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_method!=\"\" [$__interval]))",
+          "legendFormat": "{{request_method}}"
+        }
+      ],
+      "interval": "5m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "axisSoftMax": 1,
+            "drawStyle": "bars",
+            "fillOpacity": 65,
+            "lineWidth": 1,
+            "showPoints": "always",
+            "pointSize": 4,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "bargauge",
+      "title": "Requests by route group",
+      "description": "Bounded route groups limit grouping cardinality during scans with thousands of unique paths or query strings, including downstream split queries. Other paths / scans includes routes outside the listed groups. Open recent access-log rows for exact sanitized URIs.",
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (route) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\" | __error__=\"\" | request_uri!=\"\" | label_format request_path=`{{ regexReplaceAll \"\\\\?.*$\" .request_uri \"\" }}` | label_format route=`{{ if eq .request_path \"/\" }}/{{ else if hasPrefix \"/api/v1/auth/\" .request_path }}/api/v1/auth/*{{ else if hasPrefix \"/api/v1/appointments/\" .request_path }}/api/v1/appointments/*{{ else if or (hasPrefix \"/api/\" .request_path) (eq .request_path \"/api\") }}/api/*{{ else if hasPrefix \"/assets/\" .request_path }}/assets/*{{ else if eq .request_path \"/favicon.ico\" }}/favicon.ico{{ else }}Other paths / scans{{ end }}` | drop request_uri, request_path [$__range]))",
+          "legendFormat": "{{route}}",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Value #A",
+                "desc": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {}
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "namePlacement": "top",
+        "textMode": "value_and_name",
+        "valueMode": "text",
+        "sizing": "manual",
+        "minVizHeight": 48,
+        "maxVizHeight": 60,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 18
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "displayName": "${__field.name}",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Request outcomes",
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (application, status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", status=\"status\" | __error__=\"\" | request_uri != \"/waf-healthz\" | status!=\"\" [$__range]))",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "application": 0,
+              "status": 1,
+              "Value": 2
+            },
+            "renameByName": {
+              "application": "Application",
+              "status": "HTTP status",
+              "Value": "Requests"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Requests",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Requests"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Top client IPs",
+      "description": "Resolved visitor IPs from Caddy access logs. Parsed at query time to avoid a high-cardinality Loki label.",
+      "gridPos": {
+        "x": 12,
+        "y": 19,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip != \"\" [$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "client_ip": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "client_ip": "Client IP",
+              "Value": "Requests"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Requests",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Requests"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": "logs",
+      "title": "Recent access logs",
+      "description": "Latest 100 non-probe requests with durations in milliseconds. Expand a row for extracted labels; open the Raw JSON evidence row below for the complete stored, redacted access record.",
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json status=\"status\", request_method=\"request.method\", request_uri=\"request.uri\", client_ip=\"client_ip\", duration=\"duration\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri!=\"\" | line_format `{{.status}} {{.application}} | {{.request_method}} {{.request_uri}} | ip={{.client_ip}} duration={{printf \"%.1f\" (mulf .duration 1000)}}ms`",
+          "queryType": "range",
+          "maxLines": 100
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showLevel": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "prettifyLogMessage": false,
+        "enableLogDetails": true
+      }
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Raw JSON evidence",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [
+        {
+          "id": 10,
+          "type": "logs",
+          "title": "Raw access records",
+          "description": "Latest 100 non-probe access records as stored in Loki, after Caddy redaction. Application and pod filters are preserved; JSON parsing filters the records but does not rewrite their content.",
+          "gridPos": {
+            "x": 0,
+            "y": 38,
+            "w": 24,
+            "h": 10
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri!=\"\"",
+              "queryType": "range",
+              "maxLines": 100
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "showLabels": false,
+            "showLevel": false,
+            "showCommonLabels": false,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "prettifyLogMessage": true,
+            "enableLogDetails": true
+          }
+        }
+      ]
+    }
+  ]
+}

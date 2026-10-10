@@ -49,8 +49,8 @@ not a WAF replacement, and it is never duplicated into Caddy/Coraza.
 | Flux Kustomization | `gitops/clusters/taskflow/abuseipdb.yaml` | `dependsOn: infra-controllers`, SOPS decryption |
 | Deny policy | `gitops/infrastructure/configs/cilium/abuseipdb-ingress-deny.yaml` | Active: `reserved:ingress` ingest deny via `cidrGroupRef` |
 | Cloudflare edge sink | managed by the synchronizer via the Cloudflare API | IP list `abuseipdb` + zone rule `ref: abuseipdb` (action `block`) |
-| Feed dashboard | `gitops/monitoring/app/abuseipdb.yaml` | `VMServiceScrape` + Grafana dashboard `AbuseIPDB Security` (sync/health) |
-| Blocked-sources dashboard | `gitops/monitoring/app/blocked-sources-dashboard.yaml` | Grafana dashboard `Blocked Sources` (per-IP CF blocks + Cilium denials) |
+| Feed dashboard | `gitops/monitoring/app/dashboards/abuseipdb-security.json` | Grafana dashboard `AbuseIPDB Security` (sync/health) |
+| Blocked-sources dashboard | `gitops/monitoring/app/dashboards/blocked-sources.json` | Grafana dashboard `Blocked Sources` (per-IP CF blocks + Cilium denials) |
 | Cilium flow export | `gitops/infrastructure/controllers/cilium/release.yaml` (`hubble.export.static`) | DROPPED/ERROR flows → `/var/run/cilium/hubble/events.log` |
 | Log shipping | `gitops/monitoring/logging/alloy-release.yaml` | Alloy ships the `abuseipdb` namespace and the Hubble flow file to Loki |
 
@@ -225,10 +225,10 @@ for per-IP investigation.
 Grafana is the operator-facing UI. Per-IP values are always parsed at query
 time and never stored as Prometheus labels.
 
-* **`AbuseIPDB Security`** (`gitops/monitoring/app/abuseipdb.yaml`) — feed and
+* **`AbuseIPDB Security`** (`gitops/monitoring/app/dashboards/abuseipdb-security.json`) — feed and
   sink health: entries, feed age, sync status, API status, change counters,
   Cilium drop counters and Cilium health.
-* **`Blocked Sources`** (`gitops/monitoring/app/blocked-sources-dashboard.yaml`)
+* **`Blocked Sources`** (`gitops/monitoring/app/dashboards/blocked-sources.json`)
   — the actual blocked IPs:
   * *Cloudflare edge blocks* — `abuseipdb-sync` polls the Security Events API
     (`firewallEventsAdaptive`) and pushes aggregated blocks to Loki

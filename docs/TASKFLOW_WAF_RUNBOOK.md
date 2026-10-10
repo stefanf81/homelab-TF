@@ -33,7 +33,8 @@ tags are never overwritten. A changed Dockerfile recipe with an unchanged
 `IMAGE_REVISION` fails the run. ConfigMap-only changes do not trigger that
 workflow, so a second workflow ("Validate WAF config and dashboards") runs
 `tests/validate-configs.sh` on any change to `gitops/apps/taskflow/*-waf.yaml`
-or `grafana-provisioning.yaml`; it validates the unmodified Caddyfiles and every
+or `gitops/monitoring/` (dashboards, Loki datasource, and the Grafana sidecar
+config in `platform/release.yaml`); it validates the unmodified Caddyfiles and every
 dashboard JSON. Run either locally with:
 
 ```bash
@@ -337,14 +338,18 @@ a collection-health indicator.
 
 ### Dashboard validation
 
-Run `gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh` (Docker and
-Ruby required). It validates the shipped Caddyfiles, dashboard JSON and layout,
+Run `gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh` (Docker, Ruby,
+and kubectl required). It validates the shipped Caddyfiles, dashboard JSON and layout,
 panel/target identifiers, datasource-specific query modes, interval settings,
 and variable references against declared variables and supported Grafana
 built-ins. Bare, braced/formatted, and legacy references are recognized. Loki
 `label_values` queries are checked for valid wrapper syntax, and their selectors
 are parsed alongside every Loki panel target using a disposable Loki parser.
 Built-in variables are substituted with representative values for parsing.
+It also renders both monitoring Kustomizations with `kubectl kustomize` and
+fails when a dashboard JSON is not provisioned by them, drifts from its
+rendered ConfigMap, lacks the `grafana_dashboard` label, or has no valid
+relative `grafana_folder` annotation.
 This checks syntax, not live field contents, rendering, query cost, or
 series-limit behavior. Validator regression tests also run in CI.
 

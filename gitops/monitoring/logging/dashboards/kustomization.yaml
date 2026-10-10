@@ -2,15 +2,68 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: monitoring
 configMapGenerator:
-  # Keep the imported dashboard UID so provisioning adopts the existing Falco
-  # dashboard rather than creating a duplicate. The sidecar reloads on updates.
+  # One ConfigMap per dashboard. Stable ConfigMap names and dashboard UIDs let
+  # provisioning adopt the existing dashboards instead of creating duplicates;
+  # the sidecar reloads on updates. The `grafana_folder` annotation places each
+  # dashboard in a Grafana folder (sidecar.dashboards.folderAnnotation must be
+  # set to `grafana_folder` in the stack HelmRelease).
   - name: falco-dashboard
     files:
       - falco-official.json
     options:
       disableNameSuffixHash: true
+      annotations:
+        grafana_folder: Security
       labels:
         grafana_dashboard: "1"
         app.kubernetes.io/name: falco
         app.kubernetes.io/component: security
+        app.kubernetes.io/part-of: taskflow-observability
+  - name: trivy-dashboard
+    files:
+      - trivy.json
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        grafana_folder: Security
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/name: trivy-operator
+        app.kubernetes.io/component: security
+        app.kubernetes.io/part-of: taskflow-observability
+  - name: taskflow-waf-dashboard
+    files:
+      - taskflow-waf.json
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        grafana_folder: Taskflow
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/name: taskflow-waf
+        app.kubernetes.io/component: logging
+        app.kubernetes.io/part-of: taskflow-observability
+  - name: taskflow-access-logs-dashboard
+    files:
+      - taskflow-access-logs.json
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        grafana_folder: Taskflow
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/name: taskflow-access-logs
+        app.kubernetes.io/component: logging
+        app.kubernetes.io/part-of: taskflow-observability
+  - name: taskflow-rate-limits-dashboard
+    files:
+      - taskflow-rate-limits.json
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        grafana_folder: Taskflow
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/name: taskflow-rate-limits
+        app.kubernetes.io/component: logging
         app.kubernetes.io/part-of: taskflow-observability

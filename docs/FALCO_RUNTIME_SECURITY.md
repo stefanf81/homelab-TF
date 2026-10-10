@@ -222,8 +222,9 @@ Navigate to **`https://grafana.jokelab.dev`** and log in.
 
 ### Step 3: Open the Provisioned Dashboard
 The dashboard is generated as `ConfigMap/monitoring/falco-dashboard` with the
-`grafana_dashboard: "1"` label. After the GitOps changes are deployed, Grafana's
-sidecar loads it automatically; open **Dashboards → Falco**. Edit its JSON in Git
+`grafana_dashboard: "1"` label and is placed in the **Security** Grafana folder.
+After the GitOps changes are deployed, Grafana's
+sidecar loads it automatically; open **Dashboards → Security → Falco**. Edit its JSON in Git
 for persistent changes. The existing UID is retained to adopt the earlier
 manual import instead of creating another Falco dashboard.
 

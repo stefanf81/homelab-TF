@@ -1,0 +1,25 @@
+# Loki datasource for Grafana, auto-provisioned by the datasource sidecar
+# (label `grafana_datasource: "1"`). The stable uid `loki` is referenced by the
+# dashboard `lokiDatasource` template variables. Dashboards live in
+# gitops/monitoring/logging/dashboards (see SOURCE.md there).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskflow-waf-loki-datasource
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+    app.kubernetes.io/name: loki
+    app.kubernetes.io/component: logging
+    app.kubernetes.io/part-of: taskflow-observability
+data:
+  loki-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        uid: loki
+        type: loki
+        access: proxy
+        url: http://loki-gateway.monitoring.svc.cluster.local
+        isDefault: false
+        editable: false

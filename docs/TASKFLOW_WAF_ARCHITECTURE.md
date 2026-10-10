@@ -632,7 +632,7 @@ rejections additionally carry the `rate_limit_zone` field.
 
 **Dashboard**: "Taskflow Rate Limits" (`/d/taskflow-rate-limits`)
 
-Provisioned by `gitops/monitoring/logging/grafana-provisioning.yaml` and derived
+Provisioned by `gitops/monitoring/logging/dashboards/taskflow-rate-limits.json` and derived
 entirely from Caddy access logs in Loki (`status=429`). It shows rate-limited
 requests for 5m/1h/24h, rate-limiter 429s over time by application, the rejection
 mix (Coraza blocks vs limiter vs upstream 429s), total Caddy request rate, and
@@ -916,7 +916,8 @@ kubectl logs -n monitoring deploy/alloy -c alloy
 | `gitops/monitoring/logging/repositories.yaml` | HelmRepos for Loki and Alloy |
 | `gitops/monitoring/logging/loki-release.yaml` | Loki HelmRelease |
 | `gitops/monitoring/logging/alloy-release.yaml` | Alloy HelmRelease with log collection |
-| `gitops/monitoring/logging/grafana-provisioning.yaml` | Loki datasource + WAF, access-log, and rate-limit dashboards |
+| `gitops/monitoring/logging/loki-datasource.yaml` | Loki datasource auto-provisioned in Grafana |
+| `gitops/monitoring/logging/dashboards/` | WAF, access-log, and rate-limit dashboards (standalone JSON, configMapGenerator, SOURCE.md) |
 | `gitops/monitoring/logging/vmservicescrapes.yaml` | VMServiceScrape for Loki/Alloy metrics |
 | `gitops/clusters/taskflow/monitoring-logging.yaml` | Flux Kustomization for logging stack |
 | `docs/TASKFLOW_WAF_RUNBOOK.md` | Operational runbook |

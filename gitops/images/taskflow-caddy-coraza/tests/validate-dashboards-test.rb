@@ -1,6 +1,9 @@
 require "minitest/autorun"
 require "tempfile"
+require "fileutils"
+require "tmpdir"
 require_relative "validate-dashboards"
+require_relative "validate-dashboard-provisioning"
 
 class DashboardValidationTest < Minitest::Test
   def panel(id, y = 0)
@@ -28,6 +31,70 @@ class DashboardValidationTest < Minitest::Test
       documents.each { |document| file.write(YAML.dump(document)) }
       file.flush
       yield file.path
+    end
+  end
+
+  def with_temp_dashboard(dashboard)
+    Tempfile.create(["dashboard-", ".json"]) do |file|
+      file.write(JSON.generate(dashboard))
+      file.flush
+      yield file.path
+    end
+  end
+
+  def provisioning_tree(name = "fixture")
+    { name: name, kustomization: "tree", dashboards: "tree/dashboards" }
+  end
+
+  def provisioning_source(name, dashboard)
+    { path: "/fixtures/#{name}", name: name, dashboard: dashboard }
+  end
+
+  def provisioning_dashboard(uid)
+    { "uid" => uid, "title" => uid, "panels" => [] }
+  end
+
+  def provisioning_configmap(name:, key:, dashboard:, folder: "Security", namespace: "monitoring",
+                             labels: { "grafana_dashboard" => "1" }, data: {})
+    {
+      "apiVersion" => "v1", "kind" => "ConfigMap",
+      "metadata" => { "name" => name, "namespace" => namespace, "labels" => labels,
+                      "annotations" => { "grafana_folder" => folder } },
+      "data" => { key => JSON.generate(dashboard) }.merge(data)
+    }
+  end
+
+  def with_kustomize_fixture(resources)
+    Dir.mktmpdir("dashboard-provisioning-") do |directory|
+      FileUtils.mkdir_p(File.join(directory, "tree", "dashboards"))
+      File.write(File.join(directory, "tree", "dashboards", "fixture.json"),
+                 JSON.generate(provisioning_dashboard("fixture")))
+      File.write(File.join(directory, "tree", "dashboards", "kustomization.yaml"), <<~YAML)
+        apiVersion: kustomize.config.k8s.io/v1beta1
+        kind: Kustomization
+        namespace: monitoring
+        configMapGenerator:
+          - name: fixture-dashboard
+            files:
+              - fixture.json
+            options:
+              disableNameSuffixHash: true
+              annotations:
+                grafana_folder: Fixture
+              labels:
+                grafana_dashboard: "1"
+      YAML
+      File.write(File.join(directory, "tree", "other.yaml"), <<~YAML)
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: other
+          namespace: monitoring
+      YAML
+      File.write(File.join(directory, "tree", "kustomization.yaml"),
+                 "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n" +
+                 resources.map { |resource| "  - #{resource}\n" }.join)
+      yield directory
     end
   end
 
@@ -109,6 +176,22 @@ class DashboardValidationTest < Minitest::Test
       error = assert_raises(RuntimeError) { DashboardValidation.run(path) }
       assert_equal 2, error.message.scan("missing dashboard uid").length
       refute_includes error.message, "duplicate dashboard uid"
+    end
+  end
+
+  def test_json_inputs_are_loaded_from_bare_files
+    with_temp_dashboard("uid" => "json-uid", "title" => "JSON", "panels" => []) do |path|
+      out, = capture_io { DashboardValidation.run([path]) }
+      assert_includes out, "1 dashboards"
+    end
+  end
+
+  def test_multiple_paths_detect_cross_file_duplicate_uids
+    with_temp_dashboard("uid" => "dup-uid", "title" => "One", "panels" => []) do |first|
+      with_temp_dashboard("uid" => "dup-uid", "title" => "Two", "panels" => []) do |second|
+        error = assert_raises(RuntimeError) { DashboardValidation.run([first, second]) }
+        assert_includes error.message, "duplicate dashboard uid \"dup-uid\""
+      end
     end
   end
 
@@ -233,25 +316,26 @@ class DashboardValidationTest < Minitest::Test
     assert errors([prometheus]).any? { |error| error.include?("not a Prometheus option") }
   end
 
+  def waf_dashboard_files
+    Dir[File.expand_path("../../../monitoring/logging/dashboards/taskflow-*.json", __dir__)].sort
+  end
+
   def test_actual_evidence_panels_are_lazy_and_do_not_rewrite_lines
-    path = File.expand_path("../../../monitoring/logging/grafana-provisioning.yaml", __dir__)
-    documents = YAML.load_stream(File.read(path)).compact
+    files = waf_dashboard_files
+    assert_equal 3, files.length
     evidence_count = 0
-    documents.each do |document|
-      document.fetch("data", {}).each do |key, value|
-        next unless key.end_with?(".json")
-        dashboard = JSON.parse(value)
-        row = dashboard["panels"].find { |item| item["title"] == "Raw JSON evidence" }
-        refute_nil row, "#{key} needs an evidence row"
-        assert_equal true, row["collapsed"]
-        row["panels"].each do |raw|
-          evidence_count += 1
-          assert_equal "logs", raw["type"]
-          raw["targets"].each do |target|
-            assert_equal "range", target["queryType"]
-            assert_equal 100, target["maxLines"]
-            refute_match(/\|\s*(?:line_format|unpack)\b/, target["expr"])
-          end
+    files.each do |file|
+      dashboard = JSON.parse(File.read(file))
+      row = dashboard["panels"].find { |item| item["title"] == "Raw JSON evidence" }
+      refute_nil row, "#{File.basename(file)} needs an evidence row"
+      assert_equal true, row["collapsed"]
+      row["panels"].each do |raw|
+        evidence_count += 1
+        assert_equal "logs", raw["type"]
+        raw["targets"].each do |target|
+          assert_equal "range", target["queryType"]
+          assert_equal 100, target["maxLines"]
+          refute_match(/\|\s*(?:line_format|unpack)\b/, target["expr"])
         end
       end
     end
@@ -310,23 +394,105 @@ class DashboardValidationTest < Minitest::Test
       "Raw rate-limited access records" => [limiter],
       "Raw pod-CIDR identity records" => [identity]
     }
-    path = File.expand_path("../../../monitoring/logging/grafana-provisioning.yaml", __dir__)
-    YAML.load_stream(File.read(path)).compact.each do |document|
-      document.fetch("data", {}).each do |key, value|
-        next unless key.end_with?(".json")
-        row = JSON.parse(value)["panels"].find { |item| item["title"] == "Raw JSON evidence" }
-        row["panels"].each do |raw|
-          query = raw["targets"].first["expr"].gsub("$application", "dashboard-validation").gsub("$pod", "dashboard-validation-waf")
-          response = DashboardValidation.get(url, "/loki/api/v1/query_range",
-                                             "query" => query, "start" => (timestamp - 60_000_000_000).to_s,
-                                             "end" => (timestamp + 1_000_000_000).to_s, "limit" => "100")
-          assert_equal "200", response.code, response.body
-          lines = JSON.parse(response.body).fetch("data").fetch("result").flat_map do |stream|
-            stream.fetch("values").map(&:last)
-          end
-          assert_equal expected.fetch(raw["title"]).sort, lines.sort, raw["title"]
+    waf_dashboard_files.each do |file|
+      row = JSON.parse(File.read(file))["panels"].find { |item| item["title"] == "Raw JSON evidence" }
+      row["panels"].each do |raw|
+        query = raw["targets"].first["expr"].gsub("$application", "dashboard-validation").gsub("$pod", "dashboard-validation-waf")
+        response = DashboardValidation.get(url, "/loki/api/v1/query_range",
+                                           "query" => query, "start" => (timestamp - 60_000_000_000).to_s,
+                                           "end" => (timestamp + 1_000_000_000).to_s, "limit" => "100")
+        assert_equal "200", response.code, response.body
+        lines = JSON.parse(response.body).fetch("data").fetch("result").flat_map do |stream|
+          stream.fetch("values").map(&:last)
         end
+        assert_equal expected.fetch(raw["title"]).sort, lines.sort, raw["title"]
       end
+    end
+  end
+
+  def test_provisioning_accepts_matching_render
+    source = provisioning_source("one.json", provisioning_dashboard("one"))
+    configmap = provisioning_configmap(name: "one-dashboard", key: "one.json", dashboard: source.fetch(:dashboard))
+    assert_empty DashboardProvisioningValidation.check([source], [configmap], "fixture")
+  end
+
+  def test_provisioning_rejects_unprovisioned_sources
+    source = provisioning_source("one.json", provisioning_dashboard("one"))
+    failures = DashboardProvisioningValidation.check([source], [], "fixture")
+    assert failures.any? { |error| error.include?("one.json") && error.include?("not provisioned") }
+  end
+
+  def test_provisioning_rejects_content_drift_and_wrong_namespace
+    source = provisioning_source("one.json", provisioning_dashboard("one"))
+    configmap = provisioning_configmap(name: "one-dashboard", key: "one.json",
+                                       dashboard: provisioning_dashboard("drifted"), namespace: "default")
+    failures = DashboardProvisioningValidation.check([source], [configmap], "fixture")
+    assert failures.any? { |error| error.include?("does not match") }
+    assert failures.any? { |error| error.include?("monitoring namespace") }
+  end
+
+  def test_provisioning_rejects_missing_label_bundled_json_and_stray_dashboards
+    source = provisioning_source("one.json", provisioning_dashboard("one"))
+    unlabeled = provisioning_configmap(name: "one-dashboard", key: "one.json",
+                                       dashboard: source.fetch(:dashboard), labels: {})
+    assert DashboardProvisioningValidation.check([source], [unlabeled], "fixture").any? { |error|
+      error.include?("not provisioned")
+    }
+
+    bundled = provisioning_configmap(name: "one-dashboard", key: "one.json",
+                                     dashboard: source.fetch(:dashboard), data: { "extra.json" => "{}" })
+    assert DashboardProvisioningValidation.check([source], [bundled], "fixture").any? { |error|
+      error.include?("exactly one dashboard JSON entry")
+    }
+
+    stray = provisioning_configmap(name: "stray", key: "stray.json", dashboard: provisioning_dashboard("stray"))
+    assert DashboardProvisioningValidation.check([source], [stray], "fixture").any? { |error|
+      error.include?("no source file provides it")
+    }
+  end
+
+  def test_provisioning_rejects_invalid_folder_annotations
+    source = provisioning_source("one.json", provisioning_dashboard("one"))
+    ["", " Security", "/Security", "../Security", "Security/", "Security\\Nested"].each do |folder|
+      configmap = provisioning_configmap(name: "one-dashboard", key: "one.json",
+                                         dashboard: source.fetch(:dashboard), folder: folder)
+      assert DashboardProvisioningValidation.check([source], [configmap], "fixture").any? { |error|
+        error.include?("grafana_folder")
+      }, "expected #{folder.inspect} to be rejected"
+    end
+    nested = provisioning_configmap(name: "one-dashboard", key: "one.json",
+                                    dashboard: source.fetch(:dashboard), folder: "Security/Nested")
+    assert_empty DashboardProvisioningValidation.check([source], [nested], "fixture")
+  end
+
+  def test_provisioning_rejects_duplicate_rendering
+    source = provisioning_source("one.json", provisioning_dashboard("one"))
+    first = provisioning_configmap(name: "a-dashboard", key: "one.json", dashboard: source.fetch(:dashboard))
+    second = provisioning_configmap(name: "b-dashboard", key: "one.json", dashboard: source.fetch(:dashboard))
+    assert DashboardProvisioningValidation.check([source], [first, second], "fixture").any? { |error|
+      error.include?("more than once")
+    }
+  end
+
+  def test_provisioning_integration_passes_when_dashboards_directory_is_wired
+    with_kustomize_fixture(["dashboards", "other.yaml"]) do |directory|
+      out, = capture_io { DashboardProvisioningValidation.run(directory, [provisioning_tree]) }
+      assert_includes out, "1 dashboards"
+    end
+  end
+
+  def test_provisioning_integration_fails_when_parent_omits_dashboards
+    with_kustomize_fixture(["other.yaml"]) do |directory|
+      error = assert_raises(RuntimeError) { DashboardProvisioningValidation.run(directory, [provisioning_tree]) }
+      assert_includes error.message, "fixture.json"
+      assert_includes error.message, "not provisioned"
+    end
+  end
+
+  def test_provisioning_reports_kustomize_failures
+    with_kustomize_fixture(["missing.yaml"]) do |directory|
+      error = assert_raises(RuntimeError) { DashboardProvisioningValidation.run(directory, [provisioning_tree]) }
+      assert_includes error.message, "kubectl kustomize failed"
     end
   end
 end

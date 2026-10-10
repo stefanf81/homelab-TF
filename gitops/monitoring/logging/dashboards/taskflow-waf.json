@@ -1,0 +1,1406 @@
+{
+  "uid": "taskflow-waf",
+  "title": "Taskflow WAF",
+  "description": "Coraza and Caddy telemetry for the Taskflow frontend and backend WAFs. RelevantOnly auditing emits no records for normal successful traffic. Event timelines show zero while WAF logs are arriving; rule breakdowns and recent detections are empty when no rules matched in the selected time range.",
+  "schemaVersion": 39,
+  "version": 9,
+  "refresh": "1m",
+  "tags": [
+    "taskflow",
+    "security",
+    "loki"
+  ],
+  "links": [
+    {
+      "title": "Rate limits",
+      "type": "link",
+      "url": "/d/taskflow-rate-limits",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "Access logs",
+      "type": "link",
+      "url": "/d/taskflow-access-logs",
+      "keepTime": true,
+      "includeVars": true
+    }
+  ],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "text": "VictoriaMetrics",
+          "value": "VictoriaMetrics"
+        },
+        "hide": 2,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "text": "Loki",
+          "value": "loki"
+        },
+        "hide": 2,
+        "name": "lokiDatasource",
+        "options": [],
+        "query": "loki",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
+        "name": "application",
+        "label": "Application",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "${lokiDatasource}"
+        },
+        "query": "label_values({job=\"coraza-waf\"}, application)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "WAF audit events",
+      "description": "All Coraza audit records per displayed interval (minimum 5 minutes; wider for long time ranges to avoid missing events). Relevant responses can be audited without a matched rule. Zero means no audit events while WAF logs are arriving; no data means no WAF logs in that interval.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"transaction\\\"\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+          "legendFormat": "{{application}}"
+        }
+      ],
+      "interval": "5m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisSoftMax": 1,
+            "drawStyle": "bars",
+            "fillOpacity": 65,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "taskflow-backend"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "taskflow-frontend"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "WAF rule detections",
+      "description": "Detected transactions per displayed interval (minimum 5 minutes; wider for long time ranges). Requires Coraza messages[] rule matches. Zero means no detections while WAF logs are arriving; no data means no WAF logs in that interval.",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+          "legendFormat": "{{application}}"
+        }
+      ],
+      "interval": "5m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisSoftMax": 1,
+            "drawStyle": "bars",
+            "fillOpacity": 65,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "taskflow-backend"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "taskflow-frontend"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "type": "bargauge",
+      "title": "Top first-matched CRS rules",
+      "description": "Audit records grouped by the first rule ID extracted by Alloy. A transaction can match multiple rules; this does not count every rule match.",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (rule_id) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\".+\"}[$__range])))",
+          "legendFormat": "CRS {{rule_id}}",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Value #A",
+                "desc": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {}
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "namePlacement": "top",
+        "textMode": "value_and_name",
+        "valueMode": "text",
+        "sizing": "manual",
+        "minVizHeight": 48,
+        "maxVizHeight": 60,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 18
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "displayName": "CRS ${__field.name}",
+          "noValue": "No detections",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "piechart",
+      "title": "First-matched rule categories",
+      "description": "All detected audit records, categorized by their first extracted CRS rule ID. Protocol enforcement and Other CRS are included so percentages cover all first-matched rules, not just attack families. A transaction can match multiple rules.",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (category) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\".+\"} | label_format category=`{{ if hasPrefix \"942\" .rule_id }}SQL injection{{ else if hasPrefix \"941\" .rule_id }}Cross-site scripting{{ else if hasPrefix \"930\" .rule_id }}Path traversal{{ else if hasPrefix \"931\" .rule_id }}Remote file inclusion{{ else if hasPrefix \"932\" .rule_id }}Command injection{{ else if or (hasPrefix \"933\" .rule_id) (hasPrefix \"934\" .rule_id) }}Code injection{{ else if or (hasPrefix \"920\" .rule_id) (hasPrefix \"921\" .rule_id) }}Protocol enforcement{{ else if hasPrefix \"913\" .rule_id }}Scanner detection{{ else }}Other CRS{{ end }}` [$__range]))",
+          "legendFormat": "{{category}}",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {}
+        }
+      ],
+      "options": {
+        "displayLabels": [],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "width": 260,
+          "showLegend": true,
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "displayName": "${__field.name}",
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Detections by HTTP method",
+      "description": "Detected transactions by method per displayed interval (minimum 5 minutes). Sparse bars represent events, not a continuous rate.",
+      "gridPos": {
+        "x": 8,
+        "y": 8,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (method) (count_over_time({job=\"coraza-waf\", application=~\"$application\", method=~\".+\"} |= \"\\\"messages\\\"\" [$__interval]))",
+          "legendFormat": "{{method}}"
+        }
+      ],
+      "interval": "5m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "axisSoftMax": 1,
+            "drawStyle": "bars",
+            "fillOpacity": 65,
+            "lineWidth": 1,
+            "showPoints": "always",
+            "pointSize": 4,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "type": "bargauge",
+      "title": "Audit records containing each paranoia level",
+      "description": "Counts audit records containing each CRS paranoia-level tag over the selected range. A record can count at several levels; do not add these counts together. An absent count becomes zero only if WAF logs arrived in the 5 minutes ending at the selected range's end; otherwise that level has no data. Historical nonzero counts remain visible.",
+      "gridPos": {
+        "x": 16,
+        "y": 8,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |= \"paranoia-level/1\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+          "legendFormat": "PL 1 (Standard)",
+          "queryType": "instant"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |= \"paranoia-level/2\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+          "legendFormat": "PL 2 (Elevated)",
+          "queryType": "instant"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |= \"paranoia-level/3\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+          "legendFormat": "PL 3 (High)",
+          "queryType": "instant"
+        },
+        {
+          "refId": "D",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |= \"paranoia-level/4\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+          "legendFormat": "PL 4 (Extreme)",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "namePlacement": "left",
+        "textMode": "value_and_name",
+        "valueMode": "text",
+        "sizing": "manual",
+        "minVizHeight": 24,
+        "maxVizHeight": 36,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 18
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "PL 1 (Standard)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "PL 2 (Elevated)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "PL 3 (High)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "D"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "PL 4 (Extreme)"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Top source IPs",
+      "description": "Client IP is parsed at query time, so it is not indexed as a Loki label.",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip!=\"\" [$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "client_ip": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "client_ip": "Client IP",
+              "Value": "Detections"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Detections",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Detections"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "logs",
+      "title": "Recent WAF detections",
+      "description": "Latest 100 matched audit records with method, URI, first rule and client IP. Expand a row for extracted labels; open the Raw JSON evidence row below for the stored, redacted audit record. Loopback IPs can be local port-forward canaries.",
+      "gridPos": {
+        "x": 8,
+        "y": 16,
+        "w": 16,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json request_method=\"transaction.request.method\", request_uri=\"transaction.request.uri\", client_ip=\"transaction.client_ip\", interrupted=\"transaction.is_interrupted\" | __error__=\"\" | regexp `\\[msg \\\\\"(?P<rule_msg>[^\\\\\"]+)\\\\\"\\]` | line_format `{{if eq .interrupted \"true\"}}BLOCK{{else}}DETECT{{end}} {{.application}} | {{.request_method}} {{.request_uri}} | CRS {{.rule_id}}: {{.rule_msg}} | ip={{.client_ip}}`",
+          "queryType": "range",
+          "maxLines": 100
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showLevel": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "prettifyLogMessage": false,
+        "enableLogDetails": true
+      }
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "Rule-family detail",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "First-matched SQL injection",
+          "description": "Audit records whose first extracted rule is in the SQL injection family, per displayed interval (minimum 5 minutes). Other matching rules in the same record are not counted separately.",
+          "gridPos": {
+            "x": 0,
+            "y": 25,
+            "w": 12,
+            "h": 8
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"942[0-9]{3}\"}[$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+              "legendFormat": "{{application}}"
+            }
+          ],
+          "interval": "5m",
+          "maxDataPoints": 300,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "custom": {
+                "axisSoftMax": 1,
+                "drawStyle": "bars",
+                "fillOpacity": 65,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "taskflow-backend"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "taskflow-frontend"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "First-matched XSS, injection & traversal",
+          "description": "Audit records first matching XSS, traversal, remote file inclusion, command or code injection, per displayed interval (minimum 5 minutes).",
+          "gridPos": {
+            "x": 12,
+            "y": 25,
+            "w": 12,
+            "h": 8
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"941[0-9]{3}|93[0-4][0-9]{3}\"}[$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+              "legendFormat": "{{application}}"
+            }
+          ],
+          "interval": "5m",
+          "maxDataPoints": 300,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "custom": {
+                "axisSoftMax": 1,
+                "drawStyle": "bars",
+                "fillOpacity": 65,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "taskflow-backend"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "taskflow-frontend"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "row",
+      "title": "Detection summary",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Detected transactions blocked",
+      "description": "Percentage of audit records containing rule detections that were interrupted by Coraza. This is not the fraction of all requests blocked, and interrupted responses need not use HTTP 403.",
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "((sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" |= \"\\\"is_interrupted\\\":true\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" [$__range])))) / (sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" [$__range])) > 0)) * 100",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "noValue": "No detections",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Top targeted URIs",
+      "description": "Request URIs with the most audit records containing WAF detections. A record may contain multiple rule matches.",
+      "gridPos": {
+        "x": 8,
+        "y": 26,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (request_uri) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json request_uri=\"transaction.request.uri\" | __error__=\"\" | request_uri!=\"\" [$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "request_uri": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "request_uri": "Request URI",
+              "Value": "Detections"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Detections",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Detections"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 18,
+      "type": "table",
+      "title": "Top attacking user agents",
+      "description": "User-Agents sending traffic that triggers WAF rules.",
+      "gridPos": {
+        "x": 16,
+        "y": 26,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (user_agent) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json user_agent=`transaction.request.headers[\"user-agent\"][0]` | __error__=\"\" | user_agent!=\"\" [$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "user_agent": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "user_agent": "User agent",
+              "Value": "Detections"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Detections",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Detections"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 21,
+      "type": "row",
+      "title": "WAF runtime & log pipeline health",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [
+        {
+          "id": 19,
+          "type": "timeseries",
+          "title": "WAF inspection latency (p95)",
+          "description": "Per-application p95 Coraza processing time in milliseconds from audited requests only. RelevantOnly auditing does not sample all normal traffic.",
+          "gridPos": {
+            "x": 0,
+            "y": 35,
+            "w": 24,
+            "h": 8
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "quantile_over_time(0.95, {job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"stopwatch\\\"\" | regexp \"combined=(?P<waf_latency_ns>[0-9]+)\" | waf_latency_ns!=\"\" | unwrap waf_latency_ns | __error__=\"\" [$__interval]) by (application) / 1000000",
+              "legendFormat": "{{application}}"
+            }
+          ],
+          "interval": "1m",
+          "maxDataPoints": 300,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "decimals": 2,
+              "min": 0,
+              "custom": {
+                "showPoints": "always",
+                "pointSize": 4,
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 10,
+          "type": "timeseries",
+          "title": "WAF pod CPU",
+          "gridPos": {
+            "x": 0,
+            "y": 43,
+            "w": 12,
+            "h": 8
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\", container=\"waf\", metrics_path=\"/metrics/cadvisor\"}[$__rate_interval]))",
+              "legendFormat": "{{pod}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "cores"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 11,
+          "type": "timeseries",
+          "title": "WAF pod memory",
+          "gridPos": {
+            "x": 12,
+            "y": 43,
+            "w": 12,
+            "h": 8
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\", container=\"waf\", metrics_path=\"/metrics/cadvisor\"})",
+              "legendFormat": "{{pod}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 12,
+          "type": "timeseries",
+          "title": "WAF pod restarts",
+          "gridPos": {
+            "x": 0,
+            "y": 51,
+            "w": 12,
+            "h": 8
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\"}[1h]))",
+              "legendFormat": "{{pod}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 13,
+          "type": "stat",
+          "title": "Loki ingester flush failures/s",
+          "description": "Chunk flush failures per second, deduplicated across the Loki service and headless-service scrapes. This measures storage flush health, not append timeouts.",
+          "gridPos": {
+            "x": 12,
+            "y": 51,
+            "w": 6,
+            "h": 8
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(max by (instance) (rate(loki_ingester_chunks_flush_failures_total{namespace=\"monitoring\",job=\"loki\"}[$__rate_interval])))",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "noValue": "Unavailable",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.000001
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 14,
+          "type": "stat",
+          "title": "Alloy forwarding errors",
+          "gridPos": {
+            "x": 18,
+            "y": 51,
+            "w": 6,
+            "h": 8
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(loki_write_dropped_bytes_total[5m]))",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "min": 0,
+              "noValue": "Unavailable",
+              "color": {
+                "mode": "thresholds"
+              }
+            },
+            "overrides": []
+          }
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "row",
+      "title": "Raw JSON evidence",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [
+        {
+          "id": 24,
+          "type": "logs",
+          "title": "Raw WAF detection records",
+          "description": "Latest 100 detection-bearing audit records as stored in Loki, after ingestion redaction. No line_format or rule-description regexp is applied, so the complete stored JSON is available even when a summary field cannot be extracted.",
+          "gridPos": {
+            "x": 0,
+            "y": 36,
+            "w": 24,
+            "h": 10
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\"",
+              "queryType": "range",
+              "maxLines": 100
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "showLabels": false,
+            "showLevel": false,
+            "showCommonLabels": false,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "prettifyLogMessage": true,
+            "enableLogDetails": true
+          }
+        }
+      ]
+    }
+  ]
+}

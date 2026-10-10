@@ -10,19 +10,38 @@
 # Usage: [IMAGE=<ref>] [LOKI_IMAGE=<ref>] validate-configs.sh
 # The image defaults to the one pinned in the frontend WAF Deployment.
 #
-# Requires: docker and ruby.
+# Requires: docker, ruby, and kubectl (with embedded Kustomize).
 
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../../.." && pwd)"
 WAF_DIR="$REPO_ROOT/gitops/apps/taskflow"
-GRAFANA_FILE="$REPO_ROOT/gitops/monitoring/logging/grafana-provisioning.yaml"
 LOKI_RELEASE="$REPO_ROOT/gitops/monitoring/logging/loki-release.yaml"
 LOKI_REPOSITORIES="$REPO_ROOT/gitops/monitoring/logging/repositories.yaml"
 
+for tool in docker ruby kubectl; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "required tool not found: $tool" >&2
+    exit 1
+  }
+done
+
+# Every custom Grafana dashboard ships as a standalone JSON file next to the
+# configMapGenerator that wraps it (see the SOURCE.md in each directory).
+shopt -s nullglob
+DASHBOARDS=("$REPO_ROOT"/gitops/monitoring/logging/dashboards/*.json "$REPO_ROOT"/gitops/monitoring/app/dashboards/*.json)
+shopt -u nullglob
+if ((${#DASHBOARDS[@]} == 0)); then
+  echo "no dashboard JSON files found under gitops/monitoring/*/dashboards" >&2
+  exit 1
+fi
+
 echo "== validating Grafana dashboard structure"
-env -u LOKI_URL ruby "$HERE/validate-dashboards.rb" "$GRAFANA_FILE"
+env -u LOKI_URL ruby "$HERE/validate-dashboards.rb" "${DASHBOARDS[@]}"
+
+echo "== validating dashboard provisioning (Kustomize render)"
+ruby "$HERE/validate-dashboard-provisioning.rb" "$REPO_ROOT"
 
 echo "== resolving deployed Loki version from its Helm release/repository"
 EXPECTED_LOKI_VERSION="$(ruby "$HERE/validate-loki-version.rb" "$LOKI_RELEASE" "$LOKI_REPOSITORIES")"
@@ -76,7 +95,7 @@ loki_container="$(docker run -d --rm --publish 127.0.0.1::3100 \
   "$LOKI_IMAGE" -config.file=/etc/loki/validation.yaml)"
 loki_port="$(docker inspect --format '{{(index (index .NetworkSettings.Ports "3100/tcp") 0).HostPort}}' "$loki_container")"
 export LOKI_URL="http://127.0.0.1:$loki_port"
-if ! ruby "$HERE/validate-dashboards.rb" "$GRAFANA_FILE"; then
+if ! ruby "$HERE/validate-dashboards.rb" "${DASHBOARDS[@]}"; then
   docker logs "$loki_container" >&2
   exit 1
 fi

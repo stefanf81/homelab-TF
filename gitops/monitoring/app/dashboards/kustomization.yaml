@@ -1,0 +1,45 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+configMapGenerator:
+  # One ConfigMap per dashboard. Stable ConfigMap names and dashboard UIDs let
+  # provisioning adopt the existing dashboards instead of creating duplicates;
+  # the sidecar reloads on updates. The `grafana_folder` annotation places each
+  # dashboard in a Grafana folder (sidecar.dashboards.folderAnnotation must be
+  # set to `grafana_folder` in the stack HelmRelease).
+  - name: abuseipdb-security-dashboard
+    files:
+      - abuseipdb-security.json
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        grafana_folder: Security
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/name: abuseipdb-sync
+        app.kubernetes.io/component: observability
+        app.kubernetes.io/part-of: taskflow-observability
+  - name: blocked-sources-dashboard
+    files:
+      - blocked-sources.json
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        grafana_folder: Security
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/name: abuseipdb-sync
+        app.kubernetes.io/component: observability
+        app.kubernetes.io/part-of: taskflow-observability
+  - name: taskflow-performance-dashboard
+    files:
+      - taskflow-performance.json
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        grafana_folder: Taskflow
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/name: taskflow
+        app.kubernetes.io/component: observability
+        app.kubernetes.io/part-of: taskflow-observability

@@ -192,12 +192,20 @@ spec:
         dashboards:
           reloadURL: "http://localhost:3000/api/admin/provisioning/dashboards/reload"
           # Grafana runs in `monitoring`; limit ConfigMap discovery to this
-          # namespace instead of cluster-wide.
-          searchNamespaces:
+          # namespace instead of cluster-wide. The chart joins the list into the
+          # sidecar's NAMESPACE env var (value name is `searchNamespace`).
+          searchNamespace:
             - monitoring
+          # Dashboard ConfigMaps request their Grafana folder through the
+          # `grafana_folder` annotation (see gitops/monitoring/*/dashboards).
+          folderAnnotation: grafana_folder
+          provider:
+            # Replicate the sidecar's folder structure in Grafana so annotated
+            # ConfigMaps are imported into folders instead of one flat list.
+            foldersFromFilesStructure: true
         datasources:
           reloadURL: "http://localhost:3000/api/admin/provisioning/datasources/reload"
-          searchNamespaces:
+          searchNamespace:
             - monitoring
       # Grafana is exposed via an HTTPRoute on the public Gateway
       ingress:

@@ -273,16 +273,27 @@ module DashboardValidation
     errors
   end
 
-  def self.run(path, url = nil)
-    dashboards = YAML.load_stream(File.read(path)).compact.select do |document|
-      document["kind"] == "ConfigMap" && document.dig("metadata", "labels", "grafana_dashboard") == "1"
-    end.flat_map do |document|
-      document.fetch("data", {}).filter_map do |key, value|
-        next unless key.end_with?(".json")
-        ["#{document.dig('metadata', 'name')}/#{key}", JSON.parse(value)]
+  # Load dashboards from a standalone dashboard JSON file or from a YAML
+  # manifest containing one or more `grafana_dashboard: "1"` ConfigMaps.
+  def self.load(path)
+    if File.extname(path) == ".json"
+      [[File.basename(path), JSON.parse(File.read(path))]]
+    else
+      YAML.load_stream(File.read(path)).compact.select do |document|
+        document["kind"] == "ConfigMap" && document.dig("metadata", "labels", "grafana_dashboard") == "1"
+      end.flat_map do |document|
+        document.fetch("data", {}).filter_map do |key, value|
+          next unless key.end_with?(".json")
+          ["#{document.dig('metadata', 'name')}/#{key}", JSON.parse(value)]
+        end
       end
     end
-    raise "no dashboard JSON found in #{path}" if dashboards.empty?
+  end
+
+  def self.run(paths, url = nil)
+    paths = Array(paths)
+    dashboards = paths.flat_map { |path| load(path) }
+    raise "no dashboard JSON found in #{paths.join(', ')}" if dashboards.empty?
 
     errors = []
     uids = {}
@@ -318,8 +329,8 @@ end
 
 if $PROGRAM_NAME == __FILE__
   begin
-    raise "usage: #{File.basename(__FILE__)} <grafana-provisioning.yaml>" unless ARGV.length == 1
-    DashboardValidation.run(ARGV.first, ENV["LOKI_URL"])
+    raise "usage: #{File.basename(__FILE__)} <dashboard.json|provisioning.yaml> ..." if ARGV.empty?
+    DashboardValidation.run(ARGV, ENV["LOKI_URL"])
   rescue StandardError => error
     warn error.message
     exit 1

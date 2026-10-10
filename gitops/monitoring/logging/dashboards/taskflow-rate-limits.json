@@ -1,0 +1,982 @@
+{
+  "uid": "taskflow-rate-limits",
+  "title": "Taskflow Rate Limits",
+  "description": "Caddy HTTP rate-limit activity (HTTP 429) for the Taskflow WAFs, derived from Caddy access logs in Loki. Counts show zero while WAF logs are arriving; breakdowns and recent requests are empty when no rejections occurred. Individual client IPs and URIs are parsed at query time and are not Loki labels.",
+  "schemaVersion": 39,
+  "version": 5,
+  "refresh": "1m",
+  "tags": [
+    "taskflow",
+    "security",
+    "loki"
+  ],
+  "links": [
+    {
+      "title": "WAF detections",
+      "type": "link",
+      "url": "/d/taskflow-waf",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "Access logs",
+      "type": "link",
+      "url": "/d/taskflow-access-logs",
+      "keepTime": true,
+      "includeVars": true
+    }
+  ],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "text": "Loki",
+          "value": "loki"
+        },
+        "hide": 2,
+        "name": "lokiDatasource",
+        "options": [],
+        "query": "loki",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
+        "name": "application",
+        "label": "Application",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "${lokiDatasource}"
+        },
+        "query": "label_values({job=\"coraza-waf\", container=\"waf\"}, application)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "429 responses — 5 min",
+      "description": "All HTTP 429 responses in Caddy access logs (last 5 minutes). Zero means no 429s while WAF logs are arriving; no data means no WAF logs in that window. The rejection-mix panel below separates rate-limiter 429s from other sources.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 6
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\" | __error__=\"\" | status=429 [5m])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "noValue": "No WAF logs",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "429 responses — 1 h",
+      "description": "All HTTP 429 responses in Caddy access logs (last hour). Zero means no 429s while WAF logs are arriving; no data means no WAF logs in that window. The rejection-mix panel below separates rate-limiter 429s from other sources.",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 6
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\" | __error__=\"\" | status=429 [1h])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[1h])))",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "noValue": "No WAF logs",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "429 responses — 24 h",
+      "description": "All HTTP 429 responses in Caddy access logs (last 24 hours). Zero means no 429s while WAF logs are arriving; no data means no WAF logs in that window. The rejection-mix panel below separates rate-limiter 429s from other sources.",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 6
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\" | __error__=\"\" | status=429 [24h])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[24h])))",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "noValue": "No WAF logs",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Rate-limited responses",
+      "description": "Caddy rate-limiter 429s per displayed interval (minimum 5 minutes), split by application. Zones are frontend general and backend api/authentication. These carry rate_limit_zone; upstream/application 429s appear as Other 429 in the rejection mix.",
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", rate_limit_zone=\"rate_limit_zone\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+          "legendFormat": "{{application}}"
+        }
+      ],
+      "interval": "5m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "axisSoftMax": 1,
+            "drawStyle": "bars",
+            "fillOpacity": 65,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "taskflow-backend"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "taskflow-frontend"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Rejections by source",
+      "description": "Counts per displayed interval (minimum 5 minutes). Coraza blocks come from transaction.is_interrupted, not HTTP 403. Rate-limiter rejections are 429s carrying rate_limit_zone; other 429s come from upstream/application code. Zone details are available in the recent-request rows.",
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"is_interrupted\\\":true\" [$__interval])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+          "legendFormat": "Coraza block"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", rate_limit_zone=\"rate_limit_zone\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" [$__interval])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+          "legendFormat": "Caddy rate limit"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", rate_limit_zone=\"rate_limit_zone\" | __error__=\"\" | status=429 | rate_limit_zone=\"\" [$__interval])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+          "legendFormat": "Other 429 (upstream/app)"
+        }
+      ],
+      "interval": "5m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "axisSoftMax": 1,
+            "drawStyle": "bars",
+            "fillOpacity": 65,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Caddy request rate",
+      "description": "Average requests per second over the displayed interval (minimum 5 minutes), from access logs only, excluding /waf-healthz probes.",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (application) (rate({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\" | __error__=\"\" | request_uri != \"/waf-healthz\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+          "legendFormat": "{{application}}"
+        }
+      ],
+      "interval": "5m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "lineWidth": 2,
+            "showPoints": "auto",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "taskflow-backend"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "taskflow-frontend"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Top paths receiving 429",
+      "description": "Request paths receiving HTTP 429, with query strings removed after JSON parsing. Aggregated at query time; paths are not Loki labels.",
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (request_path) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\" | __error__=\"\" | status=429 | request_uri!=\"\" | label_format request_path=`{{ regexReplaceAll \"\\\\?.*$\" .request_uri \"\" }}` [$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "request_path": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "request_path": "Request path",
+              "Value": "429 responses"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "429 responses",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "429 responses"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Top client IPs receiving 429",
+      "description": "Caddy's resolved visitor IP. Parsed at query time to avoid a high-cardinality Loki label; no per-IP Prometheus time series exist.",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | client_ip != \"\" [$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "client_ip": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "client_ip": "Client IP",
+              "Value": "429 responses"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "429 responses",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "429 responses"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Top hosts receiving 429",
+      "description": "Currently all public TaskFlow traffic uses www.jokelab.dev; the panel is kept for future hostnames on this Gateway.",
+      "gridPos": {
+        "x": 8,
+        "y": 22,
+        "w": 16,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (request_host) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_host=\"request.host\" | __error__=\"\" | status=429 | request_host != \"\" [$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "request_host": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "request_host": "Host",
+              "Value": "429 responses"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "429 responses",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "429 responses"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "logs",
+      "title": "Recent rate-limited requests",
+      "description": "Access-log summaries for Caddy rate-limiter rejections (rate_limit_zone set), including the resolved client IP and Retry-After response header. Upstream/application 429s are excluded. Open the Raw JSON evidence row below for the complete stored, redacted records.",
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_method=\"request.method\", request_uri=\"request.uri\", client_ip=\"client_ip\", rate_limit_zone=\"rate_limit_zone\", retry_after=`resp_headers[\"Retry-After\"][0]` | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | line_format `{{.status}} {{.application}} | {{.request_method}} {{.request_uri}} | ip={{.client_ip}} zone={{.rate_limit_zone}} retry-after={{.retry_after | default \"-\"}}s`",
+          "queryType": "range",
+          "maxLines": 100
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showLevel": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "prettifyLogMessage": false,
+        "enableLogDetails": true
+      }
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Identity drift — client_ip in pod CIDR",
+      "description": "Requests resolving into the pod CIDR (probes excluded). Legitimate in-cluster Gateway clients appear here occasionally; a sustained value that is not a known internal client means the trusted cilium_host peer changed, so per-client buckets are shared — re-run runbook Stage 0 and update trusted_proxies.",
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 8,
+        "h": 6
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*` [5m])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "noValue": "No WAF logs",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "logs",
+      "title": "Pod-CIDR identity samples (client_ip in pod CIDR)",
+      "description": "Access-log summaries whose resolved client_ip is in the pod CIDR: known in-cluster clients, or the trusted-peer fallback after a node change. Open the Raw JSON evidence row below for the complete stored, redacted records.",
+      "gridPos": {
+        "x": 8,
+        "y": 38,
+        "w": 16,
+        "h": 6
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json status=\"status\", request_method=\"request.method\", request_uri=\"request.uri\", client_ip=\"client_ip\", rate_limit_zone=\"rate_limit_zone\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*` | line_format `{{.status}} {{.application}} | {{.request_method}} {{.request_uri}} | ip={{.client_ip}} zone={{.rate_limit_zone | default \"-\"}}`",
+          "queryType": "range",
+          "maxLines": 100
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showLevel": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "prettifyLogMessage": false,
+        "enableLogDetails": true
+      }
+    },
+    {
+      "id": 13,
+      "type": "row",
+      "title": "Raw JSON evidence",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [
+        {
+          "id": 14,
+          "type": "logs",
+          "title": "Raw rate-limited access records",
+          "description": "Latest 100 Caddy rate-limiter rejections as stored in Loki, after Caddy redaction. Includes the full stored request and response fields without line_format; upstream/application 429s are excluded.",
+          "gridPos": {
+            "x": 0,
+            "y": 45,
+            "w": 24,
+            "h": 8
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", rate_limit_zone=\"rate_limit_zone\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\"",
+              "queryType": "range",
+              "maxLines": 100
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "showLabels": false,
+            "showLevel": false,
+            "showCommonLabels": false,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "prettifyLogMessage": true,
+            "enableLogDetails": true
+          }
+        },
+        {
+          "id": 15,
+          "type": "logs",
+          "title": "Raw pod-CIDR identity records",
+          "description": "Latest 100 non-probe access records with client_ip in the pod CIDR, as stored in Loki after Caddy redaction. JSON parsing filters the records without rewriting their content.",
+          "gridPos": {
+            "x": 0,
+            "y": 53,
+            "w": 24,
+            "h": 8
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*`",
+              "queryType": "range",
+              "maxLines": 100
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "showLabels": false,
+            "showLevel": false,
+            "showCommonLabels": false,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "prettifyLogMessage": true,
+            "enableLogDetails": true
+          }
+        }
+      ]
+    }
+  ]
+}

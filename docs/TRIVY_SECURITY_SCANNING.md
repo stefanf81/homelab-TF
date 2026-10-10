@@ -31,7 +31,7 @@ gitops/
 │       └── ...
 └── monitoring/
     ├── app/vmservicescrapes.yaml     # VMServiceScrape trivy-operator (metrics → VictoriaMetrics)
-    └── logging/trivy-dashboard.yaml  # Grafana "Trivy Operator" dashboard (ConfigMap)
+    └── logging/dashboards/trivy.json # Grafana "Trivy Operator" dashboard (configMapGenerator)
 ```
 
 - `trivy-operator/` is reconciled by its **own** cluster Kustomization (`trivy-operator`)
@@ -144,10 +144,10 @@ The exported metrics include (main ones):
 
 ### Dashboard (Grafana)
 
-`gitops/monitoring/logging/trivy-dashboard.yaml` deploys the **"Trivy Operator"**
+`gitops/monitoring/logging/dashboards/trivy.json` deploys the **"Trivy Operator"**
 dashboard (ConfigMap `trivy-dashboard`, label `grafana_dashboard: "1"` → Grafana via
-Grafana Sidecar). It is based on Aqua's public dashboard **17813** but rewritten with the
-`VictoriaMetrics` datasource UID and a `$namespace` template variable (`label_values(
+Grafana Sidecar). It is based on Aqua's public dashboard **17813** but rewritten for the
+VictoriaMetrics `$datasource` template variable and a `$namespace` template variable (`label_values(
 trivy_image_vulnerabilities, namespace)`).
 
 Panels (top to bottom):
