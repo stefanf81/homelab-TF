@@ -482,19 +482,34 @@ class DashboardValidationTest < Minitest::Test
     add.call("198.51.100.10", 403, "/login.php", nil, "scan-bot/1.0")
     3.times { add.call("198.51.100.20", 429, "/other", nil, nil, with_ua: false) }
     sequence += 1
-    audit = {
+    audit1 = {
       "msg" => "audit", "seq" => sequence,
       "transaction" => { "client_ip" => "198.51.100.10", "is_interrupted" => true,
                          "request" => { "method" => "GET", "uri" => "/j2ee.zip" } },
-      "messages" => [{ "error_message" => "fixture" }]
+      "messages" => [{ "error_message" => '[client "198.51.100.10"] Coraza: Warning. Restricted File Access Attempt [file "@owasp_crs/..."] [id "930130"] [msg "Restricted File Access Attempt"]' }]
     }
-    lines << [(base_ts + sequence * 1000).to_s, JSON.generate(audit)]
+    sequence += 1
+    audit2 = {
+      "msg" => "audit", "seq" => sequence,
+      "transaction" => { "client_ip" => "198.51.100.10", "is_interrupted" => false,
+                         "request" => { "method" => "GET", "uri" => "/api/login" } },
+      "messages" => [{ "error_message" => '[client "198.51.100.10"] Coraza: Warning. SQL Injection Attempt [file "@owasp_crs/..."] [id "942100"] [msg "SQL Injection Attempt"]' }]
+    }
     sequence += 1
     lines << [(base_ts + sequence * 1000).to_s, '{"msg":"handled request","status":429']
 
     labels = { "job" => "coraza-waf", "container" => "waf",
                "application" => FIXTURE_APPLICATION, "pod" => "dashboard-fixture-waf" }
-    payload = { "streams" => [{ "stream" => labels, "values" => lines }] }
+    audit_labels1 = { "job" => "coraza-waf", "application" => FIXTURE_APPLICATION,
+                      "pod" => "dashboard-fixture-waf", "rule_id" => "930130" }
+    audit_labels2 = { "job" => "coraza-waf", "application" => FIXTURE_APPLICATION,
+                      "pod" => "dashboard-fixture-waf", "rule_id" => "942100" }
+
+    payload = { "streams" => [
+      { "stream" => labels, "values" => lines },
+      { "stream" => audit_labels1, "values" => [[(base_ts + (sequence - 2) * 1000).to_s, JSON.generate(audit1)]] },
+      { "stream" => audit_labels2, "values" => [[(base_ts + (sequence - 1) * 1000).to_s, JSON.generate(audit2)]] }
+    ] }
     uri = URI.join(url, "/loki/api/v1/push")
     http = Net::HTTP.new(uri.host, uri.port, nil)
     http.open_timeout = 2
@@ -537,8 +552,28 @@ class DashboardValidationTest < Minitest::Test
     access_status = instant_vector(url, fixture_query(access, 3, fixture_base_query.merge("$client_ip" => "198.51.100.20")), "access status filtered")
     assert_equal 3.0, access_status.fetch({ "status" => "429" })
 
+    waf_detections = instant_vector(url, fixture_query(waf, 101, fixture_base_query.merge("$client_ip" => "198.51.100.10")), "waf detections")
+    assert_equal 2.0, waf_detections.fetch({})
+
+    waf_interrupted = instant_vector(url, fixture_query(waf, 102, fixture_base_query.merge("$client_ip" => "198.51.100.10")), "waf interrupted")
+    assert_equal 1.0, waf_interrupted.fetch({})
+
+    waf_not_interrupted = instant_vector(url, fixture_query(waf, 103, fixture_base_query.merge("$client_ip" => "198.51.100.10")), "waf not interrupted")
+    assert_equal 1.0, waf_not_interrupted.fetch({})
+
+    waf_share = instant_vector(url, fixture_query(waf, 16, fixture_base_query.merge("$client_ip" => "198.51.100.10")), "waf interruption rate")
+    assert_equal 50.0, waf_share.fetch({})
+
+    waf_rules = instant_vector(url, fixture_query(waf, 3, fixture_base_query.merge("$client_ip" => "198.51.100.10")), "waf rules")
+    assert_equal 1.0, waf_rules.fetch({ "rule_id" => "930130", "rule_msg" => "Restricted File Access Attempt" })
+    assert_equal 1.0, waf_rules.fetch({ "rule_id" => "942100", "rule_msg" => "SQL Injection Attempt" })
+
+    waf_categories = instant_vector(url, fixture_query(waf, 4, fixture_base_query.merge("$client_ip" => "198.51.100.10")), "waf categories")
+    assert_equal 1.0, waf_categories.fetch({ "category" => "File access / LFI (930xxx)" })
+    assert_equal 1.0, waf_categories.fetch({ "category" => "SQL injection" })
+
     waf_ips = instant_vector(url, fixture_query(waf, 6, fixture_base_query.merge("$client_ip" => "198.51.100.10")), "waf source IPs")
-    assert_equal 1.0, waf_ips.fetch({ "client_ip" => "198.51.100.10" })
+    assert_equal 2.0, waf_ips.fetch({ "client_ip" => "198.51.100.10" })
 
     raw_expr = fixture_query(access, 10, fixture_base_query.merge("$client_ip" => ".*"))
     response = DashboardValidation.get(url, "/loki/api/v1/query_range",

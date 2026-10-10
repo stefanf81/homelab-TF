@@ -567,26 +567,29 @@ datasources:
 
 | Panel | Type | Data Source | Query |
 |-------|------|-------------|-------|
-| WAF audit events | timeseries | Loki | Counts `"transaction"` records per adaptive `$__interval`, with a zero baseline while WAF logs arrive |
-| WAF rule detections | timeseries | Loki | Counts `"messages"` records per adaptive `$__interval`, with a zero baseline while WAF logs arrive |
-| Top first-matched CRS rules | bar gauge | Loki | Instant `topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[$__range])))`; one labeled bar per result row |
-| First-matched rule categories | donut | Loki | One instant query categorizes all first rule IDs, including protocol enforcement, scanners and Other CRS |
-| Detections by HTTP method | timeseries | Loki | Counts detected audit records by indexed `method` per `$__interval` |
-| Audit records containing each paranoia level | bar gauge | Loki | Selected-range counts for `paranoia-level/1` through `/4`; overlapping counts; absent levels use a 5-minute liveness fallback |
-| Top source IPs | table | Loki | Instant top 10, extracting only `transaction.client_ip`; Client IP and Detections columns |
-| Recent WAF detections | logs | Loki | Latest 100 detections with BLOCK/DETECT, application, method, URI, first rule description and IP |
+| Detection-bearing audit records | stat | Loki | Total audit records containing rule detections in selected range, honoring Application and Client IP |
+| Confirmed interruptions (BLOCK) | stat | Loki | Audit records explicitly interrupted by Coraza (`transaction.is_interrupted=true`) in selected range |
+| Detected without interruption | stat | Loki | Audit records matching rules where Coraza did not interrupt (`transaction.is_interrupted=false`) |
+| Interruption rate | stat | Loki | Percentage of detected transactions that were interrupted; guarded denominator; No detections when undefined |
+| WAF activity over time | timeseries | Loki | Audited transactions vs rule detections per adaptive `$__interval`, with a zero baseline while WAF logs arrive |
+| Top first-matched CRS rules | bar gauge | Loki | Instant `topk(10, sum by (rule_id, rule_msg) ...)`; displays rule ID and descriptive rule message |
+| First-matched rule categories | bar gauge | Loki | Horizontal bar gauge categorizing rule families (SQLi, XSS, File access / LFI 930xxx, etc.) |
+| Top source IPs | table | Loki | Instant top 10 with data links to Access Logs, Rate Limits, and WAF drilldowns |
+| Recent WAF detections | logs | Loki | Latest 100 detections with compact `BLOCK/DETECT · <ip> · <method> <uri> · CRS <id>: <msg> (<app>)` formatting |
 | Raw WAF detection records | logs (collapsed row) | Loki | Latest 100 detection-bearing audit records without `line_format`, retaining the complete stored, redacted JSON |
-| First-matched SQL injection | timeseries | Loki | Indexed first rule ID matches `942[0-9]{3}`; counts per `$__interval` |
-| First-matched XSS, injection & traversal | timeseries | Loki | Indexed first rule ID matches `941[0-9]{3}` or `93[0-4][0-9]{3}`; counts per `$__interval` |
-| Detected transactions blocked | stat | Loki | Instant percentage of detected records that were interrupted; guarded denominator; No detections when undefined |
-| Top targeted URIs | table | Loki | Instant top 10, extracting only `transaction.request.uri` |
-| Top attacking user agents | table | Loki | Instant top 10, extracting `transaction.request.headers["user-agent"][0]` |
-| WAF inspection latency (p95) | timeseries | Loki | Unwraps `combined` nanoseconds from stopwatch records, calculates per-application p95, and converts to milliseconds |
-| WAF pod CPU | timeseries | VictoriaMetrics | `rate(container_cpu_usage_seconds_total{...}[$__rate_interval])` |
-| WAF pod memory | timeseries | VictoriaMetrics | `container_memory_working_set_bytes{...}` |
-| WAF pod restarts | timeseries | VictoriaMetrics | `increase(kube_pod_container_status_restarts_total{...}[1h])` |
-| Loki ingester flush failures/s | stat | VictoriaMetrics | `sum(max by (instance) (rate(loki_ingester_chunks_flush_failures_total{namespace="monitoring",job="loki"}[$__rate_interval])))` |
-| Alloy forwarding errors | stat | VictoriaMetrics | `sum(rate(loki_write_dropped_bytes_total[5m]))` |
+| WAF rule detections | timeseries (collapsed row) | Loki | Standalone detections timeseries per `$__interval` |
+| Detections by HTTP method | timeseries (collapsed row) | Loki | Counts detected audit records by indexed `method` per `$__interval` |
+| Audit records containing each paranoia level | bar gauge (collapsed row) | Loki | Selected-range counts for `paranoia-level/1` through `/4`; absent levels use a 5-minute liveness fallback |
+| First-matched SQL injection | timeseries (collapsed row) | Loki | Indexed first rule ID matches `942[0-9]{3}`; counts per `$__interval` |
+| First-matched XSS, injection & traversal | timeseries (collapsed row) | Loki | Indexed first rule ID matches `941[0-9]{3}` or `93[0-4][0-9]{3}`; counts per `$__interval` |
+| Top targeted URIs | table (collapsed row) | Loki | Instant top 10, extracting only `transaction.request.uri` |
+| Top attacking user agents | table (collapsed row) | Loki | Instant top 10, extracting `transaction.request.headers["user-agent"][0]` |
+| WAF inspection latency (p95) | timeseries (collapsed row) | Loki | Unwraps `combined` nanoseconds from stopwatch records, calculates per-application p95, and converts to milliseconds |
+| WAF pod CPU | timeseries (collapsed row) | VictoriaMetrics | `rate(container_cpu_usage_seconds_total{...}[$__rate_interval])` |
+| WAF pod memory | timeseries (collapsed row) | VictoriaMetrics | `container_memory_working_set_bytes{...}` |
+| WAF pod restarts | timeseries (collapsed row) | VictoriaMetrics | `increase(kube_pod_container_status_restarts_total{...}[1h])` |
+| Loki ingester flush failures/s | stat (collapsed row) | VictoriaMetrics | `sum(max by (instance) (rate(loki_ingester_chunks_flush_failures_total{namespace="monitoring",job="loki"}[$__rate_interval])))` |
+| Alloy forwarding errors | stat (collapsed row) | VictoriaMetrics | `sum(rate(loki_write_dropped_bytes_total[5m]))` |
 
 Loki summaries use `queryType: instant`; the Prometheus `instant` flag is not a
 Loki query option. Event-count and request-rate charts use buckets of at least

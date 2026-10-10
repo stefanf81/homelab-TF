@@ -1,9 +1,9 @@
 {
   "uid": "taskflow-waf",
   "title": "Taskflow WAF",
-  "description": "Coraza and Caddy telemetry for the Taskflow frontend and backend WAFs. Audit-derived panels honor the Application and Client IP filters; pod and pipeline metrics are service-level. RelevantOnly auditing emits no records for normal successful traffic.",
+  "description": "Coraza and Caddy telemetry for the Taskflow frontend and backend WAFs. Selected-range overview cards, rule breakdowns, top IPs, and recent detections honor the Application and Client IP filters; pod and infrastructure metrics are service-level. RelevantOnly auditing emits no records for normal successful traffic.",
   "schemaVersion": 39,
-  "version": 11,
+  "version": 12,
   "refresh": "1m",
   "tags": [
     "taskflow",
@@ -88,14 +88,252 @@
   },
   "panels": [
     {
-      "id": 1,
-      "type": "timeseries",
-      "title": "WAF audit events",
-      "description": "All Coraza audit records per displayed interval (minimum 5 minutes; wider for long time ranges to avoid missing events). Relevant responses can be audited without a matched rule. Zero means no audit events while WAF logs are arriving; no data means no WAF logs in that interval.",
+      "id": 100,
+      "type": "row",
+      "title": "Overview — selected range",
+      "collapsed": false,
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 8,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 101,
+      "type": "stat",
+      "title": "Detection-bearing audit records",
+      "description": "Total Coraza audit records containing rule detections in the selected range, honoring Application and Client IP filters. RelevantOnly auditing records only relevant transactions; normal traffic produces no audit records.",
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"}[$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "noValue": "No detections",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 102,
+      "type": "stat",
+      "title": "Confirmed interruptions (BLOCK)",
+      "description": "Audit records explicitly interrupted by Coraza (transaction.is_interrupted=true) in the selected range. A WAF interruption drops or blocks the transaction; it is not inferred from HTTP 403 alone.",
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\", interrupted=\"transaction.is_interrupted\" | __error__=\"\" | client_ip=~\"$client_ip\" | interrupted=\"true\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"}[$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "noValue": "No detections",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 103,
+      "type": "stat",
+      "title": "Detected without interruption",
+      "description": "Audit records matching rules where Coraza did not interrupt the request (transaction.is_interrupted=false). Common in detect-only rules or non-disruptive phases.",
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\", interrupted=\"transaction.is_interrupted\" | __error__=\"\" | client_ip=~\"$client_ip\" | interrupted=\"false\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"}[$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "noValue": "No detections",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Interruption rate",
+      "description": "Percentage of detection-bearing audit records that were interrupted by Coraza. Honors the Application and Client IP filters. Guarded denominator; shows 'No detections' when undefined.",
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${lokiDatasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "((sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"\\\"is_interrupted\\\":true\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__range])))) / (sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__range])) > 0)) * 100",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "noValue": "No detections",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "WAF activity over time (audit events vs rule detections)",
+      "description": "Transactions audited vs rule detections per displayed interval (minimum 5 minutes; wider for long time ranges). Audit events can occur without rule matches (RelevantOnly response criteria). Shows a zero baseline while WAF logs arrive.",
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
         "h": 8
       },
       "datasource": {
@@ -106,93 +344,12 @@
         {
           "refId": "A",
           "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"transaction\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
-          "legendFormat": "{{application}}"
-        }
-      ],
-      "interval": "5m",
-      "maxDataPoints": 300,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+          "legendFormat": "{{application}} (all audit records)"
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "min": 0,
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisSoftMax": 1,
-            "drawStyle": "bars",
-            "fillOpacity": 65,
-            "lineWidth": 1,
-            "showPoints": "never",
-            "spanNulls": false
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "taskflow-backend"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "blue"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "taskflow-frontend"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "orange"
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 2,
-      "type": "timeseries",
-      "title": "WAF rule detections",
-      "description": "Detected transactions per displayed interval (minimum 5 minutes; wider for long time ranges). Requires Coraza messages[] rule matches. Zero means no detections while WAF logs are arriving; no data means no WAF logs in that interval.",
-      "gridPos": {
-        "x": 8,
-        "y": 0,
-        "w": 8,
-        "h": 8
-      },
-      "datasource": {
-        "type": "loki",
-        "uid": "${lokiDatasource}"
-      },
-      "targets": [
         {
-          "refId": "A",
+          "refId": "B",
           "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
-          "legendFormat": "{{application}}"
+          "legendFormat": "{{application}} (rule detections)"
         }
       ],
       "interval": "5m",
@@ -228,30 +385,18 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "taskflow-backend"
+              "id": "byRegexp",
+              "options": ".*all audit records.*"
             },
             "properties": [
               {
-                "id": "color",
+                "id": "custom.lineStyle",
                 "value": {
-                  "mode": "fixed",
-                  "fixedColor": "blue"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "taskflow-frontend"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "orange"
+                  "dash": [
+                    4,
+                    4
+                  ],
+                  "fill": "dash"
                 }
               }
             ]
@@ -262,12 +407,12 @@
     {
       "id": 3,
       "type": "bargauge",
-      "title": "Top first-matched CRS rules",
-      "description": "Audit records grouped by the first rule ID extracted by Alloy. A transaction can match multiple rules; this does not count every rule match.",
+      "title": "Top 10 first-matched CRS rules",
+      "description": "Audit records grouped by the first rule ID and descriptive rule message extracted from Coraza messages. One transaction can match multiple rules; this ranks the primary triggered rule.",
       "gridPos": {
-        "x": 16,
-        "y": 0,
-        "w": 8,
+        "x": 0,
+        "y": 14,
+        "w": 12,
         "h": 8
       },
       "datasource": {
@@ -277,8 +422,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, sum by (rule_id) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\".+\"} | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__range])))",
-          "legendFormat": "CRS {{rule_id}}",
+          "expr": "topk(10, sum by (rule_id, rule_msg) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\".+\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | regexp `\\[msg \\\\\"(?P<rule_msg>[^\\\\\"]+)\\\\\"\\]` [$__range])))",
+          "legendFormat": "CRS {{rule_id}}: {{rule_msg}}",
           "queryType": "instant"
         }
       ],
@@ -334,7 +479,7 @@
           "unit": "none",
           "decimals": 0,
           "min": 0,
-          "displayName": "CRS ${__field.name}",
+          "displayName": "${__field.name}",
           "noValue": "No detections",
           "color": {
             "mode": "fixed",
@@ -346,13 +491,13 @@
     },
     {
       "id": 4,
-      "type": "piechart",
+      "type": "bargauge",
       "title": "First-matched rule categories",
-      "description": "All detected audit records, categorized by their first extracted CRS rule ID. Protocol enforcement and Other CRS are included so percentages cover all first-matched rules, not just attack families. A transaction can match multiple rules.",
+      "description": "Detected audit records categorized by their first extracted CRS rule family. Local file inclusion (930xxx) includes restricted file access and traversal.",
       "gridPos": {
-        "x": 0,
-        "y": 8,
-        "w": 8,
+        "x": 12,
+        "y": 14,
+        "w": 12,
         "h": 8
       },
       "datasource": {
@@ -362,7 +507,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (category) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\".+\"} | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | label_format category=`{{ if hasPrefix \"942\" .rule_id }}SQL injection{{ else if hasPrefix \"941\" .rule_id }}Cross-site scripting{{ else if hasPrefix \"930\" .rule_id }}Path traversal{{ else if hasPrefix \"931\" .rule_id }}Remote file inclusion{{ else if hasPrefix \"932\" .rule_id }}Command injection{{ else if or (hasPrefix \"933\" .rule_id) (hasPrefix \"934\" .rule_id) }}Code injection{{ else if or (hasPrefix \"920\" .rule_id) (hasPrefix \"921\" .rule_id) }}Protocol enforcement{{ else if hasPrefix \"913\" .rule_id }}Scanner detection{{ else }}Other CRS{{ end }}` [$__range]))",
+          "expr": "sum by (category) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\".+\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | label_format category=`{{ if hasPrefix \"942\" .rule_id }}SQL injection{{ else if hasPrefix \"941\" .rule_id }}Cross-site scripting{{ else if hasPrefix \"930\" .rule_id }}File access / LFI (930xxx){{ else if hasPrefix \"931\" .rule_id }}Remote file inclusion{{ else if hasPrefix \"932\" .rule_id }}Command injection{{ else if or (hasPrefix \"933\" .rule_id) (hasPrefix \"934\" .rule_id) }}Code injection{{ else if or (hasPrefix \"920\" .rule_id) (hasPrefix \"921\" .rule_id) }}Protocol enforcement{{ else if hasPrefix \"913\" .rule_id }}Scanner detection{{ else }}Other CRS{{ end }}` [$__range]))",
           "legendFormat": "{{category}}",
           "queryType": "instant"
         }
@@ -377,153 +522,33 @@
           }
         },
         {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Value #A",
+                "desc": true
+              }
+            ]
+          }
+        },
+        {
           "id": "rowsToFields",
           "options": {}
         }
       ],
       "options": {
-        "displayLabels": [],
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "width": 260,
-          "showLegend": true,
-          "values": [
-            "value",
-            "percent"
-          ]
-        },
-        "pieType": "donut",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "decimals": 0,
-          "displayName": "${__field.name}",
-          "color": {
-            "mode": "palette-classic-by-name"
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 5,
-      "type": "timeseries",
-      "title": "Detections by HTTP method",
-      "description": "Detected transactions by method per displayed interval (minimum 5 minutes). Sparse bars represent events, not a continuous rate.",
-      "gridPos": {
-        "x": 8,
-        "y": 8,
-        "w": 8,
-        "h": 8
-      },
-      "datasource": {
-        "type": "loki",
-        "uid": "${lokiDatasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (method) (count_over_time({job=\"coraza-waf\", application=~\"$application\", method=~\".+\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__interval]))",
-          "legendFormat": "{{method}}"
-        }
-      ],
-      "interval": "5m",
-      "maxDataPoints": 300,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "min": 0,
-          "custom": {
-            "axisSoftMax": 1,
-            "drawStyle": "bars",
-            "fillOpacity": 65,
-            "lineWidth": 1,
-            "showPoints": "always",
-            "pointSize": 4,
-            "spanNulls": false
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 15,
-      "type": "bargauge",
-      "title": "Audit records containing each paranoia level",
-      "description": "Counts audit records containing each CRS paranoia-level tag over the selected range. A record can count at several levels; do not add these counts together. An absent count becomes zero only if WAF logs arrived in the 5 minutes ending at the selected range's end; otherwise that level has no data. Historical nonzero counts remain visible.",
-      "gridPos": {
-        "x": 16,
-        "y": 8,
-        "w": 8,
-        "h": 8
-      },
-      "datasource": {
-        "type": "loki",
-        "uid": "${lokiDatasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"paranoia-level/1\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
-          "legendFormat": "PL 1 (Standard)",
-          "queryType": "instant"
-        },
-        {
-          "refId": "B",
-          "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"paranoia-level/2\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
-          "legendFormat": "PL 2 (Elevated)",
-          "queryType": "instant"
-        },
-        {
-          "refId": "C",
-          "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"paranoia-level/3\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
-          "legendFormat": "PL 3 (High)",
-          "queryType": "instant"
-        },
-        {
-          "refId": "D",
-          "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"paranoia-level/4\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
-          "legendFormat": "PL 4 (Extreme)",
-          "queryType": "instant"
-        }
-      ],
-      "options": {
         "orientation": "horizontal",
         "displayMode": "basic",
-        "namePlacement": "left",
+        "namePlacement": "top",
         "textMode": "value_and_name",
         "valueMode": "text",
         "sizing": "manual",
         "minVizHeight": 24,
-        "maxVizHeight": 36,
+        "maxVizHeight": 40,
         "text": {
-          "titleSize": 14,
-          "valueSize": 18
+          "titleSize": 13,
+          "valueSize": 16
         },
         "reduceOptions": {
           "calcs": [
@@ -538,72 +563,22 @@
         "defaults": {
           "unit": "none",
           "decimals": 0,
-          "min": 0,
+          "displayName": "${__field.name}",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "purple"
+            "mode": "palette-classic-by-name"
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "A"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "PL 1 (Standard)"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "B"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "PL 2 (Elevated)"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "C"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "PL 3 (High)"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "D"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "PL 4 (Extreme)"
-              }
-            ]
-          }
-        ]
+        "overrides": []
       }
     },
     {
       "id": 6,
       "type": "table",
-      "title": "Top source IPs",
-      "description": "Client IP is parsed at query time, so it is not indexed as a Loki label.",
+      "title": "Top source IPs (ranked subset)",
+      "description": "Client IPs parsed from transaction.client_ip. Click an IP to investigate in Access Logs or Rate Limits, or to filter this WAF dashboard.",
       "gridPos": {
         "x": 0,
-        "y": 16,
+        "y": 22,
         "w": 8,
         "h": 8
       },
@@ -678,6 +653,31 @@
                 "value": 100
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "client_ip"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Access logs for this IP",
+                    "url": "/d/taskflow-access-logs/taskflow-access-logs?${__url_time_range}&var-client_ip=${__value.raw}"
+                  },
+                  {
+                    "title": "Rate limits for this IP",
+                    "url": "/d/taskflow-rate-limits/taskflow-rate-limits?${__url_time_range}&var-client_ip=${__value.raw}"
+                  },
+                  {
+                    "title": "Filter WAF to this IP",
+                    "url": "/d/taskflow-waf/taskflow-waf?${__url_time_range}&var-client_ip=${__value.raw}"
+                  }
+                ]
+              }
+            ]
           }
         ]
       }
@@ -685,11 +685,11 @@
     {
       "id": 7,
       "type": "logs",
-      "title": "Recent WAF detections",
-      "description": "Latest 100 matched audit records with method, URI, first rule and client IP. Expand a row for extracted labels; open the Raw JSON evidence row below for the stored, redacted audit record. Loopback IPs can be local port-forward canaries.",
+      "title": "Recent WAF detections (latest 100)",
+      "description": "Latest 100 matched audit records. Action, IP, and method/URI are placed first for immediate scanning without wrapping. Expand a row for full labels; open the Raw JSON evidence row below for complete stored records.",
       "gridPos": {
         "x": 8,
-        "y": 16,
+        "y": 22,
         "w": 16,
         "h": 8
       },
@@ -700,7 +700,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json request_method=\"transaction.request.method\", request_uri=\"transaction.request.uri\", client_ip=\"transaction.client_ip\", interrupted=\"transaction.is_interrupted\" | __error__=\"\" | client_ip=~\"$client_ip\" | regexp `\\[msg \\\\\"(?P<rule_msg>[^\\\\\"]+)\\\\\"\\]` | line_format `{{if eq .interrupted \"true\"}}BLOCK{{else}}DETECT{{end}} {{.application}} | {{.request_method}} {{.request_uri}} | CRS {{.rule_id}}: {{.rule_msg}} | ip={{.client_ip}}`",
+          "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json request_method=\"transaction.request.method\", request_uri=\"transaction.request.uri\", client_ip=\"transaction.client_ip\", interrupted=\"transaction.is_interrupted\" | __error__=\"\" | client_ip=~\"$client_ip\" | regexp `\\[msg \\\\\"(?P<rule_msg>[^\\\\\"]+)\\\\\"\\]` | line_format `{{if eq .interrupted \"true\"}}BLOCK{{else}}DETECT{{end}} · {{.client_ip}} · {{.request_method}} {{.request_uri}} · CRS {{.rule_id}}: {{.rule_msg}} ({{.application}})`",
           "queryType": "range",
           "maxLines": 100
         }
@@ -719,15 +719,279 @@
     {
       "id": 20,
       "type": "row",
-      "title": "Rule-family detail",
+      "title": "Detection characteristics (methods, paranoia levels, rule families)",
       "collapsed": true,
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 30,
         "w": 24,
         "h": 1
       },
       "panels": [
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "WAF rule detections",
+          "description": "Detected transactions per displayed interval (minimum 5 minutes; wider for long time ranges). Requires Coraza messages[] rule matches. Zero means no detections while WAF logs are arriving; no data means no WAF logs in that interval.",
+          "gridPos": {
+            "x": 0,
+            "y": 31,
+            "w": 12,
+            "h": 8
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+              "legendFormat": "{{application}}"
+            }
+          ],
+          "interval": "5m",
+          "maxDataPoints": 300,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisSoftMax": 1,
+                "drawStyle": "bars",
+                "fillOpacity": 65,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "taskflow-backend"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "taskflow-frontend"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Detections by HTTP method",
+          "description": "Detected transactions by method per displayed interval (minimum 5 minutes). Sparse bars represent events, not a continuous rate.",
+          "gridPos": {
+            "x": 12,
+            "y": 31,
+            "w": 12,
+            "h": 8
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (method) (count_over_time({job=\"coraza-waf\", application=~\"$application\", method=~\".+\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__interval]))",
+              "legendFormat": "{{method}}"
+            }
+          ],
+          "interval": "5m",
+          "maxDataPoints": 300,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "custom": {
+                "axisSoftMax": 1,
+                "drawStyle": "bars",
+                "fillOpacity": 65,
+                "lineWidth": 1,
+                "showPoints": "always",
+                "pointSize": 4,
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 15,
+          "type": "bargauge",
+          "title": "Audit records containing each paranoia level",
+          "description": "Counts audit records containing each CRS paranoia-level tag over the selected range. A record can count at several levels; do not add these counts together. An absent count becomes zero only if WAF logs arrived in the 5 minutes ending at the selected range's end; otherwise that level has no data. Historical nonzero counts remain visible.",
+          "gridPos": {
+            "x": 0,
+            "y": 39,
+            "w": 24,
+            "h": 6
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"paranoia-level/1\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+              "legendFormat": "PL 1 (Standard)",
+              "queryType": "instant"
+            },
+            {
+              "refId": "B",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"paranoia-level/2\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+              "legendFormat": "PL 2 (Elevated)",
+              "queryType": "instant"
+            },
+            {
+              "refId": "C",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"paranoia-level/3\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+              "legendFormat": "PL 3 (High)",
+              "queryType": "instant"
+            },
+            {
+              "refId": "D",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"paranoia-level/4\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+              "legendFormat": "PL 4 (Extreme)",
+              "queryType": "instant"
+            }
+          ],
+          "options": {
+            "orientation": "horizontal",
+            "displayMode": "basic",
+            "namePlacement": "left",
+            "textMode": "value_and_name",
+            "valueMode": "text",
+            "sizing": "manual",
+            "minVizHeight": 24,
+            "maxVizHeight": 36,
+            "text": {
+              "titleSize": 14,
+              "valueSize": 18
+            },
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showUnfilled": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "decimals": 0,
+              "min": 0,
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "purple"
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "PL 1 (Standard)"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "PL 2 (Elevated)"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "C"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "PL 3 (High)"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "D"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "PL 4 (Extreme)"
+                  }
+                ]
+              }
+            ]
+          }
+        },
         {
           "id": 8,
           "type": "timeseries",
@@ -735,7 +999,7 @@
           "description": "Audit records whose first extracted rule is in the SQL injection family, per displayed interval (minimum 5 minutes). Other matching rules in the same record are not counted separately.",
           "gridPos": {
             "x": 0,
-            "y": 25,
+            "y": 45,
             "w": 12,
             "h": 8
           },
@@ -818,7 +1082,7 @@
           "description": "Audit records first matching XSS, traversal, remote file inclusion, command or code injection, per displayed interval (minimum 5 minutes).",
           "gridPos": {
             "x": 12,
-            "y": 25,
+            "y": 45,
             "w": 12,
             "h": 8
           },
@@ -899,235 +1163,188 @@
     {
       "id": 22,
       "type": "row",
-      "title": "Detection summary",
-      "collapsed": false,
+      "title": "Targeted URIs and attacking User-Agents",
+      "collapsed": true,
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 31,
         "w": 24,
         "h": 1
       },
-      "panels": []
-    },
-    {
-      "id": 16,
-      "type": "stat",
-      "title": "Detected transactions blocked",
-      "description": "Percentage of audit records containing rule detections that were interrupted by Coraza. This is not the fraction of all requests blocked, and interrupted responses need not use HTTP 403.",
-      "gridPos": {
-        "x": 0,
-        "y": 26,
-        "w": 8,
-        "h": 8
-      },
-      "datasource": {
-        "type": "loki",
-        "uid": "${lokiDatasource}"
-      },
-      "targets": [
+      "panels": [
         {
-          "refId": "A",
-          "expr": "((sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"\\\"is_interrupted\\\":true\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__range])))) / (sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__range])) > 0)) * 100",
-          "queryType": "instant"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
+          "id": 17,
+          "type": "table",
+          "title": "Top 10 targeted URIs",
+          "description": "Request URIs with the most audit records containing WAF detections. A record may contain multiple rule matches.",
+          "gridPos": {
+            "x": 0,
+            "y": 32,
+            "w": 12,
+            "h": 8
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "topk(10, sum by (request_uri) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json request_uri=\"transaction.request.uri\", client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | request_uri!=\"\" [$__range])))",
+              "queryType": "instant"
+            }
           ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "decimals": 1,
-          "min": 0,
-          "max": 100,
-          "noValue": "No detections",
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 17,
-      "type": "table",
-      "title": "Top targeted URIs",
-      "description": "Request URIs with the most audit records containing WAF detections. A record may contain multiple rule matches.",
-      "gridPos": {
-        "x": 8,
-        "y": 26,
-        "w": 8,
-        "h": 8
-      },
-      "datasource": {
-        "type": "loki",
-        "uid": "${lokiDatasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "topk(10, sum by (request_uri) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json request_uri=\"transaction.request.uri\", client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | request_uri!=\"\" [$__range])))",
-          "queryType": "instant"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "labelsToFields",
-          "options": {
-            "mode": "columns"
-          }
-        },
-        {
-          "id": "merge",
-          "options": {}
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
+          "transformations": [
+            {
+              "id": "labelsToFields",
+              "options": {
+                "mode": "columns"
+              }
             },
-            "indexByName": {
-              "request_uri": 0,
-              "Value": 1
+            {
+              "id": "merge",
+              "options": {}
             },
-            "renameByName": {
-              "request_uri": "Request URI",
-              "Value": "Detections"
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true
+                },
+                "indexByName": {
+                  "request_uri": 0,
+                  "Value": 1
+                },
+                "renameByName": {
+                  "request_uri": "Request URI",
+                  "Value": "Detections"
+                }
+              }
             }
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "sortBy": [
-          {
-            "displayName": "Detections",
-            "desc": true
-          }
-        ]
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "noValue": "—"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byType",
-              "options": "number"
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "sortBy": [
+              {
+                "displayName": "Detections",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "noValue": "—"
             },
-            "properties": [
+            "overrides": [
               {
-                "id": "displayName",
-                "value": "Detections"
-              },
-              {
-                "id": "custom.width",
-                "value": 100
+                "matcher": {
+                  "id": "byType",
+                  "options": "number"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Detections"
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  }
+                ]
               }
             ]
           }
-        ]
-      }
-    },
-    {
-      "id": 18,
-      "type": "table",
-      "title": "Top attacking user agents",
-      "description": "User-Agents sending traffic that triggers WAF rules.",
-      "gridPos": {
-        "x": 16,
-        "y": 26,
-        "w": 8,
-        "h": 8
-      },
-      "datasource": {
-        "type": "loki",
-        "uid": "${lokiDatasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "topk(10, sum by (user_agent) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json user_agent=`transaction.request.headers[\"user-agent\"][0]`, client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | user_agent!=\"\" [$__range])))",
-          "queryType": "instant"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "labelsToFields",
-          "options": {
-            "mode": "columns"
-          }
         },
         {
-          "id": "merge",
-          "options": {}
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "indexByName": {
-              "user_agent": 0,
-              "Value": 1
-            },
-            "renameByName": {
-              "user_agent": "User agent",
-              "Value": "Detections"
+          "id": 18,
+          "type": "table",
+          "title": "Top 10 attacking user agents",
+          "description": "User-Agents sending traffic that triggers WAF rules.",
+          "gridPos": {
+            "x": 12,
+            "y": 32,
+            "w": 12,
+            "h": 8
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "topk(10, sum by (user_agent) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json user_agent=`transaction.request.headers[\"user-agent\"][0]`, client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | user_agent!=\"\" [$__range])))",
+              "queryType": "instant"
             }
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "sortBy": [
-          {
-            "displayName": "Detections",
-            "desc": true
-          }
-        ]
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "noValue": "—"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byType",
-              "options": "number"
+          ],
+          "transformations": [
+            {
+              "id": "labelsToFields",
+              "options": {
+                "mode": "columns"
+              }
             },
-            "properties": [
+            {
+              "id": "merge",
+              "options": {}
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true
+                },
+                "indexByName": {
+                  "user_agent": 0,
+                  "Value": 1
+                },
+                "renameByName": {
+                  "user_agent": "User agent",
+                  "Value": "Detections"
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "sortBy": [
               {
-                "id": "displayName",
-                "value": "Detections"
-              },
+                "displayName": "Detections",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "noValue": "—"
+            },
+            "overrides": [
               {
-                "id": "custom.width",
-                "value": 100
+                "matcher": {
+                  "id": "byType",
+                  "options": "number"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Detections"
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  }
+                ]
               }
             ]
           }
-        ]
-      }
+        }
+      ]
     },
     {
       "id": 21,
@@ -1136,7 +1353,7 @@
       "collapsed": true,
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 32,
         "w": 24,
         "h": 1
       },
@@ -1371,13 +1588,28 @@
       ]
     },
     {
+      "id": 25,
+      "type": "text",
+      "title": "Scope, coverage, and limits",
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 24,
+        "h": 6
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**How to read this dashboard**\n\n- **RelevantOnly auditing:** Coraza records only relevant transactions (matched rules or response criteria); normal successful traffic produces no audit records.\n- **Interruption vs Detection:** A detection means a rule matched; it is an interruption (BLOCK) only when `transaction.is_interrupted=true`.\n- **Top tables and logs:** Tables show ranked top-10 subsets (ties can hide entries); the recent-event log is a sample of at most the latest 100 matching records.\n- **Redaction:** Credential headers and sensitive parameters are redacted before Loki ingestion.\n- **External edge and host protection:** Direct-to-origin Cilium drops and Cloudflare edge blocks live on the **Blocked Sources** dashboard.\n- **Client IP filter:** The `client_ip` textbox (`.*` = all) filters audit-derived panels at query time; pod and infrastructure metrics are service-wide.\n"
+      }
+    },
+    {
       "id": 23,
       "type": "row",
       "title": "Raw JSON evidence",
       "collapsed": true,
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 39,
         "w": 24,
         "h": 1
       },
