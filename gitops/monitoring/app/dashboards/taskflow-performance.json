@@ -1,9 +1,9 @@
 {
   "uid": "taskflow-performance",
   "title": "TaskFlow Performance",
-  "description": "Backend JVM, HTTP, Hikari, PostgreSQL, Redis, pod, node, and disk performance metrics.",
+  "description": "Backend JVM, HTTP, Hikari, PostgreSQL, Redis, pod, node, and disk performance metrics. Use the dashboard links for request-level investigation in Loki-backed dashboards.",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "time": {
     "from": "now-6h",
@@ -45,7 +45,8 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "noValue": "Unavailable"
         },
         "overrides": []
       },
@@ -60,7 +61,8 @@
           "fields": "",
           "values": false
         }
-      }
+      },
+      "description": "1 while vmagent successfully scrapes the backend metrics endpoint; 0 (red) means the scrape is failing and the other metric panels on this dashboard are stale. Unavailable means no scrape result exists in the selected range."
     },
     {
       "id": 2,
@@ -637,5 +639,28 @@
         "type": "datasource"
       }
     ]
-  }
+  },
+  "links": [
+    {
+      "title": "Access logs",
+      "type": "link",
+      "url": "/d/taskflow-access-logs",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "WAF detections",
+      "type": "link",
+      "url": "/d/taskflow-waf",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "Rate limits",
+      "type": "link",
+      "url": "/d/taskflow-rate-limits",
+      "keepTime": true,
+      "includeVars": true
+    }
+  ]
 }

@@ -3,7 +3,7 @@
   "title": "Blocked Sources",
   "description": "Per-IP traffic rejected by Cloudflare (proxied path) and Cilium (direct path). Client IPs are parsed from logs at query time, never metric labels.",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": {
     "from": "now-24h",
@@ -326,7 +326,7 @@
       "id": 7,
       "type": "table",
       "title": "Top blocked client IPs (Cloudflare)",
-      "description": "Client IPs blocked at the Cloudflare edge, parsed from the Security Events log body.",
+      "description": "Client IPs blocked at the Cloudflare edge, parsed from the Security Events log body. Shows at most the top 20 entries; ties can hide the remaining values.",
       "gridPos": {
         "x": 0,
         "y": 12,
@@ -358,7 +358,7 @@
       "id": 8,
       "type": "table",
       "title": "Top dropped source IPs (Cilium Gateway)",
-      "description": "Source IPs from the same Gateway drop filter as the overview. For proxied traffic this can be a Cloudflare edge address; reasonless drops are not attributed to a particular policy.",
+      "description": "Source IPs from the same Gateway drop filter as the overview. For proxied traffic this can be a Cloudflare edge address; reasonless drops are not attributed to a particular policy. Shows at most the top 20 entries; ties can hide the remaining values.",
       "gridPos": {
         "x": 8,
         "y": 12,
@@ -415,13 +415,14 @@
           "unit": "short"
         },
         "overrides": []
-      }
+      },
+      "description": " Shows at most the top 20 entries; ties can hide the remaining values."
     },
     {
       "id": 10,
       "type": "table",
       "title": "Sampled paths in blocked groups (Cloudflare)",
-      "description": "Each client/rule/host/minute group retains its first path and attributes the group's count to that sample. This is not an exact per-path request ranking.",
+      "description": "Each client/rule/host/minute group retains its first path and attributes the group's count to that sample. This is not an exact per-path request ranking. Shows at most the top 20 sampled values.",
       "gridPos": {
         "x": 0,
         "y": 19,
@@ -478,13 +479,14 @@
           "unit": "short"
         },
         "overrides": []
-      }
+      },
+      "description": " Shows at most the top 20 entries; ties can hide the remaining values."
     },
     {
       "id": 12,
       "type": "table",
       "title": "Sampled user agents in blocked groups (Cloudflare)",
-      "description": "Each client/rule/host/minute group retains its first user agent and attributes the group's count to that sample. This is not an exact per-user-agent request ranking.",
+      "description": "Each client/rule/host/minute group retains its first user agent and attributes the group's count to that sample. This is not an exact per-user-agent request ranking. Shows at most the top 20 sampled values.",
       "gridPos": {
         "x": 16,
         "y": 19,
@@ -515,8 +517,8 @@
     {
       "id": 13,
       "type": "logs",
-      "title": "Recent Cloudflare blocks",
-      "description": "Raw aggregated Security Events (per client IP, rule source, minute).",
+      "title": "Recent Cloudflare blocks (latest 100)",
+      "description": "Raw aggregated Security Events (per client IP, rule source, minute). Displays at most the latest 100 records; the stat and time-series panels above count all matching events.",
       "gridPos": {
         "x": 0,
         "y": 26,
@@ -530,7 +532,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"cloudflare-firewall\"} | json | line_format `{{.action}} {{.source}} ip={{.client_ip}} host={{.host}} path={{.path}} ua={{.user_agent}} hits={{.count}}`"
+          "expr": "{job=\"cloudflare-firewall\"} | json | line_format `{{.action}} {{.source}} ip={{.client_ip}} host={{.host}} path={{.path}} ua={{.user_agent}} hits={{.count}}`",
+          "maxLines": 100
         }
       ],
       "options": {
@@ -545,8 +548,8 @@
     {
       "id": 14,
       "type": "logs",
-      "title": "Recent Cilium Gateway drops",
-      "description": "Non-reply dropped flows involving reserved:ingress, with POLICY_DENIED or no recorded reason. Uses the same filter as the overview.",
+      "title": "Recent Cilium Gateway drops (latest 100)",
+      "description": "Non-reply dropped flows involving reserved:ingress, with POLICY_DENIED or no recorded reason. Uses the same filter as the overview. Displays at most the latest 100 records; the stat and time-series panels above count all matching events.",
       "gridPos": {
         "x": 12,
         "y": 26,
@@ -560,7 +563,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_source_identity=\"8\" or flow_destination_identity=\"8\") | (flow_drop_reason_desc=\"POLICY_DENIED\" or flow_drop_reason_desc=\"\") | line_format `{{.flow_verdict}} {{.flow_drop_reason_desc}} src={{.flow_IP_source}} dst={{.flow_IP_destination}} port={{.flow_l4_TCP_destination_port}} dir={{.flow_traffic_direction}}`"
+          "expr": "{job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_source_identity=\"8\" or flow_destination_identity=\"8\") | (flow_drop_reason_desc=\"POLICY_DENIED\" or flow_drop_reason_desc=\"\") | line_format `{{.flow_verdict}} {{.flow_drop_reason_desc}} src={{.flow_IP_source}} dst={{.flow_IP_destination}} port={{.flow_l4_TCP_destination_port}} dir={{.flow_traffic_direction}}`",
+          "maxLines": 100
         }
       ],
       "options": {
@@ -584,7 +588,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Cloudflare (proxied path, real client IPs)** — collected by `abuseipdb-sync` from Security Events into Loki (`job=\"cloudflare-firewall\"`). Needs `Zone Analytics: Read`; free-plan API retention is 24h. Paths and user agents are first-event samples per client/rule/host/minute group, not exact rankings. `firewallCustom` is a rule source, not a unique AbuseIPDB rule identifier.\n\n**Cilium Gateway** — shows non-reply `DROPPED` flows with source or destination identity **8** (`reserved:ingress`) and either `POLICY_DENIED` or no recorded reason. The export omits L7/policy details: reasonless drops cannot be attributed to AbuseIPDB or default-deny from these records alone. Counts are flow events, not unique requests. For proxied traffic Cilium can see Cloudflare edge addresses; use the edge panels for real client IPs."
+        "content": "**Cloudflare (proxied path, real client IPs)** — collected by `abuseipdb-sync` from Security Events into Loki (`job=\"cloudflare-firewall\"`). Needs `Zone Analytics: Read`; free-plan API retention is 24h. Paths and user agents are first-event samples per client/rule/host/minute group, not exact rankings. `firewallCustom` is a rule source, not a unique AbuseIPDB rule identifier.\n\n**Cilium Gateway** — shows non-reply `DROPPED` flows with source or destination identity **8** (`reserved:ingress`) and either `POLICY_DENIED` or no recorded reason. The export omits L7/policy details: reasonless drops cannot be attributed to AbuseIPDB or default-deny from these records alone. Counts are flow events, not unique requests. For proxied traffic Cilium can see Cloudflare edge addresses; use the edge panels for real client IPs.\n\n**Display limits** — ranking tables show at most the top 20 entries and sample panels at most the latest 100 records; aggregate stat and time-series panels count every matching event in the selected range."
       }
     }
   ],
@@ -617,5 +621,14 @@
         "type": "datasource"
       }
     ]
-  }
+  },
+  "links": [
+    {
+      "title": "Feed & sync health",
+      "type": "link",
+      "url": "/d/abuseipdb-security",
+      "keepTime": true,
+      "includeVars": true
+    }
+  ]
 }

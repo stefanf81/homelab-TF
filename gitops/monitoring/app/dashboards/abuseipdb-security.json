@@ -1,9 +1,9 @@
 {
   "uid": "abuseipdb-security",
   "title": "AbuseIPDB Security",
-  "description": "Feed health, change tracking and Cilium enforcement for the runtime-managed AbuseIPDB denylist. Detailed per-IP investigation is done in Loki / Hubble, not as metric labels.",
+  "description": "Feed health, change tracking and Cilium enforcement for the runtime-managed AbuseIPDB denylist. Detailed per-IP investigation is done in Loki / Hubble, not as metric labels. Per-IP block detail lives on the Blocked Sources dashboard.",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": {
     "from": "now-24h",
@@ -1216,7 +1216,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Where enforcement happens**\n\n- **Cloudflare edge (real client IPs):** account IP list `abuseipdb` referenced by the zone WAF custom rule `ip.src in $abuseipdb` (action Block). This is what protects the proxied public hostnames.\n- **Cilium (direct paths):** `CiliumCIDRGroup/abuseipdb` + `CiliumClusterwideNetworkPolicy deny-abuseipdb-ingress` on `reserved:ingress`, for direct-to-origin/LAN traffic. Cilium only sees Cloudflare edge addresses for proxied traffic.\n\n**Synchronizer logs (Loki)**\n\n```logql\n{namespace=\"abuseipdb\"} | json\n{namespace=\"abuseipdb\"} |= \"Cloudflare edge sink updated\"\n{namespace=\"abuseipdb\"} |= \"synchronization failed\"\n```\n\n**Cilium flow detail (Hubble CLI, per source IP)**\n\n```shell\nhubble observe --verdict DROPPED --last 100\nhubble observe --from-ip <suspected-source-ip>\nhubble observe --label cidrgroup:io.cilium.groupname/abuseipdb\n```"
+        "content": "**Where enforcement happens**\n\n- **Cloudflare edge (real client IPs):** account IP list `abuseipdb` referenced by the zone WAF custom rule `ip.src in $abuseipdb` (action Block). This is what protects the proxied public hostnames.\n- **Cilium (direct paths):** `CiliumCIDRGroup/abuseipdb` + `CiliumClusterwideNetworkPolicy deny-abuseipdb-ingress` on `reserved:ingress`, for direct-to-origin/LAN traffic. Cilium only sees Cloudflare edge addresses for proxied traffic.\n\n**Synchronizer logs (Loki)**\n\n```logql\n{namespace=\"abuseipdb\"} | json\n{namespace=\"abuseipdb\"} |= \"Cloudflare edge sink updated\"\n{namespace=\"abuseipdb\"} |= \"synchronization failed\"\n```\n\n**Cilium flow detail (Hubble CLI, per source IP)**\n\n```shell\nhubble observe --verdict DROPPED --last 100\nhubble observe --from-ip <suspected-source-ip>\nhubble observe --label cidrgroup:io.cilium.groupname/abuseipdb\n```\n\nFor per-IP block detail (Cloudflare edge blocks and Cilium Gateway drops), open the **Blocked Sources** dashboard."
       }
     }
   ],
@@ -1236,5 +1236,14 @@
         "type": "datasource"
       }
     ]
-  }
+  },
+  "links": [
+    {
+      "title": "Blocked Sources",
+      "type": "link",
+      "url": "/d/blocked-sources",
+      "keepTime": true,
+      "includeVars": true
+    }
+  ]
 }

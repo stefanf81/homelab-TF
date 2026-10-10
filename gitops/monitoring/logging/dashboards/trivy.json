@@ -3,7 +3,7 @@
   "title": "Trivy Operator",
   "description": "Trivy vulnerability, misconfiguration, RBAC, exposed secret, compliance, and operator health metrics. Based on Aqua's Grafana dashboard 17813.",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "1m",
   "time": {
     "from": "now-24h",
@@ -161,7 +161,7 @@
     {
       "id": 3,
       "type": "timeseries",
-      "title": "Vulnerabilities by Namespace",
+      "title": "Vulnerabilities by Namespace (top 15)",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -196,7 +196,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Shows at most the top 15 namespaces; compare with the totals panel for full coverage."
     },
     {
       "id": 4,
@@ -298,7 +299,7 @@
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Misconfiguration by Namespace",
+      "title": "Misconfiguration by Namespace (top 15)",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -333,7 +334,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Shows at most the top 15 namespaces; compare with the totals panel for full coverage."
     },
     {
       "id": 7,
