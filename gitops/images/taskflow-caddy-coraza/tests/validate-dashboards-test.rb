@@ -397,7 +397,7 @@ class DashboardValidationTest < Minitest::Test
     waf_dashboard_files.each do |file|
       row = JSON.parse(File.read(file))["panels"].find { |item| item["title"] == "Raw JSON evidence" }
       row["panels"].each do |raw|
-        query = raw["targets"].first["expr"].gsub("$application", "dashboard-validation").gsub("$pod", "dashboard-validation-waf")
+        query = raw["targets"].first["expr"].gsub("$application", "dashboard-validation").gsub("$pod", "dashboard-validation-waf").gsub("$client_ip", ".*")
         response = DashboardValidation.get(url, "/loki/api/v1/query_range",
                                            "query" => query, "start" => (timestamp - 60_000_000_000).to_s,
                                            "end" => (timestamp + 1_000_000_000).to_s, "limit" => "100")
@@ -408,6 +408,128 @@ class DashboardValidationTest < Minitest::Test
         assert_equal expected.fetch(raw["title"]).sort, lines.sort, raw["title"]
       end
     end
+  end
+
+  FIXTURE_APPLICATION = "dashboard-fixture-app"
+
+  def fixture_dashboard(name)
+    JSON.parse(File.read(File.expand_path("../../../monitoring/logging/dashboards/#{name}.json", __dir__)))
+  end
+
+  def fixture_panel_expr(dashboard, id, ref = "A")
+    panel = dashboard["panels"].find { |p| p["id"] == id } ||
+            dashboard["panels"].flat_map { |p| p["panels"] || [] }.find { |p| p["id"] == id }
+    raise "panel #{id} missing" unless panel
+    panel["targets"].find { |t| t["refId"] == ref }.fetch("expr")
+  end
+
+  def fixture_query(dashboard, id, replacements)
+    replacements.reduce(fixture_panel_expr(dashboard, id)) { |expr, (key, value)| expr.gsub(key, value) }
+  end
+
+  def fixture_base_query
+    { "$__range" => "1h", "$__interval" => "1m", "$application" => FIXTURE_APPLICATION, "$pod" => ".*" }
+  end
+
+  def instant_vector(url, expr, context)
+    response = DashboardValidation.get(url, "/loki/api/v1/query", "query" => expr)
+    parsed = JSON.parse(response.body)
+    raise "#{context}: query failed: #{parsed['error']}" unless parsed["status"] == "success"
+    parsed.dig("data", "result").to_h do |row|
+      [row["metric"].reject { |key, _| key == "__name__" }, row.dig("value", 1).to_f]
+    end
+  rescue JSON::ParserError
+    raise "#{context}: non-JSON response: #{response.body[0, 200]}"
+  end
+
+  def push_access_fixtures(url)
+    base_ts = Time.now.to_i * 1_000_000_000
+    sequence = 0
+    lines = []
+    add = lambda do |client_ip, status, uri, zone, user_agent, with_ua: true|
+      sequence += 1
+      record = {
+        "level" => "info", "msg" => "handled request", "seq" => sequence,
+        "request" => { "method" => "GET", "host" => "www.jokelab.dev", "uri" => uri,
+                       "headers" => with_ua ? { "User-Agent" => [user_agent] } : {} },
+        "status" => status, "client_ip" => client_ip, "duration" => 0.001
+      }
+      record["rate_limit_zone"] = zone if zone
+      lines << [(base_ts + sequence * 1000).to_s, JSON.generate(record)]
+    end
+    120.times { add.call("198.51.100.10", 429, "/j2ee.zip", "general", "scan-bot/1.0") }
+    2.times { add.call("198.51.100.10", 200, "/api/v1/appointments", nil, "scan-bot/1.0") }
+    add.call("198.51.100.10", 403, "/login.php", nil, "scan-bot/1.0")
+    3.times { add.call("198.51.100.20", 429, "/other", nil, nil, with_ua: false) }
+    sequence += 1
+    audit = {
+      "msg" => "audit", "seq" => sequence,
+      "transaction" => { "client_ip" => "198.51.100.10", "is_interrupted" => true,
+                         "request" => { "method" => "GET", "uri" => "/j2ee.zip" } },
+      "messages" => [{ "error_message" => "fixture" }]
+    }
+    lines << [(base_ts + sequence * 1000).to_s, JSON.generate(audit)]
+    sequence += 1
+    lines << [(base_ts + sequence * 1000).to_s, '{"msg":"handled request","status":429']
+
+    labels = { "job" => "coraza-waf", "container" => "waf",
+               "application" => FIXTURE_APPLICATION, "pod" => "dashboard-fixture-waf" }
+    payload = { "streams" => [{ "stream" => labels, "values" => lines }] }
+    uri = URI.join(url, "/loki/api/v1/push")
+    http = Net::HTTP.new(uri.host, uri.port, nil)
+    http.open_timeout = 2
+    http.read_timeout = 10
+    pushed = http.post(uri.request_uri, JSON.generate(payload), "Content-Type" => "application/json")
+    assert_equal "204", pushed.code, pushed.body
+  end
+
+  def test_dashboard_queries_with_fixtures
+    url = ENV["LOKI_URL"]
+    skip "LOKI_URL required for fixture query integration" unless url
+    push_access_fixtures(url)
+
+    rate = fixture_dashboard("taskflow-rate-limits")
+    access = fixture_dashboard("taskflow-access-logs")
+    waf = fixture_dashboard("taskflow-waf")
+
+    totals = instant_vector(url, fixture_query(rate, 101, fixture_base_query.merge("$client_ip" => ".*")), "rate-limits total")
+    assert_equal 126.0, totals.fetch({}), "totals must exclude the malformed record via the __error__ guard"
+
+    only_a = instant_vector(url, fixture_query(rate, 101, fixture_base_query.merge("$client_ip" => "198.51.100.10")), "rate-limits total filtered")
+    assert_equal 123.0, only_a.fetch({})
+
+    statuses = instant_vector(url, fixture_query(rate, 20, fixture_base_query.merge("$client_ip" => ".*")), "status breakdown")
+    assert_equal 2.0, statuses.fetch({ "status" => "200" })
+    assert_equal 1.0, statuses.fetch({ "status" => "403" })
+    assert_equal 123.0, statuses.fetch({ "status" => "429" })
+
+    zones = instant_vector(url, fixture_query(rate, 21, fixture_base_query.merge("$client_ip" => ".*")), "zone breakdown")
+    assert_equal 120.0, zones.values.sum, "only zone-carrying 429s count as Caddy rejections"
+
+    categories = instant_vector(url, fixture_query(rate, 22, fixture_base_query.merge("$client_ip" => ".*")), "path categories")
+    assert_equal 120.0, categories.fetch({ "category" => "Archive/backup" })
+    assert_equal 3.0, categories.fetch({ "category" => "Other" })
+
+    agents = instant_vector(url, fixture_query(rate, 23, fixture_base_query.merge("$client_ip" => ".*")), "user agents")
+    assert_equal 120.0, agents.fetch({ "user_agent" => "scan-bot/1.0" })
+    assert_equal 3.0, agents.fetch({ "user_agent" => "(missing)" })
+
+    access_status = instant_vector(url, fixture_query(access, 3, fixture_base_query.merge("$client_ip" => "198.51.100.20")), "access status filtered")
+    assert_equal 3.0, access_status.fetch({ "status" => "429" })
+
+    waf_ips = instant_vector(url, fixture_query(waf, 6, fixture_base_query.merge("$client_ip" => "198.51.100.10")), "waf source IPs")
+    assert_equal 1.0, waf_ips.fetch({ "client_ip" => "198.51.100.10" })
+
+    raw_expr = fixture_query(access, 10, fixture_base_query.merge("$client_ip" => ".*"))
+    response = DashboardValidation.get(url, "/loki/api/v1/query_range",
+                                       "query" => raw_expr,
+                                       "start" => ((Time.now.to_i - 3600).to_s + "000000000"),
+                                       "end" => ((Time.now.to_i + 1).to_s + "000000000"),
+                                       "limit" => "100")
+    parsed = JSON.parse(response.body)
+    assert_equal "success", parsed["status"], parsed["error"]
+    entries = parsed.dig("data", "result").sum { |stream| stream["values"].length }
+    assert_equal 100, entries, "evidence panels display at most 100 records while totals count all matches"
   end
 
   def test_provisioning_accepts_matching_render

@@ -1,9 +1,9 @@
 {
   "uid": "taskflow-access-logs",
   "title": "Taskflow Access Logs",
-  "description": "Caddy access-log activity for normal Taskflow traffic. Coraza audit records and WAF detections are shown separately on the Taskflow WAF dashboard.",
+  "description": "Caddy access-log activity for normal Taskflow traffic. Honors the Application, Pod, and Client IP filters except where noted. Coraza audit records and WAF detections are shown separately on the Taskflow WAF dashboard.",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 5,
   "refresh": "1m",
   "tags": [
     "taskflow",
@@ -44,6 +44,18 @@
         "refresh": 1,
         "regex": "",
         "type": "datasource"
+      },
+      {
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        },
+        "label": "Client IP (regex, .* = all)",
+        "name": "client_ip",
+        "options": [],
+        "query": ".*",
+        "type": "textbox",
+        "hide": 0
       },
       {
         "name": "application",
@@ -88,7 +100,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "Shows Caddy access logs from the `waf` container and excludes `/waf-healthz` probes. URIs and credential headers are redacted before Loki ingestion. `client_ip` is Caddy's resolved visitor address from `X-Forwarded-For`; it is parsed at query time and is not a Loki label."
+        "content": "Shows Caddy access logs from the `waf` container and excludes `/waf-healthz` probes. URIs and credential headers are redacted before Loki ingestion. `client_ip` is Caddy's resolved visitor address from `X-Forwarded-For`; it is parsed at query time and is not a Loki label. The Client IP filter (regex, default `.*`) is applied at query time to the request, status, method, route, outcome, recent-log, and raw-evidence panels; the Top client IPs table shows the matching IPs."
       }
     },
     {
@@ -109,7 +121,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri!=\"\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"}[$__interval])))",
+          "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~\"$client_ip\" | request_uri!=\"\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"}[$__interval])))",
           "legendFormat": "{{application}}"
         }
       ],
@@ -192,7 +204,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", status=\"status\" | __error__=\"\" | request_uri != \"/waf-healthz\" | status!=\"\" [$__interval]))",
+          "expr": "sum by (status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", status=\"status\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | client_ip=~\"$client_ip\" | status!=\"\" [$__interval]))",
           "legendFormat": "HTTP {{status}}"
         }
       ],
@@ -306,7 +318,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (request_method) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", request_method=\"request.method\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_method!=\"\" [$__interval]))",
+          "expr": "sum by (request_method) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", request_method=\"request.method\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | client_ip=~\"$client_ip\" | request_method!=\"\" [$__interval]))",
           "legendFormat": "{{request_method}}"
         }
       ],
@@ -359,7 +371,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (route) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\" | __error__=\"\" | request_uri!=\"\" | label_format request_path=`{{ regexReplaceAll \"\\\\?.*$\" .request_uri \"\" }}` | label_format route=`{{ if eq .request_path \"/\" }}/{{ else if hasPrefix \"/api/v1/auth/\" .request_path }}/api/v1/auth/*{{ else if hasPrefix \"/api/v1/appointments/\" .request_path }}/api/v1/appointments/*{{ else if or (hasPrefix \"/api/\" .request_path) (eq .request_path \"/api\") }}/api/*{{ else if hasPrefix \"/assets/\" .request_path }}/assets/*{{ else if eq .request_path \"/favicon.ico\" }}/favicon.ico{{ else }}Other paths / scans{{ end }}` | drop request_uri, request_path [$__range]))",
+          "expr": "sum by (route) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | request_uri!=\"\" | label_format request_path=`{{ regexReplaceAll \"\\\\?.*$\" .request_uri \"\" }}` | label_format route=`{{ if eq .request_path \"/\" }}/{{ else if hasPrefix \"/api/v1/auth/\" .request_path }}/api/v1/auth/*{{ else if hasPrefix \"/api/v1/appointments/\" .request_path }}/api/v1/appointments/*{{ else if or (hasPrefix \"/api/\" .request_path) (eq .request_path \"/api\") }}/api/*{{ else if hasPrefix \"/assets/\" .request_path }}/assets/*{{ else if eq .request_path \"/favicon.ico\" }}/favicon.ico{{ else }}Other paths / scans{{ end }}` | drop request_uri, request_path [$__range]))",
           "legendFormat": "{{route}}",
           "queryType": "instant"
         }
@@ -442,7 +454,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (application, status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", status=\"status\" | __error__=\"\" | request_uri != \"/waf-healthz\" | status!=\"\" [$__range]))",
+          "expr": "sum by (application, status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", status=\"status\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | client_ip=~\"$client_ip\" | status!=\"\" [$__range]))",
           "queryType": "instant"
         }
       ],
@@ -530,7 +542,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip != \"\" [$__range])))",
+          "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip != \"\" | client_ip=~\"$client_ip\" [$__range])))",
           "queryType": "instant"
         }
       ],
@@ -616,7 +628,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json status=\"status\", request_method=\"request.method\", request_uri=\"request.uri\", client_ip=\"client_ip\", duration=\"duration\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri!=\"\" | line_format `{{.status}} {{.application}} | {{.request_method}} {{.request_uri}} | ip={{.client_ip}} duration={{printf \"%.1f\" (mulf .duration 1000)}}ms`",
+          "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json status=\"status\", request_method=\"request.method\", request_uri=\"request.uri\", client_ip=\"client_ip\", duration=\"duration\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~\"$client_ip\" | request_uri!=\"\" | line_format `{{.status}} {{.application}} | {{.request_method}} {{.request_uri}} | ip={{.client_ip}} duration={{printf \"%.1f\" (mulf .duration 1000)}}ms`",
           "queryType": "range",
           "maxLines": 100
         }
@@ -662,7 +674,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri!=\"\"",
+              "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~\"$client_ip\" | request_uri!=\"\"",
               "queryType": "range",
               "maxLines": 100
             }

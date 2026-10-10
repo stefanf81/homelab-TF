@@ -596,6 +596,12 @@ dashboards refresh every minute. Summary logs wrap lines and expose extracted
 labels; collapsed Raw JSON evidence rows return complete stored records without
 `line_format`. These records retain ingestion redaction. See the runbook's
 "Rendering and query behavior" section for the full rendering conventions.
+Audit-derived panels (events, detections, rule/method/paranoia/URI/User-Agent
+tables, latency, and evidence) honor the `application` and `client_ip` filters;
+WAF pod and log-pipeline metrics are service-level and intentionally ignore the
+client filter. Examples of scan-style activity can be inspected end to end by
+setting `client_ip` here or on the Rate Limits dashboard, where client IPs in
+the top table link into this dashboard pre-filtered.
 Rule-family trends and runtime/log-pipeline panels are grouped in collapsed
 rows so the overview loads only its primary queries.
 
@@ -604,6 +610,7 @@ rows so the overview loads only its primary queries.
 | Variable | Type | Values |
 |----------|------|--------|
 | `application` | query | `label_values({job="coraza-waf"}, application)` — filters by `taskflow-frontend` / `taskflow-backend` |
+| `client_ip` | textbox | Regular expression applied at query time to records carrying a client IP; default `.*` matches every client. The WAF dashboard applies it to audit-derived panels; the Access Logs and Rate Limits dashboards apply it to access-log panels as noted in each panel description. |
 
 ### Access Logs Dashboard
 
@@ -616,8 +623,8 @@ bounded route groups, request outcomes, and recent access logs. Exact sanitized
 URIs remain in log rows; route grouping bounds grouping cardinality during scans
 with thousands of unique paths, including downstream split queries. A collapsed
 Raw JSON evidence row exposes complete stored access records. Filters are
-available for `application` and `pod`; `namespace` is fixed to `taskflow` and
-`container` is fixed to `waf`.
+available for `application`, `pod`, and `client_ip`; `namespace` is fixed to
+`taskflow` and `container` is fixed to `waf`.
 
 Each WAF uses `log_append <client_ip {client_ip}` before `coraza_waf`, so Caddy
 access logs include the resolved visitor IP even when Coraza blocks the request.
@@ -633,16 +640,39 @@ rejections additionally carry the `rate_limit_zone` field.
 **Dashboard**: "Taskflow Rate Limits" (`/d/taskflow-rate-limits`)
 
 Provisioned by `gitops/monitoring/logging/dashboards/taskflow-rate-limits.json` and derived
-entirely from Caddy access logs in Loki (`status=429`). It shows rate-limited
-requests for 5m/1h/24h, rate-limiter 429s over time by application, the rejection
-mix (Coraza blocks vs limiter vs upstream 429s), total Caddy request rate, and
-the top paths / client IPs / hosts receiving 429. It also carries an "Identity
-drift — client_ip in pod CIDR" stat: known internal clients can contribute;
-sustained unexpected values warrant checking the trusted `cilium_host` peer and
-re-running runbook Stage 0. A collapsed Raw JSON evidence row contains separate
-limiter-rejection and pod-CIDR identity records. Client IPs and URIs are parsed
-at query time (`| json`) and are not indexed stream labels, avoiding ingest
-cardinality; query-time rankings can still produce high-cardinality groups.
+entirely from Caddy access logs in Loki (`status=429`). Layout:
+
+- **Overview — selected range**: total recorded requests, all 429 responses,
+  confirmable Caddy rate-limit rejections (429s carrying `rate_limit_zone`), and
+  the rejection share of requests. Exact integer totals honor the application and
+  client-IP filters.
+- **Fixed-window summaries**: 5-minute, 1-hour, and 24-hour 429 counts that end at
+  the range endpoint and can include activity outside the graph; these cards are
+  intentionally unfiltered by client IP.
+- **Breakdowns**: HTTP responses by status (all recorded codes; a 200 is not proof
+  that content was served and a 403 is not automatically a Coraza block), the
+  rejection mix (Coraza blocks vs limiter vs upstream 429s), and rate-limit
+  rejections by zone (`<application> / <zone>`, including unexpected zones).
+- **Client and request tables**: top-10 paths, client IPs, and hosts receiving 429
+  (ranked subsets — ties can hide most entries), bounded 429 path categories
+  (Archive/backup, Config/source-control, Script endpoints, API routes, Static
+  assets, Other), and top-10 User-Agents (self-reported; missing values group as
+  `(missing)`). Clicking a client IP opens the Access Logs or WAF dashboard
+  filtered to that IP and the current time range.
+- It also carries an "Identity drift — client_ip in pod CIDR" stat: known internal
+  clients can contribute; sustained unexpected values warrant checking the trusted
+  `cilium_host` peer and re-running runbook Stage 0.
+- A collapsed Raw JSON evidence row contains separate limiter-rejection and
+  pod-CIDR identity records. Evidence panels display at most the latest 100
+  matching records while the totals above count every match; a scope panel and
+  pipeline-health stats (Loki and Alloy scrape targets, recent WAF log activity)
+  make coverage limits and telemetry gaps explicit.
+
+Client IPs and URIs are parsed at query time (`| json`) and are not indexed stream
+labels, avoiding ingest cardinality; query-time rankings can still produce
+high-cardinality groups. Panels count complete access records only: the selective
+JSON parser tolerates truncated lines without error, so query guards exclude
+records missing an extracted request URI.
 
 ### Access
 

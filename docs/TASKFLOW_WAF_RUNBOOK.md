@@ -328,7 +328,22 @@ a collection-health indicator.
   the JSON stored in Loki **after redaction**, not unredacted request contents.
 - Access/429 queries filter compact Caddy JSON lines before parsing and extract
   only the fields used by that panel. Dashboards refresh every minute and have
-  navigation links that preserve the selected time range and application.
+  navigation links that preserve the selected time range and application. The
+  **Client IP** textbox filter (a regular expression, `.*` = all) narrows
+  access-log panels on Access Logs and Rate Limits and the audit-derived panels
+  on the WAF dashboard; it is applied at query time. On Rate Limits, clicking a
+  client IP in the top table opens Access Logs or WAF pre-filtered to that IP
+  and the current time range.
+- Totals describe matching records retained in Loki, not a complete traffic
+  inventory. The Rate Limits overview cards count the exact selected-range
+  values while the fixed 5-minute/1-hour/24-hour cards end at the range endpoint
+  and can include data outside the graph. Top tables are ranked subsets (ten
+  rows; ties can hide most entries), the request-rate chart is window-averaged
+  rather than a peak rate, and evidence panels show at most the latest 100
+  records. A scope panel and scrape/log-activity stats call out these limits.
+- Panel queries guard against partial records: the selective JSON parser does
+  not error on truncated lines, so access-log counts additionally require a
+  non-empty parsed request URI before counting a record.
 - Access-log route volume uses bounded route groups rather than arbitrary URI
   rankings. This bounds grouping cardinality even during scans with thousands
   of unique paths. Loki is configured with `max_query_series: 5000`: a direct
