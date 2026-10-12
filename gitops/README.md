@@ -90,7 +90,7 @@ The scaffolded manifests inside this layout include critical performance and net
 * **PostgreSQL Engine Tuning:** `postgres-db.yaml` utilizes container launch variables to tune buffers, cache sizes, and connection limits within its 1024Mi RAM limit (e.g. `shared_buffers=384MB`, `effective_cache_size=700MB`, `work_mem=8MB`, `max_connections=50`).
 
 ### 2. Modern Kubernetes Gateway API with Cilium (`apps/taskflow/`)
-* **Cilium CNI & Gateway API Operator:** Deployed under `infrastructure/controllers/cilium/`. The core Gateway API schemas are fully managed under `infrastructure/controllers/gateway-api/` using a **local-vendored** copy of the official `v1.6.1` standard installation release. This ensures Flux CD performs dry-run validations with 100% compliance, preventing any schema version conflicts or ownership clashes with K3s's built-in platform installers.
+* **Cilium CNI & Gateway API Operator:** Deployed under `infrastructure/controllers/cilium/`. The core Gateway API schemas are fully managed under `infrastructure/controllers/gateway-api/` using a **local-vendored** copy of the official `v1.6.3` standard installation release. This ensures Flux CD performs dry-run validations with 100% compliance, preventing any schema version conflicts or ownership clashes with K3s's built-in platform installers.
 * **Unified Gateway & Hostname Routing (`gateway.yaml` & `httproute.yaml`):** The TaskFlow app is securely routed through Cilium-native Gateway API rules scoped to `www.jokelab.dev` on the HTTPS listener. Plain HTTP is redirected to HTTPS:
   * `https://www.jokelab.dev/` maps to the TaskFlow Angular Frontend
   * `https://www.jokelab.dev/api` maps to the Spring Boot Backend API
