@@ -78,6 +78,11 @@ spec:
             - configMapRef:
                 name: backend-config
           env:
+            # Admin password (username `admin`). The prod profile refuses to start if it
+            # is blank, `admin-password` or contains `CHANGE_ME`, and re-syncs the stored
+            # admin hash from it on every boot: rotating this secret rotates the admin
+            # password on the next restart. Never set APP_REQUIRE_STRONG_ADMIN_PASSWORD=false
+            # here; that opt-out is for disposable CI/E2E stacks only.
             - name: SPRING_SECURITY_PASSWORD
               valueFrom:
                 secretKeyRef:
