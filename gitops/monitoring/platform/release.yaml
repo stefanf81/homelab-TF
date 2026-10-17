@@ -73,6 +73,13 @@ spec:
     kubeDNS:
       enabled: false
 
+    # CoreDNS is scraped by the custom `coredns` VMServiceScrape in
+    # gitops/monitoring/app/vmservicescrapes.yaml. The stack's own scrape selects
+    # the same pods (the CoreDNS chart sets k8s-app: kube-dns), so every CoreDNS
+    # series was ingested twice under two different job labels.
+    coreDns:
+      enabled: false
+
     # VMSingle — the TSDB
     vmsingle:
       enabled: true
@@ -87,7 +94,9 @@ spec:
             cpu: 100m
             memory: 256Mi
           limits:
-            cpu: "500m"
+            # A 500m cap throttled background merges and multi-series dashboard
+            # queries; memory (not CPU) is the limit that protects the node.
+            cpu: "1"
             memory: 1Gi
         extraArgs:
           # Limit internal caches so the container doesn't OOM under pressure
@@ -134,6 +143,27 @@ spec:
         limits:
           cpu: 200m
           memory: 128Mi
+
+    # Datasources provisioned by the stack. The list replaces the chart default, so
+    # both default entries are repeated; only `jsonData.timeInterval` is new. All
+    # scrapes run every 30s, but Grafana assumes 15s unless told otherwise, which
+    # makes $__rate_interval and the auto step ask for twice as many points as exist.
+    defaultDatasources:
+      victoriametrics:
+        datasources:
+          - name: VictoriaMetrics
+            type: prometheus
+            access: proxy
+            uid: VictoriaMetrics
+            isDefault: true
+            jsonData:
+              timeInterval: 30s
+          - name: VictoriaMetrics (DS)
+            isDefault: false
+            access: proxy
+            uid: VictoriaMetricsDS
+            type: victoriametrics-metrics-datasource
+            plugin: true
 
     grafana:
       enabled: true

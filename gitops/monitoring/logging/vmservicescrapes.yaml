@@ -12,6 +12,13 @@ spec:
     matchLabels:
       app.kubernetes.io/name: loki
       app.kubernetes.io/component: single-binary
+    # The chart also creates a headless Service for the same pod; scraping both
+    # ingested every Loki series twice. NotIn also matches Services without the label.
+    matchExpressions:
+      - key: variant
+        operator: NotIn
+        values:
+          - headless
   endpoints:
     - port: http-metrics
       path: /metrics
