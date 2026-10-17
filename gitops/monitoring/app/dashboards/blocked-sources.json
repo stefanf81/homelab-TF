@@ -50,7 +50,8 @@
                 "value": 100
               }
             ]
-          }
+          },
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -96,7 +97,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "gray"
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "orange",
@@ -142,7 +147,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (reason) (increase(cloudflare_firewall_collector_errors_total[$__range]))",
+          "expr": "sum by (reason) (increase(cloudflare_firewall_collector_errors_total[$__range])) or on() vector(0)",
           "legendFormat": "{{reason}}",
           "instant": true
         }
@@ -218,7 +223,8 @@
                 "value": 100
               }
             ]
-          }
+          },
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -239,7 +245,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Cloudflare blocks over time",
-      "description": "Blocked requests per minute, split by Cloudflare rule source. firewallCustom includes custom rules generally; inspect rule_id to identify the managed AbuseIPDB rule.",
+      "description": "Blocked requests per displayed interval (minimum 1 minute; wider for long time ranges), split by Cloudflare rule source. firewallCustom includes custom rules generally; inspect rule_id to identify the managed AbuseIPDB rule.",
       "gridPos": {
         "x": 0,
         "y": 5,
@@ -253,10 +259,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (source) (sum_over_time({job=\"cloudflare-firewall\"} | json | unwrap count | __error__=\"\" [1m]))",
+          "expr": "sum by (source) (sum_over_time({job=\"cloudflare-firewall\"} | json | unwrap count | __error__=\"\" [$__interval]))",
           "legendFormat": "{{source}}"
         }
       ],
+      "interval": "1m",
+      "maxDataPoints": 300,
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -280,7 +288,7 @@
       "id": 6,
       "type": "timeseries",
       "title": "Cilium Gateway dropped flows over time",
-      "description": "Non-reply dropped flows per minute involving reserved:ingress (identity 8). POLICY_DENIED confirms policy enforcement, but not which policy; reasonless drops remain unattributed. Source or destination may be the ingress identity because Envoy emits both ingress and egress events.",
+      "description": "Non-reply dropped flows per displayed interval (minimum 1 minute) involving reserved:ingress (identity 8). POLICY_DENIED confirms policy enforcement, but not which policy; reasonless drops remain unattributed. Source or destination may be the ingress identity because Envoy emits both ingress and egress events.",
       "gridPos": {
         "x": 12,
         "y": 5,
@@ -294,15 +302,17 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_source_identity=\"8\" or flow_destination_identity=\"8\") | flow_drop_reason_desc=\"POLICY_DENIED\" [1m]))",
+          "expr": "sum(count_over_time({job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_source_identity=\"8\" or flow_destination_identity=\"8\") | flow_drop_reason_desc=\"POLICY_DENIED\" [$__interval]))",
           "legendFormat": "POLICY_DENIED"
         },
         {
           "refId": "B",
-          "expr": "sum(count_over_time({job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_source_identity=\"8\" or flow_destination_identity=\"8\") | flow_drop_reason_desc=\"\" [1m]))",
+          "expr": "sum(count_over_time({job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_source_identity=\"8\" or flow_destination_identity=\"8\") | flow_drop_reason_desc=\"\" [$__interval]))",
           "legendFormat": "Gateway drop (reason not recorded)"
         }
       ],
+      "interval": "1m",
+      "maxDataPoints": 300,
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -344,14 +354,68 @@
           "queryType": "instant"
         }
       ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "client_ip": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "client_ip": "Client IP",
+              "Value": "Blocked requests"
+            }
+          }
+        }
+      ],
       "options": {
-        "showHeader": true
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Blocked requests",
+            "desc": true
+          }
+        ]
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "—"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Blocked requests"
+              },
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          }
+        ]
       }
     },
     {
@@ -376,20 +440,75 @@
           "queryType": "instant"
         }
       ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "flow_IP_source": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "flow_IP_source": "Source IP",
+              "Value": "Dropped flows"
+            }
+          }
+        }
+      ],
       "options": {
-        "showHeader": true
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Dropped flows",
+            "desc": true
+          }
+        ]
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "—"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Dropped flows"
+              },
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          }
+        ]
       }
     },
     {
       "id": 9,
       "type": "table",
       "title": "Top blocked countries (Cloudflare)",
+      "description": " Shows at most the top 20 entries; ties can hide the remaining values.",
       "gridPos": {
         "x": 16,
         "y": 12,
@@ -407,16 +526,69 @@
           "queryType": "instant"
         }
       ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "country": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "country": "Country",
+              "Value": "Blocked requests"
+            }
+          }
+        }
+      ],
       "options": {
-        "showHeader": true
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Blocked requests",
+            "desc": true
+          }
+        ]
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "—"
         },
-        "overrides": []
-      },
-      "description": " Shows at most the top 20 entries; ties can hide the remaining values."
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Blocked requests"
+              },
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "id": 10,
@@ -440,20 +612,75 @@
           "queryType": "instant"
         }
       ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "path": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "path": "Path (sampled)",
+              "Value": "Blocked requests"
+            }
+          }
+        }
+      ],
       "options": {
-        "showHeader": true
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Blocked requests",
+            "desc": true
+          }
+        ]
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "—"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Blocked requests"
+              },
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          }
+        ]
       }
     },
     {
       "id": 11,
       "type": "table",
       "title": "Top dropped TCP ports (Cilium Gateway)",
+      "description": " Shows at most the top 20 entries; ties can hide the remaining values.",
       "gridPos": {
         "x": 8,
         "y": 19,
@@ -471,16 +698,69 @@
           "queryType": "instant"
         }
       ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "flow_l4_TCP_destination_port": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "flow_l4_TCP_destination_port": "Destination port",
+              "Value": "Dropped flows"
+            }
+          }
+        }
+      ],
       "options": {
-        "showHeader": true
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Dropped flows",
+            "desc": true
+          }
+        ]
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "—"
         },
-        "overrides": []
-      },
-      "description": " Shows at most the top 20 entries; ties can hide the remaining values."
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Dropped flows"
+              },
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "id": 12,
@@ -504,14 +784,68 @@
           "queryType": "instant"
         }
       ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "user_agent": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "user_agent": "User agent (sampled)",
+              "Value": "Blocked requests"
+            }
+          }
+        }
+      ],
       "options": {
-        "showHeader": true
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Blocked requests",
+            "desc": true
+          }
+        ]
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "—"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Blocked requests"
+              },
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          }
+        ]
       }
     },
     {

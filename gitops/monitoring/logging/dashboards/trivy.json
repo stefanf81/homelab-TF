@@ -70,7 +70,7 @@
           "refId": "B"
         },
         {
-          "expr": "sum(trivy_role_rbacassessments{namespace=~\"$namespace\"}) + sum(trivy_clusterrole_clusterrbacassessments)",
+          "expr": "sum(trivy_role_rbacassessments{namespace=~\"$namespace\"} or trivy_clusterrole_clusterrbacassessments)",
           "instant": true,
           "legendFormat": "RBAC",
           "refId": "C"
@@ -353,7 +353,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (severity) (trivy_role_rbacassessments{namespace=~\"$namespace\"}) + on (severity) sum by (severity) (trivy_clusterrole_clusterrbacassessments)",
+          "expr": "sum by (severity) (trivy_role_rbacassessments{namespace=~\"$namespace\"} or trivy_clusterrole_clusterrbacassessments)",
           "legendFormat": "{{severity}}",
           "refId": "A"
         }
@@ -501,6 +501,7 @@
       "id": 11,
       "type": "stat",
       "title": "Controller Reconcile Errors",
+      "description": "Reconcile errors in the selected time range (a lifetime counter would stay red until the operator restarts).",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -513,7 +514,7 @@
       },
       "targets": [
         {
-          "expr": "sum(controller_runtime_reconcile_errors_total{job=~\".*trivy.*\"})",
+          "expr": "sum(increase(controller_runtime_reconcile_errors_total{job=~\".*trivy.*\"}[$__range]))",
           "instant": true,
           "refId": "A"
         }
@@ -528,14 +529,19 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "gray"
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "red",
                 "value": 1
               }
             ]
-          }
+          },
+          "decimals": 0
         },
         "overrides": []
       },

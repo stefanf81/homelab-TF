@@ -4,7 +4,7 @@
   "description": "Caddy access-log activity for normal Taskflow traffic. Honors the Application, Pod, and Client IP filters except where noted. Coraza audit records and WAF detections are shown separately on the Taskflow WAF dashboard.",
   "schemaVersion": 39,
   "version": 5,
-  "refresh": "1m",
+  "refresh": "5m",
   "tags": [
     "taskflow",
     "traffic",
@@ -149,7 +149,11 @@
             "fillOpacity": 65,
             "lineWidth": 1,
             "showPoints": "never",
-            "spanNulls": false
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
           }
         },
         "overrides": [
@@ -233,7 +237,11 @@
             "lineWidth": 1,
             "showPoints": "always",
             "pointSize": 4,
-            "spanNulls": false
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
           }
         },
         "overrides": [
@@ -347,7 +355,11 @@
             "lineWidth": 1,
             "showPoints": "always",
             "pointSize": 4,
-            "spanNulls": false
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
           }
         },
         "overrides": []

@@ -103,4 +103,7 @@ fi
 echo "== testing dashboard validation guards"
 ruby "$HERE/validate-dashboards-test.rb"
 
+# Runs after the guards so LOKI_URL (exported above) is the disposable Loki.
+"$HERE/validate-alloy-metrics.sh"
+
 echo "all config validations passed"

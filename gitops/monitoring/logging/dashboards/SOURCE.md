@@ -17,11 +17,16 @@ Provisioning model:
 
 | File | ConfigMap | Dashboard UID | Folder | Source |
 |---|---|---|---|---|
-| `falco-official.json` | `falco-dashboard` | `ddwe2ug4nfi0wb` | Security | [Falco chart dashboard](https://raw.githubusercontent.com/falcosecurity/charts/master/charts/falco/dashboards/falco-dashboard.json), locally adapted: VictoriaMetrics datasource variable with default `VictoriaMetrics`, existing UID retained; see `docs/FALCO_RUNTIME_SECURITY.md`. |
+| `falco-official.json` | `falco-dashboard` | `ddwe2ug4nfi0wb` | Security | [Falco chart dashboard](https://raw.githubusercontent.com/falcosecurity/charts/master/charts/falco/dashboards/falco-dashboard.json), locally adapted: VictoriaMetrics datasource variable with default `VictoriaMetrics`, existing UID retained, CPU panel unit `percentunit` (`falcosecurity_falco_cpu_usage_ratio` is exported as a 0-1 ratio, so upstream's `percent` unit showed 100x too low); see `docs/FALCO_RUNTIME_SECURITY.md`. |
 | `trivy.json` | `trivy-dashboard` | `trivy-operator` | Security | Based on Aqua's Grafana dashboard [17813](https://grafana.com/grafana/dashboards/17813/), locally adapted to the Trivy Operator metric set and VictoriaMetrics. |
 | `taskflow-waf.json` | `taskflow-waf-dashboard` | `taskflow-waf` | Taskflow | In-repo original (WAF detections, identity, upstream health). |
 | `taskflow-access-logs.json` | `taskflow-access-logs-dashboard` | `taskflow-access-logs` | Taskflow | In-repo original (request/status analytics over Loki access logs). |
 | `taskflow-rate-limits.json` | `taskflow-rate-limits-dashboard` | `taskflow-rate-limits` | Taskflow | In-repo original (rate-limit rejections by zone). |
+| `logging-pipeline.json` | `logging-pipeline-dashboard` | `logging-pipeline` | Platform | In-repo original (Alloy to Loki delivery, discarded and dropped logs, Loki streams/storage/latency, Alloy resources). Metric names checked against Loki 3.7.8 and Alloy v1.20.1. |
+
+## Metrics derived from logs
+
+The overview panels of `taskflow-waf.json` and `taskflow-rate-limits.json` read `loki_process_custom_taskflow_waf_*` metrics instead of scanning Loki. They are produced by the metrics-only `loki.process` components `waf_requests`, `waf_ratelimit`, `waf_audit` and `waf_rules` in `alloy-release.yaml`, scraped from Alloy by the `alloy` VMServiceScrape. They cover all clients and honor only the Application filter; the Client IP filtered versions stay in Loki (collapsed rows). `tests/validate-alloy-metrics.sh` runs the real Alloy image over fixture logs and checks every counter and the duration histogram, so change the pipeline and the dashboards together.
 
 Updating a dashboard:
 

@@ -11,13 +11,83 @@
   },
   "panels": [
     {
+      "id": 25,
+      "type": "stat",
+      "title": "Synchronizer scrape",
+      "description": "1 while vmagent successfully scrapes the abuseipdb-sync metrics endpoint. DOWN or No data means every other tile on this dashboard is stale or empty.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min(up{job=\"abuseipdb-sync\"})",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red"
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
       "id": 1,
       "type": "stat",
       "title": "Feed entries",
       "description": "CIDRs currently published in CiliumCIDRGroup/abuseipdb.",
       "gridPos": {
         "x": 0,
-        "y": 0,
+        "y": 3,
         "w": 4,
         "h": 5
       },
@@ -70,7 +140,7 @@
       "description": "Time since the last successful AbuseIPDB synchronization. Orange beyond 7h (missed cycle), red beyond ABUSEIPDB_MAX_STALE_AGE (24h).",
       "gridPos": {
         "x": 4,
-        "y": 0,
+        "y": 3,
         "w": 4,
         "h": 5
       },
@@ -92,7 +162,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "gray"
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "orange",
@@ -126,7 +200,7 @@
       "title": "Last successful sync",
       "gridPos": {
         "x": 8,
-        "y": 0,
+        "y": 3,
         "w": 4,
         "h": 5
       },
@@ -143,7 +217,11 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "dateTimeAsIso"
+          "unit": "dateTimeAsIso",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
         },
         "overrides": []
       },
@@ -167,7 +245,7 @@
       "description": "Result of the most recent synchronization attempt.",
       "gridPos": {
         "x": 12,
-        "y": 0,
+        "y": 3,
         "w": 4,
         "h": 5
       },
@@ -237,7 +315,7 @@
       "description": "HTTP status of the last AbuseIPDB blacklist request. 200 healthy, 429 daily rate limit, 401/422 configuration problem.",
       "gridPos": {
         "x": 16,
-        "y": 0,
+        "y": 3,
         "w": 4,
         "h": 5
       },
@@ -314,7 +392,7 @@
       "description": "Lines rejected as malformed in the selected time range. Any increase means a response failed validation and was not applied.",
       "gridPos": {
         "x": 20,
-        "y": 0,
+        "y": 3,
         "w": 4,
         "h": 5
       },
@@ -336,7 +414,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "gray"
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "red",
@@ -367,7 +449,7 @@
       "description": "Bounded reason labels only (network/http/rate_limited/parse/validation/kube).",
       "gridPos": {
         "x": 0,
-        "y": 5,
+        "y": 8,
         "w": 8,
         "h": 7
       },
@@ -408,7 +490,7 @@
       "description": "Change applied during the last successful synchronization.",
       "gridPos": {
         "x": 8,
-        "y": 5,
+        "y": 8,
         "w": 8,
         "h": 7
       },
@@ -454,7 +536,7 @@
       "description": "Feed entries removed before applying: trusted exceptions and protected/internal ranges.",
       "gridPos": {
         "x": 16,
-        "y": 5,
+        "y": 8,
         "w": 8,
         "h": 7
       },
@@ -500,7 +582,7 @@
       "description": "Hubble drop metric (aggregate, bounded labels). Detailed source IPs are not metric labels by design.",
       "gridPos": {
         "x": 0,
-        "y": 12,
+        "y": 15,
         "w": 8,
         "h": 8
       },
@@ -541,7 +623,7 @@
       "description": "HTTP responses returned by the Cilium Gateway with status 403, including denylist rejects at reserved:ingress.",
       "gridPos": {
         "x": 8,
-        "y": 12,
+        "y": 15,
         "w": 8,
         "h": 8
       },
@@ -581,7 +663,7 @@
       "title": "Drops by protocol",
       "gridPos": {
         "x": 16,
-        "y": 12,
+        "y": 15,
         "w": 8,
         "h": 8
       },
@@ -622,7 +704,7 @@
       "description": "Scrape targets for cilium-agent, cilium-operator and hubble metrics.",
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 23,
         "w": 6,
         "h": 6
       },
@@ -674,7 +756,7 @@
       "title": "Failing Cilium controllers",
       "gridPos": {
         "x": 6,
-        "y": 20,
+        "y": 23,
         "w": 6,
         "h": 6
       },
@@ -696,7 +778,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "gray"
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "red",
@@ -727,7 +813,7 @@
       "description": "Highest BPF map utilization across agents. Watch after large feed updates (see the scalability notes in the runbook).",
       "gridPos": {
         "x": 12,
-        "y": 20,
+        "y": 23,
         "w": 6,
         "h": 6
       },
@@ -750,7 +836,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "gray"
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "orange",
@@ -785,7 +875,7 @@
       "description": "Endpoints by enforcement mode. A drop in enforced endpoints can indicate policy propagation problems.",
       "gridPos": {
         "x": 18,
-        "y": 20,
+        "y": 23,
         "w": 6,
         "h": 6
       },
@@ -826,7 +916,7 @@
       "description": "Result of the most recent push to the Cloudflare edge (IP list + WAF rule).",
       "gridPos": {
         "x": 0,
-        "y": 26,
+        "y": 29,
         "w": 4,
         "h": 5
       },
@@ -896,7 +986,7 @@
       "description": "Entries published in the Cloudflare account IP list (free plan cap: 10,000).",
       "gridPos": {
         "x": 4,
-        "y": 26,
+        "y": 29,
         "w": 4,
         "h": 5
       },
@@ -948,7 +1038,7 @@
       "title": "Cloudflare last sync",
       "gridPos": {
         "x": 8,
-        "y": 26,
+        "y": 29,
         "w": 4,
         "h": 5
       },
@@ -965,7 +1055,11 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "dateTimeAsIso"
+          "unit": "dateTimeAsIso",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
         },
         "overrides": []
       },
@@ -989,7 +1083,7 @@
       "description": "Time since the last successful Cloudflare edge update. Red beyond ABUSEIPDB_MAX_STALE_AGE (24h).",
       "gridPos": {
         "x": 12,
-        "y": 26,
+        "y": 29,
         "w": 4,
         "h": 5
       },
@@ -1011,7 +1105,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "gray"
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "orange",
@@ -1046,7 +1144,7 @@
       "description": "Whether the managed zone custom rule (ref abuseipdb) exists and is enabled.",
       "gridPos": {
         "x": 16,
-        "y": 26,
+        "y": 29,
         "w": 4,
         "h": 5
       },
@@ -1099,7 +1197,7 @@
       "description": "Cloudflare allows one pending list bulk operation per account; a stuck pending operation delays the next update.",
       "gridPos": {
         "x": 20,
-        "y": 26,
+        "y": 29,
         "w": 4,
         "h": 5
       },
@@ -1138,7 +1236,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "gray"
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "orange",
@@ -1169,7 +1271,7 @@
       "description": "Bounded reason labels only (network/http/rate_limited/bulk/validation).",
       "gridPos": {
         "x": 0,
-        "y": 31,
+        "y": 34,
         "w": 24,
         "h": 6
       },
@@ -1210,7 +1312,7 @@
       "description": "Per-IP investigation is intentionally not exposed as Prometheus labels. Use Loki for synchronizer logs and Hubble for Cilium flow decisions.",
       "gridPos": {
         "x": 0,
-        "y": 37,
+        "y": 40,
         "w": 24,
         "h": 9
       },

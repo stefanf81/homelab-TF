@@ -212,7 +212,13 @@ spec:
 
           loki.source.kubernetes "taskflow_wafs" {
             targets = discovery.relabel.taskflow_wafs.output
-            forward_to = [loki.process.coraza_audit.receiver]
+            forward_to = [
+              loki.process.coraza_audit.receiver,
+              loki.process.waf_requests.receiver,
+              loki.process.waf_ratelimit.receiver,
+              loki.process.waf_audit.receiver,
+              loki.process.waf_rules.receiver,
+            ]
           }
 
           loki.source.kubernetes "taskflow_backend" {
@@ -378,6 +384,202 @@ spec:
 
             stage.static_labels {
               values = { source = "app" }
+            }
+          }
+
+          // ---- WAF logs -> metrics -------------------------------------------------------
+          // Dashboards read these instead of scanning every access/audit line in Loki. The
+          // components below receive a copy of the WAF stream and are never forwarded to
+          // Loki, so they cannot change what is stored. Alloy turns every entry label into a
+          // metric label, so each match first keeps only `application` and then promotes
+          // the few bounded values it wants (status, normalised method, zone, rule ID).
+          // Client IPs, URIs and pods never become metric labels. Custom metrics are
+          // exposed by Alloy as loki_process_custom_<name>; max_idle_duration is long so a
+          // quiet series is not recreated from zero (which would hide its first event).
+
+          // Caddy access records, probes excluded.
+          loki.process "waf_requests" {
+            forward_to = []
+
+            stage.match {
+              selector = "{job=\"coraza-waf\"} |= \"handled request\""
+
+              stage.label_keep {
+                values = ["application"]
+              }
+
+              stage.json {
+                expressions = {
+                  status   = "status",
+                  method   = "request.method",
+                  uri      = "request.uri",
+                  duration = "duration",
+                }
+              }
+
+              stage.drop {
+                source = "uri"
+                value  = "/waf-healthz"
+              }
+
+              // The method is client controlled: anything unusual becomes OTHER so a
+              // scanner cannot create unbounded series.
+              stage.template {
+                source   = "method"
+                template = "{{ if or (eq .Value \"GET\") (eq .Value \"POST\") (eq .Value \"PUT\") (eq .Value \"PATCH\") (eq .Value \"DELETE\") (eq .Value \"HEAD\") (eq .Value \"OPTIONS\") }}{{ .Value }}{{ else }}OTHER{{ end }}"
+              }
+
+              // Histogram first, while only `application` is a label.
+              stage.metrics {
+                metric.histogram {
+                  name              = "taskflow_waf_request_duration_seconds"
+                  description       = "Caddy request duration in the Taskflow WAFs, probes excluded."
+                  source            = "duration"
+                  buckets           = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
+                  max_idle_duration = "168h"
+                }
+              }
+
+              stage.labels {
+                values = {
+                  status = "",
+                  method = "",
+                }
+              }
+
+              stage.metrics {
+                metric.counter {
+                  name              = "taskflow_waf_requests_total"
+                  description       = "Caddy requests handled by the Taskflow WAFs, probes excluded, by status and normalised method."
+                  match_all         = true
+                  action            = "inc"
+                  max_idle_duration = "168h"
+                }
+              }
+            }
+          }
+
+          // Requests rejected by the Caddy rate limiter (the log carries the rejecting zone).
+          loki.process "waf_ratelimit" {
+            forward_to = []
+
+            stage.match {
+              selector = "{job=\"coraza-waf\"} |= \"handled request\""
+
+              stage.label_keep {
+                values = ["application"]
+              }
+
+              stage.json {
+                expressions = {
+                  zone = "rate_limit_zone",
+                }
+              }
+
+              // Empty for requests that were not rate limited.
+              stage.drop {
+                source     = "zone"
+                expression = "^$"
+              }
+
+              stage.labels {
+                values = {
+                  zone = "",
+                }
+              }
+
+              stage.metrics {
+                metric.counter {
+                  name              = "taskflow_waf_rate_limited_total"
+                  description       = "Requests rejected by the Caddy rate limiter, by rejecting zone."
+                  match_all         = true
+                  action            = "inc"
+                  max_idle_duration = "168h"
+                }
+              }
+            }
+          }
+
+          // Coraza audit records (RelevantOnly auditing: matched rules and response criteria).
+          loki.process "waf_audit" {
+            forward_to = []
+
+            stage.match {
+              selector = "{job=\"coraza-waf\"} |= \"\\\"transaction\\\"\""
+
+              stage.label_keep {
+                values = ["application"]
+              }
+
+              stage.json {
+                expressions = {
+                  interrupted = "transaction.is_interrupted",
+                }
+              }
+
+              stage.labels {
+                values = {
+                  interrupted = "",
+                }
+              }
+
+              stage.metrics {
+                metric.counter {
+                  name              = "taskflow_waf_audit_records_total"
+                  description       = "Coraza audit records, by whether the transaction was interrupted."
+                  match_all         = true
+                  action            = "inc"
+                  max_idle_duration = "168h"
+                }
+              }
+
+              // Records that carry rule matches (what the dashboards call detections).
+              stage.match {
+                selector = "{application=~\".+\"} |= \"\\\"messages\\\"\""
+
+                stage.metrics {
+                  metric.counter {
+                    name              = "taskflow_waf_detection_records_total"
+                    description       = "Coraza audit records containing rule matches, by whether the transaction was interrupted."
+                    match_all         = true
+                    action            = "inc"
+                    max_idle_duration = "168h"
+                  }
+                }
+              }
+            }
+          }
+
+          // First matching CRS rule of every detection record (a bounded set of rule IDs).
+          loki.process "waf_rules" {
+            forward_to = []
+
+            stage.match {
+              selector = "{job=\"coraza-waf\"} |= \"\\\"messages\\\"\""
+
+              stage.label_keep {
+                values = ["application"]
+              }
+
+              stage.regex {
+                expression = "\"messages\":\\[.*?\\[id [^0-9]*(?P<rule_id>[0-9]+)"
+              }
+
+              stage.labels {
+                values = {
+                  rule_id = "",
+                }
+              }
+
+              stage.metrics {
+                metric.counter {
+                  name              = "taskflow_waf_first_rule_total"
+                  description       = "First matching CRS rule of Coraza detection records."
+                  source            = "rule_id"
+                  action            = "inc"
+                  max_idle_duration = "168h"
+                }
+              }
             }
           }
 

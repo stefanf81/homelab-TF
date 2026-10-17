@@ -43,3 +43,27 @@ configMapGenerator:
         app.kubernetes.io/name: taskflow
         app.kubernetes.io/component: observability
         app.kubernetes.io/part-of: taskflow-observability
+  - name: cert-manager-dashboard
+    files:
+      - cert-manager.json
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        grafana_folder: Platform
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/name: cert-manager
+        app.kubernetes.io/component: observability
+        app.kubernetes.io/part-of: taskflow-observability
+  - name: kyverno-dashboard
+    files:
+      - kyverno.json
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        grafana_folder: Security
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/name: kyverno
+        app.kubernetes.io/component: security
+        app.kubernetes.io/part-of: taskflow-observability
