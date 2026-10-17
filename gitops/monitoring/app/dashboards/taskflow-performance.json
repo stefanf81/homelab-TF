@@ -102,7 +102,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Backend HTTP requests per second by response status, from the Spring http_server_requests metrics. Actuator endpoints (health, metrics) are excluded."
     },
     {
       "id": 3,
@@ -140,7 +141,8 @@
         "tooltip": {
           "mode": "single"
         }
-      }
+      },
+      "description": "95th percentile backend response time across all endpoints: 5% of requests take longer than this. Actuator endpoints are excluded."
     },
     {
       "id": 4,
@@ -194,7 +196,8 @@
         "tooltip": {
           "mode": "single"
         }
-      }
+      },
+      "description": "Share of backend requests answered with a 5xx status. Actuator endpoints are excluded."
     },
     {
       "id": 5,
@@ -244,7 +247,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "JVM heap in use, heap committed by the operating system, and the configured heap maximum. Used staying close to the maximum means the backend is near an out-of-memory failure."
     },
     {
       "id": 6,
@@ -322,7 +326,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Time the JVM spent paused for garbage collection per second, and the number of live JVM threads. Growing pauses mean memory pressure."
     },
     {
       "id": 7,
@@ -377,7 +382,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Hikari database connections: active, idle, pending (waiting for a free connection) and the pool maximum. Pending above zero for long means the pool is too small or queries are slow."
     },
     {
       "id": 8,
@@ -440,7 +446,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Open PostgreSQL connections against max_connections, and the buffer cache hit ratio. A falling hit ratio means more reads go to disk."
     },
     {
       "id": 9,
@@ -515,7 +522,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Redis memory in use, cache hit ratio and evicted keys per second. Evictions above zero mean Redis is full and is dropping keys."
     },
     {
       "id": 10,
@@ -561,7 +569,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Backend pod CPU and memory as a share of the configured limits. CPU near 100% means throttling; memory near 100% risks an out-of-memory kill."
     },
     {
       "id": 11,
@@ -607,7 +616,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Whole-node CPU busy share and memory in use (reclaimable cache is not counted as used)."
     },
     {
       "id": 12,
@@ -653,7 +663,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Free space on the root filesystem as a share of its size, and disk busy time per second for each disk device."
     }
   ],
   "templating": {
@@ -675,6 +686,17 @@
   },
   "links": [
     {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "homelab"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true,
+      "icon": "dashboard"
+    },
+    {
       "title": "Access logs",
       "type": "link",
       "url": "/d/taskflow-access-logs",
@@ -695,5 +717,44 @@
       "keepTime": true,
       "includeVars": true
     }
-  ]
+  ],
+  "graphTooltip": 1,
+  "tags": [
+    "taskflow",
+    "performance",
+    "metrics",
+    "homelab"
+  ],
+  "annotations": {
+    "list": [
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "VictoriaMetrics"
+        },
+        "enable": true,
+        "step": "1m",
+        "name": "Deployments (taskflow)",
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "expr": "changes(kube_deployment_status_observed_generation{namespace=\"taskflow\"}[$__interval]) > 0",
+        "titleFormat": "Rollout: {{deployment}}",
+        "textFormat": "Deployment spec changed",
+        "tagKeys": "deployment"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "VictoriaMetrics"
+        },
+        "enable": true,
+        "step": "1m",
+        "name": "Container restarts (taskflow)",
+        "iconColor": "rgba(255, 96, 96, 1)",
+        "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"taskflow\"}[$__interval]) > 0",
+        "titleFormat": "Restart: {{pod}}",
+        "textFormat": "Container {{container}} restarted",
+        "tagKeys": "pod,container"
+      }
+    ]
+  }
 }

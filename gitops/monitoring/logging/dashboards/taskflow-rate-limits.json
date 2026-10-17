@@ -8,9 +8,21 @@
   "tags": [
     "taskflow",
     "security",
-    "loki"
+    "loki",
+    "homelab"
   ],
   "links": [
+    {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "homelab"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true,
+      "icon": "dashboard"
+    },
     {
       "title": "WAF detections",
       "type": "link",
@@ -1206,6 +1218,11 @@
                   {
                     "title": "WAF detections for this IP",
                     "url": "/d/taskflow-waf/taskflow-waf?${__url_time_range}&var-client_ip=${__value.raw}"
+                  },
+                  {
+                    "title": "Look up on AbuseIPDB",
+                    "url": "https://www.abuseipdb.com/check/${__value.raw}",
+                    "targetBlank": true
                   }
                 ]
               }
@@ -2017,5 +2034,38 @@
         }
       ]
     }
-  ]
+  ],
+  "graphTooltip": 1,
+  "annotations": {
+    "list": [
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "VictoriaMetrics"
+        },
+        "enable": true,
+        "step": "1m",
+        "name": "Deployments (taskflow)",
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "expr": "changes(kube_deployment_status_observed_generation{namespace=\"taskflow\"}[$__interval]) > 0",
+        "titleFormat": "Rollout: {{deployment}}",
+        "textFormat": "Deployment spec changed",
+        "tagKeys": "deployment"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "VictoriaMetrics"
+        },
+        "enable": true,
+        "step": "1m",
+        "name": "Container restarts (taskflow)",
+        "iconColor": "rgba(255, 96, 96, 1)",
+        "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"taskflow\"}[$__interval]) > 0",
+        "titleFormat": "Restart: {{pod}}",
+        "textFormat": "Container {{container}} restarted",
+        "tagKeys": "pod,container"
+      }
+    ]
+  }
 }

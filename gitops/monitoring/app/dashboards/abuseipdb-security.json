@@ -236,7 +236,8 @@
           "fields": "",
           "values": false
         }
-      }
+      },
+      "description": "When the AbuseIPDB denylist last synced successfully. An old value means the synchronizer is failing."
     },
     {
       "id": 4,
@@ -695,7 +696,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Packets dropped by Cilium per second by protocol, for all drop reasons, not only the AbuseIPDB denylist."
     },
     {
       "id": 13,
@@ -804,7 +806,8 @@
           "fields": "",
           "values": false
         }
-      }
+      },
+      "description": "Cilium controllers currently failing on any node. Normally 0."
     },
     {
       "id": 15,
@@ -1074,7 +1077,8 @@
           "fields": "",
           "values": false
         }
-      }
+      },
+      "description": "When the denylist last synced to Cloudflare successfully. An old value means the Cloudflare sync is failing."
     },
     {
       "id": 21,
@@ -1341,11 +1345,29 @@
   },
   "links": [
     {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "homelab"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true,
+      "icon": "dashboard"
+    },
+    {
       "title": "Blocked Sources",
       "type": "link",
       "url": "/d/blocked-sources",
       "keepTime": true,
       "includeVars": true
     }
+  ],
+  "graphTooltip": 1,
+  "tags": [
+    "abuseipdb",
+    "security",
+    "cilium",
+    "homelab"
   ]
 }

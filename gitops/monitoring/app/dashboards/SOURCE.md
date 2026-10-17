@@ -14,6 +14,9 @@ Provisioning model:
   ConfigMap or change a dashboard `uid` without a migration plan.
 - Datasource references use template variables (`datasource` for
   VictoriaMetrics, `lokiDatasource` for Loki) so UIDs stay portable.
+- Navigation tag, shared crosshair, annotations and drill-down links are
+  described in `gitops/monitoring/logging/dashboards/SOURCE.md` ("Conventions
+  shared by all dashboards"); they apply to the dashboards in this directory too.
 
 | File | ConfigMap | Dashboard UID | Folder | Source |
 |---|---|---|---|---|

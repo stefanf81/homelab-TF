@@ -20,7 +20,19 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "homelab"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true,
+      "icon": "dashboard"
+    }
+  ],
   "panels": [
     {
       "collapsed": false,
@@ -973,7 +985,8 @@
                 "value": 80
               }
             ]
-          }
+          },
+          "unit": "ops"
         },
         "overrides": [
           {
@@ -1076,7 +1089,8 @@
         }
       ],
       "title": "Scap events/s by instance",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Kernel events captured per second by each Falco instance, plus the total. A drop to zero means Falco stopped seeing events."
     },
     {
       "datasource": {
@@ -1519,7 +1533,8 @@
         }
       ],
       "title": "Scap Drops total",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Kernel events dropped because Falco could not keep up. Any increase means events, and possibly detections, were missed."
     },
     {
       "datasource": {
@@ -1625,7 +1640,8 @@
         }
       ],
       "title": "Queue Drops",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Alerts dropped because Falco's output queue was full. Any increase means alerts were lost before delivery."
     },
     {
       "datasource": {
@@ -1816,7 +1832,8 @@
         }
       ],
       "title": "Scap Drops Buffer Enter",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Events dropped from the kernel buffer at syscall entry, by syscall category. A sign the node produces more events than Falco consumes."
     },
     {
       "datasource": {
@@ -2007,7 +2024,8 @@
         }
       ],
       "title": "Scap Drops Buffer Exit",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Events dropped from the kernel buffer at syscall exit, by syscall category. A sign the node produces more events than Falco consumes."
     },
     {
       "datasource": {
@@ -2216,7 +2234,8 @@
         }
       ],
       "title": "Scap Drops Full Threadtable",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Events dropped because Falco's thread table was full; many short-lived processes can cause it."
     },
     {
       "datasource": {
@@ -2320,7 +2339,8 @@
         }
       ],
       "title": "Scap Drops Scratch Map",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Events dropped because the driver's scratch map ran out of space while handling an event."
     },
     {
       "collapsed": false,
@@ -2488,7 +2508,8 @@
   "tags": [
     "falco",
     "kubernetes",
-    "security"
+    "security",
+    "homelab"
   ],
   "templating": {
     "list": [

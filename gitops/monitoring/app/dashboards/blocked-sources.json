@@ -4,7 +4,7 @@
   "description": "Per-IP traffic rejected by Cloudflare (proxied path) and Cilium (direct path). Client IPs are parsed from logs at query time, never metric labels.",
   "schemaVersion": 39,
   "version": 4,
-  "refresh": "30s",
+  "refresh": "1m",
   "time": {
     "from": "now-24h",
     "to": "now"
@@ -414,6 +414,24 @@
                 "value": 170
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "client_ip"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Look up on AbuseIPDB",
+                    "url": "https://www.abuseipdb.com/check/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
           }
         ]
       }
@@ -498,6 +516,24 @@
               {
                 "id": "custom.width",
                 "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "flow_IP_source"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Look up on AbuseIPDB",
+                    "url": "https://www.abuseipdb.com/check/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
               }
             ]
           }
@@ -956,11 +992,30 @@
   },
   "links": [
     {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "homelab"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true,
+      "icon": "dashboard"
+    },
+    {
       "title": "Feed & sync health",
       "type": "link",
       "url": "/d/abuseipdb-security",
       "keepTime": true,
       "includeVars": true
     }
+  ],
+  "graphTooltip": 1,
+  "tags": [
+    "abuseipdb",
+    "security",
+    "cloudflare",
+    "cilium",
+    "homelab"
   ]
 }

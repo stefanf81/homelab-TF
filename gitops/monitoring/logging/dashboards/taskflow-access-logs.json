@@ -8,9 +8,21 @@
   "tags": [
     "taskflow",
     "traffic",
-    "loki"
+    "loki",
+    "homelab"
   ],
   "links": [
+    {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "homelab"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true,
+      "icon": "dashboard"
+    },
     {
       "title": "WAF detections",
       "type": "link",
@@ -534,7 +546,8 @@
             ]
           }
         ]
-      }
+      },
+      "description": "Request count per application and HTTP status over the selected range. Health probes are excluded; the Application, Pod and Client IP filters apply."
     },
     {
       "id": 7,
@@ -616,6 +629,32 @@
               {
                 "id": "custom.width",
                 "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "client_ip"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "WAF detections for this IP",
+                    "url": "/d/taskflow-waf/taskflow-waf?${__url_time_range}&var-client_ip=${__value.raw}"
+                  },
+                  {
+                    "title": "Rate limits for this IP",
+                    "url": "/d/taskflow-rate-limits/taskflow-rate-limits?${__url_time_range}&var-client_ip=${__value.raw}"
+                  },
+                  {
+                    "title": "Look up on AbuseIPDB",
+                    "url": "https://www.abuseipdb.com/check/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
               }
             ]
           }
@@ -704,5 +743,6 @@
         }
       ]
     }
-  ]
+  ],
+  "graphTooltip": 1
 }

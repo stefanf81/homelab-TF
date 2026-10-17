@@ -6,7 +6,8 @@
   "tags": [
     "cert-manager",
     "certificates",
-    "platform"
+    "platform",
+    "homelab"
   ],
   "schemaVersion": 39,
   "version": 1,
@@ -15,7 +16,19 @@
     "from": "now-6h",
     "to": "now"
   },
-  "links": [],
+  "links": [
+    {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "homelab"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true,
+      "icon": "dashboard"
+    }
+  ],
   "templating": {
     "list": [
       {
@@ -863,5 +876,6 @@
         "content": "**Source.** Metrics from the cert-manager controller (`certmanager_*`), scraped by the `cert-manager` VMServiceScrape. Names and labels checked against cert-manager v1.21.2.\n\n- A certificate has one `certmanager_certificate_ready_status` series per condition (True, False, Unknown); the current one is 1.\n- Renewal is expected about 30 days before expiry, so a healthy 90-day certificate sits between 30 and 90 days left.\n- \"Renewal overdue\" counts certificates an hour past their renewal time: cert-manager normally renews within minutes.\n- ACME and sync-error counters only exist after their first event, so empty panels there are normal."
       }
     }
-  ]
+  ],
+  "graphTooltip": 1
 }
