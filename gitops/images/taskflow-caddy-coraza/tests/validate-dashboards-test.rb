@@ -540,6 +540,7 @@ class DashboardValidationTest < Minitest::Test
 
     zones = instant_vector(url, fixture_query(rate, 21, fixture_base_query.merge("$client_ip" => ".*")), "zone breakdown")
     assert_equal 120.0, zones.values.sum, "only zone-carrying 429s count as Caddy rejections"
+    assert_equal({ { "zone" => "#{FIXTURE_APPLICATION} / general" } => 120.0 }, zones, "zone bars must name application and zone")
 
     categories = instant_vector(url, fixture_query(rate, 22, fixture_base_query.merge("$client_ip" => ".*")), "path categories")
     assert_equal 120.0, categories.fetch({ "category" => "Archive/backup" })
@@ -565,8 +566,8 @@ class DashboardValidationTest < Minitest::Test
     assert_equal 50.0, waf_share.fetch({})
 
     waf_rules = instant_vector(url, fixture_query(waf, 3, fixture_base_query.merge("$client_ip" => "198.51.100.10")), "waf rules")
-    assert_equal 1.0, waf_rules.fetch({ "rule_id" => "930130", "rule_msg" => "Restricted File Access Attempt" })
-    assert_equal 1.0, waf_rules.fetch({ "rule_id" => "942100", "rule_msg" => "SQL Injection Attempt" })
+    assert_equal 1.0, waf_rules.fetch({ "rule" => "930130: Restricted File Access Attempt" })
+    assert_equal 1.0, waf_rules.fetch({ "rule" => "942100: SQL Injection Attempt" })
 
     waf_categories = instant_vector(url, fixture_query(waf, 4, fixture_base_query.merge("$client_ip" => "198.51.100.10")), "waf categories")
     assert_equal 1.0, waf_categories.fetch({ "category" => "File access / LFI (930xxx)" })

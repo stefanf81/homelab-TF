@@ -4,7 +4,7 @@
   "description": "Coraza and Caddy telemetry for the Taskflow frontend and backend WAFs. Selected-range overview cards, rule breakdowns, top IPs, and recent detections honor the Application and Client IP filters; pod and infrastructure metrics are service-level. RelevantOnly auditing emits no records for normal successful traffic.",
   "schemaVersion": 39,
   "version": 12,
-  "refresh": "1m",
+  "refresh": "5m",
   "tags": [
     "taskflow",
     "security",
@@ -138,7 +138,7 @@
           "unit": "none",
           "decimals": 0,
           "min": 0,
-          "noValue": "No detections",
+          "noValue": "No WAF logs",
           "color": {
             "mode": "thresholds"
           },
@@ -146,8 +146,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "gray",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "orange",
@@ -197,7 +201,7 @@
           "unit": "none",
           "decimals": 0,
           "min": 0,
-          "noValue": "No detections",
+          "noValue": "No WAF logs",
           "color": {
             "mode": "thresholds"
           },
@@ -205,8 +209,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "gray",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "red",
@@ -256,7 +264,7 @@
           "unit": "none",
           "decimals": 0,
           "min": 0,
-          "noValue": "No detections",
+          "noValue": "No WAF logs",
           "color": {
             "mode": "thresholds"
           },
@@ -264,8 +272,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "gray",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "yellow",
@@ -316,7 +328,7 @@
           "decimals": 1,
           "min": 0,
           "max": 100,
-          "noValue": "No detections",
+          "noValue": "No WAF logs",
           "color": {
             "mode": "fixed",
             "fixedColor": "blue"
@@ -422,8 +434,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, sum by (rule_id, rule_msg) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\".+\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | regexp `\\[msg \\\\\"(?P<rule_msg>[^\\\\\"]+)\\\\\"\\]` [$__range])))",
-          "legendFormat": "CRS {{rule_id}}: {{rule_msg}}",
+          "expr": "topk(10, sum by (rule) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\".+\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | regexp `\\[msg \\\\\"(?P<rule_msg>[^\\\\\"]+)\\\\\"\\]` | label_format rule=`{{.rule_id}}: {{.rule_msg}}` [$__range])))",
+          "legendFormat": "CRS {{rule}}",
           "queryType": "instant"
         }
       ],
@@ -777,7 +789,11 @@
                 "fillOpacity": 65,
                 "lineWidth": 1,
                 "showPoints": "never",
-                "spanNulls": false
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
               }
             },
             "overrides": [
@@ -861,7 +877,11 @@
                 "lineWidth": 1,
                 "showPoints": "always",
                 "pointSize": 4,
-                "spanNulls": false
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
               }
             },
             "overrides": []
@@ -1038,7 +1058,11 @@
                 "fillOpacity": 65,
                 "lineWidth": 1,
                 "showPoints": "never",
-                "spanNulls": false
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
               }
             },
             "overrides": [
@@ -1121,7 +1145,11 @@
                 "fillOpacity": 65,
                 "lineWidth": 1,
                 "showPoints": "never",
-                "spanNulls": false
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
               }
             },
             "overrides": [
@@ -1527,7 +1555,11 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "gray"
+                  },
+                  {
+                    "color": "green",
+                    "value": 0
                   },
                   {
                     "color": "red",
@@ -1579,6 +1611,23 @@
               "noValue": "Unavailable",
               "color": {
                 "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "gray",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 0
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.000001
+                  }
+                ]
               }
             },
             "overrides": []
@@ -1588,12 +1637,25 @@
       ]
     },
     {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "id": 26,
+      "panels": [],
+      "title": "Scope, coverage, and limits",
+      "type": "row"
+    },
+    {
       "id": 25,
       "type": "text",
       "title": "Scope, coverage, and limits",
       "gridPos": {
         "x": 0,
-        "y": 33,
+        "y": 34,
         "w": 24,
         "h": 6
       },
@@ -1609,7 +1671,7 @@
       "collapsed": true,
       "gridPos": {
         "x": 0,
-        "y": 39,
+        "y": 40,
         "w": 24,
         "h": 1
       },

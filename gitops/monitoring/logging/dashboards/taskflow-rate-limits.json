@@ -4,7 +4,7 @@
   "description": "Caddy HTTP rate-limit activity (HTTP 429) for the Taskflow WAFs, derived from Caddy access logs in Loki. Overview totals, breakdowns, and tables honor the Application and Client IP filters; the fixed-window cards do not. Rankings and log samples are limited subsets, not complete inventories. Individual client IPs and URIs are parsed at query time and are not Loki labels.",
   "schemaVersion": 39,
   "version": 7,
-  "refresh": "1m",
+  "refresh": "5m",
   "tags": [
     "taskflow",
     "security",
@@ -201,8 +201,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "gray",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "yellow",
@@ -260,8 +264,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "gray",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "red",
@@ -319,8 +327,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "gray",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "yellow",
@@ -382,8 +394,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "gray",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "yellow",
@@ -441,8 +457,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "gray",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "yellow",
@@ -500,8 +520,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "gray",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "yellow",
@@ -678,7 +702,11 @@
             "fillOpacity": 65,
             "lineWidth": 1,
             "showPoints": "never",
-            "spanNulls": false
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
           }
         },
         "overrides": [
@@ -748,9 +776,9 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (application, rate_limit_zone) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", rate_limit_zone=\"rate_limit_zone\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | client_ip=~\"$client_ip\" [$__range]))",
+          "expr": "sum by (zone) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", rate_limit_zone=\"rate_limit_zone\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | client_ip=~\"$client_ip\" | label_format zone=`{{.application}} / {{.rate_limit_zone}}` [$__range]))",
           "queryType": "instant",
-          "legendFormat": "{{application}} / {{rate_limit_zone}}"
+          "legendFormat": "{{zone}}"
         }
       ],
       "transformations": [
@@ -858,7 +886,11 @@
             "fillOpacity": 65,
             "lineWidth": 1,
             "showPoints": "never",
-            "spanNulls": false
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
           }
         },
         "overrides": [
@@ -1068,7 +1100,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 120
+                "value": 140
               }
             ]
           }
@@ -1154,7 +1186,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 120
+                "value": 140
               }
             ]
           },
@@ -1261,7 +1293,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 120
+                "value": 140
               }
             ]
           }
@@ -1429,7 +1461,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 120
+                "value": 140
               }
             ]
           }
@@ -1516,8 +1548,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "gray",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "red",
@@ -1806,7 +1842,7 @@
           "unit": "none",
           "decimals": 0,
           "min": 0,
-          "noValue": "No data",
+          "noValue": "0",
           "color": {
             "mode": "thresholds"
           },

@@ -17,7 +17,7 @@ Provisioning model:
 
 | File | ConfigMap | Dashboard UID | Folder | Source |
 |---|---|---|---|---|
-| `falco-official.json` | `falco-dashboard` | `ddwe2ug4nfi0wb` | Security | [Falco chart dashboard](https://raw.githubusercontent.com/falcosecurity/charts/master/charts/falco/dashboards/falco-dashboard.json), locally adapted: VictoriaMetrics datasource variable with default `VictoriaMetrics`, existing UID retained; see `docs/FALCO_RUNTIME_SECURITY.md`. |
+| `falco-official.json` | `falco-dashboard` | `ddwe2ug4nfi0wb` | Security | [Falco chart dashboard](https://raw.githubusercontent.com/falcosecurity/charts/master/charts/falco/dashboards/falco-dashboard.json), locally adapted: VictoriaMetrics datasource variable with default `VictoriaMetrics`, existing UID retained, CPU panel unit `percentunit` (`falcosecurity_falco_cpu_usage_ratio` is exported as a 0-1 ratio, so upstream's `percent` unit showed 100x too low); see `docs/FALCO_RUNTIME_SECURITY.md`. |
 | `trivy.json` | `trivy-dashboard` | `trivy-operator` | Security | Based on Aqua's Grafana dashboard [17813](https://grafana.com/grafana/dashboards/17813/), locally adapted to the Trivy Operator metric set and VictoriaMetrics. |
 | `taskflow-waf.json` | `taskflow-waf-dashboard` | `taskflow-waf` | Taskflow | In-repo original (WAF detections, identity, upstream health). |
 | `taskflow-access-logs.json` | `taskflow-access-logs-dashboard` | `taskflow-access-logs` | Taskflow | In-repo original (request/status analytics over Loki access logs). |
