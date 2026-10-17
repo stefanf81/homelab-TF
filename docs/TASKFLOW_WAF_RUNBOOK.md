@@ -327,17 +327,24 @@ a collection-health indicator.
   These panels also fetch at most 100 records, only when expanded. "Raw" means
   the JSON stored in Loki **after redaction**, not unredacted request contents.
 - Access/429 queries filter compact Caddy JSON lines before parsing and extract
-  only the fields used by that panel. Dashboards refresh every minute and have
-  navigation links that preserve the selected time range and application. The
+  only the fields used by that panel. The WAF, Access Logs and Rate Limits
+  dashboards refresh every 5 minutes and have navigation links that preserve the
+  selected time range and application, plus a **Dashboards** dropdown to every
+  other dashboard. The
   **Client IP** textbox filter (a regular expression, `.*` = all) narrows
   access-log panels on Access Logs and Rate Limits and the audit-derived panels
-  on the WAF dashboard; it is applied at query time. On Rate Limits, clicking a
-  client IP in the top table opens Access Logs or WAF pre-filtered to that IP
-  and the current time range.
-- Totals describe matching records retained in Loki, not a complete traffic
-  inventory. The Rate Limits overview cards count the exact selected-range
-  values while the fixed 5-minute/1-hour/24-hour cards end at the range endpoint
-  and can include data outside the graph. Top tables are ranked subsets (ten
+  on the WAF dashboard; it is applied at query time. Clicking a client IP in a
+  top table (WAF, Rate Limits, Access Logs) opens the other dashboards
+  pre-filtered to that IP and the current time range, or an AbuseIPDB lookup in
+  a new tab. Rollouts and container restarts in `taskflow` appear as
+  annotations on the WAF and Rate Limits charts.
+- Totals describe matching records, not a complete traffic inventory. The WAF
+  and Rate Limits overview cards, fixed-window cards and activity/rejection
+  charts read the Alloy counters `loki_process_custom_taskflow_waf_*` from
+  VictoriaMetrics: they cover all clients, honor only the Application filter, and
+  stop updating if Alloy or its scrape is down. Their Client IP filtered versions
+  scan Loki in collapsed rows. The fixed 5-minute/1-hour/24-hour cards end at the
+  range endpoint and can include data outside the graph. Top tables are ranked subsets (ten
   rows; ties can hide most entries), the request-rate chart is window-averaged
   rather than a peak rate, and evidence panels show at most the latest 100
   records. A scope panel and scrape/log-activity stats call out these limits.
@@ -346,9 +353,11 @@ a collection-health indicator.
   non-empty parsed request URI before counting a record.
 - Access-log route volume uses bounded route groups rather than arbitrary URI
   rankings. This bounds grouping cardinality even during scans with thousands
-  of unique paths. Loki is configured with `max_query_series: 5000`: a direct
-  instant `topk(10, ...)` bounds its final result, but split execution can expose
-  larger grouped downstream results to the limit. Transient URI/path labels are
+  of unique paths. Loki is configured with `max_query_series: 20000`: a direct
+  instant `topk(10, ...)` bounds its final result, but split execution exposes
+  the full grouped downstream result to the limit (at 5000, top-IP tables failed
+  once a range held more than 5000 distinct client IPs; 19,000 IPs peaked at
+  178 MiB of Loki's 768 MiB). Transient URI/path labels are
   dropped before the route aggregation; exact sanitized URIs remain in log rows.
 
 ### Dashboard validation
@@ -364,7 +373,10 @@ Built-in variables are substituted with representative values for parsing.
 It also renders both monitoring Kustomizations with `kubectl kustomize` and
 fails when a dashboard JSON is not provisioned by them, drifts from its
 rendered ConfigMap, lacks the `grafana_dashboard` label, or has no valid
-relative `grafana_folder` annotation.
+relative `grafana_folder` annotation. It also runs
+`validate-alloy-metrics.sh`, which feeds fixture logs with known counts through
+the real Alloy image and checks every `loki_process_custom_taskflow_waf_*`
+counter and the duration histogram.
 This checks syntax, not live field contents, rendering, query cost, or
 series-limit behavior. Validator regression tests also run in CI.
 
@@ -676,6 +688,27 @@ kubectl get cm -n monitoring -l grafana_dashboard
 kubectl logs deployment/victoria-metrics-k8s-stack-grafana -n monitoring -c grafana-sc-datasources | grep loki
 kubectl logs deployment/victoria-metrics-k8s-stack-grafana -n monitoring -c grafana-sc-dashboard | grep taskflow
 ```
+
+#### Overview cards show "No WAF logs" while log panels have data
+
+**Cause**: The overview cards read Alloy's derived metrics from VictoriaMetrics,
+not Loki. Alloy is not being scraped, or its metrics pipeline is not running.
+
+**Fix**:
+```bash
+# The alloy VMServiceScrape must exist and its target must be up
+kubectl -n monitoring get vmservicescrape alloy
+# In VMUI (/vmsingle/vmui): both should return data
+#   up{job="alloy"}
+#   sum(increase(loki_process_custom_taskflow_waf_requests_total[1h]))
+# Alloy exposes the counters on its own metrics endpoint
+kubectl -n monitoring port-forward svc/alloy 12345:12345 &
+curl -s localhost:12345/metrics | grep loki_process_custom_taskflow_waf_ | head
+```
+
+The counters only appear after the first matching record, so a quiet WAF can
+show "No WAF logs" legitimately; the collapsed client-filtered rows query Loki
+directly.
 
 #### Caddy access logs but no Coraza audit logs
 

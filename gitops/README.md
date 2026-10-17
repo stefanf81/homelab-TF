@@ -24,8 +24,8 @@ gitops/
 │   └── kyverno-policies/       #   Example ClusterPolicies (Audit mode); reconciled by kyverno-policies Kustomization
 ├── monitoring/                 # 4. VictoriaMetrics, Grafana, Loki, Alloy, and dashboards
 │   ├── platform/               #   VictoriaMetrics stack, Grafana, routes, grafana secrets
-│   ├── app/                    #   App scrapes + Grafana dashboards (incl. "Blocked Sources", "AbuseIPDB Security")
-│   └── logging/                #   Loki, Alloy (WAF logs, abuseipdb-sync logs, Hubble flow export)
+│   ├── app/                    #   App scrapes + Grafana dashboards (TaskFlow Performance, AbuseIPDB Security, Blocked Sources, cert-manager, Kyverno)
+│   └── logging/                #   Loki, Alloy (WAF logs + derived WAF metrics, abuseipdb-sync logs, Hubble flow export) + WAF, Access Logs, Rate Limits, Falco, Trivy, Logging pipeline dashboards
 ├── images/                     # Custom images: WAF (Caddy+Coraza) and abuseipdb-sync Dockerfiles
 ├── RENOVATE.md                  #   Dependency-update bot activation and operation
 ├── README.md                   # GitOps directory overview
