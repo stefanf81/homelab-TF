@@ -49,6 +49,26 @@ for app, filename in APPS.items():
         lines.append(json.dumps({"level": "info", "msg": "handled request", "request": {"method": "GET", "uri": "/waf-healthz", "host": "10.0.0.1:8080"},
                                  "duration": 0.0001, "status": 200}, separators=(",", ":")))
     lines.append(json.dumps({"level": "info", "msg": "something else", "status": 200}))  # not an access record
+    # Client-controlled text that mimics the selectors' needles. Values are JSON
+    # strings, so their quotes are escaped and must never satisfy a key match.
+    for spoof in ["transaction", "messages", '"transaction":{', '"messages":['] * 10:
+        duration = 0.002
+        lines.append(json.dumps({
+            "level": "info", "msg": "handled request", "status": 200, "duration": duration, "rate_limit_zone": None,
+            "request": {"method": "GET", "uri": "/", "headers": {"User-Agent": [spoof]}},
+        }, separators=(",", ":")))
+        requests[(app, "200", "GET")] += 1
+        h = hist[app]
+        h["count"] += 1
+        h["sum"] += duration
+        for j, bound in enumerate(BUCKETS):
+            if duration <= bound:
+                h["buckets"][j] += 1
+    for spoof in ["handled request", '"msg":"handled request"'] * 10:
+        lines.append(json.dumps({"transaction": {"client_ip": "198.51.100.7", "is_interrupted": False,
+                                                 "request": {"method": "GET", "uri": "/", "headers": {"x-test": [spoof]}}}},
+                                separators=(",", ":")))
+        audit[(app, "false")] += 1
     for _ in range(1500):
         interrupted = random.random() < 0.5
         has_messages = random.random() < 0.8

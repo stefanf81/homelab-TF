@@ -401,7 +401,7 @@ spec:
             forward_to = []
 
             stage.match {
-              selector = "{job=\"coraza-waf\"} |= \"handled request\""
+              selector = "{job=\"coraza-waf\"} |= \"\\\"msg\\\":\\\"handled request\\\"\""
 
               stage.label_keep {
                 values = ["application"]
@@ -499,7 +499,7 @@ spec:
             forward_to = []
 
             stage.match {
-              selector = "{job=\"coraza-waf\"} |= \"\\\"transaction\\\"\""
+              selector = "{job=\"coraza-waf\"} |= \"\\\"transaction\\\":{\""
 
               stage.label_keep {
                 values = ["application"]
@@ -529,7 +529,7 @@ spec:
 
               // Records that carry rule matches (what the dashboards call detections).
               stage.match {
-                selector = "{application=~\".+\"} |= \"\\\"messages\\\"\""
+                selector = "{application=~\".+\"} |= \"\\\"messages\\\":[\""
 
                 stage.metrics {
                   metric.counter {
@@ -549,7 +549,7 @@ spec:
             forward_to = []
 
             stage.match {
-              selector = "{job=\"coraza-waf\"} |= \"\\\"messages\\\"\""
+              selector = "{job=\"coraza-waf\"} |= \"\\\"messages\\\":[\""
 
               stage.label_keep {
                 values = ["application"]
@@ -580,6 +580,17 @@ spec:
           loki.write "local" {
             endpoint {
               url = "http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push"
+            }
+
+            // Entries go to a write-ahead log on the alloy-data PVC first, so a slow or
+            // unreachable Loki no longer back-pressures the sources: the WAF metrics
+            // components share the WAF source's synchronous fan-out and used to stall
+            // once the in-memory queue filled. Buffered entries are sent when Loki is
+            // back. Segments older than 30m are deleted, which bounds disk use (watch
+            // alloy-data on the Logging pipeline dashboard) and an outage's replay.
+            wal {
+              enabled         = true
+              max_segment_age = "30m"
             }
 
             external_labels = {

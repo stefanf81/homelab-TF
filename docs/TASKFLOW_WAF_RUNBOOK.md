@@ -342,7 +342,8 @@ a collection-health indicator.
   and Rate Limits overview cards, fixed-window cards and activity/rejection
   charts read the Alloy counters `loki_process_custom_taskflow_waf_*` from
   VictoriaMetrics: they cover all clients, honor only the Application filter, and
-  stop updating if Alloy or its scrape is down. Their Client IP filtered versions
+  stop updating if Alloy or its scrape is down (they keep counting while Loki is
+  down, because Alloy buffers log shipping in its write-ahead log). Their Client IP filtered versions
   scan Loki in collapsed rows. The fixed 5-minute/1-hour/24-hour cards end at the
   range endpoint and can include data outside the graph. Top tables are ranked subsets (ten
   rows; ties can hide most entries), the request-rate chart is window-averaged

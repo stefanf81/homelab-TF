@@ -528,7 +528,9 @@ Three metrics-only `loki.process` components (`waf_requests`, `waf_audit`,
 parses each access record once and derives the request counter, the duration
 histogram and the rate-limit counter from it. Caddy logs `"rate_limit_zone":null`
 for requests that were not limited, so the rate-limit counter only admits lines
-whose zone is a non-empty string.
+whose zone is a non-empty string. Selectors match compact JSON keys (`"msg":"handled request"`, `"transaction":{`, `"messages":[`): quotes inside logged header values are escaped, so client-controlled text cannot satisfy them.
+
+The WAF source fans out synchronously to the Loki pipeline and the metrics components, so `loki.write` keeps a write-ahead log on the `alloy-data` PVC (`wal { enabled = true, max_segment_age = "30m" }`). An unreachable Loki then no longer stalls the counters, and buffered entries are sent when it returns; segments older than 30 minutes are deleted, which bounds disk use and the replay after a long outage. Without the WAL, a lab test with 300,000 lines and Loki down stalled every counter at about 15%; with it they stayed exact and all lines reached Loki after recovery. The Alloy test refuses a config without it.
 They have `forward_to = []`, so they never write to Loki and stored logs and
 labels are unchanged. Each keeps only bounded labels (`stage.label_keep`) before
 `stage.metrics`, because every remaining entry label would become a metric label.

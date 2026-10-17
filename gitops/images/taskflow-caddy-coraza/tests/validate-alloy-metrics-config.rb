@@ -36,6 +36,11 @@ kept = blocks.reject do |block|
   replaced.any? { |prefix| head.start_with?(prefix) }
 end
 abort "WAF source block not found in Alloy config" unless waf_forward
+# The WAF metrics share the source's synchronous fan-out with the Loki write path.
+# Without the write-ahead log, an unreachable Loki stalls them once the in-memory
+# queue fills (a load larger than these fixtures), so keep it from being dropped.
+writer = blocks.find { |block| block.first.start_with?('loki.write "local"') }&.join("\n").to_s
+abort 'loki.write "local" must keep `wal { enabled = true }` (see alloy-release.yaml)' unless writer =~ /wal\s*\{[^}]*enabled\s*=\s*true/m
 
 text = kept.map { |block| block.join("\n") }.join("\n\n")
 text = text.gsub("http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push", loki_url)
