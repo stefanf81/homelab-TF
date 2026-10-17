@@ -1641,7 +1641,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**What these numbers mean**\n\n- Totals count matching records retained in Loki for the selected range and filters; they are not a guarantee that every event was collected.\n- Top tables are ranked subsets (top 10); ties can hide most entries. Log panels show the latest 100 matching records as a sample.\n- A 200 response is not proof that sensitive content was served, and a 403 is not automatically a WAF block.\n- Credentials and selected query parameters are redacted before ingestion; WAF auditing is RelevantOnly, so normal traffic produces no audit records.\n- Cloudflare edge blocks and Cilium drops live on the **Blocked Sources** dashboard.\n- The Client IP filter is a regular expression applied at query time; use `.*` for all clients. An empty field matches nothing.\n\n- The overview cards, fixed-window cards, rejection and request-rate charts come from Alloy metrics (`loki_process_custom_taskflow_waf_*`): all clients, Application filter only, and they stop updating if Alloy or its scrape is down. Tables, breakdown bars and logs scan Loki and also honor the Client IP filter."
+        "content": "**What these numbers mean**\n\n- Totals count matching records retained in Loki for the selected range and filters; they are not a guarantee that every event was collected.\n- Top tables are ranked subsets (top 10); ties can hide most entries. Log panels show the latest 100 matching records as a sample.\n- A 200 response is not proof that sensitive content was served, and a 403 is not automatically a WAF block.\n- Credentials and selected query parameters are redacted before ingestion; WAF auditing is RelevantOnly, so normal traffic produces no audit records.\n- Cloudflare edge blocks and Cilium drops live on the **Blocked Sources** dashboard.\n- The Client IP filter is a regular expression applied at query time; use `.*` for all clients. An empty field matches nothing.\n\n- The overview cards, fixed-window cards, rejection and request-rate charts come from Alloy metrics (`loki_process_custom_taskflow_waf_*`): all clients, Application filter only, and they stop updating if Alloy or its scrape is down. Tables, breakdown bars and logs scan Loki and also honor the Client IP filter. Client IP filtered versions of the four overview cards are in the collapsed row \"Totals filtered by client IP\"."
       }
     },
     {
@@ -1941,6 +1941,199 @@
                   {
                     "color": "blue",
                     "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 202,
+          "type": "stat",
+          "title": "All 429 responses (client-filtered)",
+          "description": "Every HTTP 429 response in the selected range, including Caddy rate-limit rejections and upstream/application 429s. Exact integer count. Scans the Caddy access logs in Loki and honors both the Application and Client IP filters.",
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 6,
+            "y": 69
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | request_uri != \"\" | client_ip=~\"$client_ip\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__range])))",
+              "queryType": "instant"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "decimals": 0,
+              "min": 0,
+              "noValue": "No WAF logs",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "gray",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 0
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 203,
+          "type": "stat",
+          "title": "Caddy rate-limit rejections (client-filtered)",
+          "description": "429 responses carrying a rate_limit_zone value: confirmable Caddy rate-limiter rejections in the selected range. Exact integer count. Scans the Caddy access logs in Loki and honors both the Application and Client IP filters.",
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 12,
+            "y": 69
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\", rate_limit_zone=\"rate_limit_zone\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | request_uri != \"\" | client_ip=~\"$client_ip\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__range])))",
+              "queryType": "instant"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "decimals": 0,
+              "min": 0,
+              "noValue": "No WAF logs",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "gray",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 0
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 204,
+          "type": "stat",
+          "title": "Rate-limit share of requests (client-filtered)",
+          "description": "Caddy rate-limit rejections divided by recorded requests in the selected range. Shows 0% when WAF logs exist but no requests match the filters, and 'No logged requests' when no WAF logs exist in the range. Scans the Caddy access logs in Loki and honors both the Application and Client IP filters.",
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 18,
+            "y": 69
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${lokiDatasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "(sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\", rate_limit_zone=\"rate_limit_zone\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | request_uri != \"\" | client_ip=~\"$client_ip\" [$__range])) / (sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | client_ip=~\"$client_ip\" [$__range])) > 0)) * 100 or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__range])))",
+              "queryType": "instant"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "decimals": 0,
+              "min": 0,
+              "noValue": "No logged requests",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "gray",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 0
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 25
                   }
                 ]
               }

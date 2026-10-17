@@ -19,19 +19,29 @@ def scrape():
     return rows
 
 
-# Fixtures are tailed from disk: wait until the request total stops moving.
-previous, rows = -1.0, []
-for _ in range(60):
+# Fixtures are tailed from disk, and the WAF fan-out is synchronous with the Loki
+# write, so a slow push pauses every counter. Wait until each counter family has
+# reached its expected total (an over-count reaches it at once and fails below),
+# then scrape once more so nothing still in flight is missed.
+TARGETS = {name: sum(row[-1] for row in truth[key]) for name, key in
+           (("requests_total", "requests"), ("rate_limited_total", "limited"), ("audit_records_total", "audit"),
+            ("detection_records_total", "detections"), ("first_rule_total", "rules"))}
+rows = []
+deadline = time.monotonic() + 240
+while time.monotonic() < deadline:
     try:
         rows = scrape()
     except OSError:
         time.sleep(2)
         continue
-    total = sum(v for n, _, v in rows if n == PREFIX + "requests_total")
-    if total > 0 and total == previous:
+    totals = collections.Counter()
+    for metric, _, value in rows:
+        totals[metric[len(PREFIX):]] += value
+    if all(totals[name] >= want for name, want in TARGETS.items()):
+        time.sleep(3)
+        rows = scrape()
         break
-    previous = total
-    time.sleep(3)
+    time.sleep(2)
 
 
 def aggregate(name, keys):

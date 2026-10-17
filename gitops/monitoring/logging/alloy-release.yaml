@@ -215,7 +215,6 @@ spec:
             forward_to = [
               loki.process.coraza_audit.receiver,
               loki.process.waf_requests.receiver,
-              loki.process.waf_ratelimit.receiver,
               loki.process.waf_audit.receiver,
               loki.process.waf_rules.receiver,
             ]
@@ -456,43 +455,40 @@ spec:
                   max_idle_duration = "168h"
                 }
               }
-            }
-          }
 
-          // Requests rejected by the Caddy rate limiter (the log carries the rejecting zone).
-          loki.process "waf_ratelimit" {
-            forward_to = []
+              // Requests rejected by the Caddy rate limiter, from the same parse.
+              // Caddy logs "rate_limit_zone":null for requests that were not limited
+              // (log_append of an unset placeholder) and probes carry no field.
+              // stage.drop cannot drop a null or missing value, so only lines whose
+              // zone is a non-empty string enter this match. It runs after the
+              // request counter, so dropping status and method here does not affect it.
+              stage.match {
+                selector = "{application=~\".+\"} |~ \"\\\"rate_limit_zone\\\":\\\"[^\\\"]+\\\"\""
 
-            // Caddy logs "rate_limit_zone":null for requests that were not limited
-            // (log_append of an unset placeholder) and probes carry no field at all.
-            // stage.drop cannot drop a null or missing value, so only lines whose zone
-            // is a non-empty string enter this match.
-            stage.match {
-              selector = "{job=\"coraza-waf\"} |= \"handled request\" |~ \"\\\"rate_limit_zone\\\":\\\"[^\\\"]+\\\"\""
-
-              stage.label_keep {
-                values = ["application"]
-              }
-
-              stage.json {
-                expressions = {
-                  zone = "rate_limit_zone",
+                stage.json {
+                  expressions = {
+                    zone = "rate_limit_zone",
+                  }
                 }
-              }
 
-              stage.labels {
-                values = {
-                  zone = "",
+                stage.label_keep {
+                  values = ["application"]
                 }
-              }
 
-              stage.metrics {
-                metric.counter {
-                  name              = "taskflow_waf_rate_limited_total"
-                  description       = "Requests rejected by the Caddy rate limiter, by rejecting zone."
-                  match_all         = true
-                  action            = "inc"
-                  max_idle_duration = "168h"
+                stage.labels {
+                  values = {
+                    zone = "",
+                  }
+                }
+
+                stage.metrics {
+                  metric.counter {
+                    name              = "taskflow_waf_rate_limited_total"
+                    description       = "Requests rejected by the Caddy rate limiter, by rejecting zone."
+                    match_all         = true
+                    action            = "inc"
+                    max_idle_duration = "168h"
+                  }
                 }
               }
             }

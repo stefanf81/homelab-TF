@@ -209,6 +209,11 @@ spec:
       path: /metrics
       interval: 60s
       scheme: http
+      # Certificate metrics carry the certificate's own `namespace` label. Without
+      # honorLabels the target label (namespace=cert-manager) wins and the real one
+      # is renamed to exported_namespace, so every certificate showed cert-manager.
+      # Controller metrics have no namespace label and keep the target's.
+      honorLabels: true
 ---
 # --- Kyverno (all four controller metrics Services share part-of=kyverno) -----
 apiVersion: operator.victoriametrics.com/v1beta1

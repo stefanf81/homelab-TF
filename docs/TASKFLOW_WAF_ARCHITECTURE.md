@@ -523,8 +523,12 @@ loki.write "local" {
 
 ### Metrics derived from logs
 
-Four metrics-only `loki.process` components (`waf_requests`, `waf_ratelimit`,
-`waf_audit`, `waf_rules`) receive the same WAF records as the Loki pipeline.
+Three metrics-only `loki.process` components (`waf_requests`, `waf_audit`,
+`waf_rules`) receive the same WAF records as the Loki pipeline. `waf_requests`
+parses each access record once and derives the request counter, the duration
+histogram and the rate-limit counter from it. Caddy logs `"rate_limit_zone":null`
+for requests that were not limited, so the rate-limit counter only admits lines
+whose zone is a non-empty string.
 They have `forward_to = []`, so they never write to Loki and stored logs and
 labels are unchanged. Each keeps only bounded labels (`stage.label_keep`) before
 `stage.metrics`, because every remaining entry label would become a metric label.
@@ -692,8 +696,9 @@ and also honor the Client IP filter. Layout:
 
 - **Overview — selected range**: total recorded requests, all 429 responses,
   confirmable Caddy rate-limit rejections (records carrying `rate_limit_zone`), and
-  the rejection share of requests, from the Alloy metrics. The Client IP filtered
-  total is in the collapsed row "Totals filtered by client IP (scans logs)".
+  the rejection share of requests, from the Alloy metrics. Client IP filtered
+  versions of all four cards (Loki) are in the collapsed row "Totals filtered by
+  client IP (scans logs)"; open it after following an IP link.
 - **Fixed-window summaries**: 5-minute, 1-hour, and 24-hour 429 counts that end at
   the range endpoint and can include activity outside the graph; these cards are
   unfiltered by client IP.

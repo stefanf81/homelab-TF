@@ -677,7 +677,7 @@
       "id": 10,
       "type": "timeseries",
       "title": "Policy execution latency (p95, slowest policies)",
-      "description": "95th percentile rule execution time for the eight slowest policies.",
+      "description": "95th percentile rule execution time for the eight policies with the highest peak in the selected range (MetricsQL topk_max, so the set does not change from point to point).",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -691,7 +691,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(8, histogram_quantile(0.95, sum by (le, policy_name) (rate(kyverno_policy_execution_duration_seconds_bucket[$__rate_interval]))))",
+          "expr": "topk_max(8, histogram_quantile(0.95, sum by (le, policy_name) (rate(kyverno_policy_execution_duration_seconds_bucket[$__rate_interval]))))",
           "legendFormat": "{{policy_name}}"
         }
       ],

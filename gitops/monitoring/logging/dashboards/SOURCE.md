@@ -26,7 +26,7 @@ Provisioning model:
 
 ## Metrics derived from logs
 
-The overview panels of `taskflow-waf.json` and `taskflow-rate-limits.json` read `loki_process_custom_taskflow_waf_*` metrics instead of scanning Loki. They are produced by the metrics-only `loki.process` components `waf_requests`, `waf_ratelimit`, `waf_audit` and `waf_rules` in `alloy-release.yaml`, scraped from Alloy by the `alloy` VMServiceScrape. They cover all clients and honor only the Application filter; the Client IP filtered versions stay in Loki (collapsed rows). `tests/validate-alloy-metrics.sh` runs the real Alloy image over fixture logs and checks every counter and the duration histogram, so change the pipeline and the dashboards together.
+The overview panels of `taskflow-waf.json` and `taskflow-rate-limits.json` read `loki_process_custom_taskflow_waf_*` metrics instead of scanning Loki. They are produced by the metrics-only `loki.process` components `waf_requests` (requests, duration histogram and rate-limit rejections from one parse), `waf_audit` and `waf_rules` in `alloy-release.yaml`, scraped from Alloy by the `alloy` VMServiceScrape. They cover all clients and honor only the Application filter; the Client IP filtered versions stay in Loki (collapsed rows). `tests/validate-alloy-metrics.sh` runs the real Alloy image over fixture logs and checks every counter and the duration histogram, so change the pipeline and the dashboards together.
 
 ## Conventions shared by all dashboards
 
