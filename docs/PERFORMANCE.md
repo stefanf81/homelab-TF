@@ -51,6 +51,15 @@ The deployment owns heap sizing via `JAVA_TOOL_OPTIONS` and
 >
 > The backend Service and VMServiceScrape use the same named `http` port, so discovery does not depend on an unnamed numeric Service port.
 
+#### Monitoring stack tuning (October 2026)
+
+- **No duplicate scrapes:** the stack's own CoreDNS scrape is disabled (`coreDns.enabled: false`; the custom `coredns` VMServiceScrape selects the same pods), and the `loki` VMServiceScrape skips the chart's headless Service. Both previously ingested every series twice.
+- **CPU limits:** Loki and VMSingle limits raised from 500m to 1 CPU so split Loki queries run in parallel and VMSingle merges are not throttled; memory limits (768Mi / 1Gi) stay the protective limit.
+- **Loki:** in-process results cache (100 MB, no memcached pod); a repeated range query went from 4.4 s to 0.009 s in the lab. Tenant ingestion set explicitly to 8 MB/s with a 16 MB burst (the 4/6 MB default made the 15 MB per-stream burst unreachable).
+- **Grafana:** the VictoriaMetrics datasource sets `timeInterval: 30s` to match the scrape interval.
+- **Dashboards:** the WAF and Rate Limits overviews read Alloy-derived counters instead of scanning Loki: log data read per dashboard open at 6h fell from 949 to 89 MB (WAF) and 2,108 to 516 MB (Rate Limits).
+- **Open:** drop unused high-cardinality series (API server histograms, unused cAdvisor metrics) after checking the VMUI cardinality explorer.
+
 ### 1.3 ~~PostgreSQL runs on Longhorn (network storage)~~ (RESOLVED)
 **File:** `gitops/apps/taskflow/postgres-pvc.yaml` (`storageClassName: proxmox-csi`)
 

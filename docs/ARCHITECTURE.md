@@ -569,12 +569,18 @@ the app because its Grafana route targets the TaskFlow Gateway:
   `infra-controllers` and `taskflow-app`.
 - **`monitoring-app`** Kustomization (`gitops/monitoring/app`) applies the
   VMServiceScrapes and the Grafana dashboards (`TaskFlow Performance`,
-  `AbuseIPDB Security`, `Blocked Sources`). Depends on `monitoring` so the
-  VMServiceScrape CRD already exists.
+  `AbuseIPDB Security`, `Blocked Sources`, `cert-manager`, `Kyverno`). Depends on
+  `monitoring` so the VMServiceScrape CRD already exists.
 - **`monitoring-logging`** Kustomization (`gitops/monitoring/logging`) runs
   Loki + Alloy, which ships the WAF audit logs, the `abuseipdb-sync` logs and
   the Cilium Hubble flow export into Loki for Grafana Explore and the
-  `Blocked Sources` dashboard.
+  `Blocked Sources` dashboard. Alloy also derives bounded WAF counters
+  (`loki_process_custom_taskflow_waf_*`) that VictoriaMetrics scrapes for the WAF
+  and Rate Limits overviews. Its dashboards are `Taskflow WAF`, `Taskflow Access
+  Logs`, `Taskflow Rate Limits`, `Falco`, `Trivy Operator` and `Logging pipeline`.
+- Grafana folders: Security, Taskflow and Platform. Every dashboard carries the
+  `homelab` tag and a "Dashboards" dropdown; conventions are in
+  `gitops/monitoring/logging/dashboards/SOURCE.md`.
 
 **Reaching the UIs:**
 

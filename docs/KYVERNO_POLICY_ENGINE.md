@@ -13,6 +13,12 @@ the short notes in `gitops/README.md`.
 
 Both are managed entirely through Git; nothing is applied imperatively.
 
+Kyverno's own controller metrics (policy results, admission requests and latency,
+rule readiness, controller health and resources) are on the Grafana dashboard
+**Kyverno** (`/d/kyverno`, Security folder,
+`gitops/monitoring/app/dashboards/kyverno.json`). Per-resource violations stay in
+Policy Reporter.
+
 ---
 
 ## 1. Architecture in this repo (file map)

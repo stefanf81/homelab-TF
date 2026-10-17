@@ -4,7 +4,7 @@
 
 Taskflow uses a **Caddy + Coraza WAF** (Web Application Firewall) to inspect all incoming HTTP traffic before it reaches the application services. Coraza runs as a Coraza-Caddy plugin, using the **OWASP Core Rule Set (CRS)** to detect and optionally block common web attacks (SQL injection, XSS, path traversal, etc.). Caddy additionally enforces **per-client HTTP rate limiting** (HTTP 429, `caddy-ratelimit`): frontend `general` 180/min and backend `api` 300/min, enabled 2026-09-26 after the live client-IP verification passed. Rate limiting complements — and does not replace — IP reputation enforcement (Cloudflare edge + Cilium) or CRS inspection. See [Rate Limiting](#rate-limiting).
 
-Audit logs, access logs (including rate-limit 429s), and Coraza records from the WAFs are collected by **Grafana Alloy**, stored in **Grafana Loki** (30-day retention), and visualized in Grafana dashboards.
+Audit logs, access logs (including rate-limit 429s), and Coraza records from the WAFs are collected by **Grafana Alloy**, stored in **Grafana Loki** (30-day retention), and visualized in Grafana dashboards. Alloy also counts the same records into bounded `loki_process_custom_taskflow_waf_*` metrics, which VictoriaMetrics scrapes, so the dashboard overviews do not have to scan Loki (see [Metrics derived from logs](#metrics-derived-from-logs)).
 
 > **IP reputation is not a WAF concern here.** Known-malicious source IPs are
 > enforced **before** this stack: at the Cloudflare edge for proxied traffic
@@ -385,8 +385,10 @@ Prometheus scrape). The plugin is configured with `disable_metrics` as a
 safeguard, because its Prometheus collectors label every series with the
 rate-limit key — for `{client_ip}` that would create one time series per
 Internet client. Do not enable Caddy metrics without accounting for that.
-Individual 429 events are observed through the access logs → Loki path instead
-(see [Rate Limits Dashboard](#rate-limits-dashboard)).
+Individual 429 events are observed through the access logs → Loki path instead,
+and Alloy counts limiter rejections per application and zone without a client
+label (see [Metrics derived from logs](#metrics-derived-from-logs) and
+[Rate Limits Dashboard](#rate-limits-dashboard)).
 
 ### Performance notes
 
@@ -421,7 +423,7 @@ The pipeline extracts `method` from the transaction JSON and the first matched C
 
 Loki's `json` parser skips arrays, so `messages[]` cannot be fully flattened with LogQL. The raw JSON audit record is retained for investigation; dashboard detection queries require `"messages"` and therefore exclude relevant HTTP responses that did not trigger a WAF rule.
 
-Alloy configuration:
+Alloy configuration (simplified; `gitops/monitoring/logging/alloy-release.yaml` is the source of truth and also fans the WAF records out to the metrics-only components described below):
 
 ```alloy
 discovery.kubernetes "pods" {
@@ -519,12 +521,45 @@ loki.write "local" {
 }
 ```
 
+### Metrics derived from logs
+
+Four metrics-only `loki.process` components (`waf_requests`, `waf_ratelimit`,
+`waf_audit`, `waf_rules`) receive the same WAF records as the Loki pipeline.
+They have `forward_to = []`, so they never write to Loki and stored logs and
+labels are unchanged. Each keeps only bounded labels (`stage.label_keep`) before
+`stage.metrics`, because every remaining entry label would become a metric label.
+Alloy exposes them with the `loki_process_custom_` prefix, and the `alloy`
+VMServiceScrape collects them every 30s.
+
+| Metric | Labels | Counts |
+|--------|--------|--------|
+| `loki_process_custom_taskflow_waf_requests_total` | `application`, `status`, `method` | Caddy "handled request" access records, health probes excluded; unusual methods are normalised to `OTHER` |
+| `loki_process_custom_taskflow_waf_request_duration_seconds` | `application` (histogram) | Caddy request duration |
+| `loki_process_custom_taskflow_waf_rate_limited_total` | `application`, `zone` | Access records carrying `rate_limit_zone`, i.e. Caddy limiter rejections |
+| `loki_process_custom_taskflow_waf_audit_records_total` | `application`, `interrupted` | Coraza audit records |
+| `loki_process_custom_taskflow_waf_detection_records_total` | `application`, `interrupted` | Audit records with rule matches (`messages`) |
+| `loki_process_custom_taskflow_waf_first_rule_total` | `application`, `rule_id` | First matched CRS rule per detection |
+
+Client IPs, URIs and User-Agents are never metric labels. Panels built on these
+metrics therefore cover all clients and honor only the Application filter; the
+Client IP filtered versions stay on Loki. Series idle for 168h are dropped
+(`max_idle_duration`). VictoriaMetrics' `increase()` counts a counter's first
+sample as an increase from zero, so a fresh series is not under-counted.
+
+`gitops/images/taskflow-caddy-coraza/tests/validate-alloy-metrics.sh` runs the
+real Alloy image over fixture logs with known counts and checks every counter
+and the histogram; `validate-configs.sh` and CI run it. Change the pipeline and
+the dashboards together.
+
 ### Loki Configuration
 
 - **Mode**: Monolithic (single binary)
 - **Retention**: 30 days (720 hours)
 - **Storage**: 10Gi PVC (`proxmox-csi` StorageClass)
-- **Caches**: Disabled (chunk cache, result cache)
+- **Caches**: in-process results cache (`embedded_cache`, 100 MB); memcached chunk and results caches disabled
+- **Limits**: `max_query_series: 20000` (top-IP tables group by client IP and failed above 5000 distinct IPs), tenant ingestion 8 MB/s with a 16 MB burst, per-stream 3 MB/s with a 15 MB burst
+- **Resources**: 100m/256Mi requests, 1 CPU/768Mi limits (the CPU limit lets split range queries run in parallel)
+- **Metrics scrape**: the `loki` VMServiceScrape selects only the main Service, not the chart's headless Service, so Loki series are not duplicated
 - **Canary/Test**: Disabled
 
 ### Log Labels
@@ -567,14 +602,15 @@ datasources:
 
 | Panel | Type | Data Source | Query |
 |-------|------|-------------|-------|
-| Detection-bearing audit records | stat | Loki | Total audit records containing rule detections in selected range, honoring Application and Client IP |
-| Confirmed interruptions (BLOCK) | stat | Loki | Audit records explicitly interrupted by Coraza (`transaction.is_interrupted=true`) in selected range |
-| Detected without interruption | stat | Loki | Audit records matching rules where Coraza did not interrupt (`transaction.is_interrupted=false`) |
-| Interruption rate | stat | Loki | Percentage of detected transactions that were interrupted; guarded denominator; No detections when undefined |
-| WAF activity over time | timeseries | Loki | Audited transactions vs rule detections per adaptive `$__interval`, with a zero baseline while WAF logs arrive |
+| Detection-bearing audit records | stat | VictoriaMetrics | `increase(loki_process_custom_taskflow_waf_detection_records_total[$__range])`: audit records containing rule detections in the selected range; all clients, Application filter only |
+| Confirmed interruptions (BLOCK) | stat | VictoriaMetrics | Detection records with `interrupted="true"` (`transaction.is_interrupted`) in the selected range |
+| Detected without interruption | stat | VictoriaMetrics | Detection records with `interrupted="false"` |
+| Interruption rate | stat | VictoriaMetrics | Percentage of detection records that were interrupted; guarded denominator; No detections when undefined |
+| WAF activity over time | timeseries | VictoriaMetrics | Audit records vs rule detections per adaptive `$__interval` |
+| Overview filtered by client IP | 4 stats + timeseries (collapsed row) | Loki | The same five panels scanning Loki, honoring Application and Client IP |
 | Top first-matched CRS rules | bar gauge | Loki | Instant `topk(10, sum by (rule_id, rule_msg) ...)`; displays rule ID and descriptive rule message |
 | First-matched rule categories | bar gauge | Loki | Horizontal bar gauge categorizing rule families (SQLi, XSS, File access / LFI 930xxx, etc.) |
-| Top source IPs | table | Loki | Instant top 10 with data links to Access Logs, Rate Limits, and WAF drilldowns |
+| Top source IPs | table | Loki | Instant top 10 with data links to Access Logs, Rate Limits, WAF drilldowns and an AbuseIPDB lookup |
 | Recent WAF detections | logs | Loki | Latest 100 detections with compact `BLOCK/DETECT · <ip> · <method> <uri> · CRS <id>: <msg> (<app>)` formatting |
 | Raw WAF detection records | logs (collapsed row) | Loki | Latest 100 detection-bearing audit records without `line_format`, retaining the complete stored, redacted JSON |
 | WAF rule detections | timeseries (collapsed row) | Loki | Standalone detections timeseries per `$__interval` |
@@ -595,14 +631,20 @@ Loki summaries use `queryType: instant`; the Prometheus `instant` flag is not a
 Loki query option. Event-count and request-rate charts use buckets of at least
 5 minutes; inspection latency uses at least 1 minute. Buckets widen with the
 displayed query step, with a 300-point budget to avoid gaps on long ranges. The
-dashboards refresh every minute. Summary logs wrap lines and expose extracted
+WAF, Access Logs and Rate Limits dashboards refresh every 5 minutes. Summary logs wrap lines and expose extracted
 labels; collapsed Raw JSON evidence rows return complete stored records without
 `line_format`. These records retain ingestion redaction. See the runbook's
 "Rendering and query behavior" section for the full rendering conventions.
-Audit-derived panels (events, detections, rule/method/paranoia/URI/User-Agent
-tables, latency, and evidence) honor the `application` and `client_ip` filters;
-WAF pod and log-pipeline metrics are service-level and intentionally ignore the
-client filter. Examples of scan-style activity can be inspected end to end by
+Audit-derived Loki panels (rule/method/paranoia/URI/User-Agent breakdowns,
+latency, evidence and the collapsed client-filtered overview) honor the
+`application` and `client_ip` filters. The overview cards and activity chart
+come from Alloy metrics and honor only `application`; WAF pod and log-pipeline
+metrics are service-level and also ignore the client filter.
+Deployment rollouts and container restarts in the `taskflow` namespace are
+drawn as annotations (toggles in the top bar). Every dashboard has a
+**Dashboards** dropdown (tag `homelab`) and a shared crosshair; see
+`gitops/monitoring/logging/dashboards/SOURCE.md` for the conventions.
+Examples of scan-style activity can be inspected end to end by
 setting `client_ip` here or on the Rate Limits dashboard, where client IPs in
 the top table link into this dashboard pre-filtered.
 Rule-family trends and runtime/log-pipeline panels are grouped in collapsed
@@ -642,16 +684,19 @@ rejections additionally carry the `rate_limit_zone` field.
 
 **Dashboard**: "Taskflow Rate Limits" (`/d/taskflow-rate-limits`)
 
-Provisioned by `gitops/monitoring/logging/dashboards/taskflow-rate-limits.json` and derived
-entirely from Caddy access logs in Loki (`status=429`). Layout:
+Provisioned by `gitops/monitoring/logging/dashboards/taskflow-rate-limits.json`. The
+overview cards, fixed-window cards, rejection mix, rate-limited responses and
+request-rate charts come from the Alloy metrics (all clients, Application filter
+only); breakdown bars, tables and log samples scan the Caddy access logs in Loki
+and also honor the Client IP filter. Layout:
 
 - **Overview — selected range**: total recorded requests, all 429 responses,
-  confirmable Caddy rate-limit rejections (429s carrying `rate_limit_zone`), and
-  the rejection share of requests. Exact integer totals honor the application and
-  client-IP filters.
+  confirmable Caddy rate-limit rejections (records carrying `rate_limit_zone`), and
+  the rejection share of requests, from the Alloy metrics. The Client IP filtered
+  total is in the collapsed row "Totals filtered by client IP (scans logs)".
 - **Fixed-window summaries**: 5-minute, 1-hour, and 24-hour 429 counts that end at
   the range endpoint and can include activity outside the graph; these cards are
-  intentionally unfiltered by client IP.
+  unfiltered by client IP.
 - **Breakdowns**: HTTP responses by status (all recorded codes; a 200 is not proof
   that content was served and a 403 is not automatically a Coraza block), the
   rejection mix (Coraza blocks vs limiter vs upstream 429s), and rate-limit
@@ -661,7 +706,7 @@ entirely from Caddy access logs in Loki (`status=429`). Layout:
   (Archive/backup, Config/source-control, Script endpoints, API routes, Static
   assets, Other), and top-10 User-Agents (self-reported; missing values group as
   `(missing)`). Clicking a client IP opens the Access Logs or WAF dashboard
-  filtered to that IP and the current time range.
+  filtered to that IP and the current time range, or an AbuseIPDB lookup.
 - It also carries an "Identity drift — client_ip in pod CIDR" stat: known internal
   clients can contribute; sustained unexpected values warrant checking the trusted
   `cilium_host` peer and re-running runbook Stage 0.
