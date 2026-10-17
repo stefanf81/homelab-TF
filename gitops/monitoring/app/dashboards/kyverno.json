@@ -6,7 +6,8 @@
   "tags": [
     "kyverno",
     "policy",
-    "security"
+    "security",
+    "homelab"
   ],
   "schemaVersion": 39,
   "version": 1,
@@ -15,7 +16,19 @@
     "from": "now-6h",
     "to": "now"
   },
-  "links": [],
+  "links": [
+    {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "homelab"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true,
+      "icon": "dashboard"
+    }
+  ],
   "templating": {
     "list": [
       {
@@ -1174,5 +1187,6 @@
         "content": "**Source.** Kyverno controller metrics (`kyverno_*`) from the four controller metrics services, plus container metrics from cAdvisor and kube-state-metrics. Names and labels checked against Kyverno v1.19.1.\n\n- Policy results count rule evaluations, not distinct resources. A background scan re-counts the same failing resource every cycle.\n- By default Kyverno does not export `policy_namespace` and `resource_namespace` labels, so results are per policy and kind, not per namespace.\n- Current violations per resource are in Policy Reporter (https://kyverno.jokelab.dev); this dashboard shows evaluation activity and controller health.\n- Counters appear after their first event, so empty panels on a quiet cluster are normal."
       }
     }
-  ]
+  ],
+  "graphTooltip": 1
 }

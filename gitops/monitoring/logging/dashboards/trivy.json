@@ -156,7 +156,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Vulnerabilities found in scanned container images, by severity, for the selected namespaces."
     },
     {
       "id": 3,
@@ -254,7 +255,8 @@
           "show": false
         },
         "frameIndex": 0
-      }
+      },
+      "description": "Vulnerability counts per image, tag, namespace and severity."
     },
     {
       "id": 5,
@@ -294,7 +296,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Kubernetes resource misconfigurations (config audits) by severity."
     },
     {
       "id": 6,
@@ -375,7 +378,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "RBAC findings for roles and cluster roles by severity."
     },
     {
       "id": 8,
@@ -415,7 +419,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Secrets found exposed in container images: the 15 namespaces with the most."
     },
     {
       "id": 9,
@@ -455,7 +460,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Compliance checks that currently fail, by check title."
     },
     {
       "id": 10,
@@ -495,7 +501,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Compliance checks that currently pass, by check title."
     },
     {
       "id": 11,
@@ -596,7 +603,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Trivy operator reconcile runs per second by controller and result. Errors mean scans are not completing."
     },
     {
       "id": 13,
@@ -676,6 +684,26 @@
         "mode": "markdown",
         "content": "The installed Trivy Operator v0.34.0 findings collector reads **namespaced InfraAssessmentReports** for `trivy_resource_infraassessments`; it does not export **ClusterInfraAssessmentReports** such as `node-ubuntu`. A missing metric is therefore not proof of zero infrastructure findings.\n\nInspect node reports and scan currency with `kubectl get clusterinfraassessmentreports -o yaml`; use the compliance panels above for exported cluster compliance summaries. **Not exported** means no namespaced metric series for this selection; it does not certify node health."
       }
+    }
+  ],
+  "graphTooltip": 1,
+  "tags": [
+    "trivy",
+    "security",
+    "vulnerabilities",
+    "homelab"
+  ],
+  "links": [
+    {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "homelab"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true,
+      "icon": "dashboard"
     }
   ]
 }
