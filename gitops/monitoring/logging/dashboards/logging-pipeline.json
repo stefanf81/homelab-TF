@@ -311,7 +311,7 @@
       "id": 5,
       "type": "stat",
       "title": "Active streams",
-      "description": "Streams held in Loki's memory. The configured limit is 10,000 per tenant (max_streams_per_user).",
+      "description": "Streams held in Loki's memory. Loki rejects new streams above 5,000: the effective limit is the lower of max_streams_per_user (10,000) and Loki's default max_global_streams_per_user (5,000).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -701,7 +701,7 @@
       "id": 12,
       "type": "timeseries",
       "title": "Ingest rate at Loki",
-      "description": "Bytes and lines per second received by Loki's distributor. The dashed line is Loki's default tenant ingestion limit of 4 MB/s, which the repo does not override; above it Loki answers 429 and discards entries.",
+      "description": "Bytes and lines per second received by Loki's distributor. The dashed line is the tenant ingestion limit of 8 MB/s (ingestion_rate_mb, 16 MB burst); above it Loki answers 429 and discards entries.",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -725,7 +725,7 @@
         },
         {
           "refId": "C",
-          "expr": "vector(4194304)",
+          "expr": "vector(8388608)",
           "legendFormat": "ingestion limit"
         }
       ],
@@ -796,7 +796,7 @@
       "id": 13,
       "type": "timeseries",
       "title": "Streams and chunks in memory",
-      "description": "Streams and chunks held by Loki's ingester. The dashed line is the 10,000 stream limit.",
+      "description": "Streams and chunks held by Loki's ingester. The dashed line is the effective 5,000 stream limit.",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -820,7 +820,7 @@
         },
         {
           "refId": "C",
-          "expr": "vector(10000)",
+          "expr": "vector(5000)",
           "legendFormat": "stream limit"
         }
       ],
@@ -1445,7 +1445,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Source.** Loki and Alloy metrics scraped by VictoriaMetrics, plus kubelet volume metrics. Names checked against Loki 3.7.8 and Alloy v1.20.1.\n\n- Discard counters only exist after the first discard, so empty discard panels are healthy. The stat tiles show 0 when Loki is scraped.\n- Alloy retries a failed push before dropping it: retries and send errors are the early warning, dropped bytes the loss.\n- Stream and storage limits are written into these panels from `gitops/monitoring/logging/loki-release.yaml` (10,000 streams, 10 GiB, 30 days); update them together."
+        "content": "**Source.** Loki and Alloy metrics scraped by VictoriaMetrics, plus kubelet volume metrics. Names checked against Loki 3.7.8 and Alloy v1.20.1.\n\n- Discard counters only exist after the first discard, so empty discard panels are healthy. The stat tiles show 0 when Loki is scraped.\n- Alloy retries a failed push before dropping it: retries and send errors are the early warning, dropped bytes the loss.\n- Stream and storage limits are written into these panels from `gitops/monitoring/logging/loki-release.yaml` (5,000 effective streams, 8 MB/s ingestion, 10 GiB, 30 days); update them together."
       }
     }
   ],

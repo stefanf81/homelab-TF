@@ -80,6 +80,14 @@ spec:
     coreDns:
       enabled: false
 
+    # The bundled CoreDNS dashboard is gated on coreDns.enabled by default; keep it
+    # synced, since the custom coredns scrape still provides its metrics (the
+    # dashboard discovers the job name from coredns_build_info).
+    defaultDashboards:
+      sources:
+        kubernetes-system-coredns:
+          enabled: true
+
     # VMSingle — the TSDB
     vmsingle:
       enabled: true
@@ -145,9 +153,11 @@ spec:
           memory: 128Mi
 
     # Datasources provisioned by the stack. The list replaces the chart default, so
-    # both default entries are repeated; only `jsonData.timeInterval` is new. All
-    # scrapes run every 30s, but Grafana assumes 15s unless told otherwise, which
-    # makes $__rate_interval and the auto step ask for twice as many points as exist.
+    # both default entries are repeated; only `jsonData.timeInterval` is new. Most
+    # scrapes run every 30s (postgres, redis, Trivy, cilium-operator, cert-manager,
+    # Kyverno and Policy Reporter every 60s), but Grafana assumes 15s unless told
+    # otherwise, which makes $__rate_interval and the auto step ask for more points
+    # than exist.
     defaultDatasources:
       victoriametrics:
         datasources:

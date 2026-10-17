@@ -248,7 +248,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\"}[$__range])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))",
+          "expr": "sum(increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__range])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))",
           "instant": true
         }
       ],
@@ -311,7 +311,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * (sum(increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\"}[$__range])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) / (sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])) > 0)",
+          "expr": "100 * (sum(increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__range])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) / (sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])) > 0)",
           "instant": true
         }
       ],
@@ -681,12 +681,12 @@
         },
         {
           "refId": "B",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\"}[$__interval]))",
+          "expr": "sum(increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval]))",
           "legendFormat": "Caddy rate limit"
         },
         {
           "refId": "C",
-          "expr": "clamp_min((sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[$__interval])) or vector(0)) - (sum(increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\"}[$__interval])) or vector(0)), 0)",
+          "expr": "clamp_min((sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[$__interval])) or vector(0)) - (sum(increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval])) or vector(0)), 0)",
           "legendFormat": "Other 429 (upstream/app)"
         }
       ],
@@ -870,7 +870,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (application) (increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\"}[$__interval]))",
+          "expr": "sum by (application) (increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval]))",
           "legendFormat": "{{application}}"
         }
       ],
@@ -1839,7 +1839,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_rate_limited_total[5m])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total[5m])))",
+          "expr": "sum(increase(loki_process_custom_taskflow_waf_rate_limited_total{zone=~\".+\"}[5m])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total[5m])))",
           "instant": true
         }
       ],

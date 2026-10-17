@@ -463,8 +463,12 @@ spec:
           loki.process "waf_ratelimit" {
             forward_to = []
 
+            // Caddy logs "rate_limit_zone":null for requests that were not limited
+            // (log_append of an unset placeholder) and probes carry no field at all.
+            // stage.drop cannot drop a null or missing value, so only lines whose zone
+            // is a non-empty string enter this match.
             stage.match {
-              selector = "{job=\"coraza-waf\"} |= \"handled request\""
+              selector = "{job=\"coraza-waf\"} |= \"handled request\" |~ \"\\\"rate_limit_zone\\\":\\\"[^\\\"]+\\\"\""
 
               stage.label_keep {
                 values = ["application"]
@@ -474,12 +478,6 @@ spec:
                 expressions = {
                   zone = "rate_limit_zone",
                 }
-              }
-
-              // Empty for requests that were not rate limited.
-              stage.drop {
-                source     = "zone"
-                expression = "^$"
               }
 
               stage.labels {

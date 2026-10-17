@@ -14,7 +14,7 @@
       "id": 1,
       "type": "stat",
       "title": "Cloudflare blocked requests",
-      "description": "Sum of blocked requests reported by Cloudflare Security Events in the selected range.",
+      "description": "Sum of blocked requests reported by Cloudflare Security Events in the selected range. The collector writes only when there are events, so 0 means no blocks only while \"Cloudflare collector age\" (next to this tile) is green.",
       "gridPos": {
         "x": 0,
         "y": 0,
@@ -187,7 +187,7 @@
       "id": 4,
       "type": "stat",
       "title": "Cilium Gateway dropped flows",
-      "description": "Non-reply DROPPED flows involving reserved:ingress (identity 8), with POLICY_DENIED or no recorded reason. Reasonless flows are not proof of an AbuseIPDB or L7-policy block. These are flow events, not unique HTTP requests.",
+      "description": "Non-reply DROPPED flows involving reserved:ingress (identity 8), with POLICY_DENIED or no recorded reason. Reasonless flows are not proof of an AbuseIPDB or L7-policy block. These are flow events, not unique HTTP requests. Shows 0 while the Hubble export delivers any flow in the range, and No data when it delivers none (export or Alloy tail down, or a completely quiet gateway).",
       "gridPos": {
         "x": 18,
         "y": 0,
@@ -201,7 +201,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_source_identity=\"8\" or flow_destination_identity=\"8\") | (flow_drop_reason_desc=\"POLICY_DENIED\" or flow_drop_reason_desc=\"\") [$__range]))",
+          "expr": "sum(count_over_time({job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_source_identity=\"8\" or flow_destination_identity=\"8\") | (flow_drop_reason_desc=\"POLICY_DENIED\" or flow_drop_reason_desc=\"\") [$__range])) or (0 * sum(count_over_time({job=\"hubble-flows\"}[$__range])))",
           "queryType": "instant"
         }
       ],
@@ -212,7 +212,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "gray"
+              },
+              {
+                "color": "green",
+                "value": 0
               },
               {
                 "color": "orange",
@@ -224,7 +228,7 @@
               }
             ]
           },
-          "noValue": "0"
+          "noValue": "No data"
         },
         "overrides": []
       },

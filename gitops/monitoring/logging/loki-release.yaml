@@ -54,7 +54,10 @@ spec:
         allow_structured_metadata: true
         volume_enabled: true
         # Bound stream/query cardinality and per-stream ingest so a single noisy
-        # producer cannot exhaust the monolithic instance.
+        # producer cannot exhaust the monolithic instance. The effective stream
+        # limit is the lower of this and max_global_streams_per_user (Loki default
+        # 5000, unset here), so new streams are rejected above 5000. The Logging
+        # pipeline dashboard draws that 5000; keep the two in sync.
         max_streams_per_user: 10000
         max_label_names_per_series: 30
         max_label_value_length: 2048
