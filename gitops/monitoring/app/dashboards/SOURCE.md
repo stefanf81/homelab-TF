@@ -20,6 +20,8 @@ Provisioning model:
 | `abuseipdb-security.json` | `abuseipdb-security-dashboard` | `abuseipdb-security` | Security | In-repo original; see `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`. |
 | `blocked-sources.json` | `blocked-sources-dashboard` | `blocked-sources` | Security | In-repo original; see below and `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`. |
 | `taskflow-performance.json` | `taskflow-performance-dashboard` | `taskflow-performance` | Taskflow | In-repo original (backend JVM/HTTP/Hikari/PostgreSQL/Redis + pod/node/disk metrics). |
+| `cert-manager.json` | `cert-manager-dashboard` | `cert-manager` | Platform | In-repo original (certificate expiry/readiness/renewal, ACME requests, controller sync errors). Metric names and labels checked against cert-manager v1.21.2 (`pkg/metrics`, `internal/collectors`). |
+| `kyverno.json` | `kyverno-dashboard` | `kyverno` | Security | In-repo original (policy results, admission requests/latency, rule readiness, controller health and resource use). Metric names and labels checked against Kyverno v1.19.1 (`pkg/metrics`, chart `metricsExposure`). Policy Reporter's per-resource violations are not included: its metric names could not be verified offline. |
 
 ## Blocked Sources scope
 

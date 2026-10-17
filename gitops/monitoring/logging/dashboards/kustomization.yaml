@@ -67,3 +67,15 @@ configMapGenerator:
         app.kubernetes.io/name: taskflow-rate-limits
         app.kubernetes.io/component: logging
         app.kubernetes.io/part-of: taskflow-observability
+  - name: logging-pipeline-dashboard
+    files:
+      - logging-pipeline.json
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        grafana_folder: Platform
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/name: logging-pipeline
+        app.kubernetes.io/component: logging
+        app.kubernetes.io/part-of: taskflow-observability
