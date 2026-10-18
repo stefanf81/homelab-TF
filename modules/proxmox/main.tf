@@ -1,10 +1,10 @@
-# Ubuntu 26.04 (Resolute) Cloud Image, pinned to the 2026-08-23 release image.
+# Ubuntu 26.04 (Resolute) Cloud Image, pinned to the 2026-09-27 release image.
 resource "proxmox_download_file" "ubuntu_cloud_image" {
   content_type        = "iso"
   datastore_id        = "local"
   node_name           = var.proxmox_node
-  url                 = "https://cloud-images.ubuntu.com/releases/resolute/release-20260823/ubuntu-26.04-server-cloudimg-amd64.img"
-  checksum            = "8196be9d7958059cb56c6c75c80fdf6cee8a8885bc149ea791d7db1c7ef93035"
+  url                 = "https://cloud-images.ubuntu.com/releases/resolute/release-20260927/ubuntu-26.04-server-cloudimg-amd64.img"
+  checksum            = "8800651811af9a85465ad1d552add729947bb16488dddb4a9b5305a3d97332b2"
   checksum_algorithm  = "sha256"
   file_name           = "ubuntu-26.04-server-cloudimg-amd64.img"
   overwrite           = false
