@@ -11,6 +11,13 @@ abort "usage: #{File.basename(__FILE__)} <alloy-release.yaml> <out.alloy> <loki 
 release_doc = YAML.load_stream(File.read(release)).compact.find { |d| d["kind"] == "HelmRelease" && d.dig("metadata", "name") == "alloy" }
 abort "Alloy HelmRelease not found in #{release}" unless release_doc
 config = release_doc.dig("spec", "values", "alloy", "configMap", "content") or abort "Alloy config content missing"
+# The Alloy chart renders configMap.content through Helm's `tpl` (ConfigMap data and
+# checksum annotation). Any "{{" is evaluated by Helm: a Go-template stage.template
+# made every upgrade fail to render, so Flux silently kept the previous Alloy release.
+if (line_no = config.lines.index { |line| line.include?("{{") })
+  abort "Alloy config line #{line_no + 1} contains \"{{\"; the chart renders the config through Helm tpl, so the release would fail. " \
+        "Avoid Go templates in the Alloy config (e.g. use stage.regex/stage.match instead of stage.template)."
+end
 
 # Top-level blocks start at column 0 with `name "label" {` and end at a lone `}`.
 blocks = []

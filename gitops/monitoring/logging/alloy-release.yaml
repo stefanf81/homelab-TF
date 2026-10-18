@@ -67,6 +67,9 @@ spec:
             readOnly: true
       configMap:
         create: true
+        # The chart renders `content` through Helm's tpl (ConfigMap and checksum), so
+        # it must not contain a double opening brace: Helm would evaluate it and the release fails
+        # to render. The Alloy metrics test refuses a config that does.
         content: |
           discovery.kubernetes "pods" {
             role = "pod"
@@ -421,11 +424,14 @@ spec:
                 value  = "/waf-healthz"
               }
 
-              // The method is client controlled: anything unusual becomes OTHER so a
-              // scanner cannot create unbounded series.
-              stage.template {
-                source   = "method"
-                template = "{{ if or (eq .Value \"GET\") (eq .Value \"POST\") (eq .Value \"PUT\") (eq .Value \"PATCH\") (eq .Value \"DELETE\") (eq .Value \"HEAD\") (eq .Value \"OPTIONS\") }}{{ .Value }}{{ else }}OTHER{{ end }}"
+              // The method is client controlled: only the usual methods become label
+              // values, everything else is labelled OTHER below, so a scanner cannot
+              // create unbounded series. No Go template (stage.template) here: the
+              // Alloy chart renders this whole config through Helm's tpl, and any
+              // double opening brace breaks the release (the Alloy test rejects it).
+              stage.regex {
+                source     = "method"
+                expression = "^(?P<known_method>GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$"
               }
 
               // Histogram first, while only `application` is a label.
@@ -442,7 +448,17 @@ spec:
               stage.labels {
                 values = {
                   status = "",
-                  method = "",
+                  method = "known_method",
+                }
+              }
+
+              stage.match {
+                selector = "{application=~\".+\", method=\"\"}"
+
+                stage.static_labels {
+                  values = {
+                    method = "OTHER",
+                  }
                 }
               }
 
