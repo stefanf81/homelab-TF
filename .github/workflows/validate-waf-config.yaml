@@ -61,7 +61,7 @@ jobs:
       # image. Update deliberately alongside the repo's toolchain.
       - name: Install pinned kubectl (with embedded Kustomize)
         env:
-          KUBECTL_VERSION: v1.37.0
+          KUBECTL_VERSION: v1.37.1
         run: |
           curl -fsSLo /tmp/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
           curl -fsSLo /tmp/kubectl.sha256 "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256"
