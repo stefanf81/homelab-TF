@@ -15,9 +15,10 @@ Static review of this repository at `87a87e1` (2026-10-19); nothing was run
 against the live cluster. Items marked **verify** depend on live state or on
 the separate backend/frontend repositories.
 
-Companion documents: `SOTA_HOMELAB_2026.md` (September gap analysis) and
-`BACKLOG_2026.md` (September remediation backlog). §5 tracks what happened to
-that backlog.
+Companion documents: `SOTA_HOMELAB_2026.md` (September gap analysis),
+`BACKLOG_2026.md` (September remediation backlog; §5 tracks what happened to it)
+and **`REMEDIATION_PLAN_2026-10.md`**, which turns every finding below into an
+issue with options, recommended configuration, verification and rollback.
 
 ---
 
@@ -46,7 +47,7 @@ September backlog. **None of the four P0 items has been done**:
 | # | Gap | Risk |
 |---|-----|------|
 | 1 | No alerting (vmalert and Alertmanager disabled, no Flux `Alert`) | A reboot, full disk, expiring cert or Falco detection produces no signal |
-| 2 | No backups of Postgres, Grafana or any PVC; `Retain` is not a backup | One bad migration or deleted PVC loses all bookings |
+| 2 | No backups of Postgres, Grafana or any PVC; `Retain` is not a backup, and Proxmox VM backups exclude PV disks (the CSI plugin attaches them with `backup=false`) | One bad migration or deleted PVC loses all bookings |
 | 3 | Origin is reachable directly through the router port-forward, bypassing Cloudflare | Cloudflare WAF, bot and DDoS protection only apply to traffic that chooses to use it (new finding) |
 | 4 | k3s secrets are stored unencrypted in the sqlite datastore | Anyone with the VM disk or a Proxmox backup has every secret, including the `sops-age` key |
 | 5 | k3s still runs kube-proxy next to Cilium's kube-proxy replacement | Duplicate iptables programming and conntrack work on every Service change (new finding) |
@@ -66,6 +67,12 @@ Legend: ✅ state of the art · 🟡 fine for a homelab, behind SOTA · 🔴 gap
 | Ubuntu 26.04 VM (Proxmox, `cpu: host`, virtio-scsi-single, iothread, discard) | image 20260927 | 🟡 Talos is the community default (`SOTA_HOMELAB_2026.md`) | ✅ VM hardware settings are right | 🟡 see below |
 | k3s | v1.36.x, sqlite datastore | 🟡 | 🔴 kube-proxy not disabled | 🔴 no secrets encryption, no audit log |
 
+- 🔴 **Node flags live on the k3s command line.** The installer wrote every flag
+  into the systemd unit, and command-line flags override `config.yaml` (for
+  repeatable flags such as `--disable` the command-line list replaces the YAML
+  list). Settings added to `config.yaml` later, like README §6's
+  `disable: [coredns]`, are silently ignored. Move all flags into `config.yaml`
+  before any other node change (remediation plan REL-00).
 - 🔴 **kube-proxy still runs.** The install line in `modules/proxmox/main.tf:87`
   disables flannel, servicelb, traefik, CoreDNS, metrics-server and local-storage,
   but not kube-proxy, while Cilium runs with `kubeProxyReplacement: true`.
@@ -391,7 +398,9 @@ compare against each tool's own upstream best practice.
   `ValidatingPolicy` (backlog #8), or — for simple pod-security rules — to
   Kubernetes-native `ValidatingAdmissionPolicy` (GA since 1.30), which runs inside
   the API server with no webhook hop. If no `CleanupPolicy` exists, disable the
-  cleanup controller.
+  cleanup controller. Two version facts make this urgent: Kyverno 1.19 is tested
+  on Kubernetes 1.33–1.35 (the cluster runs 1.36), and Kyverno 1.20 (expected
+  November 2026) removes `ClusterPolicy`.
 - **Falco** runs as a fully privileged container. Set
   `driver.modernEbpf.leastPrivileged: true`: the chart then runs it with
   `CAP_SYS_RESOURCE`, `CAP_BPF`, `CAP_PERFMON` and `CAP_SYS_PTRACE` only.
@@ -416,8 +425,8 @@ compare against each tool's own upstream best practice.
   session cookie (logging into Hubble logs you out of Policy Reporter), and the
   browser sends the session cookie to `www.jokelab.dev` as well. Drop
   `cookie_domains` (host-only cookies) or give each proxy a distinct
-  `cookie_name`. Narrow `scope` to `user:email`; `read:org` is unused because no
-  org restriction is configured.
+  `cookie_name`. Keep `scope = "user:email read:org"`: oauth2-proxy's GitHub
+  provider always queries `/user/orgs` and fails without `read:org`.
 - **abuseipdb-sync**: the ClusterRole grants `get/update/patch` on *all*
   `ciliumcidrgroups`. Split it: `create` (cannot be name-scoped) plus
   `get/update/patch` with `resourceNames: [abuseipdb]`. The namespace has no PSA
@@ -447,11 +456,11 @@ compare against each tool's own upstream best practice.
   waiting for the poll interval.
 - **Grafana**: set `security.cookie_secure: true` (default is false even behind
   HTTPS), `security.strict_transport_security: true` and
-  `security.content_security_policy: true`. Narrow GitHub scopes to `user:email`.
+  `security.content_security_policy: true`. Keep the default GitHub scopes.
   The role mapping (`role_attribute_strict`, single login) is correct.
-- **metrics-server**: replace `--kubelet-insecure-tls` with
-  `--kubelet-certificate-authority` pointing at the k3s server CA
-  (`/var/lib/rancher/k3s/server/tls/server-ca.crt`, mounted read-only), backlog #10.
+- **metrics-server**: remove `--kubelet-insecure-tls` (backlog #10). k3s signs
+  kubelet serving certificates with `server-ca`, which is also the CA bundle
+  mounted into every pod, so no extra CA flag or mount is needed.
 - **Loki**: Alloy and Grafana go through the chart's nginx `loki-gateway`, which
   adds a pod and a hop in front of a single binary with auth disabled. Point both
   at `loki:3100` and disable the gateway (keep the `abuseipdb-sync` network
@@ -583,7 +592,13 @@ Proxmox VM settings (`cpu: host`, virtio-scsi-single, iothread, discard).
 | P1 #11 Egress policies | Open (only `renovate` and `abuseipdb` restrict egress) |
 | P2/P3 #12–#19 | Open |
 
-Documentation drift found during the review:
+Documentation drift found during the review (the full list, with fixes, is in
+`REMEDIATION_PLAN_2026-10.md` §6):
+
+- `docs/PERFORMANCE.md` §1.3 says PVC backups are handled at the hypervisor; the
+  Proxmox CSI plugin attaches PV disks with `backup=false`, so they are not.
+- `README.md` §6 tells you to add `disable: [coredns]` to `config.yaml`; that is
+  ignored while `--disable` flags remain on the k3s command line.
 
 - `docs/ARCHITECTURE.md` §10 says Cilium replaces kube-proxy; the k3s flags do not disable it.
 - `gitops/README.md` says the PDBs use `minAvailable: 1` (they use `maxUnavailable: 1`)
@@ -611,7 +626,7 @@ Documentation drift found during the review:
 
 6. `--disable-kube-proxy` on the live node.
 7. App and exporter database roles without superuser.
-8. oauth2-proxy host-only cookies and `user:email` scope; Grafana `cookie_secure`/HSTS.
+8. oauth2-proxy host-only cookies with distinct names; Grafana `cookie_secure`/HSTS.
 9. Cilium: `rollOutCiliumPods`, Envoy requests, BBR; CoreDNS `prefetch`/`serve_stale`.
 10. Redis `--io-threads 1`; Postgres `pg_stat_statements`, `jit=off`, `/dev/shm`; WAF `GOMEMLIMIT`.
 11. Falco `leastPrivileged`; Trivy scans platform namespaces; name-scoped abuseipdb RBAC; delete the stale OAuth secret.
