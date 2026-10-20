@@ -380,7 +380,7 @@ Rules:
 | Kyverno admission (fix key: `admissionController.container.resources`) / 3 others | 100m → 50m / 25m | (not applied) / 200m → none | 256Mi / 512Mi (now actually applied); others unchanged |
 | vmagent, node-exporter, kube-state-metrics, metrics-server | 50m, 10m, 10m, 50m → 50m, 10m, 10m, 20m | 200m, 100m, 100m, 200m → none | unchanged |
 | Grafana, Loki, VMSingle | 50m, 100m, 100m (keep) | 250m, 1, 1 → none | unchanged |
-| Alloy (fix key: `alloy.resources`) | none applied → 50m | none applied → none | 128Mi / 512Mi (first time applied) |
+| Alloy (fix key: `alloy.resources`) | none applied → 50m | none applied → none | 256Mi / 1Gi (first cap, deliberately generous; tighten after measuring) |
 | Hubble UI (fix keys: `hubble.ui.backend/frontend.resources`) | none applied → 10m each | none | 32Mi request; limit 256Mi backend, 128Mi frontend (first-time caps) |
 | Policy Reporter plugins (`plugin.kyverno/trivy.resources`) | none → 10m each | none | 32Mi / 128Mi each |
 | Falco | 100m (keep) | 1 → none (a throttled Falco drops events) | unchanged |
@@ -523,8 +523,8 @@ for example:
 # monitoring/logging/alloy-release.yaml — move the block under `alloy:` (§1.5)
     alloy:
       resources:
-        requests: {cpu: 50m, memory: 128Mi}
-        limits: {memory: 512Mi}
+        requests: {cpu: 50m, memory: 256Mi}
+        limits: {memory: 1Gi}             # first cap: generous until measured
 # infrastructure/controllers/cilium/release.yaml — Hubble UI keys fixed (§1.5)
     hubble:
       ui:

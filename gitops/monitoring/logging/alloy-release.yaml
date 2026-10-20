@@ -637,10 +637,13 @@ spec:
               cluster = "homelab",
             }
           }
-    resources:
-      requests:
-        cpu: 100m
-        memory: 128Mi
-      limits:
-        cpu: 500m
-        memory: 512Mi
+      # The chart reads the Alloy container's resources from `alloy.resources`; the
+      # previous top-level `resources` block was silently ignored, so Alloy ran with
+      # no requests or limits. First memory cap, deliberately generous: tighten it to
+      # ~1.3x the observed max working set (docs/PERF_DEEP_DIVE_2026-10.md §3.6).
+      resources:
+        requests:
+          cpu: 50m
+          memory: 256Mi
+        limits:
+          memory: 1Gi

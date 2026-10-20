@@ -98,9 +98,8 @@ spec:
           cpu: 100m
           memory: 256Mi
         limits:
-          # Loki splits a range query into parallel sub-queries; a 500m cap
-          # serialised them. Memory stays the protective limit.
-          cpu: "1"
+          # Memory stays the protective limit. No CPU limit: Loki splits a range
+          # query into parallel sub-queries, which a CPU cap serialised.
           memory: 768Mi
 
     gateway:

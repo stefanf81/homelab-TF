@@ -53,7 +53,6 @@ spec:
           cpu: 10m
           memory: 64Mi
         limits:
-          cpu: 100m
           memory: 256Mi
 
     # Node Exporter — host-level CPU/memory/disk/network metrics from every node.
@@ -65,7 +64,6 @@ spec:
           cpu: 10m
           memory: 32Mi
         limits:
-          cpu: 100m
           memory: 128Mi
       # Skip pseudo-filesystems that produce no useful metrics
       extraArgs:
@@ -113,9 +111,8 @@ spec:
             cpu: 100m
             memory: 256Mi
           limits:
-            # A 500m cap throttled background merges and multi-series dashboard
-            # queries; memory (not CPU) is the limit that protects the node.
-            cpu: "1"
+            # Memory (not CPU) protects the node. No CPU limit: a cap throttled
+            # background merges and multi-series dashboard queries.
             memory: 1Gi
         extraArgs:
           # Limit internal caches so the container doesn't OOM under pressure
@@ -159,7 +156,6 @@ spec:
             cpu: 50m
             memory: 64Mi
           limits:
-            cpu: 200m
             memory: 256Mi
 
     victoria-metrics-operator:
@@ -175,7 +171,6 @@ spec:
           cpu: 50m
           memory: 64Mi
         limits:
-          cpu: 200m
           memory: 128Mi
 
     # Datasources provisioned by the stack. The list replaces the chart default, so
@@ -294,5 +289,4 @@ spec:
           cpu: 50m
           memory: 256Mi
         limits:
-          cpu: 250m
           memory: 1Gi
