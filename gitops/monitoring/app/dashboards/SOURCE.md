@@ -63,6 +63,14 @@ Updating a dashboard:
    `grafana_folder` annotation. Run it after adding a dashboard file or
    editing a `kustomization.yaml`.
 3. Commit; Flux applies the updated ConfigMap and the sidecar reloads Grafana.
+4. After Flux has reconciled, check the live cluster:
+   `python3 gitops/monitoring/tests/verify-dashboards-live.py --grafana`
+   (needs kubectl; opens temporary port-forwards). It runs every dashboard
+   query against VMSingle and Loki with the default variables (ERROR fails,
+   EMPTY is reported as "No data right now"), checks the label sources and
+   counts the dashboards rely on, and confirms Grafana serves the repo JSON.
+   `--spoof-url https://<site>` additionally sends one request with a fake
+   WAF `Messages` header and checks that it is not counted as a detection.
 
 For dashboards imported from elsewhere, record the upstream URL/ID and the local
 adaptations in this file.
