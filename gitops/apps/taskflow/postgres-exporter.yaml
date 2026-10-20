@@ -32,11 +32,16 @@ spec:
           image: prometheuscommunity/postgres-exporter:v0.20.1
           # Collectors that are off by default. stat_checkpointer is the only source
           # of checkpoint statistics since PostgreSQL 17 (pg_stat_checkpointer).
+          # stat_statements needs `CREATE EXTENSION pg_stat_statements;` in the
+          # taskflow database (the library is preloaded by postgres-db.yaml); without
+          # it only this collector fails and logs an error per scrape.
           args:
             - --collector.stat_checkpointer
             - --collector.long_running_transactions
             - --collector.statio_user_indexes
             - --collector.stat_activity_autovacuum
+            - --collector.stat_statements
+            - --collector.stat_statements.limit=50
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:
