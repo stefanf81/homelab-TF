@@ -76,6 +76,7 @@ func main() {
 		app.lastSuccess = state.LastSuccess
 		app.cfLastSuccess = state.CloudflareLastSuccess
 		app.mu.Unlock()
+		app.restoreSuccessMetrics(time.Now())
 		if state.LastSuccess.IsZero() {
 			logger.Info("no previous successful synchronization recorded",
 				"name", cfg.CIDRGroupName, "exists", state.Exists, "entries", len(state.Prefixes))
@@ -227,6 +228,12 @@ func (a *App) syncOnce(ctx context.Context) error {
 		metricEntries.Set(float64(len(desired)))
 		metricEntriesAdded.Set(float64(result.Added))
 		metricEntriesRemoved.Set(float64(result.Removed))
+		// Timestamp and age follow the Cilium sink, like the persisted
+		// last-success annotation and the stale-feed logic; the Cloudflare
+		// sink has its own gauges and sync_success covers both sinks.
+		metricLastSuccess.Set(float64(now.Unix()))
+		metricFeedAge.Set(0)
+		metricFeedStale.Set(0)
 	}
 
 	// --- Cloudflare edge sink (optional, sees real client IPs) --------------
@@ -270,9 +277,6 @@ func (a *App) syncOnce(ctx context.Context) error {
 	}
 
 	metricSyncSuccess.Set(1)
-	metricLastSuccess.Set(float64(now.Unix()))
-	metricFeedAge.Set(0)
-	metricFeedStale.Set(0)
 
 	a.log.Info("synchronization completed",
 		"entries", len(desired),
@@ -284,6 +288,39 @@ func (a *App) syncOnce(ctx context.Context) error {
 		"created", result.Created,
 		"duration", time.Since(start).String())
 	return nil
+}
+
+// restoreSuccessMetrics republishes the last-success times recovered from the
+// CiliumCIDRGroup annotations, so the timestamp and age gauges survive a pod
+// restart even when the first synchronization afterwards fails (for example
+// because the daily AbuseIPDB quota is spent). Zero times stay unexported.
+func (a *App) restoreSuccessMetrics(now time.Time) {
+	a.mu.Lock()
+	last := a.lastSuccess
+	cfLast := a.cfLastSuccess
+	maxStale := a.cfg.MaxStaleAge
+	cfEnabled := a.cf != nil
+	a.mu.Unlock()
+
+	if !last.IsZero() {
+		age := now.Sub(last)
+		metricLastSuccess.Set(float64(last.Unix()))
+		metricFeedAge.Set(age.Seconds())
+		metricFeedStale.Set(boolGauge(age > maxStale))
+	}
+	if cfEnabled && !cfLast.IsZero() {
+		age := now.Sub(cfLast)
+		metricCloudflareLastSuccess.Set(float64(cfLast.Unix()))
+		metricCloudflareFeedAge.Set(age.Seconds())
+		metricCloudflareFeedStale.Set(boolGauge(age > maxStale))
+	}
+}
+
+func boolGauge(b bool) float64 {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // reloadFilters re-reads the Git-managed exception and protected-range files.

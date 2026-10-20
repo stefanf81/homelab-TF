@@ -61,14 +61,14 @@ var (
 		Help: "HTTP status code returned by the last AbuseIPDB blacklist request.",
 	})
 
-	metricLastSuccess = promauto.NewGauge(prometheus.GaugeOpts{
+	metricLastSuccess = newLazyGauge(prometheus.GaugeOpts{
 		Name: "abuseipdb_last_success_timestamp_seconds",
-		Help: "Unix timestamp of the last successful synchronization.",
+		Help: "Unix timestamp of the last successful CiliumCIDRGroup update (restored from the group annotation at startup).",
 	})
 
-	metricFeedAge = promauto.NewGauge(prometheus.GaugeOpts{
+	metricFeedAge = newLazyGauge(prometheus.GaugeOpts{
 		Name: "abuseipdb_feed_age_seconds",
-		Help: "Age of the last successful synchronization in seconds.",
+		Help: "Seconds since the last successful CiliumCIDRGroup update (restored from the group annotation at startup).",
 	})
 
 	metricFeedStale = promauto.NewGauge(prometheus.GaugeOpts{
@@ -76,24 +76,24 @@ var (
 		Help: "Whether the feed is older than ABUSEIPDB_MAX_STALE_AGE (1) or not (0).",
 	})
 
-	metricCloudflareSyncSuccess = promauto.NewGauge(prometheus.GaugeOpts{
+	metricCloudflareSyncSuccess = newLazyGauge(prometheus.GaugeOpts{
 		Name: "abuseipdb_cloudflare_sync_success",
 		Help: "Whether the last Cloudflare edge synchronization succeeded (1) or failed (0).",
 	})
 
-	metricCloudflareEntries = promauto.NewGauge(prometheus.GaugeOpts{
+	metricCloudflareEntries = newLazyGauge(prometheus.GaugeOpts{
 		Name: "abuseipdb_cloudflare_entries",
 		Help: "Number of entries currently published in the Cloudflare IP list.",
 	})
 
-	metricCloudflareLastSuccess = promauto.NewGauge(prometheus.GaugeOpts{
+	metricCloudflareLastSuccess = newLazyGauge(prometheus.GaugeOpts{
 		Name: "abuseipdb_cloudflare_last_success_timestamp_seconds",
-		Help: "Unix timestamp of the last successful Cloudflare edge synchronization.",
+		Help: "Unix timestamp of the last successful Cloudflare edge synchronization (restored from the group annotation at startup).",
 	})
 
-	metricCloudflareFeedAge = promauto.NewGauge(prometheus.GaugeOpts{
+	metricCloudflareFeedAge = newLazyGauge(prometheus.GaugeOpts{
 		Name: "abuseipdb_cloudflare_feed_age_seconds",
-		Help: "Age of the last successful Cloudflare edge synchronization in seconds.",
+		Help: "Seconds since the last successful Cloudflare edge synchronization (restored from the group annotation at startup).",
 	})
 
 	metricCloudflareFeedStale = promauto.NewGauge(prometheus.GaugeOpts{
@@ -106,12 +106,12 @@ var (
 		Help: "Total number of failed Cloudflare edge synchronization attempts by reason.",
 	}, []string{"reason"})
 
-	metricCloudflareBulkOperationPending = promauto.NewGauge(prometheus.GaugeOpts{
+	metricCloudflareBulkOperationPending = newLazyGauge(prometheus.GaugeOpts{
 		Name: "abuseipdb_cloudflare_bulk_operation_pending",
 		Help: "Whether a Cloudflare list bulk operation is still in progress (1) or not (0).",
 	})
 
-	metricCloudflareRulePresent = promauto.NewGauge(prometheus.GaugeOpts{
+	metricCloudflareRulePresent = newLazyGauge(prometheus.GaugeOpts{
 		Name: "abuseipdb_cloudflare_rule_present",
 		Help: "Whether the managed Cloudflare WAF custom rule is present (1) or not (0).",
 	})
@@ -141,3 +141,19 @@ var (
 		Help: "Number of blocked events collected in the last window.",
 	})
 )
+
+// lazyGauge is an unlabelled gauge that is only exported after its first Set.
+// Values that are unknown until a sink was attempted (for example the Cloudflare
+// list size right after a restart whose feed download failed) are then absent
+// instead of a misleading 0, which dashboards would render as a failure.
+type lazyGauge struct {
+	vec *prometheus.GaugeVec
+}
+
+func newLazyGauge(opts prometheus.GaugeOpts) lazyGauge {
+	return lazyGauge{vec: promauto.NewGaugeVec(opts, nil)}
+}
+
+func (g lazyGauge) Set(v float64) {
+	g.vec.WithLabelValues().Set(v)
+}

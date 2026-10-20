@@ -139,7 +139,10 @@ GET /api/v2/blacklist?plaintext=true&limit=…   (Accept: text/plain)
   response is never applied.
 * `abuseipdb.io/last-success` (Cilium) and
   `abuseipdb.io/cloudflare-last-success` are stored on the CIDR group, so feed
-  age survives pod restarts.
+  age survives pod restarts: at startup the synchronizer republishes the
+  `*_last_success_timestamp_seconds` and `*_feed_age_seconds` gauges from these
+  annotations, even when the first synchronization afterwards fails (for
+  example because the daily blacklist quota is spent).
 * When a sink's feed is older than `ABUSEIPDB_MAX_STALE_AGE` (default 24h), the
   documented stale behavior runs per sink: `fail-open` (default) empties that
   sink (Cilium group / Cloudflare list) so no address is blocked on very old
@@ -206,9 +209,23 @@ re-read on every cycle, so Git edits apply without a restart.
 `abuseipdb_last_http_status`, `abuseipdb_last_success_timestamp_seconds`,
 `abuseipdb_feed_age_seconds`, `abuseipdb_feed_stale`, `abuseipdb_build_info`.
 
+`abuseipdb_sync_errors_total` reasons: `download` (any failed feed request,
+including HTTP 429; `abuseipdb_last_http_status` has the status), `parse`,
+`validation` and `kube`. `abuseipdb_last_success_timestamp_seconds` and
+`abuseipdb_feed_age_seconds` follow the Cilium sink (the `last-success`
+annotation and the stale-feed logic); `abuseipdb_sync_success` covers all
+enabled sinks.
+
 Cloudflare sink: `abuseipdb_cloudflare_sync_success`, `_entries`,
 `_last_success_timestamp_seconds`, `_feed_age_seconds`, `_feed_stale`,
 `_sync_errors_total{reason}`, `_bulk_operation_pending`, `_rule_present`.
+Error reasons: `network`, `http`, `rate_limited`, `bulk`, `validation`,
+`timeout`. `_sync_success`, `_entries`, `_bulk_operation_pending` and
+`_rule_present` are not exported until the first Cloudflare push after a pod
+start (a push only follows a successful feed download), so an unknown state
+reads as "No data" instead of a false `0`; the timestamp and age gauges are
+restored from the annotation, or absent while no Cloudflare success was ever
+recorded.
 
 Security Events collector: `cloudflare_firewall_collector_success`,
 `cloudflare_firewall_collector_errors_total{reason}`,

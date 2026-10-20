@@ -137,7 +137,7 @@
       "id": 2,
       "type": "stat",
       "title": "Feed age",
-      "description": "Time since the last successful AbuseIPDB synchronization. Orange beyond 7h (missed cycle), red beyond ABUSEIPDB_MAX_STALE_AGE (24h).",
+      "description": "Time since the CiliumCIDRGroup denylist was last updated successfully, as tracked by the synchronizer (restored from the group annotation after restarts, refreshed every minute). Orange beyond 7h (missed 6h cycle), red beyond ABUSEIPDB_MAX_STALE_AGE (24h). No data: no successful update recorded yet. Cloudflare edge freshness is shown separately below.",
       "gridPos": {
         "x": 4,
         "y": 3,
@@ -151,7 +151,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "time() - abuseipdb_last_success_timestamp_seconds",
+          "expr": "abuseipdb_feed_age_seconds",
           "instant": true
         }
       ],
@@ -211,7 +211,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "abuseipdb_last_success_timestamp_seconds * 1000",
+          "expr": "(abuseipdb_last_success_timestamp_seconds > 0) * 1000",
           "instant": true
         }
       ],
@@ -237,7 +237,7 @@
           "values": false
         }
       },
-      "description": "When the AbuseIPDB denylist last synced successfully. An old value means the synchronizer is failing."
+      "description": "When the CiliumCIDRGroup denylist was last updated successfully (restored after restarts). An old value means the synchronizer is failing; Cloudflare edge freshness is shown separately below. No data: no successful update recorded yet."
     },
     {
       "id": 4,
@@ -404,7 +404,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "increase(abuseipdb_invalid_entries_total[$__range])",
+          "expr": "sum(increase(abuseipdb_invalid_entries_total[$__range]))",
           "instant": true
         }
       ],
@@ -447,7 +447,7 @@
       "id": 7,
       "type": "timeseries",
       "title": "Sync errors by reason",
-      "description": "Bounded reason labels only (network/http/rate_limited/parse/validation/kube).",
+      "description": "Failed synchronization attempts by bounded reason: download (any failed feed request, including HTTP 429 rate limiting; see Last API status), parse, validation or kube.",
       "gridPos": {
         "x": 0,
         "y": 8,
@@ -579,8 +579,8 @@
     {
       "id": 10,
       "type": "timeseries",
-      "title": "Cilium policy drops by reason",
-      "description": "Hubble drop metric (aggregate, bounded labels). Detailed source IPs are not metric labels by design.",
+      "title": "Cilium drops by reason",
+      "description": "Hubble drop metric for every drop reason, not only policy denials (POLICY_DENIED is policy enforcement). Aggregate, bounded labels; detailed source IPs are not metric labels by design.",
       "gridPos": {
         "x": 0,
         "y": 15,
@@ -621,7 +621,7 @@
       "id": 11,
       "type": "timeseries",
       "title": "Gateway 403 responses",
-      "description": "HTTP responses returned by the Cilium Gateway with status 403, including denylist rejects at reserved:ingress.",
+      "description": "HTTP responses with status 403 counted by Hubble's httpV2 metric for L7-visible traffic, including 403s returned by backends or the WAF. Whether Envoy policy denials at reserved:ingress (the AbuseIPDB direct-path deny) are counted here is not verified; the Blocked Sources dashboard shows those drops.",
       "gridPos": {
         "x": 8,
         "y": 15,
@@ -702,8 +702,8 @@
     {
       "id": 13,
       "type": "stat",
-      "title": "Cilium targets up",
-      "description": "Scrape targets for cilium-agent, cilium-operator and hubble metrics.",
+      "title": "Cilium scrape targets",
+      "description": "Scrape result per job (cilium-agent, cilium-operator, hubble): DOWN if any target of that job fails. A missing tile means the job has no scrape target.",
       "gridPos": {
         "x": 0,
         "y": 23,
@@ -717,8 +717,9 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(up{job=~\"cilium-agent|cilium-operator|hubble\"})",
-          "instant": true
+          "expr": "min by (job) (up{job=~\"cilium-agent|cilium-operator|hubble\"})",
+          "instant": true,
+          "legendFormat": "{{job}}"
         }
       ],
       "fieldConfig": {
@@ -735,7 +736,24 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -749,7 +767,8 @@
           ],
           "fields": "",
           "values": false
-        }
+        },
+        "textMode": "value_and_name"
       }
     },
     {
@@ -916,7 +935,7 @@
       "id": 18,
       "type": "stat",
       "title": "Cloudflare sync status",
-      "description": "Result of the most recent push to the Cloudflare edge (IP list + WAF rule).",
+      "description": "Result of the most recent push to the Cloudflare edge (IP list + WAF rule). No attempt: no push since the synchronizer started; each push follows a successful feed download (none after an AbuseIPDB 429).",
       "gridPos": {
         "x": 0,
         "y": 29,
@@ -965,7 +984,8 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "noValue": "No attempt"
         },
         "overrides": []
       },
@@ -986,7 +1006,7 @@
       "id": 19,
       "type": "stat",
       "title": "Cloudflare list entries",
-      "description": "Entries published in the Cloudflare account IP list (free plan cap: 10,000).",
+      "description": "Entries published in the Cloudflare account IP list (free plan cap: 10,000), as of the last push. Unknown: no push since the synchronizer started (each push follows a successful feed download).",
       "gridPos": {
         "x": 4,
         "y": 29,
@@ -1000,7 +1020,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "abuseipdb_cloudflare_entries",
+          "expr": "abuseipdb_cloudflare_entries and on() (abuseipdb_cloudflare_last_success_timestamp_seconds > 0)",
           "instant": true
         }
       ],
@@ -1018,7 +1038,8 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "noValue": "Unknown"
         },
         "overrides": []
       },
@@ -1052,7 +1073,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "abuseipdb_cloudflare_last_success_timestamp_seconds * 1000",
+          "expr": "(abuseipdb_cloudflare_last_success_timestamp_seconds > 0) * 1000",
           "instant": true
         }
       ],
@@ -1078,13 +1099,13 @@
           "values": false
         }
       },
-      "description": "When the denylist last synced to Cloudflare successfully. An old value means the Cloudflare sync is failing."
+      "description": "When the denylist last synced to Cloudflare successfully (restored after restarts). An old value means the Cloudflare sync is failing. No data: no successful Cloudflare sync recorded yet."
     },
     {
       "id": 21,
       "type": "stat",
       "title": "Cloudflare feed age",
-      "description": "Time since the last successful Cloudflare edge update. Red beyond ABUSEIPDB_MAX_STALE_AGE (24h).",
+      "description": "Time since the last successful Cloudflare edge update, as tracked by the synchronizer (restored after restarts, refreshed every minute). Orange beyond 7h (missed 6h cycle), red beyond ABUSEIPDB_MAX_STALE_AGE (24h). No data: no successful Cloudflare sync recorded yet.",
       "gridPos": {
         "x": 12,
         "y": 29,
@@ -1098,7 +1119,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "time() - abuseipdb_cloudflare_last_success_timestamp_seconds",
+          "expr": "abuseipdb_cloudflare_feed_age_seconds",
           "instant": true
         }
       ],
@@ -1145,7 +1166,7 @@
       "id": 22,
       "type": "stat",
       "title": "WAF rule present",
-      "description": "Whether the managed zone custom rule (ref abuseipdb) exists and is enabled.",
+      "description": "Whether the managed zone custom rule (ref abuseipdb) exists and is enabled, as checked by the last push. Unknown: no push has reached the rule check since the synchronizer started.",
       "gridPos": {
         "x": 16,
         "y": 29,
@@ -1159,7 +1180,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "abuseipdb_cloudflare_rule_present",
+          "expr": "abuseipdb_cloudflare_rule_present and on() (abuseipdb_cloudflare_last_success_timestamp_seconds > 0)",
           "instant": true
         }
       ],
@@ -1177,7 +1198,8 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "noValue": "Unknown"
         },
         "overrides": []
       },
@@ -1198,7 +1220,7 @@
       "id": 23,
       "type": "stat",
       "title": "Bulk operation pending",
-      "description": "Cloudflare allows one pending list bulk operation per account; a stuck pending operation delays the next update.",
+      "description": "Cloudflare allows one pending list bulk operation per account; a stuck pending operation delays the next update. Unknown: no list update since the synchronizer started.",
       "gridPos": {
         "x": 20,
         "y": 29,
@@ -1251,7 +1273,8 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "noValue": "Unknown"
         },
         "overrides": []
       },
@@ -1272,7 +1295,7 @@
       "id": 24,
       "type": "timeseries",
       "title": "Cloudflare sync errors by reason",
-      "description": "Bounded reason labels only (network/http/rate_limited/bulk/validation).",
+      "description": "Bounded reason labels only (network/http/rate_limited/bulk/validation/timeout).",
       "gridPos": {
         "x": 0,
         "y": 34,
@@ -1322,7 +1345,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Where enforcement happens**\n\n- **Cloudflare edge (real client IPs):** account IP list `abuseipdb` referenced by the zone WAF custom rule `ip.src in $abuseipdb` (action Block). This is what protects the proxied public hostnames.\n- **Cilium (direct paths):** `CiliumCIDRGroup/abuseipdb` + `CiliumClusterwideNetworkPolicy deny-abuseipdb-ingress` on `reserved:ingress`, for direct-to-origin/LAN traffic. Cilium only sees Cloudflare edge addresses for proxied traffic.\n\n**Synchronizer logs (Loki)**\n\n```logql\n{namespace=\"abuseipdb\"} | json\n{namespace=\"abuseipdb\"} |= \"Cloudflare edge sink updated\"\n{namespace=\"abuseipdb\"} |= \"synchronization failed\"\n```\n\n**Cilium flow detail (Hubble CLI, per source IP)**\n\n```shell\nhubble observe --verdict DROPPED --last 100\nhubble observe --from-ip <suspected-source-ip>\nhubble observe --label cidrgroup:io.cilium.groupname/abuseipdb\n```\n\nFor per-IP block detail (Cloudflare edge blocks and Cilium Gateway drops), open the **Blocked Sources** dashboard."
+        "content": "**Where enforcement happens**\n\n- **Cloudflare edge (real client IPs):** account IP list `abuseipdb` referenced by the zone WAF custom rule `ip.src in $abuseipdb` (action Block). This is what protects the proxied public hostnames.\n- **Cilium (direct paths):** `CiliumCIDRGroup/abuseipdb` + `CiliumClusterwideNetworkPolicy deny-abuseipdb-ingress` on `reserved:ingress`, for direct-to-origin/LAN traffic. Cilium only sees Cloudflare edge addresses for proxied traffic.\n\n**Synchronizer logs (Loki)**\n\n```logql\n{namespace=\"abuseipdb\"} | json\n{namespace=\"abuseipdb\"} |= \"Cloudflare edge sink updated\"\n{namespace=\"abuseipdb\"} |= \"synchronization failed\"\n```\n\n**Cilium flow detail (Hubble CLI, per source IP)**\n\n```shell\nhubble observe --verdict DROPPED --last 100\nhubble observe --from-ip <suspected-source-ip>\n```\n\nFor per-IP block detail (Cloudflare edge blocks and Cilium Gateway drops), open the **Blocked Sources** dashboard."
       }
     }
   ],

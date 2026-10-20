@@ -31,13 +31,16 @@ Provisioning model:
 Per-IP view of traffic rejected at the two enforcement layers:
 
 - Cloudflare edge blocks come from the `firewallEventsAdaptive` collector in
-  `abuseipdb-sync` (Loki `job=cloudflare-firewall`). Free-plan Security Events
-  retention is 24h, so short ranges are the most meaningful.
+  `abuseipdb-sync` (Loki `job=cloudflare-firewall`). Security Events API
+  retention depends on the Cloudflare plan (see `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`)
+  and only limits backfill; the panels read what was collected into Loki.
 - Cilium drops come from the Hubble flow export shipped by Alloy (Loki
   `job=hubble-flows`); the direct-to-origin denylist shows up as
   `POLICY_DENIED` / reasonless `DROPPED` flows at `reserved:ingress`
   (identity 8). Reasonless flows cannot be attributed to a specific policy from
-  this export.
+  this export. The top source-IP table only counts flows towards the ingress
+  identity (destination identity 8), so the gateway's own address on Envoy's
+  upstream leg is not listed.
 
 Per-IP values are parsed at query time; they are never Prometheus labels.
 
