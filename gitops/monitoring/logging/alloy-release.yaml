@@ -369,8 +369,15 @@ spec:
 
               // Coraza stores matches in messages[].error_message; Loki skips arrays,
               // so extract the first matching CRS rule ID from the raw record.
+              // Anchored on the top-level `},"messages":[{` that follows the
+              // transaction object: request header names are lowercased into
+              // transaction.request.headers, so a client header "Messages: [id 1]"
+              // produces `"messages":["...` there and must not match. Inside
+              // error_message, Coraza writes [id "N"] with %q, so the genuine
+              // value is `[id \"N\"]` while client data (URI, matched data) is
+              // escaped once more and cannot produce a bare `\"`.
               stage.regex {
-                expression = "\"messages\":\\[.*?\\[id [^0-9]*(?P<rule_id>[0-9]+)"
+                expression = `\},"messages":\[\{.*?\[id \\"(?P<rule_id>[0-9]+)\\"\]`
               }
 
               // Only normalised methods and installed CRS rule IDs become labels.
@@ -571,9 +578,11 @@ spec:
                 }
               }
 
-              // Records that carry rule matches (what the dashboards call detections).
+              // Records that carry rule matches (what the dashboards call detections):
+              // the top-level messages array of objects, never a client header
+              // named "messages" (its value is a string array, `"messages":["`).
               stage.match {
-                selector = "{application=~\".+\"} |= \"\\\"messages\\\":[\""
+                selector = "{application=~\".+\"} |= \"},\\\"messages\\\":[{\""
 
                 stage.metrics {
                   metric.counter {
@@ -593,14 +602,15 @@ spec:
             forward_to = []
 
             stage.match {
-              selector = "{job=\"coraza-waf\"} |= \"\\\"messages\\\":[\""
+              selector = "{job=\"coraza-waf\"} |= \"},\\\"messages\\\":[{\""
 
               stage.label_keep {
                 values = ["application"]
               }
 
+              // Same anchored expression as coraza_audit above.
               stage.regex {
-                expression = "\"messages\":\\[.*?\\[id [^0-9]*(?P<rule_id>[0-9]+)"
+                expression = `\},"messages":\[\{.*?\[id \\"(?P<rule_id>[0-9]+)\\"\]`
               }
 
               stage.labels {

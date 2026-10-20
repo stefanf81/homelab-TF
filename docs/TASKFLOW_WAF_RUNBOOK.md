@@ -164,10 +164,11 @@ kubectl -n kube-system exec ds/cilium -c cilium-agent -- ip -4 addr show cilium_
 
 Re-run this if the node is replaced or if `client_ip` starts resolving to a
 `10.42.x.x`/peer address. The "Identity drift — client_ip in pod CIDR" panel on
-the Taskflow Rate Limits dashboard turns red when real requests resolve to a
-pod-range address, which is the signal that the trusted peer changed. Trust only
-the address(es) that actually carry Gateway traffic; do **not** trust the whole
-Pod CIDR, or a pod that reaches the Gateway could be skipped as a trusted hop.
+the Taskflow Rate Limits dashboard (counted over the selected range) turns red
+when real requests resolve to a pod-range address, which is the signal that the
+trusted peer changed. Trust only the address(es) that actually carry Gateway
+traffic; do **not** trust the whole Pod CIDR, or a pod that reaches the Gateway
+could be skipped as a trusted hop.
 
 ### Stage 1 — narrow the trusted proxy range (applied 2026-09-26)
 
@@ -309,9 +310,15 @@ a collection-health indicator.
   charts have a 300-point budget. The bucket widens with the query step for long
   time ranges, preventing sparse detections from disappearing between samples.
   Counts are per displayed interval, not a fixed 5-minute total at every zoom.
-- The category donut includes protocol enforcement, scanner detection and
-  Other CRS, so its percentages cover all extracted first-matched rules.
+- The category bars include protocol enforcement (920), protocol attack (921),
+  session fixation (943), Java attack (944), scanner detection and Other CRS, so
+  they cover all extracted first-matched rules.
   Paranoia-level counts still overlap and should not be added together.
+- Rule IDs, rule messages, paranoia-level tags and the inspection latency are
+  read only from Coraza-written parts of the audit record: the top-level
+  `},"messages":[{` array (where Coraza quotes its own `[id \"N\"]`/`[tag \"..\"]`
+  values once and client data twice) and `"stopwatch":"..."`. Request headers,
+  URIs and matched data that imitate these markers are ignored.
 - Rule-family trends and runtime/log-pipeline details are in collapsed rows,
   keeping the overview compact and deferring those queries until expanded.
 - Recent-log panels fetch at most 100 records, hide inline label badges, and
@@ -331,7 +338,8 @@ a collection-health indicator.
   dashboards refresh every 5 minutes and have navigation links that preserve the
   selected time range and application, plus a **Dashboards** dropdown to every
   other dashboard. The
-  **Client IP** textbox filter (a regular expression, `.*` = all) narrows
+  **Client IP** textbox filter (a regular expression, `.*` = all; it is inserted
+  into a backtick-quoted LogQL matcher, so escapes such as `10\.42\..*` work) narrows
   access-log panels on Access Logs and Rate Limits and the audit-derived panels
   on the WAF dashboard; it is applied at query time. Clicking a client IP in a
   top table (WAF, Rate Limits, Access Logs) opens the other dashboards
@@ -469,12 +477,15 @@ In Grafana Explore, select the `Loki` datasource and query:
 
 # Only audit records containing a matched Coraza rule.
 # This excludes relevant HTTP responses such as 401s that Coraza audits without a match.
-{job="coraza-waf"} |= "\"messages\""
+# Match the top-level array (`},"messages":[{`), not just `"messages"`: Coraza
+# lowercases request header names into transaction.request.headers, so a client
+# header "Messages: ..." would otherwise make any audited 404 look like a detection.
+{job="coraza-waf"} |= "},\"messages\":[{"
 
 # Top rule IDs and source IPs over the selected period.
 topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[1h])))
 topk(10, sum by (transaction_client_ip) (
-  count_over_time({job="coraza-waf"} |= "\"messages\"" | json [1h])
+  count_over_time({job="coraza-waf"} |= "},\"messages\":[{" | json [1h])
 ))
 ```
 
@@ -721,7 +732,7 @@ directly.
 
 **Cause**: `SecAuditEngine RelevantOnly` also audits relevant response statuses. These records contain `transaction` but no `messages` array, so they are audit events rather than WAF rule detections.
 
-**Fix**: Use `{job="coraza-waf"} |= "\"messages\""` to view actual matched rules. After deploying the Alloy pipeline, verify that a new detection also has `method` and `rule_id` labels in Grafana Explore. Historic records will not gain those labels.
+**Fix**: Use `{job="coraza-waf"} |= "},\"messages\":[{"` to view actual matched rules (the anchored needle ignores a client header named `Messages`). After deploying the Alloy pipeline, verify that a new detection also has `method` and `rule_id` labels in Grafana Explore. Historic records will not gain those labels.
 
 #### Detection category slices show `Value #A`, `Value #B`, or similar
 

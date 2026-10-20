@@ -17,6 +17,16 @@ USUAL = ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
 requests, limited, audit, detections, rules = (collections.Counter() for _ in range(5))
 hist = {app: {"count": 0, "sum": 0.0, "buckets": [0] * len(BUCKETS)} for app in APPS}
 security = {}
+spoofs = {}  # spoof fixture id -> the rule_id label Loki must carry ("" = none)
+# Client-controlled header KEYS and values that mimic the audit needles. Coraza lowercases
+# request header names into transaction.request.headers (before the top-level messages
+# array), so "Messages: ..." becomes "messages":["..."] there. Only the top-level
+# `},"messages":[{` array may count as a detection or supply a rule ID.
+SPOOF_HEADERS = {
+    "messages": ['[id "999001"] [msg "Injected rule"] [tag "paranoia-level/4"]'],
+    "user-agent": ['x combined=999999999999 [id "999002"] [msg "spoofed"] [tag "paranoia-level/4"]'],
+    "stopwatch": ["1 2; combined=999999999999"],
+}
 
 for app, filename in APPS.items():
     lines = []
@@ -84,6 +94,27 @@ for app, filename in APPS.items():
         if has_messages:
             detections[(app, flag)] += 1
             rules[(app, rule)] += 1
+    # Spoofed audit records in the real Coraza shape (headers before messages, Go %q
+    # quoting inside error_message, so client data in [data "..."] is escaped twice).
+    # Even ids are genuine detections and must count once with their real rule; odd ids
+    # have no rule matches (an audited 404) and must count only as audit records.
+    for i in range(20):
+        fixture_id = f"{app}-spoof-{i}"
+        record = {"spoof_fixture_id": fixture_id,
+                  "transaction": {"client_ip": "192.0.2.9", "is_interrupted": False,
+                                  "request": {"method": "GET", "uri": "/nonexistent", "headers": SPOOF_HEADERS},
+                                  "producer": {"stopwatch": "1 2; combined=1500000, p1=1, p2=2, p3=0, p4=0, p5=0"}}}
+        audit[(app, "false")] += 1
+        spoofs[fixture_id] = ""
+        if i % 2 == 0:
+            rule = random.choice(RULE_IDS)
+            record["messages"] = [{"actionset": "", "message": "", "data": None, "error_message":
+                                   f'[client "192.0.2.9"] Coraza: Warning. Thing [file "f"] [line "1"] [id "{rule}"] [rev ""] [msg "Thing"] '
+                                   '[data "Matched Data: [id \\"999003\\"] [tag \\"paranoia-level/4\\"] found"] [tag "paranoia-level/1"]'}]
+            detections[(app, "false")] += 1
+            rules[(app, rule)] += 1
+            spoofs[fixture_id] = rule
+        lines.append(json.dumps(record, separators=(",", ":")))
     # Exercise the actual Loki redactor, not just the metrics-only fan-out.
     # Every secret below is synthetic. Headers include multiple values, empty
     # arrays, literal ']', escaped quotes/backslashes and mixed-case keys.
@@ -127,5 +158,5 @@ as_rows = lambda counter: [[*key, value] for key, value in counter.items()]
 with open(truth_path, "w") as handle:
     json.dump({"requests": as_rows(requests), "limited": as_rows(limited), "audit": as_rows(audit),
                "detections": as_rows(detections), "rules": as_rows(rules), "histogram": hist, "buckets": BUCKETS,
-               "security": security}, handle)
+               "security": security, "spoofs": spoofs, "rule_ids": RULE_IDS}, handle)
 print(f"fixtures: {sum(requests.values())} requests, {sum(limited.values())} rate-limited, {sum(audit.values())} audit, {sum(detections.values())} detections")

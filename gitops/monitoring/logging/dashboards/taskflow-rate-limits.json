@@ -593,7 +593,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json status=\"status\", request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | status != \"\" | client_ip=~\"$client_ip\" [$__range]))",
+          "expr": "sum by (status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json status=\"status\", request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | status != \"\" | client_ip=~`$client_ip` [$__range]))",
           "queryType": "instant",
           "legendFormat": "HTTP {{status}}"
         }
@@ -788,7 +788,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (zone) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", rate_limit_zone=\"rate_limit_zone\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | client_ip=~\"$client_ip\" | label_format zone=`{{.application}} / {{.rate_limit_zone}}` [$__range]))",
+          "expr": "sum by (zone) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", rate_limit_zone=\"rate_limit_zone\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | client_ip=~`$client_ip` | label_format zone=`{{.application}} / {{.rate_limit_zone}}` [$__range]))",
           "queryType": "instant",
           "legendFormat": "{{zone}}"
         }
@@ -1051,7 +1051,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, sum by (request_path) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | request_uri!=\"\" | client_ip=~\"$client_ip\" | label_format request_path=`{{ regexReplaceAll \"\\\\?.*$\" .request_uri \"\" }}` [$__range])))",
+          "expr": "topk(10, sum by (request_path) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | request_uri!=\"\" | client_ip=~`$client_ip` | label_format request_path=`{{ regexReplaceAll \"\\\\?.*$\" .request_uri \"\" }}` [$__range])))",
           "queryType": "instant"
         }
       ],
@@ -1137,7 +1137,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | client_ip != \"\" | client_ip=~\"$client_ip\" [$__range])))",
+          "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | client_ip != \"\" | client_ip=~`$client_ip` [$__range])))",
           "queryType": "instant"
         }
       ],
@@ -1249,7 +1249,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, sum by (request_host) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_host=\"request.host\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | request_host != \"\" | client_ip=~\"$client_ip\" [$__range])))",
+          "expr": "topk(10, sum by (request_host) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_host=\"request.host\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | request_host != \"\" | client_ip=~`$client_ip` [$__range])))",
           "queryType": "instant"
         }
       ],
@@ -1335,7 +1335,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (category) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | request_uri!=\"\" | client_ip=~\"$client_ip\" | label_format path=`{{ regexReplaceAll \"\\\\?.*$\" .request_uri \"\" }}` | label_format category=`{{ if or (hasSuffix \".zip\" .path) (hasSuffix \".tar\" .path) (hasSuffix \".tgz\" .path) (hasSuffix \".gz\" .path) (hasSuffix \".bz2\" .path) (hasSuffix \".rar\" .path) (hasSuffix \".7z\" .path) (hasSuffix \".bak\" .path) (hasSuffix \".old\" .path) (hasSuffix \".orig\" .path) (hasSuffix \".save\" .path) (hasSuffix \".sql\" .path) (hasSuffix \".dump\" .path) (hasSuffix \".swp\" .path) }}Archive/backup{{ else if or (hasPrefix \"/.env\" .path) (hasPrefix \"/.git\" .path) (hasPrefix \"/.svn\" .path) (hasPrefix \"/.hg\" .path) (hasPrefix \"/.htpasswd\" .path) (hasPrefix \"/.htaccess\" .path) (hasPrefix \"/.DS_Store\" .path) (hasPrefix \"/.aws\" .path) (hasPrefix \"/.ssh\" .path) (hasSuffix \"wp-config\" .path) }}Config/source-control{{ else if or (hasSuffix \".php\" .path) (hasSuffix \".asp\" .path) (hasSuffix \".aspx\" .path) (hasSuffix \".jsp\" .path) (hasSuffix \".jspx\" .path) (hasSuffix \".cgi\" .path) (hasSuffix \".sh\" .path) (hasSuffix \".pl\" .path) (hasSuffix \".py\" .path) (hasSuffix \".rb\" .path) }}Script endpoints{{ else if or (hasPrefix \"/api\" .path) (hasPrefix \"/actuator\" .path) (hasPrefix \"/graphql\" .path) }}API routes{{ else if or (hasPrefix \"/assets/\" .path) (hasPrefix \"/static/\" .path) (hasSuffix \".js\" .path) (hasSuffix \".css\" .path) (hasSuffix \".png\" .path) (hasSuffix \".jpg\" .path) (hasSuffix \".jpeg\" .path) (hasSuffix \".gif\" .path) (hasSuffix \".svg\" .path) (hasSuffix \".ico\" .path) (hasSuffix \".woff\" .path) (hasSuffix \".woff2\" .path) (hasSuffix \".map\" .path) }}Static assets{{ else }}Other{{ end }}` | drop request_uri, path [$__range]))",
+          "expr": "sum by (category) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | request_uri!=\"\" | client_ip=~`$client_ip` | label_format path=`{{ regexReplaceAll \"\\\\?.*$\" .request_uri \"\" }}` | label_format category=`{{ if or (hasSuffix \".zip\" .path) (hasSuffix \".tar\" .path) (hasSuffix \".tgz\" .path) (hasSuffix \".gz\" .path) (hasSuffix \".bz2\" .path) (hasSuffix \".rar\" .path) (hasSuffix \".7z\" .path) (hasSuffix \".bak\" .path) (hasSuffix \".old\" .path) (hasSuffix \".orig\" .path) (hasSuffix \".save\" .path) (hasSuffix \".sql\" .path) (hasSuffix \".dump\" .path) (hasSuffix \".swp\" .path) }}Archive/backup{{ else if or (hasPrefix \"/.env\" .path) (hasPrefix \"/.git\" .path) (hasPrefix \"/.svn\" .path) (hasPrefix \"/.hg\" .path) (hasPrefix \"/.htpasswd\" .path) (hasPrefix \"/.htaccess\" .path) (hasPrefix \"/.DS_Store\" .path) (hasPrefix \"/.aws\" .path) (hasPrefix \"/.ssh\" .path) (hasSuffix \"wp-config\" .path) }}Config/source-control{{ else if or (hasSuffix \".php\" .path) (hasSuffix \".asp\" .path) (hasSuffix \".aspx\" .path) (hasSuffix \".jsp\" .path) (hasSuffix \".jspx\" .path) (hasSuffix \".cgi\" .path) (hasSuffix \".sh\" .path) (hasSuffix \".pl\" .path) (hasSuffix \".py\" .path) (hasSuffix \".rb\" .path) }}Script endpoints{{ else if or (hasPrefix \"/api\" .path) (hasPrefix \"/actuator\" .path) (hasPrefix \"/graphql\" .path) }}API routes{{ else if or (hasPrefix \"/assets/\" .path) (hasPrefix \"/static/\" .path) (hasSuffix \".js\" .path) (hasSuffix \".css\" .path) (hasSuffix \".png\" .path) (hasSuffix \".jpg\" .path) (hasSuffix \".jpeg\" .path) (hasSuffix \".gif\" .path) (hasSuffix \".svg\" .path) (hasSuffix \".ico\" .path) (hasSuffix \".woff\" .path) (hasSuffix \".woff2\" .path) (hasSuffix \".map\" .path) }}Static assets{{ else }}Other{{ end }}` | drop request_uri, path [$__range]))",
           "queryType": "instant",
           "legendFormat": "{{category}}"
         }
@@ -1417,7 +1417,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, sum by (user_agent) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", user_agent=`request.headers[\"User-Agent\"][0]`, request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | request_uri != \"\" | client_ip=~\"$client_ip\" | label_format user_agent=`{{ if .user_agent }}{{ .user_agent }}{{ else }}(missing){{ end }}` [$__range])))",
+          "expr": "topk(10, sum by (user_agent) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", user_agent=`request.headers[\"User-Agent\"][0]`, request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | request_uri != \"\" | client_ip=~`$client_ip` | label_format user_agent=`{{ if .user_agent }}{{ .user_agent }}{{ else }}(missing){{ end }}` [$__range])))",
           "queryType": "instant"
         }
       ],
@@ -1503,7 +1503,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_method=\"request.method\", request_uri=\"request.uri\", client_ip=\"client_ip\", rate_limit_zone=\"rate_limit_zone\", retry_after=`resp_headers[\"Retry-After\"][0]` | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | client_ip=~\"$client_ip\" | line_format `{{.status}} {{.application}} | {{.request_method}} {{.request_uri}} | ip={{.client_ip}} zone={{.rate_limit_zone}} retry-after={{.retry_after | default \"-\"}}s`",
+          "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_method=\"request.method\", request_uri=\"request.uri\", client_ip=\"client_ip\", rate_limit_zone=\"rate_limit_zone\", retry_after=`resp_headers[\"Retry-After\"][0]` | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | client_ip=~`$client_ip` | line_format `{{.status}} {{.application}} | {{.request_method}} {{.request_uri}} | ip={{.client_ip}} zone={{.rate_limit_zone}} retry-after={{.retry_after | default \"-\"}}s`",
           "queryType": "range",
           "maxLines": 100
         }
@@ -1523,7 +1523,7 @@
       "id": 11,
       "type": "stat",
       "title": "Identity drift — client_ip in pod CIDR",
-      "description": "Requests resolving into the pod CIDR (probes excluded), not affected by the Client IP filter. Legitimate in-cluster Gateway clients appear here occasionally; a sustained value that is not a known internal client means the trusted cilium_host peer changed, so per-client buckets are shared — re-run runbook Stage 0 and update trusted_proxies.",
+      "description": "Requests in the selected range resolving into the pod CIDR (probes excluded), not affected by the Client IP filter. Legitimate in-cluster Gateway clients appear here occasionally; a sustained value that is not a known internal client means the trusted cilium_host peer changed, so per-client buckets are shared — re-run runbook Stage 0 and update trusted_proxies.",
       "gridPos": {
         "x": 0,
         "y": 52,
@@ -1537,7 +1537,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*` [5m])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*` [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__range])))",
           "queryType": "instant"
         }
       ],
@@ -1766,7 +1766,7 @@
       "id": 27,
       "type": "stat",
       "title": "WAF log activity (last 5m)",
-      "description": "All WAF container log lines (Caddy access records and Coraza audit records) observed in the last 5 minutes, across applications and clients. Zero with a healthy scrape can indicate an idle site or an ingestion gap.",
+      "description": "All WAF container log lines (Caddy access records, Coraza audit records, and Caddy/Coraza runtime messages such as per-rule WAF warnings) observed in the last 5 minutes, across applications and clients. Zero with a healthy scrape can indicate an idle site or an ingestion gap.",
       "gridPos": {
         "x": 12,
         "y": 63,
@@ -1911,7 +1911,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | client_ip=~\"$client_ip\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__range])))",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | client_ip=~`$client_ip` [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__range])))",
               "queryType": "instant"
             }
           ],
@@ -1966,7 +1966,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | request_uri != \"\" | client_ip=~\"$client_ip\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__range])))",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | request_uri != \"\" | client_ip=~`$client_ip` [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__range])))",
               "queryType": "instant"
             }
           ],
@@ -2029,7 +2029,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\", rate_limit_zone=\"rate_limit_zone\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | request_uri != \"\" | client_ip=~\"$client_ip\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__range])))",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\", rate_limit_zone=\"rate_limit_zone\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | request_uri != \"\" | client_ip=~`$client_ip` [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__range])))",
               "queryType": "instant"
             }
           ],
@@ -2092,7 +2092,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "(sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\", rate_limit_zone=\"rate_limit_zone\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | request_uri != \"\" | client_ip=~\"$client_ip\" [$__range])) / (sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | client_ip=~\"$client_ip\" [$__range])) > 0)) * 100 or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__range])))",
+              "expr": "(sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", request_uri=\"request.uri\", rate_limit_zone=\"rate_limit_zone\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | request_uri != \"\" | client_ip=~`$client_ip` [$__range])) / (sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | client_ip=~`$client_ip` [$__range])) > 0)) * 100 or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__range])))",
               "queryType": "instant"
             }
           ],
@@ -2175,7 +2175,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", rate_limit_zone=\"rate_limit_zone\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | client_ip=~\"$client_ip\"",
+              "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" |= \"\\\"status\\\":429\" | json status=\"status\", rate_limit_zone=\"rate_limit_zone\", client_ip=\"client_ip\" | __error__=\"\" | status=429 | rate_limit_zone!=\"\" | client_ip=~`$client_ip`",
               "queryType": "range",
               "maxLines": 100
             }

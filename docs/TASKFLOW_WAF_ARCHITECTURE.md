@@ -643,7 +643,7 @@ datasources:
 | Raw WAF detection records | logs (collapsed row) | Loki | Latest 100 detection-bearing audit records without `line_format`, retaining the complete stored, redacted JSON |
 | WAF rule detections | timeseries (collapsed row) | Loki | Standalone detections timeseries per `$__interval` |
 | Detections by HTTP method | timeseries (collapsed row) | Loki | Counts detected audit records by indexed `method` per `$__interval` |
-| Audit records containing each paranoia level | bar gauge (collapsed row) | Loki | Selected-range counts for `paranoia-level/1` through `/4`; absent levels use a 5-minute liveness fallback |
+| Audit records containing each paranoia level | bar gauge (collapsed row) | Loki | Selected-range counts of detection records whose Coraza-written `[tag \"paranoia-level/N\"]` (N = 1-4) follows the top-level `messages` array, so client data cannot fake a level; absent levels use a 5-minute liveness fallback |
 | First-matched SQL injection | timeseries (collapsed row) | Loki | Indexed first rule ID matches `942[0-9]{3}`; counts per `$__interval` |
 | First-matched XSS, injection & traversal | timeseries (collapsed row) | Loki | Indexed first rule ID matches `941[0-9]{3}` or `93[0-4][0-9]{3}`; counts per `$__interval` |
 | Top targeted URIs | table (collapsed row) | Loki | Instant top 10, extracting only `transaction.request.uri` |
@@ -772,14 +772,14 @@ records missing an extracted request URI.
 {job="coraza-waf"} |= "\"transaction\""
 
 # Actual rule detections only (excludes relevant HTTP responses without a rule match)
-{job="coraza-waf"} |= "\"messages\""
+{job="coraza-waf"} |= "},\"messages\":[{"
 
 # Top matched CRS rules (newly ingested records after the Alloy pipeline rollout)
 topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[1h])))
 
 # Client IPs with the most detections; parsed at query time, not indexed
 topk(10, sum by (client_ip) (
-  count_over_time({job="coraza-waf"} |= "\"messages\"" |
+  count_over_time({job="coraza-waf"} |= "},\"messages\":[{" |
     json client_ip="transaction.client_ip" | __error__="" | client_ip!="" [1h])
 ))
 
@@ -797,7 +797,7 @@ topk(10, sum by (client_ip) (
 {job="coraza-waf", rule_id=~"941[0-9]{3}"}
 
 # Detections introduced by paranoia level 2 (rules ignored on PL 1)
-{job="coraza-waf"} |= "\"messages\"" |= "paranoia-level/2"
+{job="coraza-waf"} |~ `\},"messages":\[\{.*\[tag \\"paranoia-level/2\\"\]`
 
 # Rate-limited requests (HTTP 429) with the resolved client IP
 {job="coraza-waf", container="waf"} |= "\"handled request\"" |= "\"status\":429" |
