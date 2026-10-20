@@ -724,7 +724,7 @@
       "id": 11,
       "type": "timeseries",
       "title": "ACME request latency (mean)",
-      "description": "Mean outbound ACME request latency, by ACME action. cert-manager exports this latency as a summary (no histogram buckets), so a percentile across requests cannot be computed. Gaps are normal: ACME requests only happen around issuance and renewal.",
+      "description": "Mean outbound ACME request latency, by ACME action. cert-manager exports this latency as a summary (per-series 0.5/0.9/0.99 quantiles, no histogram buckets), and summary quantiles cannot be aggregated across series, so the panel shows the mean. Gaps are normal: ACME requests only happen around issuance and renewal.",
       "gridPos": {
         "h": 8,
         "w": 8,

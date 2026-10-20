@@ -415,7 +415,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(pg_stat_activity_count{namespace=\"taskflow\"})",
+          "expr": "sum(pg_stat_activity_count{namespace=\"taskflow\",backend_type=\"client backend\"})",
           "legendFormat": "connections"
         },
         {
@@ -460,7 +460,7 @@
           "mode": "multi"
         }
       },
-      "description": "Open PostgreSQL client connections to all databases (backend pool, exporter, admin sessions) against the server-wide max_connections, and the taskflow database buffer cache hit ratio. A falling hit ratio means more reads go to disk."
+      "description": "Open PostgreSQL client connections to all databases (backend pool, admin sessions; background workers such as autovacuum are excluded) against the server-wide max_connections, and the taskflow database buffer cache hit ratio. A falling hit ratio means more reads go to disk."
     },
     {
       "id": 9,

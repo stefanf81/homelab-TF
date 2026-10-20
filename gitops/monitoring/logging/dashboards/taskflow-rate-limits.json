@@ -1523,7 +1523,7 @@
       "id": 11,
       "type": "stat",
       "title": "Identity drift — client_ip in pod CIDR",
-      "description": "Requests in the selected range resolving into the pod CIDR (probes excluded), not affected by the Client IP filter. Legitimate in-cluster Gateway clients appear here occasionally; a sustained value that is not a known internal client means the trusted cilium_host peer changed, so per-client buckets are shared — re-run runbook Stage 0 and update trusted_proxies.",
+      "description": "Requests in the selected range resolving into the pod CIDR (probes excluded), not affected by the Client IP filter. Legitimate in-cluster Gateway clients appear here occasionally, so a single request turns it red; compare shorter ranges, and if the count keeps growing without a known internal client it means the trusted cilium_host peer changed, so per-client buckets are shared — re-run runbook Stage 0 and update trusted_proxies.",
       "gridPos": {
         "x": 0,
         "y": 52,

@@ -235,7 +235,7 @@ still possible:
 3. In the **Prometheus / VictoriaMetrics** drop-down, select the default **VictoriaMetrics** datasource.
 4. Click **Import**.
 
-### Dashboard Layout (19 visualizations, plus section headers)
+### Dashboard Layout (18 visualizations, plus section headers)
 
 #### Row 1: Events (3 pie charts + 3 time series)
 | Panel | Type | Query |
@@ -255,7 +255,7 @@ still possible:
 | **Scap events/s by instance** | Time series | `sum by(pod) (rate(falcosecurity_scap_n_evts_total[...]))` |
 | **Memory RSS** | Time series | `avg by(pod) (falcosecurity_falco_memory_rss_bytes)` |
 | **Memory VSZ** | Time series | `avg by(pod) (falcosecurity_falco_memory_vsz_bytes)` |
-| **CPU** | Time series | `sum by(pod) (rate(container_cpu_usage_seconds_total{container="falco"}[...]))` (cAdvisor, share of one core) |
+| **CPU** | Time series | `sum by(pod) (rate(container_cpu_usage_seconds_total{container="falco",metrics_path="/metrics/cadvisor"}[...]))` (cAdvisor, share of one core) |
 | **Scap Drops total** | Time series | `sum by(pod) (increase(falcosecurity_scap_n_drops_total[...]))` |
 | **Queue Drops** | Time series | `sum by(pod) (increase(falcosecurity_falco_outputs_queue_num_drops_total[...]))` |
 | **Scap Drops Buffer** | Time series | `sum by(pod, drop) (increase(falcosecurity_scap_n_drops_buffer_total{dir="exit"}[...]))`, all categories |

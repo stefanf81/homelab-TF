@@ -1180,7 +1180,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "abuseipdb_cloudflare_rule_present and on() (abuseipdb_cloudflare_last_success_timestamp_seconds > 0)",
+          "expr": "abuseipdb_cloudflare_rule_present",
           "instant": true
         }
       ],
