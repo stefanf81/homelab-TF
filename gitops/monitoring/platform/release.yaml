@@ -85,6 +85,46 @@ spec:
     kubeDNS:
       enabled: false
 
+    # k3s runs the control plane inside the kubelet process, so kubelet /metrics
+    # re-exposed every apiserver/etcd/scheduler series already scraped by the
+    # apiserver job (~81k duplicate series). Drop those prefixes here; kubelet_*,
+    # rest_client_*, storage and volume metrics stay. The list replaces the chart
+    # default, so its three rules are repeated first.
+    kubelet:
+      vmScrape:
+        spec:
+          metricRelabelConfigs:
+            - action: labeldrop
+              regex: (uid)
+            - action: labeldrop
+              regex: (id|name)
+            - action: drop
+              source_labels: [__name__]
+              regex: (rest_client_request_duration_seconds_bucket|rest_client_request_duration_seconds_sum|rest_client_request_duration_seconds_count)
+            - action: drop
+              source_labels: [__name__]
+              regex: (apiserver|etcd|scheduler|apiextensions|watch|workqueue|kine|aggregator|authentication|authorization)_.+
+
+    # Drop apiserver histograms no dashboard or recording rule reads (~58k series).
+    # Kept: apiserver_request_sli_duration_seconds_bucket (burn-rate/availability
+    # rules), workqueue_queue_duration_seconds_bucket (apiserver dashboard) and all
+    # _count/_sum series. The endpoint list replaces the chart default, so it is
+    # repeated in full.
+    kubeApiServer:
+      vmScrape:
+        spec:
+          endpoints:
+            - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+              port: https
+              scheme: https
+              tlsConfig:
+                caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+                serverName: kubernetes
+              metricRelabelConfigs:
+                - action: drop
+                  source_labels: [__name__]
+                  regex: (etcd_request_duration_seconds|apiserver_request_duration_seconds|apiserver_watch_events_dispatch_duration_seconds|apiserver_watch_list_duration_seconds|apiserver_request_body_size_bytes|apiserver_storage_list_duration_seconds|apiserver_watch_cache_read_wait_seconds|apiserver_watch_cache_initialization_duration_seconds|apiserver_response_sizes|apiserver_watch_events_sizes)_bucket
+
     # CoreDNS is scraped by the custom `coredns` VMServiceScrape in
     # gitops/monitoring/app/vmservicescrapes.yaml. The stack's own scrape selects
     # the same pods (the CoreDNS chart sets k8s-app: kube-dns), so every CoreDNS
