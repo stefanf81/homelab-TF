@@ -31,8 +31,11 @@ spec:
             # and all other ports to the pod's network interface (was localhost).
             - name: JAEGER_LISTEN_HOST
               value: "0.0.0.0"
+            - name: GOMEMLIMIT
+              value: "200MiB"
           args:
-            # Cap retained spans so the in-memory store can't exhaust the 256Mi limit under trace load.
+            # Retain the existing conservative trace cap; the Go soft memory limit leaves
+            # headroom below 256Mi. Built-in config has no obsolete ai.enable_mcp override.
             - "--set=extensions.jaeger_storage.backends.some_storage.memory.max_traces=5000"
           securityContext:
             allowPrivilegeEscalation: false

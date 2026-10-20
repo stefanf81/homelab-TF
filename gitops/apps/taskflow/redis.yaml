@@ -52,12 +52,8 @@ spec:
             - "yes"
             - "--maxmemory-samples"
             - "10"
-            # Redis 8 I/O threading — offloads socket writes and protocol parsing to
-            # 2 background threads. Reads remain on the main thread unless
-            # --io-threads-do-reads is enabled; with 500m CPU this still helps
-            # during eviction bursts. Reduce to 1 if CPU throttling is observed.
-            - "--io-threads"
-            - "2"
+            # Keep the default single I/O thread: extra threads cost latency/throughput
+            # on small CPU budgets with one shared Lettuce connection (BENCHMARKS.md §59).
             # Guard against client-connection memory blowup. Caps the combined output
             # buffers of all connected clients (Lettuce + redis_exporter) at 5% of
             # maxmemory (~19 MB here). Exceeding the cap drops the greediest connection

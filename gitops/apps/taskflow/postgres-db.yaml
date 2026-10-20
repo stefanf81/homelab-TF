@@ -55,7 +55,7 @@ spec:
             - "-c"
             - "autovacuum_work_mem=32MB"
             # Fewer connections → less per-connection memory pressure.
-            # One backend's Hikari pool has a maximum size of 25, leaving headroom for
+            # One backend's Hikari pool keeps 25 connections open (minimum == maximum), leaving room for
             # psql, Flyway migrations, and the postgres-exporter. Backend scaling is
             # intentionally disabled until connection pooling is redesigned.
             - "-c"
@@ -73,8 +73,8 @@ spec:
             - "-c"
             - "wal_buffers=16MB"
             - "-c"
-            # zstd compression of full-page images in WAL: less write I/O for little CPU.
-            - "wal_compression=zstd"
+            # lz4 is the lowest-CPU WAL codec in the PG 18.6 audit (BENCHMARKS.md §59/60).
+            - "wal_compression=lz4"
             - "-c"
             - "max_wal_size=2GB"
             # synchronous_commit=on (the default): a commit is acknowledged only after its
