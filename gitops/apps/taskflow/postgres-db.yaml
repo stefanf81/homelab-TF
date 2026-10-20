@@ -53,7 +53,7 @@ spec:
             - "-c"
             - "max_parallel_maintenance_workers=2"
             # Fewer connections → less per-connection memory pressure.
-            # One backend's Hikari pool has a maximum size of 25, leaving headroom for
+            # One backend's Hikari pool keeps 25 connections open (minimum == maximum), leaving room for
             # psql, Flyway migrations, and the postgres-exporter. Backend scaling is
             # intentionally disabled until connection pooling is redesigned.
             - "-c"
@@ -68,9 +68,8 @@ spec:
             - "-c"
             - "wal_buffers=16MB"
             - "-c"
-            # zstd WAL compression reduces write I/O by 40-60% at minimal CPU cost.
-            # Safe for a single-node homelab with no replication (no standby decode cost).
-            - "wal_compression=zstd"
+            # lz4 is the lowest-CPU WAL codec in the PG 18.6 audit (BENCHMARKS.md §59/60).
+            - "wal_compression=lz4"
             - "-c"
             # synchronous_commit=off skips the per-transaction WAL fsync on commit.
             # On a single-node cluster with Proxmox CSI (local SSD), the "commit is
@@ -111,7 +110,8 @@ spec:
           resources:
             # Guaranteed QoS: requests == limits so PostgreSQL is never CPU-throttled
             # under load, which directly protects query latency. The 1024Mi budget fits
-            # 384 shared_buffers + ~240Mi peak work_mem + connection overhead + OS page cache.
+            # 384 shared_buffers + work_mem + connection overhead + OS page cache. /dev/shm
+            # is charged here only as used (up to 256Mi); its size is not extra memory.
             limits:
               cpu: "1000m"
               memory: 1024Mi
@@ -121,6 +121,8 @@ spec:
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql
+            - name: dshm
+              mountPath: /dev/shm
           startupProbe:
             exec:
               command: ["pg_isready", "-U", "postgres"]
@@ -141,6 +143,11 @@ spec:
         - name: postgres-storage
           persistentVolumeClaim:
             claimName: postgres-pvc
+        - name: dshm
+          # Parallel hash joins can exceed the runtime's default 64Mi shared memory.
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
 ---
 apiVersion: v1
 kind: Service

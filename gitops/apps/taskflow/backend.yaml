@@ -19,6 +19,8 @@ spec:
       # The backend never calls the Kubernetes API.
       automountServiceAccountToken: false
       securityContext:
+        # The mount hides the image directory; make it writable by the runtime UID/GID.
+        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       imagePullSecrets:
@@ -72,6 +74,8 @@ spec:
           volumeMounts:
             - name: tmp-volume
               mountPath: /tmp
+            - name: diagnostics
+              mountPath: /var/log/taskflow
           # Every key of backend-config is exported 1:1, so a new key added to the
           # ConfigMap reaches the pod without a second edit here.
           envFrom:
@@ -137,12 +141,12 @@ spec:
             #  - UseStringDeduplication: modest heap reduction for string-heavy workloads.
             #  - ParallelRefProcEnabled: speeds GC reference processing.
             #  - DisableExplicitGC: blocks Full GCs triggered by System.gc() calls.
-            #  - GC logging to /tmp/gc.log with rotation (5 files × 10 MiB) — readable via
-            #    `kubectl exec -n taskflow deploy/taskflow-backend -- cat /tmp/gc.log.0`.
-            #  - HeapDumpOnOutOfMemoryError + HeapDumpPath=/tmp/heapdump.hprof: post-mortem
-            #    dump on OOM (both paths are writable thanks to the emptyDir tmp-volume).
+            #  - GC logging to /var/log/taskflow/gc.log (5 files × 10 MiB).
+            #  - HeapDumpOnOutOfMemoryError writes java_pid<pid>.hprof to the same disk-backed
+            #    directory. It survives a container restart, NOT pod deletion. An existing
+            #    dump is never overwritten: remove it after analysis so the next OOM can dump.
             - name: JAVA_TOOL_OPTIONS
-              value: "-XX:+UseG1GC -XX:+UseContainerSupport -XX:MaxRAMPercentage=50.0 -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxDirectMemorySize=256m -XX:MaxMetaspaceSize=256m -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags:filecount=5,filesize=10m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/heapdump.hprof"
+              value: "-XX:+UseG1GC -XX:+UseContainerSupport -XX:MaxRAMPercentage=50.0 -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxDirectMemorySize=256m -XX:MaxMetaspaceSize=256m -Xlog:gc*:file=/var/log/taskflow/gc.log:time,uptime,level,tags:filecount=5,filesize=10m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/taskflow"
             # glibc-only allocator cap (Ubuntu 26.04 base since the Alpine->resolute
             # migration): arenas default to 8 x cores and the JVM's worker/carrier
             # threads spread native allocations across them, padding RSS. Measured
@@ -196,6 +200,10 @@ spec:
       volumes:
         - name: tmp-volume
           emptyDir: {}
+        - name: diagnostics
+          # Node disk, never medium: Memory. Use a PVC if dumps must survive pod deletion.
+          emptyDir:
+            sizeLimit: 2Gi
 ---
 apiVersion: v1
 kind: Service
