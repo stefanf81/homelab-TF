@@ -45,7 +45,7 @@
       "id": 1,
       "type": "stat",
       "title": "Security Issues by Type",
-      "description": "Exported vulnerability, configuration, RBAC and secret findings. Infrastructure metric coverage is shown separately below; absent metrics are not converted to zero findings.",
+      "description": "Exported vulnerability, configuration, RBAC and secret findings. Infrastructure metric coverage is shown separately below; absent metrics are not converted to zero findings. RBAC includes cluster-role findings, which have no namespace and are counted whatever namespaces are selected.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -175,7 +175,7 @@
       },
       "targets": [
         {
-          "expr": "topk(15, sum by (namespace) (trivy_image_vulnerabilities{namespace=~\"$namespace\"}))",
+          "expr": "topk_max(15, sum by (namespace) (trivy_image_vulnerabilities{namespace=~\"$namespace\"}))",
           "legendFormat": "{{namespace}}",
           "refId": "A"
         }
@@ -198,7 +198,7 @@
           "mode": "multi"
         }
       },
-      "description": "Shows at most the top 15 namespaces; compare with the totals panel for full coverage."
+      "description": "The 15 namespaces with the highest peak in the selected range (MetricsQL topk_max, so the set does not change from point to point); compare with the totals panel for full coverage."
     },
     {
       "id": 4,
@@ -216,7 +216,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (image_repository, image_tag, namespace, severity) (trivy_image_vulnerabilities{namespace=~\"$namespace\"})",
+          "expr": "max by (image_registry, image_repository, image_tag, namespace, severity) (trivy_image_vulnerabilities{namespace=~\"$namespace\"})",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -230,6 +230,7 @@
               "Time": true
             },
             "renameByName": {
+              "image_registry": "Registry",
               "image_repository": "Image",
               "image_tag": "Tag",
               "namespace": "Namespace",
@@ -256,7 +257,7 @@
         },
         "frameIndex": 0
       },
-      "description": "Vulnerability counts per image, tag, namespace and severity."
+      "description": "Vulnerability counts per image, tag, namespace and severity. Trivy writes one report per workload container; an image used by several workloads is counted once."
     },
     {
       "id": 5,
@@ -315,7 +316,7 @@
       },
       "targets": [
         {
-          "expr": "topk(15, sum by (namespace) (trivy_resource_configaudits{namespace=~\"$namespace\"}))",
+          "expr": "topk_max(15, sum by (namespace) (trivy_resource_configaudits{namespace=~\"$namespace\"}))",
           "legendFormat": "{{namespace}}",
           "refId": "A"
         }
@@ -338,7 +339,7 @@
           "mode": "multi"
         }
       },
-      "description": "Shows at most the top 15 namespaces; compare with the totals panel for full coverage."
+      "description": "The 15 namespaces with the highest peak in the selected range (MetricsQL topk_max, so the set does not change from point to point); compare with the totals panel for full coverage."
     },
     {
       "id": 7,
@@ -379,7 +380,7 @@
           "mode": "multi"
         }
       },
-      "description": "RBAC findings for roles and cluster roles by severity."
+      "description": "RBAC findings for roles and cluster roles by severity. Cluster-role findings have no namespace and are included whatever namespaces are selected."
     },
     {
       "id": 8,
@@ -397,7 +398,7 @@
       },
       "targets": [
         {
-          "expr": "topk(15, sum by (namespace) (trivy_image_exposedsecrets{namespace=~\"$namespace\"}))",
+          "expr": "topk_max(15, sum by (namespace) (trivy_image_exposedsecrets{namespace=~\"$namespace\"}))",
           "legendFormat": "{{namespace}}",
           "refId": "A"
         }
@@ -420,7 +421,7 @@
           "mode": "multi"
         }
       },
-      "description": "Secrets found exposed in container images: the 15 namespaces with the most."
+      "description": "Secrets found exposed in container images: the 15 namespaces with the highest peak in the selected range."
     },
     {
       "id": 9,
@@ -461,7 +462,7 @@
           "mode": "multi"
         }
       },
-      "description": "Compliance checks that currently fail, by check title."
+      "description": "Failing controls per compliance framework (the legend is the framework title, e.g. nsa). Per-control detail is in the ClusterComplianceReports."
     },
     {
       "id": 10,
@@ -502,7 +503,7 @@
           "mode": "multi"
         }
       },
-      "description": "Compliance checks that currently pass, by check title."
+      "description": "Passing controls per compliance framework (the legend is the framework title, e.g. nsa). Per-control detail is in the ClusterComplianceReports."
     },
     {
       "id": 11,
@@ -682,7 +683,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "The installed Trivy Operator v0.34.0 findings collector reads **namespaced InfraAssessmentReports** for `trivy_resource_infraassessments`; it does not export **ClusterInfraAssessmentReports** such as `node-ubuntu`. A missing metric is therefore not proof of zero infrastructure findings.\n\nInspect node reports and scan currency with `kubectl get clusterinfraassessmentreports -o yaml`; use the compliance panels above for exported cluster compliance summaries. **Not exported** means no namespaced metric series for this selection; it does not certify node health."
+        "content": "The installed Trivy Operator v0.35.0 findings collector reads **namespaced InfraAssessmentReports** for `trivy_resource_infraassessments`; it does not export **ClusterInfraAssessmentReports** such as `node-ubuntu`. A missing metric is therefore not proof of zero infrastructure findings.\n\nInspect node reports and scan currency with `kubectl get clusterinfraassessmentreports -o yaml`; use the compliance panels above for exported cluster compliance summaries. **Not exported** means no namespaced metric series for this selection; it does not certify node health."
       }
     }
   ],

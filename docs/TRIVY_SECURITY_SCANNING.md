@@ -126,6 +126,7 @@ spec:
       path: /metrics
       interval: 60s
       scheme: http
+      honorLabels: true                     # keep the findings' own `namespace` label
 ```
 
 The `jobLabel: app.kubernetes.io/name` is **critical** — it sets `job="trivy-operator"`
@@ -133,14 +134,20 @@ instead of the auto-generated `namespace/name`, so the dashboard's PromQL that r
 `trivy_image_vulnerabilities` etc. works without a `job` filter (same pattern as the Falco
 scrape).
 
+`honorLabels: true` is required as well: the findings metrics carry the scanned resource's
+own `namespace` label. Without it the target label (`namespace="trivy-system"`) wins and the
+real namespace is renamed to `exported_namespace`, so every finding (and the dashboard's
+`$namespace` variable) showed `trivy-system`. This matches the operator chart's own
+ServiceMonitor (`serviceMonitor.honorLabels: true`).
+
 The exported metrics include (main ones):
 
-- `trivy_image_vulnerabilities{severity, repository, tag, image_digest, namespace, ...}`
-- `trivy_resource_configaudits{severity, success, ...}`
-- `trivy_role_rbacassessments` / `trivy_clusterrole_clusterrbacassessments`
+- `trivy_image_vulnerabilities{namespace, resource_kind, resource_name, container_name, image_registry, image_repository, image_tag, image_digest, severity}` (one series per report, i.e. per workload container, and severity)
+- `trivy_resource_configaudits{namespace, resource_kind, resource_name, severity}` (failing checks)
+- `trivy_role_rbacassessments` / `trivy_clusterrole_clusterrbacassessments` (the cluster-role metric has no `namespace` label)
 - `trivy_image_exposedsecrets{severity, ...}`
-- `trivy_resource_infraassessments{missing, severity, success, ...}`
-- `trivy_cluster_compliance{status="Pass|Fail", ...}` (from `ClusterComplianceReport`s)
+- `trivy_resource_infraassessments{namespace, resource_kind, resource_name, severity}` (namespaced `InfraAssessmentReport`s only)
+- `trivy_cluster_compliance{title, description, status="Pass|Fail"}` (one pair per `ClusterComplianceReport`; `title` is the framework, e.g. `nsa`, and the value is its failing/passing control count)
 
 ### Dashboard (Grafana)
 
@@ -152,16 +159,17 @@ trivy_image_vulnerabilities, namespace)`).
 
 Panels (top to bottom):
 
-1. **Security Issues by Type** (stat) — vulnerabilities, misconfiguration, RBAC, exposed
-   secrets, infra‑assessment counts.
+1. **Security Issues by Type** (stat) — vulnerabilities, misconfiguration, RBAC (cluster-role
+   findings included regardless of the namespace filter) and exposed secrets. Infra-assessment
+   metric coverage is a separate stat further down.
 2. **Vulnerabilities by Severity** (timeseries, `sum by (severity)`).
-3. **Vulnerabilities by Namespace** (top‑15).
-4. **Vulnerabilities by Image** (table, grouped by `image_repository`, `image_tag`,
-   `namespace`, `severity`).
+3. **Vulnerabilities by Namespace** (top‑15 by peak, `topk_max`).
+4. **Vulnerabilities by Image** (table, `max by` `image_registry`, `image_repository`,
+   `image_tag`, `namespace`, `severity`, so an image used by several workloads is counted once).
 5. **Misconfiguration by Severity** (`sum by (severity)` over `trivy_resource_configaudits`).
 6. Misconfiguration by namespace, RBAC severities, exposed‑secret by namespace,
-   compliance Pass/Fail (from `trivy_cluster_compliance`), plus operator health panels
-   (reconcile errors, `workqueue_*`/`controller_runtime_*` based).
+   compliance Pass/Fail controls per framework (from `trivy_cluster_compliance`), plus operator health panels
+   (reconcile errors and reconciliations, `controller_runtime_*` based).
 
 Open it in Grafana under **Dashboards → Trivy Operator**. (Datasource UID in the JSON is
 `VictoriaMetrics` — matches the provisioned stack.)

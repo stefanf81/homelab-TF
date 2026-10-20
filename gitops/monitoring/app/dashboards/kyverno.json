@@ -122,7 +122,7 @@
       "id": 2,
       "type": "stat",
       "title": "Active policy rules",
-      "description": "Rules currently present in the cluster.",
+      "description": "Rules currently present in the cluster, including the autogen-* rules Kyverno generates for Pod controllers. The admission and background controllers both export this metric; each rule is counted once.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -136,7 +136,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(kyverno_policy_rule_info_total == 1)",
+          "expr": "count(max by (policy_type, policy_name, rule_name) (kyverno_policy_rule_info_total == 1))",
           "instant": true
         }
       ],
@@ -168,7 +168,7 @@
       "id": 3,
       "type": "stat",
       "title": "Rules not ready",
-      "description": "Policy rules whose policy is not ready.",
+      "description": "Policy rules whose policy is not ready, counted once although two controllers export them.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -182,7 +182,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(kyverno_policy_rule_info_total{status_ready=\"false\"} == 1) or (0 * count(kyverno_policy_rule_info_total))",
+          "expr": "count(max by (policy_type, policy_name, rule_name) (kyverno_policy_rule_info_total{status_ready=\"false\"} == 1)) or (0 * count(kyverno_policy_rule_info_total))",
           "instant": true
         }
       ],
@@ -800,7 +800,7 @@
       "id": 12,
       "type": "timeseries",
       "title": "Policy changes",
-      "description": "Policy creations, updates and deletions per displayed interval (minimum 5 minutes).",
+      "description": "Policy creations, updates and deletions per displayed interval (minimum 5 minutes), as seen by the admission controller (the background controller records the same changes). A controller restart re-lists every policy, which can show up as \"created\".",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -814,7 +814,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (policy_change_type) (increase(kyverno_policy_changes_total[$__interval]))",
+          "expr": "sum by (policy_change_type) (increase(kyverno_policy_changes_total{job=\"admission-controller\"}[$__interval]))",
           "legendFormat": "{{policy_change_type}}"
         }
       ],
@@ -1054,8 +1054,8 @@
     {
       "id": 17,
       "type": "timeseries",
-      "title": "CPU vs limit",
-      "description": "CPU usage of each Kyverno controller pod divided by its CPU limit.",
+      "title": "CPU vs request",
+      "description": "CPU usage of each Kyverno controller pod divided by its CPU request. The controllers deliberately have no CPU limit (see the Kyverno HelmRelease), so values above 100% are allowed: the pod uses more than it reserved. Lines mark 100% and 200%.",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -1069,7 +1069,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"kyverno\", container!=\"\", container!~\".*init.*|kyverno-pre\", metrics_path=\"/metrics/cadvisor\"}[$__rate_interval])) / sum by (pod) (kube_pod_container_resource_limits{namespace=\"kyverno\", container!=\"\", container!~\".*init.*|kyverno-pre\", resource=\"cpu\"})",
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"kyverno\", container!=\"\", container!~\".*init.*|kyverno-pre\", metrics_path=\"/metrics/cadvisor\"}[$__rate_interval])) / sum by (pod) (kube_pod_container_resource_requests{namespace=\"kyverno\", container!=\"\", container!~\".*init.*|kyverno-pre\", resource=\"cpu\"})",
           "legendFormat": "{{pod}}"
         }
       ],
@@ -1094,11 +1094,11 @@
               },
               {
                 "color": "orange",
-                "value": 0.8
+                "value": 1
               },
               {
                 "color": "red",
-                "value": 0.95
+                "value": 2
               }
             ]
           }
@@ -1184,7 +1184,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Source.** Kyverno controller metrics (`kyverno_*`) from the four controller metrics services, plus container metrics from cAdvisor and kube-state-metrics. Names and labels checked against Kyverno v1.19.1.\n\n- Policy results count rule evaluations, not distinct resources. A background scan re-counts the same failing resource every cycle.\n- By default Kyverno does not export `policy_namespace` and `resource_namespace` labels, so results are per policy and kind, not per namespace.\n- Current violations per resource are in Policy Reporter (https://kyverno.jokelab.dev); this dashboard shows evaluation activity and controller health.\n- Counters appear after their first event, so empty panels on a quiet cluster are normal."
+        "content": "**Source.** Kyverno controller metrics (`kyverno_*`) from the four controller metrics services, plus container metrics from cAdvisor and kube-state-metrics. Names and labels checked against Kyverno v1.19.1.\n\n- Policy results count rule evaluations, not distinct resources. A background scan re-counts the same failing resource every cycle.\n- `kyverno_policy_results_total` and `kyverno_admission_requests_total` do carry `resource_namespace` (results also `policy_namespace`): the chart's `metricsExposure` keys for them end in `_total` and never match Kyverno's instrument names, so their label filters do not apply. Rule info and the duration histograms do drop those labels.\n- Rule info and policy changes are exported by both the admission and background controllers; the panels count each once.\n- The controllers have no CPU limit, so CPU is shown against the request.\n- Current violations per resource are in Policy Reporter (https://kyverno.jokelab.dev); this dashboard shows evaluation activity and controller health.\n- Counters appear after their first event, so empty panels on a quiet cluster are normal."
       }
     }
   ],

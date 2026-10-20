@@ -226,7 +226,7 @@
       "id": 4,
       "type": "stat",
       "title": "Soonest expiry",
-      "description": "Days until the earliest certificate expires. Let's Encrypt certificates are renewed about 30 days before expiry, so this should stay above 21. Red below 7 days.",
+      "description": "Days until the earliest certificate expires. Let's Encrypt certificates are renewed about 30 days before expiry, so this should stay above 21. Red below 7 days. Certificates that were never issued (no expiry yet) are left out; the Not ready panels show them.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -240,7 +240,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "min((certmanager_certificate_expiration_timestamp_seconds - time()) / 86400)",
+          "expr": "min(((certmanager_certificate_expiration_timestamp_seconds > 0) - time()) / 86400)",
           "instant": true
         }
       ],
@@ -342,8 +342,8 @@
     {
       "id": 6,
       "type": "stat",
-      "title": "Failed ACME requests",
-      "description": "Outbound ACME requests that did not return 2xx in the selected range. The counter only exists after the first request, so none shows 0.",
+      "title": "Non-2xx ACME responses",
+      "description": "Outbound ACME responses that were not 2xx in the selected range; transport errors count as status 999. The ACME client retries a stale nonce (400 badNonce) by itself, so an isolated 400 is usually harmless; repeated ones together with Not ready or Renewal overdue mean issuance is failing. The counter only exists after the first request, so none shows 0.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -372,7 +372,7 @@
                 "color": "green"
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 1
               }
             ]
@@ -397,7 +397,7 @@
       "id": 7,
       "type": "table",
       "title": "Certificates by expiry",
-      "description": "Every certificate with the days left until it expires, soonest first. Colour: red below 7 days, orange below 21.",
+      "description": "Every certificate with the days left until it expires, soonest first. Colour: red below 7 days, orange below 21. Certificates that were never issued (no expiry yet) are left out; the Not ready panels show them.",
       "gridPos": {
         "h": 9,
         "w": 14,
@@ -411,7 +411,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sort((certmanager_certificate_expiration_timestamp_seconds - time()) / 86400)",
+          "expr": "sort(sum by (namespace, name, issuer_name) ((certmanager_certificate_expiration_timestamp_seconds > 0) - time()) / 86400)",
           "instant": true,
           "format": "table"
         }
@@ -522,7 +522,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "certmanager_certificate_ready_status{condition!=\"True\"} == 1",
+          "expr": "sum by (namespace, name, condition, issuer_name) (certmanager_certificate_ready_status{condition!=\"True\"} == 1)",
           "instant": true,
           "format": "table"
         }
@@ -572,7 +572,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "Days until expiry",
-      "description": "Days left per certificate. The lines mark 7 and 21 days.",
+      "description": "Days left per certificate. The lines mark 7 and 21 days. Certificates that were never issued (no expiry yet) are left out; the Not ready panels show them.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -586,7 +586,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(certmanager_certificate_expiration_timestamp_seconds - time()) / 86400",
+          "expr": "((certmanager_certificate_expiration_timestamp_seconds > 0) - time()) / 86400",
           "legendFormat": "{{namespace}}/{{name}}"
         }
       ],
@@ -723,8 +723,8 @@
     {
       "id": 11,
       "type": "timeseries",
-      "title": "ACME request latency (p95)",
-      "description": "95th percentile of outbound ACME request latency, by ACME action.",
+      "title": "ACME request latency (mean)",
+      "description": "Mean outbound ACME request latency, by ACME action. cert-manager exports this latency as a summary (no histogram buckets), so a percentile across requests cannot be computed. Gaps are normal: ACME requests only happen around issuance and renewal.",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -738,7 +738,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, action) (rate(certmanager_http_acme_client_request_duration_seconds_bucket[$__rate_interval])))",
+          "expr": "sum by (action) (rate(certmanager_http_acme_client_request_duration_seconds_sum[$__rate_interval])) / sum by (action) (rate(certmanager_http_acme_client_request_duration_seconds_count[$__rate_interval]))",
           "legendFormat": "{{action}}"
         }
       ],
@@ -873,7 +873,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Source.** Metrics from the cert-manager controller (`certmanager_*`), scraped by the `cert-manager` VMServiceScrape. Names and labels checked against cert-manager v1.21.2.\n\n- A certificate has one `certmanager_certificate_ready_status` series per condition (True, False, Unknown); the current one is 1.\n- Renewal is expected about 30 days before expiry, so a healthy 90-day certificate sits between 30 and 90 days left.\n- \"Renewal overdue\" counts certificates an hour past their renewal time: cert-manager normally renews within minutes.\n- ACME and sync-error counters only exist after their first event, so empty panels there are normal."
+        "content": "**Source.** Metrics from the cert-manager controller (`certmanager_*`), scraped by the `cert-manager` VMServiceScrape. Names and labels checked against cert-manager v1.21.2.\n\n- A certificate has one `certmanager_certificate_ready_status` series per condition (True, False, Unknown); the current one is 1.\n- Renewal is expected about 30 days before expiry, so a healthy 90-day certificate sits between 30 and 90 days left.\n- \"Renewal overdue\" counts certificates an hour past their renewal time: cert-manager normally renews within minutes.\n- A certificate that was never issued reports expiry 0; the expiry panels leave it out and the Not ready panels show it.\n- ACME latency is a summary metric, so the dashboard shows the mean per action, not a percentile.\n- ACME and sync-error counters only exist after their first event, so empty panels there are normal."
       }
     }
   ],
