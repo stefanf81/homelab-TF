@@ -783,9 +783,8 @@ dump/restore):
           - noatime                    # no metadata write on every read
 ```
 
-The chart's values do not document `allowVolumeExpansion`; check the rendered
-class (`kubectl get sc proxmox-csi-db -o yaml`) and patch it in if you want
-online growth.
+The chart's StorageClass template hard-codes `allowVolumeExpansion: true` and
+renders `mountOptions` per entry, so no patch is needed for online growth.
 
 Before moving data, measure both classes with the same tool Postgres cares
 about:

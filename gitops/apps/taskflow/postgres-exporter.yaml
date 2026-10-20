@@ -30,6 +30,13 @@ spec:
         - name: postgres-exporter
           # Pin a specific tag; rotate to a @sha256 digest for full hermeticity.
           image: prometheuscommunity/postgres-exporter:v0.20.1
+          # Collectors that are off by default. stat_checkpointer is the only source
+          # of checkpoint statistics since PostgreSQL 17 (pg_stat_checkpointer).
+          args:
+            - --collector.stat_checkpointer
+            - --collector.long_running_transactions
+            - --collector.statio_user_indexes
+            - --collector.stat_activity_autovacuum
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:
