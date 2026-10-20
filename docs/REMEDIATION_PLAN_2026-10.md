@@ -16,6 +16,9 @@ instead. Statements marked **verify** depend on live cluster state or the
 separate backend/frontend repositories; nothing here was applied to the
 cluster.
 
+Deep dives: `PERF_DEEP_DIVE_2026-10.md` (PERF-02, PERF-03, PERF-04 — measurements,
+mechanisms, sizing and ready-to-commit YAML).
+
 Severity: **High** = data loss, full compromise or silent outage is plausible;
 **Medium** = meaningful risk or cost, not immediately exploitable;
 **Low** = hygiene.
@@ -88,7 +91,7 @@ Severity: **High** = data loss, full compromise or silent outage is plausible;
 7. REL-03 + PERF-04 + REL-04 (one Postgres restart), PERF-05.
 8. SEC-03 database roles.
 9. SEC-07, SEC-08, SEC-13, SEC-10, SEC-14, PERF-08, PERF-03.
-10. PERF-02 after two weeks of data (with the LimitRange change), PERF-06, PERF-07.
+10. PERF-02 sized from the 14 days VictoriaMetrics already holds (LimitRange change in the same commit), PERF-06, PERF-07 — see `PERF_DEEP_DIVE_2026-10.md` §6 for the combined order with PERF-03/04.
 
 **Window 3 — edge**
 
@@ -2191,10 +2194,15 @@ Update `docs/ARCHITECTURE.md` and the Terraform install line (with REL-00's
 
 ### PERF-02 — CPU reservations, limits and throttling
 
+> Full investigation, sizing table, side effects and ready-to-commit YAML:
+> `PERF_DEEP_DIVE_2026-10.md` §1–3. It also found three resource blocks that
+> never applied because the charts read different keys (Kyverno admission
+> controller, Alloy, Hubble UI).
+
 | | |
 |---|---|
 | Severity | Medium (performance and rollout reliability) |
-| Evidence | `backend.yaml:166,169` (2 CPU request = limit), Postgres 1 CPU, Redis 500m, frontend 250m, Jaeger 250m; ~6.5 CPU of explicit requests in Git vs 5.6 allocatable at the Terraform default of 6 vCPU; `taskflow` `LimitRange` (`namespace.yaml`) injects `default.cpu: 500m` |
+| Evidence | `backend.yaml:166,169` (2 CPU request = limit), Postgres 1 CPU, Redis 500m, frontend 250m, Jaeger 250m; ~6.5 CPU of explicit requests in Git vs 5.6 allocatable at the Terraform default of 6 vCPU; `taskflow` `LimitRange` (`namespace.yaml`) injects `default.cpu: 500m` and sets `max.cpu: 4` |
 | Effort / downtime | 2 h + two weeks of data / rolling restarts |
 
 **Impact.** Requests are reservations: CPU reserved by mostly idle pods cannot
@@ -2243,10 +2251,12 @@ max_over_time(container_memory_working_set_bytes{namespace="taskflow",container!
 
 Required companion changes:
 
-- **LimitRange gotcha:** `namespace.yaml` sets `default.cpu: 500m`. Removing a
-  CPU limit from a container makes the LimitRange inject a 500m limit — tighter
-  than today. Remove `default.cpu` (keep `defaultRequest` and the memory
-  defaults) in the same commit.
+- **LimitRange gotcha:** `namespace.yaml` sets `default.cpu: 500m` **and**
+  `max.cpu: 4`. Removing a CPU limit from a container makes the LimitRange
+  inject a 500m limit — tighter than today — and once the default is gone, the
+  CPU `max` makes the LimitRanger *reject* containers without a CPU limit.
+  Remove both `default.cpu` and `max.cpu` (keep `defaultRequest` and the memory
+  settings) in the same commit as the Deployment changes.
 - **JVM CPU count:** without a CPU limit the JVM sizes GC and JIT threads for all
   6 node CPUs. Add `-XX:ActiveProcessorCount=2` to `JAVA_TOOL_OPTIONS`.
 - **Go CPU count:** Go ≥ 1.25 derives `GOMAXPROCS` from the CPU *limit*; without
@@ -2261,6 +2271,13 @@ under 80 %; a backend rollout completes without `Pending`.
 ---
 
 ### PERF-03 — Cilium tuning
+
+> Full investigation: `PERF_DEEP_DIVE_2026-10.md` §4. Key finding: the Gateway's
+> `cilium-envoy` runs with `hostNetwork: true`, and the bandwidth manager sets
+> `fq`, `bbr` and `tcp_slow_start_after_idle=0` in the host namespace, so BBR
+> reaches the Envoy → Cloudflare connections, not only pods. Envoy must be
+> restarted after enabling it. netkit cannot be switched in place (defer to a
+> rebuild); BIG TCP is not supported on virtio-net.
 
 | | |
 |---|---|
@@ -2299,12 +2316,23 @@ Do at the next maintenance window (brief datapath disruption):
 Do at the next node rebuild only: `bpf.datapathMode: netkit` (beta in 1.20,
 cannot be switched in place, veth/netkit mixing unsupported).
 
+After enabling the bandwidth manager, restart Envoy
+(`kubectl -n kube-system rollout restart ds/cilium-envoy`) so its listening
+sockets pick up BBR; `envoy.rollOutPods` does not trigger for this change.
+
 **Verify.** `kubectl -n kube-system exec ds/cilium -- cilium-dbg status --verbose | grep -iE 'BandwidthManager|BBR|Routing'`;
 restart the app pods afterwards so they pick up BBR.
 
 ---
 
 ### PERF-04 — PostgreSQL tuning
+
+> Full investigation: `PERF_DEEP_DIVE_2026-10.md` §5 — memory budget, every
+> setting against the PG 18 defaults, `pg_test_fsync`/pgbench procedures for
+> REL-04, and the storage layer: the `proxmox-csi` class uses
+> `cache: writethrough` (Proxmox's default is `none`), which can only change on a
+> new PVC. Keep `io_method=worker`: `io_uring` is not in containerd's default
+> seccomp profile.
 
 | | |
 |---|---|
@@ -2500,6 +2528,7 @@ Statements in the repository that the review found to be wrong or stale:
 | `postgres-db.yaml:48-54` | `max_parallel_maintenance_workers=2` is a PG18 win | It is the default | PERF-04 |
 | `backend.yaml` resources comment | Guaranteed QoS means CPU is never throttled | CFS quota still throttles without the static CPU manager | PERF-02 |
 | `redis.yaml:50-58` | Reads stay on the main thread unless `io-threads-do-reads` | That option is a no-op in Redis 8 | PERF-05 |
+| `kyverno/release.yaml` `admissionController.resources`, `alloy-release.yaml` top-level `resources`, `cilium/release.yaml` `hubble.ui.resources` | Resource requests/limits for these components | The charts read `admissionController.container.resources`, `alloy.resources` and `hubble.ui.backend/frontend.resources`; the blocks are ignored (Alloy runs with no limits at all) | PERF-02 |
 | `docs/CLUSTER_AUDIT_2026-10.md` | Narrow oauth2-proxy/Grafana scopes to `user:email` | oauth2-proxy's GitHub provider needs `read:org`; keep the defaults (corrected in the audit) | SEC-07 |
 
 ---
