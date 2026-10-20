@@ -49,6 +49,10 @@ begin
 
   release, stack = render("gitops/monitoring/platform/release.yaml", "gitops/monitoring/platform/repository.yaml")
   name = release.dig("metadata", "name")
+  tsdb = resource(stack, "VMSingle", name).fetch("spec")
+  assert(tsdb.dig("extraArgs", "memory.allowedPercent") == "35", "TSDB caches must leave recovery/query headroom")
+  assert(tsdb.dig("extraArgs", "search.maxConcurrentRequests") == "4", "TSDB query concurrency must be bounded")
+  assert(tsdb.dig("extraArgs", "search.maxMemoryPerQuery") == "64MiB", "TSDB per-query memory must be bounded")
   assert(release.dig("spec", "upgrade", "serverSideApply") == "disabled", "Grafana strategy migration requires strategic merge, not SSA")
   evaluator = resource(stack, "VMAlert", name).fetch("spec")
   assert(evaluator.dig("extraArgs", "notifier.blackhole") == "true", "alert delivery must remain disabled")

@@ -33,6 +33,10 @@ vmagent has a 512Mi process limit and a 128MiB internal cache/queue budget. The
 previous 256Mi limit OOMKilled it during persistent-queue startup and failed-write
 retries. Monitor actual RSS after recovery; internal budgets are not total RSS caps.
 
+VMSingle keeps its 1Gi process limit, with a 35% cache budget, four concurrent
+queries and a 64MiB per-query memory budget after a recovery-time OOM. Expensive
+queries may now queue or be rejected rather than exhausting the process.
+
 Alloy uses `Recreate` because its one PVC contains WAL and file positions. Grafana
 also uses `Recreate` for its SQLite PVC. `ReadWriteOnce` restricts nodes, not the
 number of writers on one node. These updates intentionally trade a short outage

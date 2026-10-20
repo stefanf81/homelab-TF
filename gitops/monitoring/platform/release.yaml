@@ -119,7 +119,11 @@ spec:
             memory: 1Gi
         extraArgs:
           # Limit internal caches so the container doesn't OOM under pressure
-          memory.allowedPercent: "60"
+          # Cache budget is not a process RSS cap. Leave headroom for recovery,
+          # ingestion and the newly enabled recording-rule queries.
+          memory.allowedPercent: "35"
+          search.maxConcurrentRequests: "4"
+          search.maxMemoryPerQuery: "64MiB"
           # Refuse ingestion/writes when the PVC is nearly full instead of filling the disk
           storage.minFreeDiskSpaceBytes: "2GB"
           # Serve VMSingle UI from a sub-path so we can route it via Gateway API
