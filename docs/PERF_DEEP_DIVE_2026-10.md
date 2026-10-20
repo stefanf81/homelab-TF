@@ -844,8 +844,10 @@ confirmed bookings after a crash is acceptable.
 
 ### 5.5 Changes
 
-`gitops/apps/taskflow/postgres-db.yaml` (this includes REL-03's probe fix and
-PERF-02's resources, so Postgres restarts once):
+`gitops/apps/taskflow/postgres-db.yaml` — end state, including REL-03's probe fix.
+The resources part lands with step 4 of §6 (it needs the LimitRange change in
+the same commit), so Postgres restarts twice across the rollout, a few seconds
+each:
 
 ```yaml
 spec:

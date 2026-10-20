@@ -52,16 +52,13 @@ spec:
             - containerPort: 4318
               name: otlp-http
           resources:
-            # Burstable QoS by design: CPU requests == limits so OTLP trace ingestion is
-            # never CPU-throttled (throttling here back-pressures the backend's trace
-            # exporter and adds latency), while memory may burst from 128Mi up to the
-            # 256Mi RSS cap.
-            limits:
-              cpu: "250m"
-              memory: 256Mi
+            # No CPU limit: throttling OTLP ingestion back-pressures the backend's trace
+            # exporter. Memory may burst from 128Mi up to the 256Mi RSS cap.
             requests:
-              cpu: "250m"
+              cpu: 25m
               memory: 128Mi
+            limits:
+              memory: 256Mi
           startupProbe:
             httpGet:
               path: /status

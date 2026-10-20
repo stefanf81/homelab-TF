@@ -135,14 +135,15 @@ spec:
             - containerPort: 5432
               name: postgres
           resources:
-            # Guaranteed QoS: requests == limits so PostgreSQL is never CPU-throttled
-            # under load, which directly protects query latency. The 1024Mi budget fits
-            # 384 shared_buffers + ~240Mi peak work_mem + connection overhead + OS page cache.
-            limits:
-              cpu: "1000m"
-              memory: 1024Mi
+            # No CPU limit: checkpoints, autovacuum and parallel query burst and a CFS
+            # quota throttles them even on an idle node; the request guarantees the share
+            # under contention. Memory request == limit (last eviction candidate). The
+            # 1024Mi budget fits 384 shared_buffers + work_mem + connections + page cache
+            # (docs/PERF_DEEP_DIVE_2026-10.md §5.1).
             requests:
-              cpu: "1000m"
+              cpu: 250m
+              memory: 1024Mi
+            limits:
               memory: 1024Mi
           volumeMounts:
             - name: postgres-storage

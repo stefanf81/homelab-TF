@@ -16,6 +16,7 @@ spec:
       labels:
         app: redis
     spec:
+      priorityClassName: taskflow-critical
       # No workload here talks to the Kubernetes API, so no token is mounted.
       automountServiceAccountToken: false
       securityContext:
@@ -93,15 +94,14 @@ spec:
             - containerPort: 6379
               name: redis
           resources:
-            # Burstable QoS by design: CPU requests == limits so Redis is never CPU-throttled,
-            # while the 256Mi memory request can burst to the 512Mi RSS cap. A throttled L2
-            # cache would add latency spikes that stall the backend's hot path.
-            limits:
-              cpu: "500m"
-              memory: 512Mi
+            # No CPU limit (a throttled L2 cache stalls the backend's hot path); the small
+            # request reflects real use. Memory request == limit: maxmemory 384mb plus
+            # overhead stays reserved and the pod is not an eviction candidate.
             requests:
-              cpu: "500m"
-              memory: 256Mi
+              cpu: 50m
+              memory: 512Mi
+            limits:
+              memory: 512Mi
           volumeMounts:
             - name: redis-storage
               mountPath: /data

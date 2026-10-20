@@ -201,6 +201,7 @@ spec:
         app.kubernetes.io/part-of: taskflow
         app.kubernetes.io/protects: taskflow-backend
     spec:
+      priorityClassName: taskflow-critical
       terminationGracePeriodSeconds: 45
       automountServiceAccountToken: false
       securityContext:
@@ -213,6 +214,10 @@ spec:
         - name: waf
           image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.7-coraza2.6.2-r6@sha256:d5f7c6c0a3e606186aee64fef6977e8f459dc4cee74ec30b7b4c46ae78ccd03b
           imagePullPolicy: IfNotPresent
+          env:
+            # No CPU limit (below), so Go would size GOMAXPROCS for every node CPU.
+            - name: GOMAXPROCS
+              value: "2"
           ports:
             - name: http
               containerPort: 8080
@@ -252,11 +257,12 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           resources:
+            # No CPU limit: Coraza's CRS evaluation is bursty per request and a CFS quota
+            # throttles it even on an idle node. Memory stays capped.
             requests:
               cpu: 100m
               memory: 128Mi
             limits:
-              cpu: 750m
               memory: 768Mi
       volumes:
         - name: caddy-config
