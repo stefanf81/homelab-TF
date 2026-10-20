@@ -28,10 +28,21 @@ spec:
     # Trimmed stack for a 14 GiB single-node homelab. Replaces Prometheus with
     # the dramatically lighter VictoriaMetrics (VMSingle + vmagent).
     # ---------------------------------------------------------------------
-    # Disable unneeded components; keep kube-state-metrics + node-exporter
-    # for workload and host observability.
+    # Evaluate the recording rules required by the bundled Kubernetes dashboards.
+    # Alert delivery remains intentionally disabled (no Alertmanager/notifier).
     vmalert:
-      enabled: false
+      enabled: true
+      spec:
+        evaluationInterval: 60s
+        extraArgs:
+          notifier.blackhole: "true"
+        resources:
+          requests:
+            cpu: 20m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
     alertmanager:
       enabled: false
     kube-state-metrics:
@@ -128,6 +139,21 @@ spec:
       spec:
         # Discover VMServiceScrapes (and VMProbes/VMRules) in ALL namespaces
         selectAllByDefault: true
+        # Preserve pending remote-write data when the pod is replaced while
+        # VMSingle is unavailable. The operator manages the StatefulSet rollout.
+        statefulMode: true
+        statefulStorage:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: proxmox-csi
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 2Gi
+        extraArgs:
+          # Leave headroom on the queue PVC instead of consuming its full size.
+          remoteWrite.maxDiskUsagePerURL: "1073741824"
         resources:
           requests:
             cpu: 50m
@@ -177,6 +203,9 @@ spec:
 
     grafana:
       enabled: true
+      # One SQLite database on one PVC: do not run old/new Grafana concurrently.
+      deploymentStrategy:
+        type: Recreate
       image:
         # renovate: datasource=docker depName=grafana/grafana
         tag: 13.2.3
@@ -200,6 +229,10 @@ spec:
             name: grafana-github-oauth
             key: clientSecret
       grafana.ini:
+        security:
+          cookie_secure: true
+          # GitHub OAuth needs cross-site navigation back to Grafana.
+          cookie_samesite: lax
         server:
           domain: grafana.jokelab.dev
           root_url: "https://%(domain)s/"

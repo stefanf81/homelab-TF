@@ -102,7 +102,7 @@
     {
       "id": 100,
       "type": "row",
-      "title": "Overview — selected range",
+      "title": "Overview — all clients; metrics since 2026-10-18 13:34 UTC; Client IP filter in collapsed row below",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -130,7 +130,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__range])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))",
+          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -150,7 +150,7 @@
           "unit": "none",
           "decimals": 0,
           "min": 0,
-          "noValue": "No WAF logs",
+          "noValue": "Metrics unavailable",
           "color": {
             "mode": "thresholds"
           },
@@ -193,7 +193,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"true\"}[$__range])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))",
+          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"true\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -213,7 +213,7 @@
           "unit": "none",
           "decimals": 0,
           "min": 0,
-          "noValue": "No WAF logs",
+          "noValue": "Metrics unavailable",
           "color": {
             "mode": "thresholds"
           },
@@ -256,7 +256,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"false\"}[$__range])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))",
+          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"false\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -276,7 +276,7 @@
           "unit": "none",
           "decimals": 0,
           "min": 0,
-          "noValue": "No WAF logs",
+          "noValue": "Metrics unavailable",
           "color": {
             "mode": "thresholds"
           },
@@ -319,7 +319,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * (sum(increase(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"true\"}[$__range])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) / (sum(increase(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__range])) > 0)",
+          "expr": "(100 * (sum(increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"true\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) / (sum(increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__range])) > 0)) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -340,7 +340,7 @@
           "decimals": 1,
           "min": 0,
           "max": 100,
-          "noValue": "No detections",
+          "noValue": "No detections / unavailable",
           "color": {
             "mode": "fixed",
             "fixedColor": "blue"
@@ -367,12 +367,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (application) (increase(loki_process_custom_taskflow_waf_audit_records_total{application=~\"$application\"}[$__interval]))",
+          "expr": "(sum by (application) (increase_pure(loki_process_custom_taskflow_waf_audit_records_total{application=~\"$application\"}[$__interval])) or on (application) (0 * sum by (application) (increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "legendFormat": "{{application}} (all audit records)"
         },
         {
           "refId": "B",
-          "expr": "sum by (application) (increase(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__interval]))",
+          "expr": "(sum by (application) (increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__interval])) or on (application) (0 * sum by (application) (increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "legendFormat": "{{application}} (rule detections)"
         }
       ],
@@ -504,7 +504,7 @@
           "decimals": 0,
           "min": 0,
           "displayName": "${__field.name}",
-          "noValue": "No detections",
+          "noValue": "No matching detections",
           "color": {
             "mode": "fixed",
             "fixedColor": "orange"
@@ -590,7 +590,8 @@
           "displayName": "${__field.name}",
           "color": {
             "mode": "palette-classic-by-name"
-          }
+          },
+          "noValue": "No matching detections"
         },
         "overrides": []
       }
@@ -983,7 +984,7 @@
               "decimals": 1,
               "min": 0,
               "max": 100,
-              "noValue": "No WAF logs",
+              "noValue": "No detections / log data",
               "color": {
                 "mode": "fixed",
                 "fixedColor": "blue"
@@ -2008,7 +2009,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**How to read this dashboard**\n\n- **RelevantOnly auditing:** Coraza records only relevant transactions (matched rules or response criteria); normal successful traffic produces no audit records.\n- **Interruption vs Detection:** A detection means a rule matched; it is an interruption (BLOCK) only when `transaction.is_interrupted=true`.\n- **Top tables and logs:** Tables show ranked top-10 subsets (ties can hide entries); the recent-event log is a sample of at most the latest 100 matching records.\n- **Redaction:** Credential headers and sensitive parameters are redacted before Loki ingestion.\n- **External edge and host protection:** Direct-to-origin Cilium drops and Cloudflare edge blocks live on the **Blocked Sources** dashboard.\n- **Client IP filter:** The `client_ip` textbox (`.*` = all) filters audit-derived panels at query time; pod and infrastructure metrics are service-wide.\n\n- **Metrics vs logs:** the overview cards and the activity chart come from Alloy metrics (`loki_process_custom_taskflow_waf_*`): all clients, Application filter only. The same panels filtered by Client IP are in the collapsed row \"Overview filtered by client IP (scans logs)\". The rule bars, tables and recent detections scan Loki and honor both filters."
+        "content": "**How to read this dashboard**\n\n- **Coverage:** WAF metrics began on **2026-10-18 at 13:34 UTC**. Earlier events are available only in Loki. Metric counts use VictoriaMetrics `increase_pure()` to include each zero-origin counter's first burst; they cannot recover events before metrics began.\n- **Filters:** Overview cards and the activity chart use metrics: **all clients**, Application filter only. Expand **Overview filtered by client IP (scans logs)** for IP-filtered summaries. Rule bars, tables and recent detections scan Loki and honor both filters. Pod/infrastructure panels are service-wide.\n- **Zeros vs gaps:** Metric zeros require request-counter data and a successful Alloy scrape. Gaps can mean unavailable telemetry. A healthy scrape alone does not prove WAF logs are flowing. Empty rule panels mean no matching records in stored logs, not proof the pipeline is healthy.\n- **RelevantOnly auditing:** Audit records can result from rule matches or response criteria. An audit record alone is not a detection; BLOCK requires `transaction.is_interrupted=true`.\n- **Display limits:** Top tables are ranked top-10 subsets; recent logs show at most 100 records. Credential headers and sensitive parameters are redacted before ingestion.\n- **Other layers:** Cloudflare blocks and Cilium drops live on **Blocked Sources**."
       }
     },
     {

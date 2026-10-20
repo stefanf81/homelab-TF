@@ -417,13 +417,13 @@ back as well, restore the previous digest in both WAF Deployments.
 
 ### Alloy Configuration
 
-Alloy discovers WAF pods in the `taskflow` namespace using Kubernetes service discovery. Caddy access logs and redacted Coraza audit records share pod stdout, so a `loki.process` pipeline runs only on records containing `"transaction"`.
+Alloy discovers WAF pods in the `taskflow` namespace using Kubernetes service discovery. Caddy access logs and Coraza audit records share pod stdout. Alloy recognises the audit JSON key `"transaction":{` and redacts credentials before forwarding to Loki; raw Kubernetes stdout is not sanitised by this ingest-time step.
 
-The pipeline extracts `method` from the transaction JSON and the first matched CRS `rule_id` from Coraza's `messages[]` array. Both are bounded values and are stored as Loki labels. Client IPs, URIs, transaction IDs, and other request-specific values remain in the log body and are parsed at query time to avoid high-cardinality labels.
+The pipeline normalises `method` to GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS/OTHER and extracts the first matched CRS `rule_id` from Coraza's `messages[]` array. Only those bounded values become Loki labels. Client IPs, URIs, transaction IDs, and other request-specific values remain in the log body and are parsed at query time to avoid high-cardinality labels.
 
 Loki's `json` parser skips arrays, so `messages[]` cannot be fully flattened with LogQL. The raw JSON audit record is retained for investigation; dashboard detection queries require `"messages"` and therefore exclude relevant HTTP responses that did not trigger a WAF rule.
 
-Alloy configuration (simplified; `gitops/monitoring/logging/alloy-release.yaml` is the source of truth and also fans the WAF records out to the metrics-only components described below):
+Alloy configuration (illustration only, not a deployable replacement: it omits persistent WAL settings and the metrics-only fan-out below; `gitops/monitoring/logging/alloy-release.yaml` is the source of truth):
 
 ```alloy
 discovery.kubernetes "pods" {
@@ -488,12 +488,28 @@ loki.process "coraza_audit" {
   forward_to = [loki.write.local.receiver]
 
   stage.match {
-    selector = "{job=\"coraza-waf\"} |= \"\\\"transaction\\\"\""
+    selector = "{job=\"coraza-waf\"} |= \"\\\"transaction\\\":{\""
+
+    // stage.replace replaces captured VALUES, not the surrounding key.
+    stage.replace {
+      expression = `(?i)"(?:authorization|proxy-authorization|cookie|set-cookie)"\s*:\s*(\[\s*(?:"(?:\\.|[^"\\])*"\s*(?:,\s*"(?:\\.|[^"\\])*"\s*)*)?\])`
+      replace = "[\"REDACTED\"]"
+    }
+    stage.replace {
+      expression = `(?i)(?:access_token|refresh_token|id_token|code|state|password|secret)=((?:\\.|[^"\\&\s])+)`
+      replace = "REDACTED"
+    }
 
     stage.json {
+      drop_malformed = true
       expressions = {
         method = "transaction.request.method",
       }
+    }
+
+    stage.regex {
+      source = "method"
+      expression = "^(?P<known_method>GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$"
     }
 
     stage.regex {
@@ -502,8 +518,14 @@ loki.process "coraza_audit" {
 
     stage.labels {
       values = {
-        method  = "method",
+        method  = "known_method",
         rule_id = "rule_id",
+      }
+    }
+    stage.match {
+      selector = "{job=\"coraza-waf\", method=\"\"}"
+      stage.static_labels {
+        values = { method = "OTHER" }
       }
     }
   }
@@ -530,7 +552,7 @@ histogram and the rate-limit counter from it. Caddy logs `"rate_limit_zone":null
 for requests that were not limited, so the rate-limit counter only admits lines
 whose zone is a non-empty string. Selectors match compact JSON keys (`"msg":"handled request"`, `"transaction":{`, `"messages":[`): quotes inside logged header values are escaped, so client-controlled text cannot satisfy them.
 
-The WAF source fans out synchronously to the Loki pipeline and the metrics components, so `loki.write` keeps a write-ahead log on the `alloy-data` PVC (`wal { enabled = true, max_segment_age = "30m" }`). An unreachable Loki then no longer stalls the counters, and buffered entries are sent when it returns; segments older than 30 minutes are deleted, which bounds disk use and the replay after a long outage. Without the WAL, a lab test with 300,000 lines and Loki down stalled every counter at about 15%; with it they stayed exact and all lines reached Loki after recovery. The Alloy test refuses a config without it.
+The WAF source fans out synchronously to the Loki pipeline and the metrics components, so `loki.write` keeps a write-ahead log on the `alloy-data` PVC (`wal { enabled = true, max_segment_age = "30m" }`). This decouples the counters from a slow/unreachable Loki while disk space remains available. Segments older than 30 minutes are eventually deleted: this bounds age, **not bytes**. Sustained ingress of roughly 0.57 MiB/s can fill the 1Gi PVC before expiry; watch PVC usage and size it for peak traffic/outages. Replay is finite, not a guarantee of lossless delivery through arbitrary outages. Without the WAL, a lab test with 300,000 lines and Loki down stalled every counter at about 15%; with it they stayed exact and all lines reached Loki after recovery. The Alloy test refuses a config without it. See [monitoring deployment safety](../gitops/monitoring/platform/README.md) for update/storage precautions.
 They have `forward_to = []`, so they never write to Loki and stored logs and
 labels are unchanged. Each keeps only bounded labels (`stage.label_keep`) before
 `stage.metrics`, because every remaining entry label would become a metric label.

@@ -35,28 +35,16 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "orange",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 100
-              }
-            ]
-          },
-          "noValue": "0"
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
         },
         "overrides": []
       },
       "options": {
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
@@ -208,32 +196,16 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "gray"
-              },
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "orange",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 100
-              }
-            ]
-          },
-          "noValue": "No data"
+          "noValue": "No data",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
         },
         "overrides": []
       },
       "options": {
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
@@ -249,7 +221,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Cloudflare blocks over time",
-      "description": "Blocked requests per displayed interval (minimum 1 minute; wider for long time ranges), split by Cloudflare rule source. firewallCustom includes custom rules generally; inspect rule_id to identify the managed AbuseIPDB rule.",
+      "description": "Blocked requests per displayed interval (minimum 1 minute; wider for long time ranges), split by Cloudflare rule source. firewallCustom includes custom rules generally; inspect rule_id to identify the managed AbuseIPDB rule. Bars represent counts per interval; missing intervals are not connected or assumed to be zero.",
       "gridPos": {
         "x": 0,
         "y": 5,
@@ -274,6 +246,15 @@
           "unit": "short",
           "color": {
             "mode": "palette-classic"
+          },
+          "min": 0,
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
           }
         },
         "overrides": []
@@ -292,7 +273,7 @@
       "id": 6,
       "type": "timeseries",
       "title": "Cilium Gateway dropped flows over time",
-      "description": "Non-reply dropped flows per displayed interval (minimum 1 minute) involving reserved:ingress (identity 8). POLICY_DENIED confirms policy enforcement, but not which policy; reasonless drops remain unattributed. Source or destination may be the ingress identity because Envoy emits both ingress and egress events.",
+      "description": "Non-reply dropped flows per displayed interval (minimum 1 minute) involving reserved:ingress (identity 8). POLICY_DENIED confirms policy enforcement, but not which policy; reasonless drops remain unattributed. Source or destination may be the ingress identity because Envoy emits both ingress and egress events. Bars represent counts per interval; missing intervals are not connected or assumed to be zero.",
       "gridPos": {
         "x": 12,
         "y": 5,
@@ -322,6 +303,15 @@
           "unit": "short",
           "color": {
             "mode": "palette-classic"
+          },
+          "min": 0,
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
           }
         },
         "overrides": []
@@ -860,7 +850,8 @@
             "displayName": "Blocked requests",
             "desc": true
           }
-        ]
+        ],
+        "maxRowHeight": 100
       },
       "fieldConfig": {
         "defaults": {
@@ -881,7 +872,23 @@
               },
               {
                 "id": "custom.width",
-                "value": 170
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "string"
+            },
+            "properties": [
+              {
+                "id": "custom.wrapText",
+                "value": true
+              },
+              {
+                "id": "custom.inspect",
+                "value": true
               }
             ]
           }

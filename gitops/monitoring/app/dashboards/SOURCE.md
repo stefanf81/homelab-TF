@@ -41,6 +41,11 @@ Per-IP view of traffic rejected at the two enforcement layers:
 
 Per-IP values are parsed at query time; they are never Prometheus labels.
 
+Block/drop volume uses neutral stat colours; collector freshness and errors retain
+health thresholds. Sparse event charts use bars without connecting missing
+intervals. Sampled user agents wrap with a capped row height and a cell inspector;
+their counts still describe sampled groups, not an exact user-agent ranking.
+
 Updating a dashboard:
 
 1. Edit the JSON file (keep the `uid` and the datasource template variables).

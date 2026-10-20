@@ -362,6 +362,42 @@ class DashboardValidationTest < Minitest::Test
     assert_equal 4, evidence_count
   end
 
+  def test_waf_dashboards_expose_metric_coverage_and_filter_scope
+    %w[taskflow-rate-limits taskflow-waf].each do |name|
+      dashboard = fixture_dashboard(name)
+      heading = dashboard["panels"].find { |item| item["id"] == 100 }.fetch("title")
+      assert_includes heading, "all clients"
+      assert_includes heading, "2026-10-18 13:34 UTC"
+      assert_includes heading, "Client IP filter"
+      notes = dashboard["panels"].find { |item| item["title"] == "Scope, coverage, and limits" && item["type"] == "text" }
+      assert_includes notes.dig("options", "content"), "increase_pure()"
+      assert_includes notes.dig("options", "content"), "healthy scrape alone does not prove"
+    end
+    waf = fixture_dashboard("taskflow-waf")
+    empty_labels = waf["panels"].select { |p| [3, 4].include?(p["id"]) }.map { |p| p.dig("fieldConfig", "defaults", "noValue") }
+    assert_equal ["No matching detections"] * 2, empty_labels
+  end
+
+  def test_blocked_sources_counts_are_neutral_and_sparse_charts_do_not_bridge_gaps
+    path = File.expand_path("../../../monitoring/app/dashboards/blocked-sources.json", __dir__)
+    dashboard = JSON.parse(File.read(path))
+    items = dashboard["panels"].to_h { |p| [p["id"], p] }
+    [1, 4].each do |id|
+      assert_equal "value", items[id].dig("options", "colorMode")
+      assert_equal "fixed", items[id].dig("fieldConfig", "defaults", "color", "mode")
+      refute items[id].dig("fieldConfig", "defaults").key?("thresholds")
+    end
+    [2, 3].each { |id| assert items[id].dig("fieldConfig", "defaults").key?("thresholds") }
+    [5, 6].each do |id|
+      assert_equal "bars", items[id].dig("fieldConfig", "defaults", "custom", "drawStyle")
+      assert_equal false, items[id].dig("fieldConfig", "defaults", "custom", "spanNulls")
+    end
+    wrapping = items[12].dig("fieldConfig", "overrides").find { |o| o["matcher"] == { "id" => "byType", "options" => "string" } }
+    assert_includes wrapping.fetch("properties"), { "id" => "custom.wrapText", "value" => true }
+    assert_includes wrapping.fetch("properties"), { "id" => "custom.inspect", "value" => true }
+    assert_equal 100, items[12].dig("options", "maxRowHeight")
+  end
+
   def test_real_parser_rejects_invalid_logql_with_balanced_delimiters
     url = ENV["LOKI_URL"]
     skip "LOKI_URL required for parser integration" unless url

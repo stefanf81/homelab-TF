@@ -30,6 +30,10 @@ spec:
     controller:
       type: deployment
       replicas: 1
+      # RWO allows two pods on the same node. Never overlap writers to this
+      # PVC's WAL/position files during a pod-template or image upgrade.
+      updateStrategy:
+        type: Recreate
       volumes:
         extra:
           - name: alloy-data
@@ -325,26 +329,37 @@ spec:
             // Caddy access logs and Coraza audit records share stdout. Process only
             // audit records so Caddy's unrelated JSON fields never become labels.
             stage.match {
-              selector = "{job=\"coraza-waf\"} |= \"\\\"transaction\\\"\""
+              selector = "{job=\"coraza-waf\"} |= \"\\\"transaction\\\":{\""
 
               // Coraza writes audit JSON straight to stdout (there is no sidecar
               // redactor anymore), so credential redaction happens here.
-              // 1) request headers: Authorization / Proxy-Authorization / Cookie
+              // stage.replace replaces CAPTURE GROUPS, not the whole regexp.
+              // Capture the entire sensitive header value array, not its key.
+              // JSON strings may contain escaped quotes, backslashes and ']'.
+              // Also remove response Set-Cookie (audit part F).
               stage.replace {
-                expression = "(?i)\"(authorization|proxy-authorization|cookie)\"\\s*:\\s*\\[[^\\]]*\\]"
-                replace    = "\"$1\":[\"REDACTED\"]"
+                expression = `(?i)"(?:authorization|proxy-authorization|cookie|set-cookie)"\s*:\s*(\[\s*(?:"(?:\\.|[^"\\])*"\s*(?:,\s*"(?:\\.|[^"\\])*"\s*)*)?\])`
+                replace    = "[\"REDACTED\"]"
               }
 
               // 2) secrets passed as query parameters
               stage.replace {
-                expression = "(?i)(access_token|refresh_token|id_token|code|state|password|secret)=[^\"&\\s]+"
-                replace    = "$1=REDACTED"
+                expression = `(?i)(?:access_token|refresh_token|id_token|code|state|password|secret)=((?:\\.|[^"\\&\s])+)`
+                replace    = "REDACTED"
               }
 
               stage.json {
+                // Fail closed rather than forwarding malformed audit evidence
+                // that cannot be safely parsed after redaction.
+                drop_malformed = true
                 expressions = {
                   method = "transaction.request.method",
                 }
+              }
+
+              stage.regex {
+                source     = "method"
+                expression = "^(?P<known_method>GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$"
               }
 
               // Coraza stores matches in messages[].error_message; Loki skips arrays,
@@ -353,13 +368,20 @@ spec:
                 expression = "\"messages\":\\[.*?\\[id [^0-9]*(?P<rule_id>[0-9]+)"
               }
 
-              // Both values are bounded: HTTP methods and installed CRS rule IDs.
+              // Only normalised methods and installed CRS rule IDs become labels.
               // Request URIs and client IPs remain in the log body to avoid
               // high-cardinality Loki labels.
               stage.labels {
                 values = {
-                  method  = "method",
+                  method  = "known_method",
                   rule_id = "rule_id",
+                }
+              }
+
+              stage.match {
+                selector = "{job=\"coraza-waf\", method=\"\"}"
+                stage.static_labels {
+                  values = { method = "OTHER" }
                 }
               }
             }
@@ -522,6 +544,7 @@ spec:
               }
 
               stage.json {
+                drop_malformed = true
                 expressions = {
                   interrupted = "transaction.is_interrupted",
                 }
@@ -602,8 +625,9 @@ spec:
             // unreachable Loki no longer back-pressures the sources: the WAF metrics
             // components share the WAF source's synchronous fan-out and used to stall
             // once the in-memory queue filled. Buffered entries are sent when Loki is
-            // back. Segments older than 30m are deleted, which bounds disk use (watch
-            // alloy-data on the Logging pipeline dashboard) and an outage's replay.
+            // back. Segments older than 30m are eventually deleted. This bounds
+            // age, NOT bytes: sustained ~0.57 MiB/s can fill the 1Gi PVC before
+            // expiry. Watch alloy-data usage; size it for peak ingress/outages.
             wal {
               enabled         = true
               max_segment_age = "30m"

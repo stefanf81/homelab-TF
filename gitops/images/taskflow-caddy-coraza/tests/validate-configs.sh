@@ -10,7 +10,7 @@
 # Usage: [IMAGE=<ref>] [LOKI_IMAGE=<ref>] validate-configs.sh
 # The image defaults to the one pinned in the frontend WAF Deployment.
 #
-# Requires: docker, ruby, and kubectl (with embedded Kustomize).
+# Requires: docker, helm, ruby, python3, and kubectl (with embedded Kustomize).
 
 set -euo pipefail
 
@@ -20,7 +20,7 @@ WAF_DIR="$REPO_ROOT/gitops/apps/taskflow"
 LOKI_RELEASE="$REPO_ROOT/gitops/monitoring/logging/loki-release.yaml"
 LOKI_REPOSITORIES="$REPO_ROOT/gitops/monitoring/logging/repositories.yaml"
 
-for tool in docker ruby kubectl; do
+for tool in docker helm ruby python3 kubectl; do
   command -v "$tool" >/dev/null 2>&1 || {
     echo "required tool not found: $tool" >&2
     exit 1
@@ -42,6 +42,12 @@ env -u LOKI_URL ruby "$HERE/validate-dashboards.rb" "${DASHBOARDS[@]}"
 
 echo "== validating dashboard provisioning (Kustomize render)"
 ruby "$HERE/validate-dashboard-provisioning.rb" "$REPO_ROOT"
+
+echo "== validating pinned Helm renders and monitoring safety guards"
+ruby "$HERE/validate-monitoring-configs.rb"
+
+echo "== testing WAF dashboard MetricsQL against disposable VictoriaMetrics"
+python3 "$HERE/validate-waf-dashboard-metrics.py"
 
 echo "== resolving deployed Loki version from its Helm release/repository"
 EXPECTED_LOKI_VERSION="$(ruby "$HERE/validate-loki-version.rb" "$LOKI_RELEASE" "$LOKI_REPOSITORIES")"

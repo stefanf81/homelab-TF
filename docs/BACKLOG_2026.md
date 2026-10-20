@@ -20,7 +20,7 @@ Already changed but uncommitted (for context, do not redo):
 ## P0 — Availability & data safety (this week)
 
 - [ ] **1. Alerting (biggest single gap).** A reboot, disk fill, or cert failure is currently invisible.
-  - `monitoring/platform/release.yaml`: `vmalert.enabled: true`, `alertmanager.enabled: true`.
+  - VMAlert is now configured to evaluate the bundled rules with notifications blackholed (dashboard recording rules need it). Alert delivery is still pending: configure Alertmanager/receivers and remove `notifier.blackhole` together.
   - New `monitoring/platform/vmrules.yaml`: `KubeNodeNotReady`, `KubePodCrashLooping`/restart-rate,
     `KubeDeploymentReplicasMismatch`, `up == 0`, PV >80% (`kubelet_volume_stats_*`),
     node disk (`node_filesystem_avail_bytes`), `CertificateNotReady` +

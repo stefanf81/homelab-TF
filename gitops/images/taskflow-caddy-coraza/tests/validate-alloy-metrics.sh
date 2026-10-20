@@ -3,7 +3,7 @@
 # fixture WAF logs and checks the logs-to-metrics series the dashboards read:
 # exact request/rate-limit/audit/detection counts, the duration histogram, and that
 # no pod, file or client data leaks into metric labels. Needs docker, ruby, python3
-# and a reachable Loki (LOKI_URL), which Alloy also writes the unchanged logs to.
+# and a disposable Loki (LOKI_URL), which receives redacted fixture logs.
 #
 # ALLOY_IMAGE is pinned to the app version of the Alloy Helm chart in
 # gitops/monitoring/logging/alloy-release.yaml (chart 1.13.1 -> Alloy v1.20.1);
@@ -38,6 +38,10 @@ alloy_container="$(docker run -d --network host \
   "$ALLOY_IMAGE" run --server.http.listen-addr="127.0.0.1:$ALLOY_PORT" --storage.path=/tmp/alloy /etc/alloy/config.alloy)"
 
 if ! python3 "$HERE/validate-alloy-metrics-check.py" "$tmp/truth.json" "http://127.0.0.1:$ALLOY_PORT/metrics"; then
+  docker logs "$alloy_container" >&2 || true
+  exit 1
+fi
+if ! python3 "$HERE/validate-alloy-logs-check.py" "$tmp/truth.json" "$LOKI_URL"; then
   docker logs "$alloy_container" >&2 || true
   exit 1
 fi

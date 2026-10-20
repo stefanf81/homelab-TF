@@ -102,7 +102,7 @@
     {
       "id": 100,
       "type": "row",
-      "title": "Overview — selected range",
+      "title": "Overview — all clients; metrics since 2026-10-18 13:34 UTC; Client IP filter in collapsed row below",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -130,7 +130,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range]))",
+          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range]))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -150,7 +150,7 @@
           "unit": "none",
           "decimals": 0,
           "min": 0,
-          "noValue": "No WAF logs",
+          "noValue": "Metrics unavailable",
           "color": {
             "mode": "thresholds"
           },
@@ -185,7 +185,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[$__range])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))",
+          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -205,7 +205,7 @@
           "unit": "none",
           "decimals": 0,
           "min": 0,
-          "noValue": "No WAF logs",
+          "noValue": "Metrics unavailable",
           "color": {
             "mode": "thresholds"
           },
@@ -248,7 +248,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__range])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))",
+          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -268,7 +268,7 @@
           "unit": "none",
           "decimals": 0,
           "min": 0,
-          "noValue": "No WAF logs",
+          "noValue": "Metrics unavailable",
           "color": {
             "mode": "thresholds"
           },
@@ -311,7 +311,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * (sum(increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__range])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) / (sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])) > 0)",
+          "expr": "(100 * (sum(increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) / (sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])) > 0)) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -331,7 +331,7 @@
           "unit": "percent",
           "decimals": 0,
           "min": 0,
-          "noValue": "No logged requests",
+          "noValue": "No requests / unavailable",
           "color": {
             "mode": "thresholds"
           },
@@ -378,7 +378,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[5m])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[5m])))",
+          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[5m])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[5m])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -398,7 +398,7 @@
           "unit": "short",
           "decimals": 0,
           "min": 0,
-          "noValue": "No WAF logs",
+          "noValue": "Metrics unavailable",
           "color": {
             "mode": "thresholds"
           },
@@ -441,7 +441,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[1h])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[1h])))",
+          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[1h])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[1h])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -461,7 +461,7 @@
           "unit": "short",
           "decimals": 0,
           "min": 0,
-          "noValue": "No WAF logs",
+          "noValue": "Metrics unavailable",
           "color": {
             "mode": "thresholds"
           },
@@ -504,7 +504,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[24h])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[24h])))",
+          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[24h])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[24h])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -524,7 +524,7 @@
           "unit": "short",
           "decimals": 0,
           "min": 0,
-          "noValue": "No WAF logs",
+          "noValue": "Metrics unavailable",
           "color": {
             "mode": "thresholds"
           },
@@ -662,7 +662,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Rejections by source",
-      "description": "Counts per displayed interval (minimum 5 minutes), from Alloy metrics: all clients, Application filter only. Coraza blocks come from interrupted audit records, not HTTP 403. Rate-limiter rejections are 429s carrying rate_limit_zone; other 429s come from upstream/application code.",
+      "description": "Counts per displayed interval (minimum 5 minutes), from Alloy metrics: all clients, Application filter only. Coraza blocks come from interrupted audit records, not HTTP 403. Rate-limiter rejections are 429s carrying rate_limit_zone; other 429s come from upstream/application code. Each source shows zero only while request metrics exist and Alloy is scraped successfully; gaps mean metrics are unavailable.",
       "gridPos": {
         "x": 8,
         "y": 13,
@@ -676,17 +676,17 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_audit_records_total{application=~\"$application\",interrupted=\"true\"}[$__interval]))",
+          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_audit_records_total{application=~\"$application\",interrupted=\"true\"}[$__interval])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "legendFormat": "Coraza block"
         },
         {
           "refId": "B",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval]))",
+          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "legendFormat": "Caddy rate limit"
         },
         {
           "refId": "C",
-          "expr": "clamp_min((sum(increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[$__interval])) or vector(0)) - (sum(increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval])) or vector(0)), 0)",
+          "expr": "(clamp_min((sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[$__interval])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) - (sum(increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))), 0)) and on() (min(up{job=\"alloy\"}) == 1)",
           "legendFormat": "Other 429 (upstream/app)"
         }
       ],
@@ -856,7 +856,7 @@
       "id": 4,
       "type": "timeseries",
       "title": "Rate-limited responses",
-      "description": "Caddy rate-limiter 429s per displayed interval (minimum 5 minutes), split by application, from Alloy metrics (all clients). Zones are frontend general and backend api/authentication; upstream 429s appear as Other 429 in the rejection mix.",
+      "description": "Caddy rate-limiter 429s per displayed interval (minimum 5 minutes), split by application, from Alloy metrics (all clients). Zones are frontend general and backend api/authentication; upstream 429s appear as Other 429 in the rejection mix. A healthy request-counter series supplies the zero baseline per application; gaps mean metrics are unavailable.",
       "gridPos": {
         "x": 0,
         "y": 21,
@@ -870,7 +870,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (application) (increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval]))",
+          "expr": "(sum by (application) (increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval])) or on (application) (0 * sum by (application) (increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "legendFormat": "{{application}}"
         }
       ],
@@ -943,7 +943,7 @@
       "id": 6,
       "type": "timeseries",
       "title": "Caddy request rate",
-      "description": "Request rate per application from Alloy metrics (all clients, probes excluded), averaged over the query step.",
+      "description": "Request rate per application from Alloy metrics (all clients, probes excluded), averaged over the rate window. Uses the zero-origin counter increase divided by the rate window in seconds, including the initial burst of a new series.",
       "gridPos": {
         "x": 12,
         "y": 21,
@@ -957,7 +957,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (application) (rate(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__rate_interval]))",
+          "expr": "(sum by (application) (increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__rate_interval])) / ($__rate_interval_ms / 1000)) and on() (min(up{job=\"alloy\"}) == 1)",
           "legendFormat": "{{application}}"
         }
       ],
@@ -1641,7 +1641,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**What these numbers mean**\n\n- Totals count matching records retained in Loki for the selected range and filters; they are not a guarantee that every event was collected.\n- Top tables are ranked subsets (top 10); ties can hide most entries. Log panels show the latest 100 matching records as a sample.\n- A 200 response is not proof that sensitive content was served, and a 403 is not automatically a WAF block.\n- Credentials and selected query parameters are redacted before ingestion; WAF auditing is RelevantOnly, so normal traffic produces no audit records.\n- Cloudflare edge blocks and Cilium drops live on the **Blocked Sources** dashboard.\n- The Client IP filter is a regular expression applied at query time; use `.*` for all clients. An empty field matches nothing.\n\n- The overview cards, fixed-window cards, rejection and request-rate charts come from Alloy metrics (`loki_process_custom_taskflow_waf_*`): all clients, Application filter only, and they stop updating if Alloy or its scrape is down. Tables, breakdown bars and logs scan Loki and also honor the Client IP filter. Client IP filtered versions of the four overview cards are in the collapsed row \"Totals filtered by client IP\"."
+        "content": "**What these numbers mean**\n\n- **Coverage:** WAF metrics began on **2026-10-18 at 13:34 UTC**. Earlier requests are available only in Loki. Metric counts use VictoriaMetrics `increase_pure()` to include each zero-origin counter's first burst; they cannot recover requests before metrics began.\n- **Filters:** Overview/fixed-window cards and rejection/request-rate charts use metrics: **all clients**, Application filter only. Expand **Totals filtered by client IP (scans logs)** for IP-filtered summaries. Tables, breakdown bars and logs scan Loki and honor both filters. Use `.*` for all IPs.\n- **Zeros vs gaps:** Metric zeros require request-counter data and a successful Alloy scrape. Gaps can mean unavailable telemetry. A healthy scrape alone does not prove WAF logs are flowing; check pipeline health alongside these counts.\n- **Evidence:** A 200 is not proof sensitive content was served; a 403 is not automatically a WAF block. Caddy rejections carry a nonempty rate-limit zone; other 429s can come from the application.\n- **Display limits:** Top tables show at most 10 entries; recent logs show at most 100 records. Counts cover collected data, not guaranteed complete traffic. Credentials and selected query parameters are redacted.\n- **Other layers:** Cloudflare blocks and Cilium drops live on **Blocked Sources**."
       }
     },
     {
@@ -1825,7 +1825,7 @@
       "id": 28,
       "type": "stat",
       "title": "Rate-limit rejections (last 5m)",
-      "description": "Caddy rate-limiter rejections in the last 5 minutes, all applications, from Alloy metrics. No data means no WAF requests were recorded.",
+      "description": "Caddy rate-limiter rejections in the last 5 minutes, all applications, from Alloy metrics. Zero means no rejections with request metrics available and Alloy up; no data means metrics are unavailable.",
       "gridPos": {
         "x": 18,
         "y": 63,
@@ -1839,7 +1839,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(loki_process_custom_taskflow_waf_rate_limited_total{zone=~\".+\"}[5m])) or (0 * sum(increase(loki_process_custom_taskflow_waf_requests_total[5m])))",
+          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{zone=~\".+\"}[5m])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total[5m])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -1859,7 +1859,7 @@
           "unit": "none",
           "decimals": 0,
           "min": 0,
-          "noValue": "No data",
+          "noValue": "Metrics unavailable",
           "color": {
             "mode": "thresholds"
           },

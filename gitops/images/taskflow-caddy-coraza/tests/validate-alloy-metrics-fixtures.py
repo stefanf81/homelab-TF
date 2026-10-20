@@ -2,7 +2,7 @@
 """Write fixture WAF logs (Caddy access records, kubelet probes, Coraza audit records) with exactly
 known counts, and the expected metric values, for validate-alloy-metrics.sh.
 usage: validate-alloy-metrics-fixtures.py <logs dir> <truth.json>"""
-import collections, json, random, sys
+import collections, copy, json, random, sys
 
 out_dir, truth_path = sys.argv[1:3]
 random.seed(11)
@@ -16,6 +16,7 @@ USUAL = ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
 
 requests, limited, audit, detections, rules = (collections.Counter() for _ in range(5))
 hist = {app: {"count": 0, "sum": 0.0, "buckets": [0] * len(BUCKETS)} for app in APPS}
+security = {}
 
 for app, filename in APPS.items():
     lines = []
@@ -83,6 +84,41 @@ for app, filename in APPS.items():
         if has_messages:
             detections[(app, flag)] += 1
             rules[(app, rule)] += 1
+    # Exercise the actual Loki redactor, not just the metrics-only fan-out.
+    # Every secret below is synthetic. Headers include multiple values, empty
+    # arrays, literal ']', escaped quotes/backslashes and mixed-case keys.
+    for i, method in enumerate([*USUAL, "PROPFIND", "REVIEW_METHOD_ONE", "REVIEW_METHOD_TWO", "get"]):
+        fixture_id = f"{app}-{i}"
+        token = f"SYNTHETIC_SECRET_{i}"
+        record = {
+            "redaction_fixture_id": fixture_id,
+            "transaction": {
+                "client_ip": "192.0.2.1", "is_interrupted": False,
+                "request": {
+                    "method": method,
+                    "uri": f'/?public=keep&access_token={token}&code={token}&password={token}\\"quoted&after=keep',
+                    "headers": {
+                        "Authorization": [f'Bearer {token}]\\"quoted', f"second {token}"],
+                        "pRoXy-AuThOrIzAtIoN": [token],
+                        "cookie": [f"sid={token}; quoted=\"x]\""],
+                        "COOKIE": [],
+                        "X-Keep": ["non-secret evidence"],
+                    },
+                },
+                "response": {"headers": {"Set-Cookie": [f"sid={token}; Secure; HttpOnly"], "X-Keep": ["response evidence"]}},
+            },
+        }
+        expected = copy.deepcopy(record)
+        expected["transaction"]["request"]["uri"] = "/?public=keep&access_token=REDACTED&code=REDACTED&password=REDACTED&after=keep"
+        for headers in [expected["transaction"]["request"]["headers"], expected["transaction"]["response"]["headers"]]:
+            for key in headers:
+                if key.lower() in ("authorization", "proxy-authorization", "cookie", "set-cookie"):
+                    headers[key] = ["REDACTED"]
+        lines.append(json.dumps(record, separators=(",", ":")))
+        audit[(app, "false")] += 1
+        security[fixture_id] = {"record": expected, "method": method if method in USUAL else "OTHER"}
+    # Fail closed: invalid audit JSON must not be stored or counted as an audit.
+    lines.append('{"transaction":{"request":{"headers":{"authorization":["SYNTHETIC_TRUNCATED_SECRET"]},"uri":"/"}},"redaction_fixture_id":"malformed-' + app + '"')
     random.shuffle(lines)
     with open(f"{out_dir}/{filename}", "w") as handle:
         handle.write("\n".join(lines) + "\n")
@@ -90,5 +126,6 @@ for app, filename in APPS.items():
 as_rows = lambda counter: [[*key, value] for key, value in counter.items()]
 with open(truth_path, "w") as handle:
     json.dump({"requests": as_rows(requests), "limited": as_rows(limited), "audit": as_rows(audit),
-               "detections": as_rows(detections), "rules": as_rows(rules), "histogram": hist, "buckets": BUCKETS}, handle)
+               "detections": as_rows(detections), "rules": as_rows(rules), "histogram": hist, "buckets": BUCKETS,
+               "security": security}, handle)
 print(f"fixtures: {sum(requests.values())} requests, {sum(limited.values())} rate-limited, {sum(audit.values())} audit, {sum(detections.values())} detections")
