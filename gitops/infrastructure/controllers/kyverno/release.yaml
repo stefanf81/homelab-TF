@@ -34,42 +34,43 @@ spec:
     # v3 CRD management: Kyverno templates + owns the CRDs (Helm/Flux applies them).
     crds:
       install: true
+    # Resources: requests sized to real use, no CPU limits (a throttled admission
+    # webhook adds latency to every apply). The admission controller's container
+    # resources live under `container:` in chart 3.x; a top-level `resources` here is
+    # silently ignored (it was, until this change).
     admissionController:
       replicas: 1
-      resources:
-        requests:
-          memory: "256Mi"
-          cpu: "100m"
-        limits:
-          memory: "512Mi"
-          cpu: "500m"
+      container:
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
     backgroundController:
       replicas: 1
       resources:
         requests:
           memory: "128Mi"
-          cpu: "100m"
+          cpu: "25m"
         limits:
           memory: "256Mi"
-          cpu: "200m"
     cleanupController:
       replicas: 1
       resources:
         requests:
           memory: "128Mi"
-          cpu: "100m"
+          cpu: "25m"
         limits:
           memory: "256Mi"
-          cpu: "200m"
     reportsController:
       replicas: 1
       resources:
         requests:
           memory: "128Mi"
-          cpu: "100m"
+          cpu: "25m"
         limits:
           memory: "256Mi"
-          cpu: "200m"
     # Make Kyverno skip platform namespaces entirely. kube-system, kube-public,
     # kube-node-lease and Kyverno's own namespace are already in the chart's default
     # resourceFilters, so only the extra ones are listed.

@@ -34,6 +34,17 @@ spec:
       ignoreUnfixed: false
       storageClassEnabled: true
       storageClassName: proxmox-csi
+      # Built-in Trivy server (vulnerability DB cache). Mostly idle, so a small
+      # request; the CPU limit stays (scanners keep their caps, unlike long-running
+      # services). Chart default: 200m / 512Mi request, 1 CPU / 1Gi limit.
+      server:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 1Gi
       resources:
         requests:
           cpu: 250m
@@ -78,8 +89,7 @@ spec:
     targetNamespaces: ""
     resources:
       requests:
-        cpu: 100m
+        cpu: 50m
         memory: 256Mi
       limits:
-        cpu: 500m
         memory: 1Gi

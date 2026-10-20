@@ -1,0 +1,16 @@
+# Scheduling priority for the TaskFlow request path and data stores.
+#
+# With CPU limits removed and requests sized to real usage
+# (docs/PERF_DEEP_DIVE_2026-10.md §3), these pods are no longer Guaranteed QoS.
+# The priority keeps them first in the scheduling queue and last among eviction
+# candidates under node pressure (the kubelet ranks by usage above requests, then
+# priority). preemptionPolicy: Never — it never evicts other pods to make room;
+# right-sized requests leave room without preemption.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: taskflow-critical
+value: 100000
+globalDefault: false
+preemptionPolicy: Never
+description: "TaskFlow request path and data stores (WAFs, frontend, backend, Postgres, Redis)."

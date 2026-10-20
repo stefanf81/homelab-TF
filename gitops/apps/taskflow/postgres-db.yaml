@@ -19,6 +19,9 @@ spec:
       labels:
         app: postgres-db
     spec:
+      priorityClassName: taskflow-critical
+      # Room for the shutdown checkpoint (the image stops Postgres with SIGINT, a fast shutdown).
+      terminationGracePeriodSeconds: 60
       automountServiceAccountToken: false
       securityContext:
         fsGroup: 70
@@ -33,6 +36,7 @@ spec:
           args:
             # Memory — trimmed limit to 1024Mi (from 1536Mi) for the memory-constrained
             # node; shared_buffers + concurrent work_mem still fit for a low-traffic homelab.
+            # Budget: docs/PERF_DEEP_DIVE_2026-10.md §5.1.
             - "-c"
             - "shared_buffers=384MB"
             - "-c"
@@ -45,42 +49,65 @@ spec:
             - "work_mem=8MB"
             - "-c"
             - "maintenance_work_mem=64MB"
-            # PostgreSQL 18 VACUUM uses a compact radix-tree index memory structure that needs
-            # up to ~20x less memory than PG16. Allow up to 2 parallel workers for VACUUM /
-            # CREATE INDEX so maintenance finishes faster while staying inside the 1024Mi cap
-            # (peak ~2 × maintenance_work_mem during parallel vacuum). This is the zero-config
-            # win unlocked by the PG18 engine upgrade.
+            # Autovacuum workers default to maintenance_work_mem each (3 × 64MB). 32MB per
+            # worker goes a long way with PostgreSQL 17+'s radix-tree TID store and keeps
+            # the worst case inside the 1024Mi cap; index builds keep 64MB.
             - "-c"
-            - "max_parallel_maintenance_workers=2"
+            - "autovacuum_work_mem=32MB"
             # Fewer connections → less per-connection memory pressure.
             # One backend's Hikari pool keeps 25 connections open (minimum == maximum), leaving room for
             # psql, Flyway migrations, and the postgres-exporter. Backend scaling is
             # intentionally disabled until connection pooling is redesigned.
             - "-c"
             - "max_connections=50"
-            # SSD/Proxmox CSI tuning: planner assumes flash + parallel I/O; longer, smoother checkpoints.
+            # SSD/Proxmox CSI tuning: planner assumes flash + parallel I/O.
             - "-c"
             - "random_page_cost=1.1"
             - "-c"
             - "effective_io_concurrency=200"
+            # Fewer checkpoints → fewer full-page images in WAL; max_wal_size=2GB already
+            # allows 15 minutes at this write rate. Longer crash recovery is covered by
+            # the startup probe budget below.
             - "-c"
-            - "checkpoint_timeout=300"
+            - "checkpoint_timeout=15min"
             - "-c"
             - "wal_buffers=16MB"
             - "-c"
             # lz4 is the lowest-CPU WAL codec in the PG 18.6 audit (BENCHMARKS.md §59/60).
             - "wal_compression=lz4"
             - "-c"
-            # synchronous_commit=off skips the per-transaction WAL fsync on commit.
-            # On a single-node cluster with Proxmox CSI (local SSD), the "commit is
-            # acknowledged only after WAL hits disk on ALL replicas" guarantee buys
-            # nothing — there are no replicas. Disabling it removes 1-5ms of fsync
-            # latency per write transaction, improving write throughput 5-20×.
-            # Crash-safety is unchanged: a power loss may lose the last ~0.5s of
-            # transactions (wal_writer_delay), which is acceptable for a homelab.
-            - "synchronous_commit=off"
-            - "-c"
             - "max_wal_size=2GB"
+            # synchronous_commit=on (the default): a commit is acknowledged only after its
+            # WAL is flushed to the local disk. This is about the primary's own disk, not
+            # replicas. With off, a crash can lose up to 3 × wal_writer_delay (~600ms) of
+            # transactions users already saw as confirmed bookings. Cost: one fdatasync per
+            # write transaction; measure it with pg_test_fsync / pgbench
+            # (docs/PERF_DEEP_DIVE_2026-10.md §5.4) and set "off" only if it matters.
+            - "-c"
+            - "synchronous_commit=on"
+            # JIT only compiles plans above jit_above_cost, but a misestimated short OLTP
+            # query can pay tens of milliseconds for it. Also matches the CNPG images.
+            - "-c"
+            - "jit=off"
+            # Query visibility: per-statement timing (run `CREATE EXTENSION
+            # pg_stat_statements;` once in the taskflow database after this rollout),
+            # I/O timing per query and WAL fsync timing in pg_stat_io.
+            - "-c"
+            - "shared_preload_libraries=pg_stat_statements"
+            - "-c"
+            - "pg_stat_statements.track_utility=off"
+            - "-c"
+            - "track_io_timing=on"
+            - "-c"
+            - "track_wal_io_timing=on"
+            # Logs: slow statements, temp files (work_mem too small) and lock waits
+            # longer than deadlock_timeout (1s).
+            - "-c"
+            - "log_min_duration_statement=500ms"
+            - "-c"
+            - "log_temp_files=0"
+            - "-c"
+            - "log_lock_waits=on"
           securityContext:
             # postgres:18-alpine runs as UID/GID 70 by design. Do NOT "normalize" this to
             # 10001 — the PGDATA volume ownership depends on UID 70, and changing it will
@@ -108,43 +135,50 @@ spec:
             - containerPort: 5432
               name: postgres
           resources:
-            # Guaranteed QoS: requests == limits so PostgreSQL is never CPU-throttled
-            # under load, which directly protects query latency. The 1024Mi budget fits
-            # 384 shared_buffers + work_mem + connection overhead + OS page cache. /dev/shm
-            # is charged here only as used (up to 256Mi); its size is not extra memory.
-            limits:
-              cpu: "1000m"
-              memory: 1024Mi
+            # No CPU limit: checkpoints, autovacuum and parallel query burst and a CFS
+            # quota throttles them even on an idle node; the request guarantees the share
+            # under contention. Memory request == limit (last eviction candidate). The
+            # 1024Mi budget fits 384 shared_buffers + work_mem + connections + page cache
+            # (docs/PERF_DEEP_DIVE_2026-10.md §5.1).
             requests:
-              cpu: "1000m"
+              cpu: 250m
+              memory: 1024Mi
+            limits:
               memory: 1024Mi
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql
+            # Parallel query and parallel vacuum use POSIX shared memory; the container
+            # default /dev/shm is 64MB. Memory-backed, counted against the limit only when used.
             - name: dshm
               mountPath: /dev/shm
+          # pg_isready reports "rejecting connections" during crash recovery. The startup
+          # budget (120 × 5s = 10 min) lets WAL replay finish instead of killing Postgres
+          # mid-recovery in a loop; liveness only starts after startup succeeds. Exec
+          # probes default to a 1s timeout, too short during a checkpoint or vacuum.
           startupProbe:
             exec:
               command: ["pg_isready", "-U", "postgres"]
-            initialDelaySeconds: 2
-            periodSeconds: 3
-            failureThreshold: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 120
           livenessProbe:
             exec:
               command: ["pg_isready", "-U", "postgres"]
             periodSeconds: 15
-            failureThreshold: 3
+            timeoutSeconds: 5
+            failureThreshold: 4
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "postgres"]
             periodSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 2
       volumes:
         - name: postgres-storage
           persistentVolumeClaim:
             claimName: postgres-pvc
         - name: dshm
-          # Parallel hash joins can exceed the runtime's default 64Mi shared memory.
           emptyDir:
             medium: Memory
             sizeLimit: 256Mi

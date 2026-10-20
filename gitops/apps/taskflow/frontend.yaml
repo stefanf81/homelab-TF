@@ -16,6 +16,7 @@ spec:
       labels:
         app: taskflow-frontend
     spec:
+      priorityClassName: taskflow-critical
       automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
@@ -52,13 +53,12 @@ spec:
             - containerPort: 8080
               name: http
           resources:
-            # Guaranteed QoS: requests == limits locks the full CPU/memory budget for nginx,
-            # preventing latency jitter from CPU throttling during traffic spikes.
-            limits:
-              cpu: "250m"
-              memory: 256Mi
+            # nginx serving static files idles near zero CPU: small request, no CPU limit
+            # (no throttling jitter during traffic spikes), memory capped at 256Mi.
             requests:
-              cpu: "250m"
+              cpu: 25m
+              memory: 128Mi
+            limits:
               memory: 256Mi
           startupProbe:
             httpGet:

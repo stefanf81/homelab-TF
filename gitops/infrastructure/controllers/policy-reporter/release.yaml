@@ -39,17 +39,29 @@ spec:
       mode: detailed
     resources:
       requests:
-        cpu: "50m"
+        cpu: "25m"
         memory: "64Mi"
       limits:
-        cpu: "250m"
         memory: "256Mi"
     # Kyverno and Trivy plugins enrich the UI with descriptions & vulnerability data.
+    # Each plugin runs as its own Deployment with its own resources; the chart sets none.
     plugin:
       kyverno:
         enabled: true
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
       trivy:
         enabled: true
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 256Mi
     # Policy Reporter UI subchart (service: policy-reporter-ui:8080).
     # Leaving ui.clusters omitted allows Helm to generate the single 'default'
     # cluster secret dynamically containing Kyverno and Trivy plugins safely.
@@ -106,8 +118,7 @@ spec:
         enabled: false
       resources:
         requests:
-          cpu: "50m"
+          cpu: "25m"
           memory: "64Mi"
         limits:
-          cpu: "250m"
           memory: "256Mi"

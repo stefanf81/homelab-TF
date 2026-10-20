@@ -34,7 +34,6 @@ spec:
             cpu: 20m
             memory: 64Mi
           limits:
-            cpu: 200m
             memory: 256Mi
     # Chart ships no requests/limits for the node plugin; cap it on the shared node.
     node:
@@ -44,7 +43,6 @@ spec:
             cpu: 50m
             memory: 64Mi
           limits:
-            cpu: 200m
             memory: 256Mi
     existingConfigSecret: proxmox-csi-config
     storageClass:
@@ -57,3 +55,17 @@ spec:
         ssd: true
         annotations:
           storageclass.kubernetes.io/is-default-class: "true"
+      # Database volumes. `cache: none` is the Proxmox default: no host page cache
+      # (Postgres already caches in shared_buffers and the guest page cache), and
+      # guest fsyncs are still honoured. `cache` cannot change on an existing
+      # volume, so Postgres moves here when its data moves to a new PVC
+      # (docs/PERF_DEEP_DIVE_2026-10.md §5.3 has a pg_test_fsync benchmark Job).
+      - name: proxmox-csi-db
+        storage: local-lvm
+        volumeBindingMode: WaitForFirstConsumer
+        reclaimPolicy: Retain
+        fstype: ext4
+        cache: none
+        ssd: true
+        mountOptions:
+          - noatime

@@ -254,3 +254,27 @@ spec:
       path: /metrics
       interval: 60s
       scheme: http
+---
+# --- Cilium Envoy (Gateway data plane) ----------------------------------------
+# The cilium-envoy DaemonSet terminates every Gateway request (hostNetwork). The
+# chart's headless `cilium-envoy` Service exposes its metrics on `envoy-metrics`
+# (9964, envoy.prometheus.enabled defaults to true): downstream/upstream request
+# time and response codes, i.e. the latency clients actually see at the origin.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: cilium-envoy
+  namespace: monitoring
+spec:
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames:
+      - kube-system
+  selector:
+    matchLabels:
+      k8s-app: cilium-envoy
+  endpoints:
+    - port: envoy-metrics
+      path: /metrics
+      interval: 30s
+      scheme: http

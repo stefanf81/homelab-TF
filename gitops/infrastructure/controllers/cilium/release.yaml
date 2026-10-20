@@ -42,22 +42,26 @@ spec:
     # enable together with the first worker node.
     encryption:
       enabled: false
-    # Agent resources (the chart ships none).
+    # Restart the agents when cilium-config changes. Without this a Helm value change
+    # updates the ConfigMap but the running agents keep the old configuration until
+    # something else restarts them.
+    rollOutCiliumPods: true
+    # Agent resources (the chart ships none). No CPU limit: CFS throttling stretches
+    # endpoint regeneration after policy/config changes (docs/PERF_DEEP_DIVE_2026-10.md §3).
     resources:
       requests:
         cpu: 100m
         memory: 256Mi
       limits:
-        cpu: "1"
         memory: 1Gi
     operator:
       replicas: 1 # Optimized for single-node cluster
+      rollOutPods: true
       resources:
         requests:
           cpu: 50m
           memory: 128Mi
         limits:
-          cpu: 500m
           memory: 512Mi
       prometheus:
         enabled: true # operator metrics service (VMServiceScrape)
@@ -65,6 +69,26 @@ spec:
     prometheus:
       enabled: true # agent metrics service (VMServiceScrape)
       metricsService: true
+    # Per-node Envoy (DaemonSet, hostNetwork: true) terminates every Gateway request.
+    # The chart sets no resources, which left the data plane without a CPU share
+    # under contention and with the worst OOM score on the node.
+    envoy:
+      rollOutPods: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+    # EDT/fq pacing plus BBR congestion control. The agent applies the sysctls in the
+    # host namespace (net.core.default_qdisc=fq, tcp_congestion_control=bbr,
+    # tcp_slow_start_after_idle=0), so they also cover the host-network Envoy's
+    # connections to Cloudflare; pods get BBR on new sockets (kernel >= 5.18 and eBPF
+    # host routing, both present). Existing sockets keep CUBIC: restart cilium-envoy
+    # and the workloads after this rolls out (docs/PERF_DEEP_DIVE_2026-10.md §4.4).
+    bandwidthManager:
+      enabled: true
+      bbr: true
     gatewayAPI:
       enabled: true # Enable the Gateway API controller inside Cilium
       gatewayClass:
@@ -78,22 +102,32 @@ spec:
       enabled: true
       relay:
         enabled: true
+        rollOutPods: true
         resources:
           requests:
             cpu: 25m
             memory: 64Mi
           limits:
-            cpu: 200m
             memory: 128Mi
       ui:
         enabled: true
-        resources:
-          requests:
-            cpu: 25m
-            memory: 64Mi
-          limits:
-            cpu: 100m
-            memory: 128Mi
+        rollOutPods: true
+        # The chart has no `hubble.ui.resources`; it reads one block per container.
+        # The previous top-level block was silently ignored.
+        backend:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+        frontend:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
       metrics:
         enabled:
           - dns
