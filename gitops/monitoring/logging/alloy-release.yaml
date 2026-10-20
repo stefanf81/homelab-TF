@@ -644,11 +644,13 @@ spec:
           }
       # The chart reads the Alloy container's resources from `alloy.resources`; the
       # previous top-level `resources` block was silently ignored, so Alloy ran with
-      # no requests or limits. First memory cap, deliberately generous: tighten it to
-      # ~1.3x the observed max working set (docs/PERF_DEEP_DIVE_2026-10.md §3.6).
+      # no requests or limits. Tightened from the first 1Gi cap after measuring:
+      # steady ~50-85Mi, 7d peak 266Mi (2026-10-20). The limit is ~1.9x that peak
+      # rather than the 1.3x in docs/PERF_DEEP_DIVE_2026-10.md §3.6, because a Loki
+      # outage backs up the loki.write queue and v1.21 has little history yet.
       resources:
         requests:
           cpu: 50m
-          memory: 256Mi
+          memory: 128Mi
         limits:
-          memory: 1Gi
+          memory: 512Mi

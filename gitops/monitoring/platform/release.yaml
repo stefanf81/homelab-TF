@@ -39,13 +39,14 @@ spec:
         evaluationInterval: 60s
         extraArgs:
           notifier.blackhole: "true"
+        # Measured peak 36Mi (7d to 2026-10-20).
         resources:
           requests:
             cpu: 20m
-            memory: 64Mi
+            memory: 32Mi
           limits:
             cpu: 200m
-            memory: 256Mi
+            memory: 128Mi
     alertmanager:
       enabled: false
     kube-state-metrics:
@@ -204,7 +205,8 @@ spec:
         resources:
           requests:
             cpu: 50m
-            memory: 128Mi
+            # Average working set was 194Mi (peak 290Mi) against a 128Mi request.
+            memory: 192Mi
           limits:
             # 256Mi OOMKilled the persistent collector during startup/backlog.
             memory: 512Mi

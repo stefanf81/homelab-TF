@@ -96,11 +96,13 @@ spec:
       resources:
         requests:
           cpu: 100m
-          memory: 256Mi
+          # Steady working set ~65-80Mi; 7d peak 231Mi (2026-10-15).
+          memory: 128Mi
         limits:
-          # Memory stays the protective limit. No CPU limit: Loki splits a range
-          # query into parallel sub-queries, which a CPU cap serialised.
-          memory: 768Mi
+          # Memory stays the protective limit (~2.2x the measured peak). No CPU
+          # limit: Loki splits a range query into parallel sub-queries, which a
+          # CPU cap serialised.
+          memory: 512Mi
 
     gateway:
       enabled: true
