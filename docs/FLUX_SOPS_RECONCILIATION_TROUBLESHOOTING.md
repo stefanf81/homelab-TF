@@ -239,7 +239,7 @@ spec:
   chart:
     spec:
       chart: proxmox-csi-plugin
-       version: 0.5.12           # current valid OCI chart version used by this repository
+      version: 0.5.13            # current valid OCI chart version used by this repository
       sourceRef:
         kind: HelmRepository
         name: proxmox-csi
@@ -306,4 +306,4 @@ kubectl -n <SECRET_NS> get secret <SECRET_NAME> \
 | `.sops.yaml` | SOPS encryption rules (`path_regex: .*-secrets\.yaml$`, age recipient) | — (correct) |
 | `gitops/infrastructure/controllers/proxmox-csi/proxmox-csi-secrets.yaml` | Encrypted `Secret` | Decryption never run (causes A + B) |
 | `gitops/infrastructure/controllers/proxmox-csi/repository.yaml` | `HelmRepository` for Proxmox CSI | Was HTTP GitHub Pages repo without the chart → changed to `type: oci`, `url: oci://ghcr.io/sergelogvinov/charts` |
-| `gitops/infrastructure/controllers/proxmox-csi/release.yaml` | `HelmRelease` for Proxmox CSI | Current pin is `version: 0.5.12`; older incident notes used `0.3.18`. |
+| `gitops/infrastructure/controllers/proxmox-csi/release.yaml` | `HelmRelease` for Proxmox CSI | Current pin is `version: 0.5.13`; older incident notes used `0.3.18`. |

@@ -8,7 +8,7 @@ spec:
   chart:
     spec:
       chart: proxmox-csi-plugin
-      version: 0.5.12
+      version: 0.5.13
       sourceRef:
         kind: HelmRepository
         name: proxmox-csi
@@ -28,7 +28,7 @@ spec:
       plugin:
         image:
           # renovate: datasource=docker depName=ghcr.io/sergelogvinov/proxmox-csi-controller
-          tag: v0.20.0
+          tag: v0.21.0
         resources:
           requests:
             cpu: 20m

@@ -214,7 +214,7 @@ spec:
         type: Recreate
       image:
         # renovate: datasource=docker depName=grafana/grafana
-        tag: 13.2.3
+        tag: 13.2.4
       persistence:
         enabled: true
         storageClassName: proxmox-csi
