@@ -381,7 +381,7 @@ Rules:
 | vmagent, node-exporter, kube-state-metrics, metrics-server | 50m, 10m, 10m, 50m → 50m, 10m, 10m, 20m | 200m, 100m, 100m, 200m → none | unchanged |
 | Grafana, Loki, VMSingle | 50m, 100m, 100m (keep) | 250m, 1, 1 → none | unchanged |
 | Alloy (fix key: `alloy.resources`) | none applied → 50m | none applied → none | 128Mi / 512Mi (first time applied) |
-| Hubble UI (fix keys: `hubble.ui.backend/frontend.resources`) | none applied → 10m each | none | 32Mi / 128Mi each |
+| Hubble UI (fix keys: `hubble.ui.backend/frontend.resources`) | none applied → 10m each | none | 32Mi request; limit 256Mi backend, 128Mi frontend (first-time caps) |
 | Policy Reporter plugins (`plugin.kyverno/trivy.resources`) | none → 10m each | none | 32Mi / 128Mi each |
 | Falco | 100m (keep) | 1 → none (a throttled Falco drops events) | unchanged |
 | policy-reporter ×3, oauth2-proxy ×2, trivy-operator, renovate-operator | 50m → 10–25m | → none | unchanged |
@@ -529,7 +529,7 @@ for example:
     hubble:
       ui:
         backend:
-          resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 128Mi}}
+          resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 256Mi}}
         frontend:
           resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 128Mi}}
 # infrastructure/controllers/policy-reporter/release.yaml — plugins had none
@@ -663,7 +663,7 @@ existing values:
         rollOutPods: true
         # replaces the ignored `hubble.ui.resources` block (§1.5)
         backend:
-          resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 128Mi}}
+          resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 256Mi}}
         frontend:
           resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 128Mi}}
     # unchanged: ipam, kubeProxyReplacement, k8sServiceHost/Port, devices, bpf.*,
