@@ -85,7 +85,7 @@ spec:
   chart:
     spec:
       chart: falco
-      version: 9.2.0-rc1
+      version: 9.2.0
       sourceRef:
         kind: HelmRepository
         name: falco
@@ -101,13 +101,13 @@ spec:
     driver:
       kind: modern_ebpf
 
-    # Guard resource usage on a single-node homelab VM
+    # Memory is capped; CPU is not: a throttled Falco falls behind the syscall stream
+    # and drops events.
     resources:
       requests:
         cpu: "100m"
         memory: "256Mi"
       limits:
-        cpu: "1000m"
         memory: "1024Mi"
 
     # Expose Prometheus metrics (Port 8765 / port name "metrics")
@@ -235,29 +235,32 @@ still possible:
 3. In the **Prometheus / VictoriaMetrics** drop-down, select the default **VictoriaMetrics** datasource.
 4. Click **Import**.
 
-### Dashboard Layout (20 visualizations, plus section headers)
+### Dashboard Layout (19 visualizations, plus section headers)
 
 #### Row 1: Events (3 pie charts + 3 time series)
 | Panel | Type | Query |
 |-------|------|-------|
-| **Rules** | Pie chart | `sum by(rule_name) (increase(falcosecurity_falco_rules_matches_total[...]))` |
-| **Sources** | Pie chart | `sum by(source) (increase(falcosecurity_falco_rules_matches_total[...]))` |
-| **Priorities** | Pie chart | `sum by(priority) (increase(falcosecurity_falco_rules_matches_total[...]))` |
-| **by Priority over time** | Time series | Same metric, grouped by `priority` over time |
-| **by Source over time** | Time series | Same metric, grouped by `source` over time |
-| **by Rule over time** | Time series | Same metric, grouped by `rule_name` over time |
+| **Rules** | Pie chart | `sum by(rule_name) (increase_pure(falcosecurity_falco_rules_matches_total[$__range]))` (instant) |
+| **Sources** | Pie chart | `sum by(source) (increase_pure(falcosecurity_falco_rules_matches_total[$__range]))` (instant) |
+| **Priorities** | Pie chart | `sum by(priority) (increase_pure(falcosecurity_falco_rules_matches_total[$__range]))` (instant), numeric priority renamed to its name |
+| **by Priority over time** | Time series | Same metric, `increase_pure(...[$__interval])`, grouped by `priority` |
+| **by Source over time** | Time series | Same metric, `increase_pure(...[$__interval])`, grouped by `source` |
+| **by Rule over time** | Time series | Same metric, `increase_pure(...[$__interval])`, grouped by `rule_name` |
 
-#### Row 2: Performances (8 time series)
+`increase_pure()` (MetricsQL) is used because a rule's counter only appears after its first match: plain `increase()` in VictoriaMetrics can discard a large first value. Falco exports `priority` as a number (`0` emergency, `1` alert, `2` critical, `3` error, `4` warning, `5` notice, `6` informational, `7` debug); the Priorities panels rename it.
+
+#### Row 2: Performances (7 time series)
 | Panel | Type | Primary Query |
 |-------|------|------|
 | **Scap events/s by instance** | Time series | `sum by(pod) (rate(falcosecurity_scap_n_evts_total[...]))` |
 | **Memory RSS** | Time series | `avg by(pod) (falcosecurity_falco_memory_rss_bytes)` |
 | **Memory VSZ** | Time series | `avg by(pod) (falcosecurity_falco_memory_vsz_bytes)` |
-| **CPU** | Time series | `avg by(pod) (falcosecurity_falco_cpu_usage_ratio)` |
+| **CPU** | Time series | `sum by(pod) (rate(container_cpu_usage_seconds_total{container="falco"}[...]))` (cAdvisor, share of one core) |
 | **Scap Drops total** | Time series | `sum by(pod) (increase(falcosecurity_scap_n_drops_total[...]))` |
 | **Queue Drops** | Time series | `sum by(pod) (increase(falcosecurity_falco_outputs_queue_num_drops_total[...]))` |
-| **Scap Drops Buffer Enter** | Time series | Buffer drops by category (clone_fork, connect, dir_file, execve, open, other_interest) on enter path |
-| **Scap Drops Buffer Exit** | Time series | Same categories on exit path |
+| **Scap Drops Buffer** | Time series | `sum by(pod, drop) (increase(falcosecurity_scap_n_drops_buffer_total{dir="exit"}[...]))`, all categories |
+
+The upstream "Scap Drops Buffer Enter" panel was removed: Falco 0.45 counts buffer drops on the exit path only and exports the `dir="enter"` series as constant zeros for compatibility.
 
 #### Row 3: Fleet (5 panels)
 | Panel | Type | Primary Query |
@@ -283,23 +286,22 @@ The dashboard defines five template variables that become dropdown filters at th
 
 ## 5. Complete Metrics Reference
 
-These are the **actual** metrics that Falco 0.44.x exposes on the `/metrics` endpoint. Use these names in PromQL queries, alerting rules (`VMRules`), or custom Grafana panels.
+These are the **actual** metrics that Falco 0.45.0 (chart 9.2.0, modern eBPF driver) exposes on the `/metrics` endpoint. Use these names in PromQL queries, alerting rules (`VMRules`), or custom Grafana panels.
 
 ### Alert & Rule Metrics
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `falcosecurity_falco_rules_matches_total` | Counter | `rule_name`, `source`, `priority`, `pod`, `namespace`, `container_id` | Number of times each rule has matched. **Primary metric** for alert-rate dashboards. |
+| `falcosecurity_falco_rules_matches_total` | Counter | `pod`, `rule_name`, `source`, `priority`, `tag_*` | Number of times each rule has matched. **Primary metric** for alert-rate dashboards. A series only appears after the rule's first match. |
 | `falcosecurity_falco_outputs_queue_num_drops_total` | Counter | `pod` | Number of events dropped from the outputs queue (alert delivery failures). |
 
 ### Performance & Resource Metrics
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `falcosecurity_falco_n_evts_total` | Counter | `pod` | Total events processed internally by the Falco engine (before scap layer). |
-| `falcosecurity_falco_cpu_usage_ratio` | Gauge | `pod` | CPU usage as a ratio of a core (0.5 = half a core). |
-| `falcosecurity_falco_memory_rss_bytes` | Gauge | `pod`, `raw_name` | Resident Set Size (physical RAM) of the Falco process. |
-| `falcosecurity_falco_memory_vsz_bytes` | Gauge | `pod`, `raw_name` | Virtual Memory Size of the Falco process. |
+| `falcosecurity_falco_cpu_usage_ratio` | Gauge | `pod` | CPU time as a ratio of one core (0.5 = half a core), averaged since the Falco process started, like `ps` %CPU. Not current usage; the dashboard uses cAdvisor instead. |
+| `falcosecurity_falco_memory_rss_bytes` | Gauge | `pod` | Resident Set Size (physical RAM) of the Falco process. Always bytes on `/metrics`, whatever `convert_memory_to_mb` says. |
+| `falcosecurity_falco_memory_vsz_bytes` | Gauge | `pod` | Virtual Memory Size of the Falco process. |
 
 ### Scap Engine Metrics
 
@@ -307,10 +309,11 @@ These are the **actual** metrics that Falco 0.44.x exposes on the `/metrics` end
 |--------|------|--------|-------------|
 | `falcosecurity_scap_n_evts_total` | Counter | `pod` | Total kernel events captured by the scap engine. |
 | `falcosecurity_scap_n_drops_total` | Counter | `pod` | Total number of events dropped. |
-| `falcosecurity_scap_n_drops_buffer_total` | Counter | `pod`, `dir` (enter/exit), `drop` (category) | Buffer drops broken down by direction and category (clone_fork, connect, dir_file, execve, open, other_interest). |
-| `falcosecurity_scap_n_drops_cpu_total` | Counter | `pod` | Events dropped due to CPU overloading. |
+| `falcosecurity_scap_n_drops_buffer_total` | Counter | `pod`, `dir` (enter/exit), `drop` (category) | Buffer drops by category (clone_fork, execve, connect, open, dir_file, close, proc, other_interest) on `dir="exit"`. The `dir="enter"` series are constant zeros kept for compatibility. |
+| `falcosecurity_scap_n_drops_auxmap_pool_full_total` | Counter | `pod` | Modern eBPF auxiliary-map pool exhaustion drops. |
+| `falcosecurity_scap_n_drops_cpu_total` | Counter | `pod`, `cpu` | Per-CPU drops; only exported with `kernel_event_counters_per_cpu_enabled` (off by default, so not available here). |
 | `falcosecurity_scap_n_drops_full_threadtable_total` | Counter | `pod` | Events dropped because thread table is full. |
-| `falcosecurity_scap_n_drops_scratch_map_total` | Counter | `pod` | Events dropped because scratch map is full. |
+| `falcosecurity_scap_n_drops_scratch_map_total` | Counter | `pod` | With modern eBPF: events dropped because they exceeded the maximum event size. |
 
 ### Info Metrics (constant values, useful for fleet overview)
 
@@ -325,14 +328,13 @@ These are the **actual** metrics that Falco 0.44.x exposes on the `/metrics` end
 |-------|-------------|---------|
 | `rule_name` | Name of the Falco rule that triggered | `Terminal shell in container` |
 | `source` | Event source | `syscall` |
-| `priority` | Severity level | `Warning`, `Notice`, `Error`, `Critical`, `Emergency` |
-| `pod` | Falco pod identity | `falco-abc123` |
-| `namespace` | Kubernetes namespace of the offending container | `taskflow` |
-| `container_id` | Container that triggered the event | `abcdef123456` |
-| `dir` | Buffer drop direction | `enter`, `exit` |
-| `drop` | Buffer drop category | `clone_fork`, `connect`, `execve`, `open`, `dir_file`, `other_interest` |
+| `priority` | Severity level as a number: `0` emergency, `1` alert, `2` critical, `3` error, `4` warning, `5` notice, `6` informational, `7` debug | `5` |
+| `pod` | Falco pod identity (added by the scrape) | `falco-abc123` |
+| `namespace` | Namespace of the Falco pod (added by the scrape), not of the offending container | `falco` |
+| `dir` | Buffer drop direction (`enter` is always 0) | `exit` |
+| `drop` | Buffer drop category | `clone_fork`, `execve`, `connect`, `open`, `dir_file`, `close`, `proc`, `other_interest` |
 | `engine_name` | Scap engine type | `modern_bpf` |
-| `version` | Falco semantic version | `0.45.0-rc2` |
+| `version` | Falco semantic version | `0.45.0` |
 
 ---
 

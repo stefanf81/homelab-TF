@@ -207,7 +207,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(loki_discarded_samples_total[$__range])) or (0 * sum(loki_distributor_bytes_received_total))",
+          "expr": "sum(increase_pure(loki_discarded_samples_total[$__range])) or (0 * sum(loki_distributor_bytes_received_total))",
           "instant": true
         }
       ],
@@ -311,7 +311,7 @@
       "id": 5,
       "type": "stat",
       "title": "Active streams",
-      "description": "Streams held in Loki's memory. Loki rejects new streams above 5,000: the effective limit is the lower of max_streams_per_user (10,000) and Loki's default max_global_streams_per_user (5,000).",
+      "description": "Streams held in Loki's memory. Loki rejects new streams above 5,000: the effective limit is the lower of max_streams_per_user (10,000) and Loki's default max_global_streams_per_user (5,000). Orange from 4,000, red from 4,750.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -345,11 +345,11 @@
               },
               {
                 "color": "orange",
-                "value": 7000
+                "value": 4000
               },
               {
                 "color": "red",
-                "value": 9000
+                "value": 4750
               }
             ]
           }
@@ -450,7 +450,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (reason) (increase(loki_discarded_samples_total[$__interval]))",
+          "expr": "sum by (reason) (increase_pure(loki_discarded_samples_total[$__interval]))",
           "legendFormat": "{{reason}}"
         }
       ],
@@ -505,7 +505,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (reason) (increase(loki_discarded_bytes_total[$__interval]))",
+          "expr": "sum by (reason) (increase_pure(loki_discarded_bytes_total[$__interval]))",
           "legendFormat": "{{reason}}"
         }
       ],
@@ -610,7 +610,7 @@
       "id": 10,
       "type": "timeseries",
       "title": "Alloy send errors and retries",
-      "description": "Failed push requests by HTTP status, and batch retries, per second.",
+      "description": "Failed push requests by HTTP status, and batch retries, per second. \"HTTP connection error\" is a request that got no HTTP response (Alloy records status -1).",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -624,7 +624,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (status_code) (rate(loki_write_request_duration_seconds_count{status_code!~\"2..\"}[$__rate_interval]))",
+          "expr": "label_replace(sum by (status_code) (rate(loki_write_request_duration_seconds_count{status_code!~\"2..\"}[$__rate_interval])), \"status_code\", \"connection error\", \"status_code\", \"-1\")",
           "legendFormat": "HTTP {{status_code}}"
         },
         {
@@ -658,7 +658,7 @@
       "id": 11,
       "type": "timeseries",
       "title": "Log entry propagation latency (p95)",
-      "description": "Time from a log line being read by Alloy to Loki accepting it.",
+      "description": "Time from Alloy creating a log entry (when a source reads the line) until the send of its batch finishes. Batches dropped after their last retry are included.",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -876,7 +876,7 @@
       "id": 14,
       "type": "timeseries",
       "title": "Chunk flush failures and queue",
-      "description": "Chunk flush failures per second, and chunks waiting to be flushed.",
+      "description": "Chunk flush failures per second, and series waiting in the flush queue.",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -1199,7 +1199,7 @@
       "id": 20,
       "type": "timeseries",
       "title": "Alloy components and files",
-      "description": "Unhealthy Alloy components, and log files currently tailed.",
+      "description": "Unhealthy Alloy components, and files tailed by loki.source.file (the Hubble flow log). Pod logs are streamed through the Kubernetes API (loki.source.kubernetes) and are not counted as files.",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -1264,7 +1264,7 @@
       "id": 21,
       "type": "bargauge",
       "title": "Monitoring volumes used",
-      "description": "Used share of each persistent volume in the monitoring namespace (Loki, VictoriaMetrics, Grafana, Alloy). VictoriaMetrics stops accepting data when under 2 GB is free.",
+      "description": "Used share of each persistent volume in the monitoring namespace (Loki, VictoriaMetrics, vmagent, Grafana, Alloy). VictoriaMetrics refuses writes once less than 2 GB of its 8 GiB volume is free (about 70-75% used), so its bar turns orange at 55% and red at 65%; other volumes at 70% and 85%.",
       "gridPos": {
         "h": 6,
         "w": 12,
@@ -1308,7 +1308,35 @@
           },
           "max": 1
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "vmsingle-.*"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green"
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.55
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.65
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "displayMode": "basic",
@@ -1445,7 +1473,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Source.** Loki and Alloy metrics scraped by VictoriaMetrics, plus kubelet volume metrics. Names checked against Loki 3.7.8 and Alloy v1.20.1.\n\n- Discard counters only exist after the first discard, so empty discard panels are healthy. The stat tiles show 0 when Loki is scraped.\n- Alloy retries a failed push before dropping it: retries and send errors are the early warning, dropped bytes the loss.\n- Stream and storage limits are written into these panels from `gitops/monitoring/logging/loki-release.yaml` (5,000 effective streams, 8 MB/s ingestion, 10 GiB, 30 days); update them together."
+        "content": "**Source.** Loki and Alloy metrics scraped by VictoriaMetrics, plus kubelet volume metrics. Names checked against Loki 3.7.8 and Alloy v1.21.0.\n\n- Discard counters only exist after the first discard, so empty discard panels are healthy. The stat tiles show 0 when Loki is scraped.\n- Alloy retries a failed push before dropping it: retries and send errors are the early warning, dropped bytes the loss.\n- Stream and storage limits are written into these panels from `gitops/monitoring/logging/loki-release.yaml` (5,000 effective streams, 8 MB/s ingestion, 10 GiB, 30 days); update them together."
       }
     }
   ],

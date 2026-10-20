@@ -88,7 +88,7 @@
         "pieType": "donut",
         "reduceOptions": {
           "calcs": [
-            "sum"
+            "lastNotNull"
           ],
           "fields": "",
           "values": false
@@ -106,19 +106,20 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(rule_name) (increase(falcosecurity_falco_rules_matches_total{namespace=~\"$namespace\", source=~\"$source\", priority=~\"$priority\", pod=~\"$pod\"}[$__rate_interval]))",
+          "editorMode": "code",
+          "expr": "sum by(rule_name) (increase_pure(falcosecurity_falco_rules_matches_total{namespace=~\"$namespace\", source=~\"$source\", priority=~\"$priority\", pod=~\"$pod\"}[$__range]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
-          "instant": false,
+          "instant": true,
           "legendFormat": "{{rule_name}}",
-          "range": true,
+          "range": false,
           "refId": "A",
           "useBackend": false
         }
       ],
       "title": "Rules",
-      "type": "piechart"
+      "type": "piechart",
+      "description": "Rule matches in the selected range, by rule."
     },
     {
       "datasource": {
@@ -161,7 +162,7 @@
         "pieType": "donut",
         "reduceOptions": {
           "calcs": [
-            "sum"
+            "lastNotNull"
           ],
           "fields": "",
           "values": false
@@ -179,19 +180,20 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(source) (increase(falcosecurity_falco_rules_matches_total{namespace=~\"$namespace\", source=~\"$source\", priority=~\"$priority\", pod=~\"$pod\"}[$__rate_interval]))",
+          "editorMode": "code",
+          "expr": "sum by(source) (increase_pure(falcosecurity_falco_rules_matches_total{namespace=~\"$namespace\", source=~\"$source\", priority=~\"$priority\", pod=~\"$pod\"}[$__range]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
-          "instant": false,
+          "instant": true,
           "legendFormat": "{{source}}",
-          "range": true,
+          "range": false,
           "refId": "A",
           "useBackend": false
         }
       ],
       "title": "Sources",
-      "type": "piechart"
+      "type": "piechart",
+      "description": "Rule matches in the selected range, by event source."
     },
     {
       "datasource": {
@@ -296,7 +298,7 @@
         "pieType": "donut",
         "reduceOptions": {
           "calcs": [
-            "sum"
+            "lastNotNull"
           ],
           "fields": "",
           "values": false
@@ -314,13 +316,13 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(priority) (increase(falcosecurity_falco_rules_matches_total{namespace=~\"$namespace\", source=~\"$source\", priority=~\"$priority\", pod=~\"$pod\"}[$__rate_interval]))",
+          "editorMode": "code",
+          "expr": "sum by(priority) (increase_pure(falcosecurity_falco_rules_matches_total{namespace=~\"$namespace\", source=~\"$source\", priority=~\"$priority\", pod=~\"$pod\"}[$__range]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
-          "instant": false,
+          "instant": true,
           "legendFormat": "{{priority}}",
-          "range": true,
+          "range": false,
           "refId": "A",
           "useBackend": false
         }
@@ -331,28 +333,28 @@
           "id": "renameByRegex",
           "options": {
             "regex": "0",
-            "renamePattern": "default"
+            "renamePattern": "emergency"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "1",
-            "renamePattern": "debug"
+            "renamePattern": "alert"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "2",
-            "renamePattern": "informational"
+            "renamePattern": "critical"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "3",
-            "renamePattern": "notice"
+            "renamePattern": "error"
           }
         },
         {
@@ -366,32 +368,26 @@
           "id": "renameByRegex",
           "options": {
             "regex": "5",
-            "renamePattern": "error"
+            "renamePattern": "notice"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "6",
-            "renamePattern": "critical"
+            "renamePattern": "informational"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "7",
-            "renamePattern": "alert"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "8",
-            "renamePattern": "emergency"
+            "renamePattern": "debug"
           }
         }
       ],
-      "type": "piechart"
+      "type": "piechart",
+      "description": "Rule matches in the selected range, by Falco priority (exported as 0 emergency to 7 debug)."
     },
     {
       "datasource": {
@@ -488,8 +484,8 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(priority) (increase(falcosecurity_falco_rules_matches_total{namespace=~\"$namespace\", source=~\"$source\", priority=~\"$priority\", pod=~\"$pod\"}[$__rate_interval]))",
+          "editorMode": "code",
+          "expr": "sum by(priority) (increase_pure(falcosecurity_falco_rules_matches_total{namespace=~\"$namespace\", source=~\"$source\", priority=~\"$priority\", pod=~\"$pod\"}[$__interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -506,28 +502,28 @@
           "id": "renameByRegex",
           "options": {
             "regex": "0",
-            "renamePattern": "default"
+            "renamePattern": "emergency"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "1",
-            "renamePattern": "debug"
+            "renamePattern": "alert"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "2",
-            "renamePattern": "informational"
+            "renamePattern": "critical"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "3",
-            "renamePattern": "notice"
+            "renamePattern": "error"
           }
         },
         {
@@ -541,32 +537,26 @@
           "id": "renameByRegex",
           "options": {
             "regex": "5",
-            "renamePattern": "error"
+            "renamePattern": "notice"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "6",
-            "renamePattern": "critical"
+            "renamePattern": "informational"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "7",
-            "renamePattern": "alert"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "8",
-            "renamePattern": "emergency"
+            "renamePattern": "debug"
           }
         }
       ],
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Rule matches per displayed interval (minimum 1 minute), by Falco priority."
     },
     {
       "datasource": {
@@ -662,8 +652,8 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(source) (increase(falcosecurity_falco_rules_matches_total{namespace=~\"$namespace\", source=~\"$source\", priority=~\"$priority\", pod=~\"$pod\"}[$__rate_interval]))",
+          "editorMode": "code",
+          "expr": "sum by(source) (increase_pure(falcosecurity_falco_rules_matches_total{namespace=~\"$namespace\", source=~\"$source\", priority=~\"$priority\", pod=~\"$pod\"}[$__interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -675,72 +665,8 @@
         }
       ],
       "title": "by Source over time",
-      "transformations": [
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "0",
-            "renamePattern": "default"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "1",
-            "renamePattern": "debug"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "2",
-            "renamePattern": "informational"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "3",
-            "renamePattern": "notice"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "4",
-            "renamePattern": "warning"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "5",
-            "renamePattern": "error"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "6",
-            "renamePattern": "critical"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "7",
-            "renamePattern": "alert"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "8",
-            "renamePattern": "emergency"
-          }
-        }
-      ],
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Rule matches per displayed interval (minimum 1 minute), by event source."
     },
     {
       "datasource": {
@@ -837,8 +763,8 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(rule_name) (increase(falcosecurity_falco_rules_matches_total{namespace=~\"$namespace\", source=~\"$source\", priority=~\"$priority\", pod=~\"$pod\"}[$__rate_interval]))",
+          "editorMode": "code",
+          "expr": "sum by(rule_name) (increase_pure(falcosecurity_falco_rules_matches_total{namespace=~\"$namespace\", source=~\"$source\", priority=~\"$priority\", pod=~\"$pod\"}[$__interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -850,72 +776,8 @@
         }
       ],
       "title": "by Rule over time",
-      "transformations": [
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "0",
-            "renamePattern": "default"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "1",
-            "renamePattern": "debug"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "2",
-            "renamePattern": "informational"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "3",
-            "renamePattern": "notice"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "4",
-            "renamePattern": "warning"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "5",
-            "renamePattern": "error"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "6",
-            "renamePattern": "critical"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "7",
-            "renamePattern": "alert"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "8",
-            "renamePattern": "emergency"
-          }
-        }
-      ],
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Rule matches per displayed interval (minimum 1 minute), by rule."
     },
     {
       "collapsed": false,
@@ -1185,7 +1047,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "avg by(pod, raw_name) (falcosecurity_falco_memory_rss_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "expr": "avg by(pod) (falcosecurity_falco_memory_rss_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1293,30 +1155,13 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "avg by(pod, raw_name) (falcosecurity_falco_memory_vsz_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "expr": "avg by(pod) (falcosecurity_falco_memory_vsz_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "fullMetaSearch": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "{{pod}} - {{raw_name}}",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "avg by(pod, raw_name) (falcosecurity_falco_memory_vsz_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})",
-          "fullMetaSearch": false,
-          "hide": true,
           "includeNullMetadata": true,
           "instant": false,
           "legendFormat": "{{pod}}",
           "range": true,
-          "refId": "B",
+          "refId": "A",
           "useBackend": false
         }
       ],
@@ -1415,8 +1260,8 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "avg by(pod) (falcosecurity_falco_cpu_usage_ratio{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "editorMode": "code",
+          "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\"$pod\", container=\"falco\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1427,7 +1272,8 @@
         }
       ],
       "title": "CPU",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "CPU used by each Falco container (cAdvisor), as a share of one core: 100% = 1 core. Falco has no CPU limit. falcosecurity_falco_cpu_usage_ratio is not used because it is the average since the process started, not current usage."
     },
     {
       "datasource": {
@@ -1705,200 +1551,8 @@
       },
       "gridPos": {
         "h": 16,
-        "w": 12,
+        "w": 24,
         "x": 0,
-        "y": 86
-      },
-      "id": 20,
-      "options": {
-        "legend": {
-          "calcs": [
-            "max",
-            "mean"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true,
-          "sortBy": "Max",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.3.0-77222",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"enter\", drop=\"clone_fork\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "{{pod}} - clone_fork",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"enter\", drop=\"connect\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "{{pod}} - connect",
-          "range": true,
-          "refId": "B",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"enter\", drop=\"dir_file\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "{{pod}} - dir_file",
-          "range": true,
-          "refId": "C",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"enter\", drop=\"execve\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "{{pod}} - execve",
-          "range": true,
-          "refId": "D",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"enter\", drop=\"open\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "{{pod}} - open",
-          "range": true,
-          "refId": "E",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"enter\", drop=\"other_interest\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "{{pod}} - other_interest",
-          "range": true,
-          "refId": "F",
-          "useBackend": false
-        }
-      ],
-      "title": "Scap Drops Buffer Enter",
-      "type": "timeseries",
-      "description": "Events dropped from the kernel buffer at syscall entry, by syscall category. A sign the node produces more events than Falco consumes."
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "none"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 16,
-        "w": 12,
-        "x": 12,
         "y": 86
       },
       "id": 26,
@@ -1927,105 +1581,20 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"exit\", drop=\"clone_fork\"}[$__rate_interval]))",
+          "editorMode": "code",
+          "expr": "sum by(pod, drop) (increase(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"exit\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "{{pod}} - clone_fork",
+          "legendFormat": "{{pod}} - {{drop}}",
           "range": true,
           "refId": "A",
           "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"exit\", drop=\"connect\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "{{pod}} - connect",
-          "range": true,
-          "refId": "B",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"exit\", drop=\"dir_file\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "{{pod}} - dir_file",
-          "range": true,
-          "refId": "C",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"exit\", drop=\"execve\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "{{pod}} - execve",
-          "range": true,
-          "refId": "D",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"exit\", drop=\"open\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "{{pod}} - open",
-          "range": true,
-          "refId": "E",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"exit\", drop=\"other_interest\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "{{pod}} - other_interest",
-          "range": true,
-          "refId": "F",
-          "useBackend": false
         }
       ],
-      "title": "Scap Drops Buffer Exit",
+      "title": "Scap Drops Buffer",
       "type": "timeseries",
-      "description": "Events dropped from the kernel buffer at syscall exit, by syscall category. A sign the node produces more events than Falco consumes."
+      "description": "Events dropped from the kernel ring buffer, by syscall category (clone_fork, execve, connect, open, dir_file, close, proc, other_interest). A sign the node produces more events than Falco consumes. Falco 0.45 counts drops on the exit path only; its dir=\"enter\" series are fixed zeros kept for compatibility, so they are not shown."
     },
     {
       "datasource": {
@@ -2340,7 +1909,7 @@
       ],
       "title": "Scap Drops Scratch Map",
       "type": "timeseries",
-      "description": "Events dropped because the driver's scratch map ran out of space while handling an event."
+      "description": "With the modern eBPF driver this counts events dropped because they exceeded the maximum event size (n_drops_max_event_size)."
     },
     {
       "collapsed": false,
