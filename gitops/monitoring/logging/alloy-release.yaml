@@ -23,6 +23,8 @@ spec:
       retries: 3
       remediateLastFailure: true
   upgrade:
+    # Use strategic merge to remove old rollingUpdate defaults on migration.
+    serverSideApply: disabled
     remediation:
       retries: 3
       remediateLastFailure: true

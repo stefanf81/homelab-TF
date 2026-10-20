@@ -24,6 +24,15 @@ one active collector and a Bound queue PVC after reconciliation.
 
 ## Single-writer updates and browser security
 
+The stack and Alloy explicitly use client-side apply for Helm upgrades. Its
+strategic merge removes server-defaulted `rollingUpdate` fields when switching
+to `Recreate`; server-side apply failed this migration even with an explicit null.
+Fresh chart rendering alone does not test upgrades of existing Deployments.
+
+vmagent has a 512Mi process limit and a 128MiB internal cache/queue budget. The
+previous 256Mi limit OOMKilled it during persistent-queue startup and failed-write
+retries. Monitor actual RSS after recovery; internal budgets are not total RSS caps.
+
 Alloy uses `Recreate` because its one PVC contains WAL and file positions. Grafana
 also uses `Recreate` for its SQLite PVC. `ReadWriteOnce` restricts nodes, not the
 number of writers on one node. These updates intentionally trade a short outage

@@ -36,7 +36,8 @@ def resource(documents, kind, name)
 end
 
 begin
-  _, alloy = render("gitops/monitoring/logging/alloy-release.yaml", "gitops/monitoring/logging/repositories.yaml")
+  alloy_release, alloy = render("gitops/monitoring/logging/alloy-release.yaml", "gitops/monitoring/logging/repositories.yaml")
+  assert(alloy_release.dig("spec", "upgrade", "serverSideApply") == "disabled", "Alloy strategy migration requires strategic merge, not SSA")
   deployment = resource(alloy, "Deployment", "alloy")
   assert(deployment.dig("spec", "replicas") == 1, "Alloy must have one PVC writer")
   assert(deployment.dig("spec", "strategy", "type") == "Recreate", "Alloy must not surge with a shared WAL")
@@ -48,6 +49,7 @@ begin
 
   release, stack = render("gitops/monitoring/platform/release.yaml", "gitops/monitoring/platform/repository.yaml")
   name = release.dig("metadata", "name")
+  assert(release.dig("spec", "upgrade", "serverSideApply") == "disabled", "Grafana strategy migration requires strategic merge, not SSA")
   evaluator = resource(stack, "VMAlert", name).fetch("spec")
   assert(evaluator.dig("extraArgs", "notifier.blackhole") == "true", "alert delivery must remain disabled")
   assert(!evaluator.key?("notifiers") && !evaluator.key?("notifier"), "blackhole must not be combined with external notifiers")
@@ -65,6 +67,8 @@ begin
   assert(storage["accessModes"] == ["ReadWriteOnce"], "queue PVC access mode missing")
   assert(storage.dig("resources", "requests", "storage") == "2Gi", "queue PVC must leave room above the 1Gi queue cap")
   assert(agent.dig("extraArgs", "remoteWrite.maxDiskUsagePerURL") == "1073741824", "queue must be byte-bounded")
+  assert(agent.dig("extraArgs", "memory.allowedBytes") == "128MiB", "vmagent internal memory must leave process headroom")
+  assert(agent.dig("resources", "limits", "memory") == "512Mi", "vmagent needs startup/backlog memory headroom")
 
   grafana = resource(stack, "Deployment", "#{name}-grafana")
   assert(grafana.dig("spec", "strategy", "type") == "Recreate", "SQLite PVC must not have overlapping Grafana writers")

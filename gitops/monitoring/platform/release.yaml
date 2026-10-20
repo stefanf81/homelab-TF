@@ -19,6 +19,9 @@ spec:
       retries: 3
       remediateLastFailure: true
   upgrade:
+    # CSA's strategic merge honours DeploymentStrategy retainKeys when changing
+    # RollingUpdate -> Recreate. SSA retains server-defaulted rollingUpdate.
+    serverSideApply: disabled
     crds: CreateReplace
     remediation:
       retries: 3
@@ -151,12 +154,16 @@ spec:
         extraArgs:
           # Leave headroom on the queue PVC instead of consuming its full size.
           remoteWrite.maxDiskUsagePerURL: "1073741824"
+          # Bound internal queues/caches below the process limit; other scrape
+          # allocations and filesystem-backed queue activity need headroom.
+          memory.allowedBytes: "128MiB"
         resources:
           requests:
             cpu: 50m
-            memory: 64Mi
+            memory: 128Mi
           limits:
-            memory: 256Mi
+            # 256Mi OOMKilled the persistent collector during startup/backlog.
+            memory: 512Mi
 
     victoria-metrics-operator:
       image:
