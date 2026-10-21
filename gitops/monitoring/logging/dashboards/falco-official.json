@@ -220,13 +220,28 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "error"
+              "options": "emergency"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "semi-dark-red",
+                  "fixedColor": "dark-red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "alert"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
                   "mode": "fixed"
                 }
               }
@@ -241,7 +256,37 @@
               {
                 "id": "color",
                 "value": {
+                  "fixedColor": "semi-dark-red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "error"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
                   "fixedColor": "dark-orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "warning"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
                   "mode": "fixed"
                 }
               }
@@ -265,13 +310,28 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "warning"
+              "options": "informational"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "orange",
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "debug"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "text",
                   "mode": "fixed"
                 }
               }
@@ -450,7 +510,128 @@
           },
           "unit": "none"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "emergency"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "alert"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "critical"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "error"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "warning"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "notice"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "informational"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "debug"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "text",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 14,
@@ -1368,10 +1549,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "expr": "sum by(pod) (increase_pure(falcosecurity_scap_n_drops_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
+          "interval": "1m",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A",
@@ -1380,7 +1562,7 @@
       ],
       "title": "Scap Drops total",
       "type": "timeseries",
-      "description": "Kernel events dropped because Falco could not keep up. Any increase means events, and possibly detections, were missed."
+      "description": "Kernel events dropped per displayed interval (minimum 1 minute). Any non-zero value means events, and possibly detections, were missed. A new Falco pod counts every drop since its process started, including drops before its first scrape. A bar equal to a pod's whole running total can appear when the selected range starts before the stored data (14-day retention) or when the scrape labels change without a Falco restart; check the pod's counter before treating it as new drops."
     },
     {
       "datasource": {
@@ -1475,10 +1657,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_falco_outputs_queue_num_drops_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "expr": "sum by(pod) (increase_pure(falcosecurity_falco_outputs_queue_num_drops_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
+          "interval": "1m",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A",
@@ -1487,7 +1670,7 @@
       ],
       "title": "Queue Drops",
       "type": "timeseries",
-      "description": "Alerts dropped because Falco's output queue was full. Any increase means alerts were lost before delivery."
+      "description": "Alerts dropped per displayed interval (minimum 1 minute) because Falco's output queue was full. Any non-zero value means alerts were lost before delivery. A new Falco pod counts every drop since its process started, including drops before its first scrape. A bar equal to a pod's whole running total can appear when the selected range starts before the stored data (14-day retention) or when the scrape labels change without a Falco restart; check the pod's counter before treating it as new drops."
     },
     {
       "datasource": {
@@ -1582,10 +1765,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(pod, drop) (increase(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"exit\"}[$__rate_interval]))",
+          "expr": "sum by(pod, drop) (increase_pure(falcosecurity_scap_n_drops_buffer_total{namespace=~\"$namespace\", pod=~\"$pod\", dir=\"exit\"}[$__interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
+          "interval": "1m",
           "legendFormat": "{{pod}} - {{drop}}",
           "range": true,
           "refId": "A",
@@ -1594,7 +1778,7 @@
       ],
       "title": "Scap Drops Buffer",
       "type": "timeseries",
-      "description": "Events dropped from the kernel ring buffer, by syscall category (clone_fork, execve, connect, open, dir_file, close, proc, other_interest). A sign the node produces more events than Falco consumes. Falco 0.45 counts drops on the exit path only; its dir=\"enter\" series are fixed zeros kept for compatibility, so they are not shown."
+      "description": "Events dropped from the kernel ring buffer per displayed interval (minimum 1 minute), by syscall category (exit events: clone_fork, execve, connect, open, dir_file, close, proc, other_interest). A sign the node produces more events than Falco consumes. Falco 0.45 exports only these exit categories: drops of the open and connect enter events (TOCTOU mitigation) are counted in Scap Drops total but not shown here, and the exported dir=\"enter\" series are fixed zeros. A new Falco pod counts every drop since its process started, including drops before its first scrape. A bar equal to a pod's whole running total can appear when the selected range starts before the stored data (14-day retention) or when the scrape labels change without a Falco restart; check the pod's counter before treating it as new drops."
     },
     {
       "datasource": {
@@ -1687,10 +1871,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_auxmap_pool_full_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "expr": "sum by(pod) (increase_pure(falcosecurity_scap_n_drops_auxmap_pool_full_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
+          "interval": "1m",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A",
@@ -1698,7 +1883,7 @@
         }
       ],
       "title": "Scap Drops Auxmap Pool Full",
-      "description": "Modern eBPF auxiliary-map pool exhaustion drops. Uses the native metric exported by the installed driver; the legacy CPU-drop metric is not available.",
+      "description": "Modern eBPF auxiliary-map pool exhaustion drops per displayed interval (minimum 1 minute). Uses the native metric exported by the installed driver; the legacy CPU-drop metric is not available. A new Falco pod counts every drop since its process started, including drops before its first scrape. A bar equal to a pod's whole running total can appear when the selected range starts before the stored data (14-day retention) or when the scrape labels change without a Falco restart; check the pod's counter before treating it as new drops.",
       "type": "timeseries"
     },
     {
@@ -1792,10 +1977,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_full_threadtable_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "expr": "sum by(pod) (increase_pure(falcosecurity_scap_n_drops_full_threadtable_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
+          "interval": "1m",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A",
@@ -1804,7 +1990,7 @@
       ],
       "title": "Scap Drops Full Threadtable",
       "type": "timeseries",
-      "description": "Events dropped because Falco's thread table was full; many short-lived processes can cause it."
+      "description": "Threads Falco could not add to its thread table because it was full, per displayed interval (minimum 1 minute). Events from those threads are still processed but lack process and container context, so rules can misfire or miss. Usually caused by a very large number of live threads; see thread_table_size. A new Falco pod counts every drop since its process started, including drops before its first scrape. A bar equal to a pod's whole running total can appear when the selected range starts before the stored data (14-day retention) or when the scrape labels change without a Falco restart; check the pod's counter before treating it as new drops."
     },
     {
       "datasource": {
@@ -1897,10 +2083,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(pod) (increase(falcosecurity_scap_n_drops_scratch_map_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "expr": "sum by(pod) (increase_pure(falcosecurity_scap_n_drops_scratch_map_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
+          "interval": "1m",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A",
@@ -1909,7 +2096,7 @@
       ],
       "title": "Scap Drops Scratch Map",
       "type": "timeseries",
-      "description": "With the modern eBPF driver this counts events dropped because they exceeded the maximum event size (n_drops_max_event_size)."
+      "description": "Events dropped because they exceeded the modern eBPF scratch-map (maximum event size) per displayed interval (minimum 1 minute). A new Falco pod counts every drop since its process started, including drops before its first scrape. A bar equal to a pod's whole running total can appear when the selected range starts before the stored data (14-day retention) or when the scrape labels change without a Falco restart; check the pod's counter before treating it as new drops."
     },
     {
       "collapsed": false,
@@ -1988,14 +2175,16 @@
           "expr": "count by(version) (falcosecurity_falco_version_info{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
-          "legendFormat": "__auto",
-          "range": true,
+          "legendFormat": "{{version}}",
+          "instant": true,
+          "range": false,
           "refId": "A",
           "useBackend": false
         }
       ],
       "title": "Versions",
-      "type": "piechart"
+      "type": "piechart",
+      "description": "Falco versions of the pods reporting at the end of the selected range (current state, not every version seen in the range)."
     },
     {
       "datasource": {
@@ -2061,14 +2250,16 @@
           "expr": "count by(engine_name) (falcosecurity_scap_engine_name_info{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
-          "legendFormat": "__auto",
-          "range": true,
+          "legendFormat": "{{engine_name}}",
+          "instant": true,
+          "range": false,
           "refId": "A",
           "useBackend": false
         }
       ],
       "title": "Engines",
-      "type": "piechart"
+      "type": "piechart",
+      "description": "Scap engines of the pods reporting at the end of the selected range (current state, not every engine seen in the range). Should be modern_bpf."
     }
   ],
   "preload": false,
@@ -2187,25 +2378,60 @@
             "$__all"
           ]
         },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
-        "definition": "label_values(falcosecurity_falco_rules_matches_total{namespace=~\"$namespace\", source=~\"$source\"},priority)",
         "includeAll": true,
+        "allValue": ".*",
         "label": "priority",
         "multi": true,
         "name": "priority",
-        "options": [],
-        "query": {
-          "qryType": 1,
-          "query": "label_values(falcosecurity_falco_rules_matches_total{namespace=~\"$namespace\", source=~\"$source\"},priority)",
-          "refId": "PrometheusVariableQueryEditor-VariableQuery"
-        },
-        "refresh": 2,
-        "regex": "",
-        "sort": 4,
-        "type": "query"
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "emergency",
+            "value": "0"
+          },
+          {
+            "selected": false,
+            "text": "alert",
+            "value": "1"
+          },
+          {
+            "selected": false,
+            "text": "critical",
+            "value": "2"
+          },
+          {
+            "selected": false,
+            "text": "error",
+            "value": "3"
+          },
+          {
+            "selected": false,
+            "text": "warning",
+            "value": "4"
+          },
+          {
+            "selected": false,
+            "text": "notice",
+            "value": "5"
+          },
+          {
+            "selected": false,
+            "text": "informational",
+            "value": "6"
+          },
+          {
+            "selected": false,
+            "text": "debug",
+            "value": "7"
+          }
+        ],
+        "query": "emergency : 0, alert : 1, critical : 2, error : 3, warning : 4, notice : 5, informational : 6, debug : 7",
+        "type": "custom"
       }
     ]
   },

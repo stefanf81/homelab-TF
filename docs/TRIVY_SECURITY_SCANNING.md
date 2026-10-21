@@ -144,10 +144,10 @@ The exported metrics include (main ones):
 
 - `trivy_image_vulnerabilities{namespace, resource_kind, resource_name, container_name, image_registry, image_repository, image_tag, image_digest, severity}` (one series per report, i.e. per workload container, and severity)
 - `trivy_resource_configaudits{namespace, resource_kind, resource_name, severity}` (failing checks)
-- `trivy_role_rbacassessments` / `trivy_clusterrole_clusterrbacassessments` (the cluster-role metric has no `namespace` label)
+- `trivy_role_rbacassessments` / `trivy_clusterrole_clusterrbacassessments` (cluster-scoped: the exporter sets no `namespace`, so the scrape adds `namespace="trivy-system"`)
 - `trivy_image_exposedsecrets{severity, ...}`
 - `trivy_resource_infraassessments{namespace, resource_kind, resource_name, severity}` (namespaced `InfraAssessmentReport`s only)
-- `trivy_cluster_compliance{title, description, status="Pass|Fail"}` (one pair per `ClusterComplianceReport`; `title` is the framework, e.g. `nsa`, and the value is its failing/passing control count)
+- `trivy_cluster_compliance{title, description, status="Pass|Fail"}` (one pair per `ClusterComplianceReport`; `title` is the framework title, e.g. `National Security Agency - Kubernetes Hardening Guidance v1.0`, and the value is its failing/passing control count; `Pass` is the number of controls without a failing check, so it includes manual controls Trivy cannot test: 4 in NSA 1.0 and 8 in CIS 1.23)
 
 ### Dashboard (Grafana)
 
@@ -160,8 +160,11 @@ trivy_image_vulnerabilities, namespace)`).
 Panels (top to bottom):
 
 1. **Security Issues by Type** (stat) — vulnerabilities, misconfiguration, RBAC (cluster-role
-   findings included regardless of the namespace filter) and exposed secrets. Infra-assessment
-   metric coverage is a separate stat further down.
+   findings included regardless of the namespace filter) and exposed secrets. Vulnerabilities and
+   secrets count an image once per namespace, however many workloads run it, so the totals match
+   the image table. Infra-assessment metric coverage is a separate stat further down (always
+   "Not exported" here: the operator only creates namespaced infra reports for kube-system
+   control-plane pods, and kube-system is excluded).
 2. **Vulnerabilities by Severity** (timeseries, `sum by (severity)`).
 3. **Vulnerabilities by Namespace** (top‑15 by peak, `topk_max`).
 4. **Vulnerabilities by Image** (table, `max by` `image_registry`, `image_repository`,
@@ -171,8 +174,8 @@ Panels (top to bottom):
    compliance Pass/Fail controls per framework (from `trivy_cluster_compliance`), plus operator health panels
    (reconcile errors and reconciliations, `controller_runtime_*` based).
 
-Open it in Grafana under **Dashboards → Trivy Operator**. (Datasource UID in the JSON is
-`VictoriaMetrics` — matches the provisioned stack.)
+Open it in Grafana under **Dashboards → Security → Trivy Operator** (`/d/trivy-operator`). Queries use
+the `$datasource` template variable, which defaults to the provisioned `VictoriaMetrics` datasource.
 
 ---
 
@@ -224,7 +227,7 @@ and **Falco** lists and the **Trivy** ones, all under their own source tabs.
 | ScanJobs / cluster-node collector stuck | Single node + scans capped; `scanJobsConcurrentLimit` and `concurrentScanJobsLimit` are both `1`, and `scanNodeCollectorLimit: 1`. Scale down if slow or bump limits, then watch `kubectl -n trivy-system get pods`. |
 | Compliance report created but `ClusterComplianceReport` status shows `summary` / no detail | Check `trivy-operator` HelmRelease `compliance.reportType`: must be **`all`** for the adapter to work (see §4). Only reports with `reportType: all` carry per‑check results. |
 | No `trivy_*` metrics in VictoriaMetrics | Verify the `VMServiceScrape` (see `monitoring/app/vmservicescrapes.yaml`) matches the operator's labels, that `jobLabel` is `app.kubernetes.io/name`, and that `job="trivy-operator"` shows healthy in vmsingle/VMAggregator. |
-| Grafana dashboard empty | Check the dashboard's datasource is the VictoriaMetrics `UID` (`VictoriaMetrics`) and the `$namespace` template variable resolves; the metrics only appear for namespaces with scans (the `trivy_*` metrics are emitted lazily by the operator, not continuously). |
+| Grafana dashboard empty | Check the `$datasource` variable is set to `VictoriaMetrics` and the `$namespace` template variable resolves; the metrics only appear for namespaces with scans (the `trivy_*` metrics are emitted lazily by the operator, not continuously). |
 | `trivy-operator-polr-adapter` pods crash-loop | Adapter needs the `wgpolicyk8s.io` CRDs installed (Kyverno provides them). Ensure `infra-controllers`/`kyverno` is healthy before the `policy-reporter` Kustomization. |
 | Compliance reports appear in Grafana but not in Policy Reporter | Again typically `reportType: summary`. Flip to `all` in `compliance:` and re-reconcile; existing `ClusterComplianceReport`s will regenerate on next cron slot. |
 
