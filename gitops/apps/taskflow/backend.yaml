@@ -167,6 +167,18 @@ spec:
             # start; it cannot be appended to JAVA_TOOL_OPTIONS.
             - name: MALLOC_ARENA_MAX
               value: "2"
+            # Publish http_server_requests_seconds_bucket so the Taskflow Performance
+            # p95 latency series works (Micrometer only exports _count/_sum/_max by
+            # default). Spring Boot relaxed binding: dots -> underscores, dashes removed
+            # (percentiles-histogram -> PERCENTILESHISTOGRAM); verified against
+            # spring-boot-actuator-autoconfigure 3.5.6 MetricsProperties. The 5ms..10s
+            # range keeps it at 48 buckets per series instead of 276 for the full range.
+            - name: MANAGEMENT_METRICS_DISTRIBUTION_PERCENTILESHISTOGRAM_HTTP_SERVER_REQUESTS
+              value: "true"
+            - name: MANAGEMENT_METRICS_DISTRIBUTION_MINIMUMEXPECTEDVALUE_HTTP_SERVER_REQUESTS
+              value: "5ms"
+            - name: MANAGEMENT_METRICS_DISTRIBUTION_MAXIMUMEXPECTEDVALUE_HTTP_SERVER_REQUESTS
+              value: "10s"
           ports:
             - containerPort: 8080
               name: http
