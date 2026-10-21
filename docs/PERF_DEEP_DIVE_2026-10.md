@@ -220,8 +220,8 @@ the p95 is over-reserved.
 
 ```promql
 # backend (Micrometer): p95 server latency. The scrape's job label is the Service
-# name (`backend`); _bucket series need management.metrics.distribution.
-# percentiles-histogram.http.server.requests=true in the backend.
+# name (`backend`); the _bucket series come from the percentiles-histogram
+# environment variables in gitops/apps/taskflow/backend.yaml.
 histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{namespace="taskflow",service="backend"}[5m])))
 
 # Gateway (Envoy): p95 downstream request time; confirm series names in VMUI first

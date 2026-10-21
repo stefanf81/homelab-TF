@@ -66,6 +66,14 @@ management.health.readinessstate.enabled=true
 
 # Tag every series with the application name for dashboard filtering.
 management.metrics.tags.application=taskflow-backend
+
+# Latency histogram buckets for the p95 panel. The deployment sets these as
+# environment variables (gitops/apps/taskflow/backend.yaml), so the properties
+# below are optional in the backend repo. Without a range, Micrometer emits 276
+# buckets per series; 5ms..10s emits 48.
+management.metrics.distribution.percentiles-histogram.http.server.requests=true
+management.metrics.distribution.minimum-expected-value.http.server.requests=5ms
+management.metrics.distribution.maximum-expected-value.http.server.requests=10s
 ```
 
 After this, `GET /actuator/prometheus` returns the OpenMetrics text format.

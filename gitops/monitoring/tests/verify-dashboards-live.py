@@ -396,7 +396,7 @@ def targeted_checks(report, vm, loki, args, now):
         rows = vm.vector('count(http_server_requests_seconds_bucket{namespace="taskflow",service="backend"})')
         if rows:
             return "PASS", f"{rows[0][1]:g} bucket series: the p95 series works"
-        return "WARN", "no _bucket series: set management.metrics.distribution.percentiles-histogram.http.server.requests=true in taskflow-backend (mean/max still show)"
+        return "WARN", "no _bucket series: the backend should publish them (MANAGEMENT_METRICS_DISTRIBUTION_PERCENTILESHISTOGRAM_HTTP_SERVER_REQUESTS=true in gitops/apps/taskflow/backend.yaml, after the rollout); mean/max still show"
     check(report, "Taskflow HTTP latency histogram (p95)", http_buckets)
 
     def pg_backend_type():
@@ -437,6 +437,15 @@ def targeted_checks(report, vm, loki, args, now):
             return "FAIL", f"jobs {sorted(jobs)}: the Policy changes panel filters job=\"admission-controller\""
         return "PASS", f"jobs {sorted(jobs)}"
     check(report, "Kyverno policy-change job label", kyverno_jobs)
+
+    def kyverno_labels():
+        if not vm.vector("count(kyverno_policy_results_total)"):
+            return "SKIP", "no kyverno_policy_results_total series"
+        rows = vm.vector('count(kyverno_policy_results_total{resource_namespace!=""})')
+        if rows:
+            return "WARN", f"{rows[0][1]:g} series still carry resource_namespace: restart the four Kyverno Deployments so the metricsExposure change applies"
+        return "PASS", "policy results carry no resource_namespace (metricsExposure applied)"
+    check(report, "Kyverno metric label exposure", kyverno_labels)
 
     def kyverno_rules():
         rows = vm.vector("count(max by (policy_type, policy_name, rule_name) (kyverno_policy_rule_info_total == 1))")

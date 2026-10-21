@@ -155,7 +155,7 @@
           "mode": "multi"
         }
       },
-      "description": "Backend response time across all endpoints, actuator endpoints excluded. p95: 5% of requests take longer; it needs histogram buckets (management.metrics.distribution.percentiles-histogram.http.server.requests=true in the backend) and is empty without them. Mean: total request time divided by request count. Max: slowest single request in Micrometer's rolling window (up to the last two minutes), across endpoints."
+      "description": "Backend response time across all endpoints, actuator endpoints excluded. p95: 5% of requests take longer, estimated from Micrometer histogram buckets (5 ms to 10 s, set in backend.yaml; slower or faster requests fall into the edge buckets). It is empty until the backend publishes http_server_requests_seconds_bucket. Mean: total request time divided by request count. Max: slowest single request in Micrometer's rolling window (up to the last two minutes), across endpoints."
     },
     {
       "id": 4,

@@ -71,6 +71,39 @@ spec:
           cpu: "25m"
         limits:
           memory: "256Mi"
+    # Metric label exposure. The chart's defaults key the counters with a `_total`
+    # suffix (kyverno_policy_results_total, ...), but Kyverno matches these keys
+    # against the OpenTelemetry instrument names, which have no suffix (the
+    # Prometheus exporter adds `_total`), so those defaults never applied and
+    # every label was exported. Null the dead keys and set the matching ones:
+    # drop resource_namespace (and policy_namespace) from the per-result counters
+    # to bound series cardinality. All policies here are ClusterPolicies and no
+    # dashboard groups by these labels. Kyverno reads this at start-up, so the four
+    # controller Deployments need a restart after a change; the old series then
+    # expire on their own.
+    metricsConfig:
+      metricsExposure:
+        kyverno_policy_results_total: null
+        kyverno_admission_requests_total: null
+        kyverno_cleanup_controller_deletedobjects_total: null
+        kyverno_validating_policy_results_total: null
+        kyverno_mutating_policy_results_total: null
+        kyverno_generating_policy_results_total: null
+        kyverno_image_validating_policy_results_total: null
+        kyverno_policy_results:
+          disabledLabelDimensions: ["resource_namespace", "policy_namespace"]
+        kyverno_admission_requests:
+          disabledLabelDimensions: ["resource_namespace"]
+        kyverno_cleanup_controller_deletedobjects:
+          disabledLabelDimensions: ["resource_namespace", "policy_namespace"]
+        kyverno_validating_policy_results:
+          disabledLabelDimensions: ["resource_namespace", "policy_namespace"]
+        kyverno_mutating_policy_results:
+          disabledLabelDimensions: ["resource_namespace", "policy_namespace"]
+        kyverno_generating_policy_results:
+          disabledLabelDimensions: ["resource_namespace", "policy_namespace"]
+        kyverno_image_validating_policy_results:
+          disabledLabelDimensions: ["resource_namespace", "policy_namespace"]
     # Make Kyverno skip platform namespaces entirely. kube-system, kube-public,
     # kube-node-lease and Kyverno's own namespace are already in the chart's default
     # resourceFilters, so only the extra ones are listed.
