@@ -19,6 +19,19 @@ rule readiness, controller health and resources) are on the Grafana dashboard
 `gitops/monitoring/app/dashboards/kyverno.json`). Per-resource violations stay in
 Policy Reporter.
 
+How to read it: result and admission counters are created at their first event
+and every Kyverno restart starts new series, so the dashboard counts series born
+inside the range with `increase_pure()` and series that already existed with
+`increase()` (a plain `increase()` drops a first scrape of 10 or more, a plain
+`increase_pure()` would count a whole lifetime after a scrape gap). Admission
+results include server-side dry runs, so Flux's drift check re-counts a failing
+object on every reconcile. Both ClusterPolicies are `Audit`, which Kyverno
+evaluates after answering the webhook, so the admission-latency panels show
+webhook overhead, not rule cost. Kyverno's histograms start at a 5 ms bucket, so
+quantiles below 5 ms are interpolated; finer buckets need
+`metricsConfig.bucketBoundaries` in the Kyverno HelmRelease and a restart of all
+controllers at once.
+
 ---
 
 ## 1. Architecture in this repo (file map)

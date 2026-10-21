@@ -14,11 +14,11 @@
       "id": 1,
       "type": "stat",
       "title": "Cloudflare blocked requests",
-      "description": "Sum of blocked requests reported by Cloudflare Security Events in the selected range. The collector writes only when there are events, so 0 means no blocks only while \"Cloudflare collector age\" (next to this tile) is green.",
+      "description": "Blocked requests collected from Cloudflare Security Events (firewallEventsAdaptive) in the selected range. Cloudflare documents this dataset as adaptively sampled at high request volume, and every collected row counts as one request without a sampling weight, so under heavy blocking the value is an undercount; windows that hit the row limit are incomplete (see \"Cloudflare capped windows\"). The collector writes only when there are events, so 0 means no blocks only while \"Cloudflare collector age\" (next to this tile) is green.",
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 6,
+        "w": 5,
         "h": 5
       },
       "datasource": {
@@ -62,9 +62,9 @@
       "title": "Cloudflare collector age",
       "description": "Time since the last successful Security Events collection. Requires Zone Analytics: Read on the API token. No data: no successful collection since the synchronizer started (this timestamp is not persisted across restarts).",
       "gridPos": {
-        "x": 6,
+        "x": 5,
         "y": 0,
-        "w": 6,
+        "w": 5,
         "h": 5
       },
       "datasource": {
@@ -123,9 +123,9 @@
       "title": "Cloudflare collector errors",
       "description": "Failed Security Events collections in the range, by reason.",
       "gridPos": {
-        "x": 12,
+        "x": 10,
         "y": 0,
-        "w": 6,
+        "w": 4,
         "h": 5
       },
       "datasource": {
@@ -172,14 +172,69 @@
       }
     },
     {
+      "id": 16,
+      "type": "stat",
+      "title": "Cloudflare capped windows",
+      "description": "Collection windows in the selected range whose Security Events query returned its full row limit (CLOUDFLARE_FIREWALL_LIMIT, 5000 here) or produced more groups than one Loki push carries. The collector reads a single page and then moves on, so the later events of a capped window are missing from every Cloudflare panel below: counts are too low and the rankings favour the earlier part of the window. 0 means no window was capped. Until the exporter exposes cloudflare_firewall_truncated_windows_total, this tile shows 1 when any window returned 5000 or more blocked rows and 0 otherwise (the check cannot see a cap when Cloudflare rejects the action filter and the collector filters client-side).",
+      "gridPos": {
+        "x": 14,
+        "y": 0,
+        "w": 5,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(cloudflare_firewall_truncated_windows_total[$__range])) or on() (max(max_over_time(cloudflare_firewall_last_window_events[$__range])) >= bool 5000)",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
       "id": 4,
       "type": "stat",
       "title": "Cilium Gateway dropped flows",
-      "description": "Non-reply DROPPED flows involving reserved:ingress (identity 8), with POLICY_DENIED or no recorded reason. Reasonless flows are not proof of an AbuseIPDB or L7-policy block. These are flow events, not unique HTTP requests. Shows 0 while the Hubble export delivers any flow in the range, and No data when it delivers none (export or Alloy tail down, or a completely quiet gateway).",
+      "description": "Non-reply DROPPED flows involving reserved:ingress (identity 8), with POLICY_DENIED or no recorded reason. Reasonless flows are not proof of an AbuseIPDB or L7-policy block. These are flow events, not unique HTTP requests. Shows 0 when no gateway drop matched but the Hubble export delivered at least one line (any DROPPED/ERROR flow anywhere in the cluster) during the range, and No data when it delivered nothing (export or Alloy tail down, or no drops anywhere in the cluster). The export carries only DROPPED/ERROR flows, so 0 is not proof that the gateway was quiet or that the export is healthy right now.",
       "gridPos": {
-        "x": 18,
+        "x": 19,
         "y": 0,
-        "w": 6,
+        "w": 5,
         "h": 5
       },
       "datasource": {
@@ -221,7 +276,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Cloudflare blocks over time",
-      "description": "Blocked requests per displayed interval (minimum 1 minute; wider for long time ranges), split by Cloudflare rule source. firewallCustom includes custom rules generally; inspect rule_id to identify the managed AbuseIPDB rule. Bars represent counts per interval; missing intervals are not connected or assumed to be zero.",
+      "description": "Blocked requests per displayed interval (minimum 1 minute; wider for long time ranges), split by Cloudflare rule source and stacked. firewallCustom includes custom rules generally; inspect rule_id to identify the managed AbuseIPDB rule. Counts follow the collected rows (see \"Cloudflare blocked requests\" for sampling and the row limit). Bars represent counts per interval; missing intervals are not connected or assumed to be zero.",
       "gridPos": {
         "x": 0,
         "y": 5,
@@ -254,7 +309,11 @@
             "fillOpacity": 70,
             "lineWidth": 1,
             "showPoints": "never",
-            "spanNulls": false
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
           }
         },
         "overrides": []
@@ -273,7 +332,7 @@
       "id": 6,
       "type": "timeseries",
       "title": "Cilium Gateway dropped flows over time",
-      "description": "Non-reply dropped flows per displayed interval (minimum 1 minute) involving reserved:ingress (identity 8). POLICY_DENIED confirms policy enforcement, but not which policy; reasonless drops remain unattributed. Source or destination may be the ingress identity because Envoy emits both ingress and egress events. Bars represent counts per interval; missing intervals are not connected or assumed to be zero.",
+      "description": "Non-reply dropped flows per displayed interval (minimum 1 minute) involving reserved:ingress (identity 8), stacked. POLICY_DENIED is a datapath default-deny drop (no allow rule matched), typically the gateway's own connection to a backend; it is never the AbuseIPDB denylist. The denylist is enforced by Envoy at reserved:ingress, which has no BPF policy, so its denials carry no drop reason and are counted in the second series together with other reasonless Envoy denials, with the client address as source IP. Source or destination may be the ingress identity because Envoy emits both ingress and egress events. Bars represent counts per interval; missing intervals are not connected or assumed to be zero.",
       "gridPos": {
         "x": 12,
         "y": 5,
@@ -288,12 +347,12 @@
         {
           "refId": "A",
           "expr": "sum(count_over_time({job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_source_identity=\"8\" or flow_destination_identity=\"8\") | flow_drop_reason_desc=\"POLICY_DENIED\" [$__interval]))",
-          "legendFormat": "POLICY_DENIED"
+          "legendFormat": "POLICY_DENIED (backend policy)"
         },
         {
           "refId": "B",
           "expr": "sum(count_over_time({job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_source_identity=\"8\" or flow_destination_identity=\"8\") | flow_drop_reason_desc=\"\" [$__interval]))",
-          "legendFormat": "Gateway drop (reason not recorded)"
+          "legendFormat": "No reason recorded (Envoy denials, incl. AbuseIPDB)"
         }
       ],
       "interval": "1m",
@@ -311,7 +370,11 @@
             "fillOpacity": 70,
             "lineWidth": 1,
             "showPoints": "never",
-            "spanNulls": false
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
           }
         },
         "overrides": []
@@ -388,8 +451,6 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "decimals": 0,
           "noValue": "—"
         },
         "overrides": [
@@ -399,6 +460,14 @@
               "options": "number"
             },
             "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
               {
                 "id": "displayName",
                 "value": "Blocked requests"
@@ -434,7 +503,7 @@
       "id": 8,
       "type": "table",
       "title": "Top dropped source IPs (Cilium Gateway)",
-      "description": "Source IPs of non-reply DROPPED flows towards reserved:ingress (destination identity 8) with POLICY_DENIED or no recorded reason. Flows where the ingress identity is the source (Envoy's upstream leg) are excluded, because their source IP is the gateway itself. For proxied traffic this can be a Cloudflare edge address; reasonless drops are not attributed to a particular policy. Shows at most the top 20 entries; ties can hide the remaining values.",
+      "description": "Source IPs of non-reply DROPPED flows with POLICY_DENIED or no recorded reason: flows towards reserved:ingress (destination identity 8) and reasonless flows from it (source identity 8). Envoy-enforced denials, such as the AbuseIPDB direct-to-origin denylist, are logged with source identity 8 and the client address as source IP, so those clients are listed. POLICY_DENIED flows from identity 8 (the gateway's own connection to a backend, source IP = the gateway) are excluded. For proxied traffic this can be a Cloudflare edge address; reasonless drops are not attributed to a particular policy. Shows at most the top 20 entries; ties can hide the remaining values.",
       "gridPos": {
         "x": 8,
         "y": 12,
@@ -448,7 +517,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(20, sum by (flow_IP_source) (count_over_time({job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | flow_destination_identity=\"8\" | (flow_drop_reason_desc=\"POLICY_DENIED\" or flow_drop_reason_desc=\"\") | flow_IP_source!=\"\" | flow_IP_source!=\"::\" | flow_IP_source!~\"fe80:.*\" [$__range])))",
+          "expr": "topk(20, sum by (flow_IP_source) (count_over_time({job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_destination_identity=\"8\" or (flow_source_identity=\"8\" and flow_drop_reason_desc=\"\")) | (flow_drop_reason_desc=\"POLICY_DENIED\" or flow_drop_reason_desc=\"\") | flow_IP_source!=\"\" | flow_IP_source!=\"::\" | flow_IP_source!~\"fe80:.*\" [$__range])))",
           "queryType": "instant"
         }
       ],
@@ -492,8 +561,6 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "decimals": 0,
           "noValue": "—"
         },
         "overrides": [
@@ -503,6 +570,14 @@
               "options": "number"
             },
             "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
               {
                 "id": "displayName",
                 "value": "Dropped flows"
@@ -596,8 +671,6 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "decimals": 0,
           "noValue": "—"
         },
         "overrides": [
@@ -607,6 +680,14 @@
               "options": "number"
             },
             "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
               {
                 "id": "displayName",
                 "value": "Blocked requests"
@@ -682,8 +763,6 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "decimals": 0,
           "noValue": "—"
         },
         "overrides": [
@@ -693,6 +772,14 @@
               "options": "number"
             },
             "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
               {
                 "id": "displayName",
                 "value": "Blocked requests"
@@ -710,7 +797,7 @@
       "id": 11,
       "type": "table",
       "title": "Top dropped TCP ports (Cilium Gateway)",
-      "description": " Shows at most the top 20 entries; ties can hide the remaining values.",
+      "description": "Destination ports of non-reply DROPPED flows involving reserved:ingress (identity 8), POLICY_DENIED or with no recorded reason. Cilium logs Envoy-enforced Gateway denials, such as the AbuseIPDB CIDR deny, with source identity 8 and the selected backend as destination, so their port is the backend target port (8080 for the TaskFlow WAF pods), not the 80/443 port the client used. POLICY_DENIED rows from identity 8 are the gateway's own connections dropped by a backend policy. Shows at most the top 20 entries; ties can hide the remaining values.",
       "gridPos": {
         "x": 8,
         "y": 19,
@@ -768,8 +855,6 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "decimals": 0,
           "noValue": "—"
         },
         "overrides": [
@@ -779,6 +864,14 @@
               "options": "number"
             },
             "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
               {
                 "id": "displayName",
                 "value": "Dropped flows"
@@ -837,7 +930,7 @@
             },
             "renameByName": {
               "user_agent": "User agent (sampled)",
-              "Value": "Blocked requests"
+              "Value": "Requests"
             }
           }
         }
@@ -847,7 +940,7 @@
         "cellHeight": "sm",
         "sortBy": [
           {
-            "displayName": "Blocked requests",
+            "displayName": "Requests",
             "desc": true
           }
         ],
@@ -855,8 +948,6 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "decimals": 0,
           "noValue": "—"
         },
         "overrides": [
@@ -867,8 +958,16 @@
             },
             "properties": [
               {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
                 "id": "displayName",
-                "value": "Blocked requests"
+                "value": "Requests"
               },
               {
                 "id": "custom.width",
@@ -899,7 +998,7 @@
       "id": 13,
       "type": "logs",
       "title": "Recent Cloudflare blocks",
-      "description": "Raw aggregated Security Events (per client IP, rule source, minute). Shows the most recent matching records up to the Loki datasource line limit (1,000 by default); the stat and time-series panels above count the events collected into Loki.",
+      "description": "Raw aggregated Security Events (per client IP, rule source, minute). Shows the most recent matching records up to the Loki datasource line limit (1,000 by default); the stat and time-series panels above count the events collected into Loki. Rows of a capped window are incomplete (see \"Cloudflare capped windows\").",
       "gridPos": {
         "x": 0,
         "y": 26,
@@ -913,14 +1012,16 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"cloudflare-firewall\"} | json | line_format `{{.action}} {{.source}} ip={{.client_ip}} host={{.host}} path={{.path}} ua={{.user_agent}} hits={{.count}}`"
+          "expr": "{job=\"cloudflare-firewall\"} | json | line_format `{{.action}} {{.source}} ip={{.client_ip}} country={{.country}} asn={{.asn}} host={{.host}} path={{.path}} ua={{.user_agent}} hits={{.count}}`"
         }
       ],
       "options": {
         "showTime": true,
-        "showLabels": true,
+        "showLabels": false,
+        "showLevel": false,
         "showCommonLabels": false,
-        "wrapLines": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
         "prettifyLogMessage": false,
         "enableLogDetails": true
       }
@@ -943,14 +1044,16 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_source_identity=\"8\" or flow_destination_identity=\"8\") | (flow_drop_reason_desc=\"POLICY_DENIED\" or flow_drop_reason_desc=\"\") | line_format `{{.flow_verdict}} {{.flow_drop_reason_desc}} src={{.flow_IP_source}} dst={{.flow_IP_destination}} port={{.flow_l4_TCP_destination_port}} dir={{.flow_traffic_direction}}`"
+          "expr": "{job=\"hubble-flows\"} | json | __error__=\"\" | flow_verdict=\"DROPPED\" | flow_is_reply!=\"true\" | (flow_source_identity=\"8\" or flow_destination_identity=\"8\") | (flow_drop_reason_desc=\"POLICY_DENIED\" or flow_drop_reason_desc=\"\") | line_format `{{.flow_verdict}} {{if .flow_drop_reason_desc}}{{.flow_drop_reason_desc}}{{else}}(no reason){{end}} src={{.flow_IP_source}}{{if .flow_source_pod_name}} ({{.flow_source_namespace}}/{{.flow_source_pod_name}}){{end}} dst={{.flow_IP_destination}}{{if .flow_destination_pod_name}} ({{.flow_destination_namespace}}/{{.flow_destination_pod_name}}){{end}} port={{.flow_l4_TCP_destination_port}} dir={{.flow_traffic_direction}}`"
         }
       ],
       "options": {
         "showTime": true,
-        "showLabels": true,
+        "showLabels": false,
+        "showLevel": false,
         "showCommonLabels": false,
-        "wrapLines": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
         "prettifyLogMessage": false,
         "enableLogDetails": true
       }
@@ -963,11 +1066,11 @@
         "x": 0,
         "y": 34,
         "w": 24,
-        "h": 6
+        "h": 12
       },
       "options": {
         "mode": "markdown",
-        "content": "**Cloudflare (proxied path, real client IPs)** — collected by `abuseipdb-sync` from Security Events into Loki (`job=\"cloudflare-firewall\"`). Needs `Zone Analytics: Read`; Security Events API retention depends on the Cloudflare plan and only limits backfill, the panels read what was collected into Loki. Paths and user agents are first-event samples per client/rule/host/minute group, not exact rankings. `firewallCustom` is a rule source, not a unique AbuseIPDB rule identifier.\n\n**Cilium Gateway** — shows non-reply `DROPPED` flows with source or destination identity **8** (`reserved:ingress`) and either `POLICY_DENIED` or no recorded reason. The export omits L7/policy details: reasonless drops cannot be attributed to AbuseIPDB or default-deny from these records alone. Counts are flow events, not unique requests. The source-IP table only uses flows towards the ingress identity (destination identity 8), so the gateway's own address is not listed. For proxied traffic Cilium can see Cloudflare edge addresses; use the edge panels for real client IPs.\n\n**Display limits** — ranking tables show at most the top 20 entries, and recent-record panels show the newest records up to the Loki datasource line limit (1,000 by default). Aggregate stat and time-series panels count the events collected into Loki for the selected range; collector gaps, API retention, and Loki retention still apply."
+        "content": "**Cloudflare (proxied path, real client IPs)** — collected by `abuseipdb-sync` from Security Events into Loki (`job=\"cloudflare-firewall\"`). Needs `Zone Analytics: Read`; Security Events API retention depends on the Cloudflare plan and only limits backfill, the panels read what was collected into Loki. Cloudflare documents `firewallEventsAdaptive` as adaptively sampled at high volume and each row counts as one request, and the collector reads at most `CLOUDFLARE_FIREWALL_LIMIT` (5000) rows per window without paging, so under heavy blocking every Cloudflare number is a lower bound; the \"Cloudflare capped windows\" tile turns red when a window hit that limit. Paths and user agents are first-event samples per client/rule/host/minute group, not exact rankings. `firewallCustom` is a rule source, not a unique AbuseIPDB rule identifier.\n\n**Cilium Gateway** — shows non-reply `DROPPED` flows with source or destination identity **8** (`reserved:ingress`) and either `POLICY_DENIED` or no recorded reason. `reserved:ingress` has no BPF policy, so the direct-to-origin denylist is enforced by Envoy and shows up only as reasonless `DROPPED` flows (source identity 8, the client address as source IP, the backend as destination); `POLICY_DENIED` flows are datapath default-deny drops, typically the gateway's own connection to a backend, and are never the denylist. The export omits L7/policy details: reasonless drops cannot be attributed to AbuseIPDB or any other single policy from these records alone. Counts are flow events, not unique requests. The source-IP table lists flows towards the ingress identity (destination identity 8) and reasonless flows from it, so Envoy-denied clients appear while the gateway's own address (a `POLICY_DENIED` upstream leg) does not. The port table shows the port of the flow, which for Envoy denials is the backend port. For proxied traffic Cilium can see Cloudflare edge addresses; use the edge panels for real client IPs.\n\n**Display limits** — ranking tables show at most the top 20 entries, and recent-record panels show the newest records up to the Loki datasource line limit (1,000 by default). A ranking table fails with a \"maximum number of series\" error when more than 20,000 distinct values (spoofed sources, randomised paths or user agents) appear within one hour of the range; narrow the time range. Aggregate stat and time-series panels count the events collected into Loki for the selected range; collector gaps, API retention, and Loki retention still apply."
       }
     }
   ],

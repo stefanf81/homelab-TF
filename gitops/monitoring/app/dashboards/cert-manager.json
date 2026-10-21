@@ -51,7 +51,7 @@
       "id": 1,
       "type": "stat",
       "title": "Controller scrape",
-      "description": "1 while vmagent scrapes the cert-manager controller. DOWN or No data means every other tile is stale.",
+      "description": "1 while vmagent scrapes the cert-manager controller. DOWN or No data means every other tile is stale. UP only means the metrics endpoint answers: a controller that is not (yet) the elected leader, for example briefly during a rollout, serves no certificate metrics, in which case Certificates and Not ready show No data.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -343,7 +343,7 @@
       "id": 6,
       "type": "stat",
       "title": "Non-2xx ACME responses",
-      "description": "Outbound ACME responses that were not 2xx in the selected range; transport errors count as status 999. The ACME client retries a stale nonce (400 badNonce) by itself, so an isolated 400 is usually harmless; repeated ones together with Not ready or Renewal overdue mean issuance is failing. The counter only exists after the first request, so none shows 0.",
+      "description": "Outbound ACME responses that were not 2xx in the selected range; transport errors count as status 999. The ACME client retries a stale nonce (400 badNonce) by itself, so an isolated 400 is usually harmless; repeated ones together with Not ready or Renewal overdue mean issuance is failing. The counter only exists after the first request, so none shows 0. ACME request counters are created at their first request, so a new series is counted from zero (increase_pure) and series that already existed before the range use increase().",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -357,7 +357,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(certmanager_http_acme_client_request_count{status!~\"2..\"}[$__range])) or vector(0)",
+          "expr": "sum((increase_pure(certmanager_http_acme_client_request_count{status!~\"2..\"}[$__range]) unless last_over_time(certmanager_http_acme_client_request_count{status!~\"2..\"}[1h] offset $__range)) or increase(certmanager_http_acme_client_request_count{status!~\"2..\"}[$__range])) or vector(0)",
           "instant": true
         }
       ],
@@ -508,7 +508,7 @@
       "id": 8,
       "type": "table",
       "title": "Certificates not ready",
-      "description": "Certificates whose current condition is False or Unknown.",
+      "description": "Certificates whose current condition is False or Unknown. Empty means none, but only if the Not ready tile shows 0; No data there means cert-manager is exporting no certificate metrics (scrape down, or the controller is not the leader yet).",
       "gridPos": {
         "h": 9,
         "w": 10,
@@ -563,7 +563,7 @@
         "defaults": {
           "unit": "short",
           "decimals": 0,
-          "noValue": "All certificates ready"
+          "noValue": "None, if the Not ready tile shows 0 (No data there: no certificate metrics)"
         },
         "overrides": []
       }
@@ -572,7 +572,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "Days until expiry",
-      "description": "Days left per certificate. The lines mark 7 and 21 days. Certificates that were never issued (no expiry yet) are left out; the Not ready panels show them.",
+      "description": "Days left per certificate. The lines mark 7 and 21 days. Certificates that were never issued (no expiry yet) are left out; the Not ready panels show them. The axis starts at 0 but extends below it, so an expired certificate (negative days) stays visible.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -599,10 +599,10 @@
           "custom": {
             "thresholdsStyle": {
               "mode": "line"
-            }
+            },
+            "axisSoftMin": 0
           },
           "decimals": 1,
-          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -638,7 +638,7 @@
       "id": 10,
       "type": "timeseries",
       "title": "ACME requests by status",
-      "description": "Outbound ACME requests per displayed interval (minimum 5 minutes), by HTTP status.",
+      "description": "Outbound ACME requests per displayed interval (minimum 5 minutes), by HTTP status; 999 = transport error (no HTTP response).",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -652,7 +652,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (status) (increase(certmanager_http_acme_client_request_count[$__interval]))",
+          "expr": "sum by (status) ((increase_pure(certmanager_http_acme_client_request_count[$__interval]) unless last_over_time(certmanager_http_acme_client_request_count[1h] offset $__interval)) or increase(certmanager_http_acme_client_request_count[$__interval]))",
           "legendFormat": "{{status}}"
         }
       ],
@@ -673,13 +673,14 @@
               "mode": "normal"
             }
           },
-          "decimals": 0
+          "decimals": 0,
+          "min": 0
         },
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "200"
+              "id": "byRegexp",
+              "options": "^2..$"
             },
             "properties": [
               {
@@ -693,15 +694,60 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "201"
+              "id": "byRegexp",
+              "options": "^4..$"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "green"
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "429"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^5..$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "999"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
                 }
               }
             ]
@@ -724,7 +770,7 @@
       "id": 11,
       "type": "timeseries",
       "title": "ACME request latency (mean)",
-      "description": "Mean outbound ACME request latency, by ACME action. cert-manager exports this latency as a summary (per-series 0.5/0.9/0.99 quantiles, no histogram buckets), and summary quantiles cannot be aggregated across series, so the panel shows the mean. Gaps are normal: ACME requests only happen around issuance and renewal.",
+      "description": "Mean outbound ACME request latency, by ACME action. cert-manager exports this latency as a summary (per-series 0.5/0.9/0.99 quantiles, no histogram buckets), and summary quantiles cannot be aggregated across series, so the panel shows the mean. Gaps between issuance/renewal bursts are normal: ACME requests only happen at issuance and renewal (and an account check when the controller starts). Each action/status series is created at its first request and restarts with the controller, so the query uses increase_pure, which counts that first request; rate() would drop it.",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -738,7 +784,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (action) (rate(certmanager_http_acme_client_request_duration_seconds_sum[$__rate_interval])) / sum by (action) (rate(certmanager_http_acme_client_request_duration_seconds_count[$__rate_interval]))",
+          "expr": "sum by (action) (increase_pure(certmanager_http_acme_client_request_duration_seconds_sum[$__rate_interval])) / sum by (action) (increase_pure(certmanager_http_acme_client_request_duration_seconds_count[$__rate_interval]))",
           "legendFormat": "{{action}}"
         }
       ],
@@ -824,7 +870,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (controller) (increase(certmanager_controller_sync_error_count[$__interval]))",
+          "expr": "sum by (controller) ((increase_pure(certmanager_controller_sync_error_count[$__interval]) unless last_over_time(certmanager_controller_sync_error_count[1h] offset $__interval)) or increase(certmanager_controller_sync_error_count[$__interval]))",
           "legendFormat": "{{controller}}"
         }
       ],
@@ -866,14 +912,14 @@
       "type": "text",
       "title": "Reading this dashboard",
       "gridPos": {
-        "h": 5,
+        "h": 8,
         "w": 24,
         "x": 0,
         "y": 30
       },
       "options": {
         "mode": "markdown",
-        "content": "**Source.** Metrics from the cert-manager controller (`certmanager_*`), scraped by the `cert-manager` VMServiceScrape. Names and labels checked against cert-manager v1.21.2.\n\n- A certificate has one `certmanager_certificate_ready_status` series per condition (True, False, Unknown); the current one is 1.\n- Renewal is expected about 30 days before expiry, so a healthy 90-day certificate sits between 30 and 90 days left.\n- \"Renewal overdue\" counts certificates an hour past their renewal time: cert-manager normally renews within minutes.\n- A certificate that was never issued reports expiry 0; the expiry panels leave it out and the Not ready panels show it.\n- ACME latency is a summary metric, so the dashboard shows the mean per action, not a percentile.\n- ACME and sync-error counters only exist after their first event, so empty panels there are normal."
+        "content": "**Source.** Metrics from the cert-manager controller (`certmanager_*`), scraped by the `cert-manager` VMServiceScrape. Names and labels checked against cert-manager v1.21.2.\n\n- A certificate has one `certmanager_certificate_ready_status` series per condition (True, False, Unknown); the current one is 1.\n- Renewal is expected about 30 days before expiry, so a healthy 90-day certificate sits between 30 and 90 days left.\n- \"Renewal overdue\" counts certificates an hour past their renewal time: cert-manager normally renews within minutes.\n- A certificate that was never issued reports expiry 0; the expiry panels leave it out and the Not ready panels show it.\n- ACME latency is a summary metric, so the dashboard shows the mean per action, not a percentile.\n- ACME and sync-error counters only exist after their first event, so empty panels there are normal. They are counted with increase_pure() for series born inside the range and increase() for series that already existed; a range that starts before metric collection began or beyond the 14-day retention counts the earlier total once at the start of the data."
       }
     }
   ],

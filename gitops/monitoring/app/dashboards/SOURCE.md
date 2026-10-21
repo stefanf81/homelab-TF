@@ -24,7 +24,7 @@ Provisioning model:
 | `blocked-sources.json` | `blocked-sources-dashboard` | `blocked-sources` | Security | In-repo original; see below and `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`. |
 | `taskflow-performance.json` | `taskflow-performance-dashboard` | `taskflow-performance` | Taskflow | In-repo original (backend JVM/HTTP/Hikari/PostgreSQL/Redis + pod/node/disk metrics). HTTP p95 needs `management.metrics.distribution.percentiles-histogram.http.server.requests=true` in the backend; the panel's mean and max series work without it. Backend CPU is shown against its request (no CPU limit since PERF-02). |
 | `cert-manager.json` | `cert-manager-dashboard` | `cert-manager` | Platform | In-repo original (certificate expiry/readiness/renewal, ACME requests, controller sync errors). Metric names and labels checked against cert-manager v1.21.2 (`pkg/metrics`, `internal/collectors`). ACME latency is a summary metric (no histogram buckets), so the dashboard shows the mean per ACME action. A certificate that was never issued reports expiry 0; the expiry panels leave it out and the Not ready panels show it. |
-| `kyverno.json` | `kyverno-dashboard` | `kyverno` | Security | In-repo original (policy results, admission requests/latency, rule readiness, controller health and resource use). Metric names and labels checked against Kyverno v1.19.1 (`pkg/metrics`, chart `metricsExposure`). Rule-info and policy-change metrics are exported by both the admission and background controllers, so those panels deduplicate (`max by (policy_type, policy_name, rule_name)`, `job="admission-controller"`). The chart's `metricsExposure` keys `kyverno_policy_results_total` and `kyverno_admission_requests_total` do not match Kyverno's instrument names (no `_total`), so those two metrics keep `policy_namespace`/`resource_namespace`. The controllers have no CPU limit; CPU is shown against the request. Policy Reporter's per-resource violations are not included: its metric names could not be verified offline. |
+| `kyverno.json` | `kyverno-dashboard` | `kyverno` | Security | In-repo original (policy results, admission requests/latency, rule readiness, controller health and resource use). Metric names and labels checked against Kyverno v1.19.1 (`pkg/metrics`, chart `metricsExposure`). Rule-info and policy-change metrics are exported by both the admission and background controllers, so those panels deduplicate (`max by (policy_type, policy_name, rule_name)`, `job="admission-controller"`). The chart's `metricsExposure` keys `kyverno_policy_results_total` and `kyverno_admission_requests_total` do not match Kyverno's instrument names (no `_total`), so `kyverno_policy_results_total` keeps `policy_namespace` and `resource_namespace`, and `kyverno_admission_requests_total` keeps `resource_namespace` (it has no `policy_namespace`); `kyverno_policy_execution_duration_seconds` keeps `policy_namespace` because the chart drops only `resource_namespace` and `resource_request_operation` from it. The controllers have no CPU limit; CPU is shown against the request. Policy Reporter's per-resource violations are not included: its metric names could not be verified offline. |
 
 ## Blocked Sources scope
 
@@ -35,12 +35,18 @@ Per-IP view of traffic rejected at the two enforcement layers:
   retention depends on the Cloudflare plan (see `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`)
   and only limits backfill; the panels read what was collected into Loki.
 - Cilium drops come from the Hubble flow export shipped by Alloy (Loki
-  `job=hubble-flows`); the direct-to-origin denylist shows up as
-  `POLICY_DENIED` / reasonless `DROPPED` flows at `reserved:ingress`
-  (identity 8). Reasonless flows cannot be attributed to a specific policy from
-  this export. The top source-IP table only counts flows towards the ingress
-  identity (destination identity 8), so the gateway's own address on Envoy's
-  upstream leg is not listed.
+  `job=hubble-flows`). `reserved:ingress` has no BPF policy map, so the
+  direct-to-origin denylist is enforced by the Gateway's Envoy and shows up only
+  as `DROPPED` flows with no `drop_reason_desc`, source identity 8, the client
+  address as source IP and the backend as destination. `POLICY_DENIED` flows
+  involving identity 8 are datapath default-deny drops, typically the Gateway's
+  connection to a backend, never the denylist. Reasonless flows cannot be
+  attributed to a specific policy. The top source-IP table lists flows towards
+  identity 8 plus reasonless flows from it, so Envoy-denied clients appear and
+  the gateway's own address does not.
+- Cloudflare numbers are lower bounds: `firewallEventsAdaptive` is adaptively
+  sampled and the collector reads at most `CLOUDFLARE_FIREWALL_LIMIT` rows per
+  window; the "Cloudflare capped windows" tile shows capped windows.
 
 Per-IP values are parsed at query time; they are never Prometheus labels.
 

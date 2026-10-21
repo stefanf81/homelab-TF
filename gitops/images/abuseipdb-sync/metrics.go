@@ -108,12 +108,12 @@ var (
 
 	metricCloudflareBulkOperationPending = newLazyGauge(prometheus.GaugeOpts{
 		Name: "abuseipdb_cloudflare_bulk_operation_pending",
-		Help: "Whether a Cloudflare list bulk operation is still in progress (1) or not (0).",
+		Help: "1 while a Cloudflare list bulk operation is awaited, and after the last one failed or timed out until the next successful push; 0 otherwise.",
 	})
 
 	metricCloudflareRulePresent = newLazyGauge(prometheus.GaugeOpts{
 		Name: "abuseipdb_cloudflare_rule_present",
-		Help: "Whether the managed Cloudflare WAF custom rule is present (1) or not (0).",
+		Help: "1 when the last push confirmed (creating or re-enabling if needed) the managed Cloudflare WAF custom rule; 0 when that check or repair failed.",
 	})
 
 	metricFirewallCollectorSuccess = promauto.NewGauge(prometheus.GaugeOpts{
@@ -139,6 +139,11 @@ var (
 	metricFirewallLastWindowEvents = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "cloudflare_firewall_last_window_events",
 		Help: "Number of blocked events collected in the last window.",
+	})
+
+	metricFirewallTruncatedWindows = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "cloudflare_firewall_truncated_windows_total",
+		Help: "Collection windows whose Security Events query returned its full row limit (or exceeded the Loki batch limit), so later events of the window were not collected.",
 	})
 )
 

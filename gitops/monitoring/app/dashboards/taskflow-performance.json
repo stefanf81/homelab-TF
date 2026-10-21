@@ -62,7 +62,7 @@
           "values": false
         }
       },
-      "description": "1 while vmagent successfully scrapes the backend metrics endpoint; 0 (red) means the scrape is failing and the other metric panels on this dashboard are stale. Unavailable means no scrape result exists in the selected range."
+      "description": "1 while vmagent successfully scrapes the backend metrics endpoint; 0 (red) means the scrape is failing and the other metric panels on this dashboard are stale. The value is the latest `up` sample at the end of the selected time range (looking back up to 5 minutes), not a summary of the whole range. Unavailable means no such sample exists: there is no backend scrape target (no backend pod or Service endpoint), or vmagent is not scraping or writing."
     },
     {
       "id": 2,
@@ -81,7 +81,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (status) (rate(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",uri!~\"/actuator.*\"}[$__rate_interval]))",
+          "expr": "sum by (status) ((increase_pure(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",uri!~\"/actuator.*\"}[$__rate_interval]) unless last_over_time(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",uri!~\"/actuator.*\"}[1h] offset $__rate_interval)) or increase(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",uri!~\"/actuator.*\"}[$__rate_interval])) / ($__rate_interval_ms / 1000)",
           "legendFormat": "{{status}}"
         }
       ],
@@ -103,7 +103,7 @@
           "mode": "multi"
         }
       },
-      "description": "Backend HTTP requests per second by response status, from the Spring http_server_requests metrics. Actuator endpoints (health, metrics) are excluded."
+      "description": "Backend HTTP requests per second by response status, from the Spring http_server_requests metrics. Actuator endpoints (health, metrics) are excluded. Micrometer creates each method/URI/status series at its first request, so a series born inside the window is counted from zero (increase_pure), which also counts the first 5xx of an endpoint; series that already existed before the window use increase(), so a scrape gap does not inflate the rate."
     },
     {
       "id": 3,
@@ -174,7 +174,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(rate(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",status=~\"5..\",uri!~\"/actuator.*\"}[$__rate_interval])) or vector(0)) / sum(rate(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",uri!~\"/actuator.*\"}[$__rate_interval]))",
+          "expr": "(sum((increase_pure(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",status=~\"5..\",uri!~\"/actuator.*\"}[$__rate_interval]) unless last_over_time(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",status=~\"5..\",uri!~\"/actuator.*\"}[1h] offset $__rate_interval)) or increase(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",status=~\"5..\",uri!~\"/actuator.*\"}[$__rate_interval])) or vector(0)) / sum((increase_pure(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",uri!~\"/actuator.*\"}[$__rate_interval]) unless last_over_time(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",uri!~\"/actuator.*\"}[1h] offset $__rate_interval)) or increase(http_server_requests_seconds_count{namespace=\"taskflow\",service=\"backend\",uri!~\"/actuator.*\"}[$__rate_interval]))",
           "legendFormat": "5xx ratio"
         }
       ],
@@ -210,7 +210,7 @@
           "mode": "single"
         }
       },
-      "description": "Share of backend requests answered with a 5xx status. Actuator endpoints are excluded. Reads 0 until the first 5xx since the pod started (Micrometer creates the 5xx series on first use)."
+      "description": "Share of backend requests answered with a 5xx status. Actuator endpoints are excluded. Reads 0 while no 5xx occurred in the window. Micrometer creates each method/URI/status series at its first request, so a series born inside the window is counted from zero (increase_pure), which also counts the first 5xx of an endpoint; series that already existed before the window use increase(), so a scrape gap does not inflate the rate."
     },
     {
       "id": 5,
@@ -280,7 +280,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(jvm_gc_pause_seconds_sum{namespace=\"taskflow\",service=\"backend\"}[$__rate_interval]))",
+          "expr": "sum(increase(jvm_gc_pause_seconds_sum{namespace=\"taskflow\",service=\"backend\"}[$__rate_interval])) / ($__rate_interval_ms / 1000)",
           "legendFormat": "GC pause seconds/s"
         },
         {
@@ -340,7 +340,7 @@
           "mode": "multi"
         }
       },
-      "description": "Time the JVM spent paused for garbage collection per second, and the number of live JVM threads. Growing pauses mean memory pressure."
+      "description": "Time the JVM spent paused for garbage collection per second, and the number of live JVM threads. Each pause counts, including the first of each kind after a pod starts (a GC pause series appears at its first pause). A short spike when a pod (re)starts is that JVM's startup GC; see the deploy/restart annotations. Growing pauses outside restarts mean memory pressure."
     },
     {
       "id": 7,
@@ -607,7 +607,7 @@
         },
         {
           "refId": "B",
-          "expr": "1 - (node_memory_MemAvailable_bytes{job=\"node-exporter\"} / node_memory_MemTotal_bytes{job=\"node-exporter\"})",
+          "expr": "1 - max by (instance) (node_memory_MemAvailable_bytes{job=\"node-exporter\"} / node_memory_MemTotal_bytes{job=\"node-exporter\"})",
           "legendFormat": "memory usage"
         }
       ],
@@ -649,12 +649,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "node_filesystem_avail_bytes{job=\"node-exporter\",mountpoint=\"/\"} / node_filesystem_size_bytes{job=\"node-exporter\",mountpoint=\"/\"}",
+          "expr": "max by (instance) (node_filesystem_avail_bytes{job=\"node-exporter\",mountpoint=\"/\"} / node_filesystem_size_bytes{job=\"node-exporter\",mountpoint=\"/\"})",
           "legendFormat": "root free"
         },
         {
           "refId": "B",
-          "expr": "sum by (device) (rate(node_disk_io_time_seconds_total{job=\"node-exporter\",device=~\"sd[a-z]+\"}[$__rate_interval]))",
+          "expr": "max by (instance, device) (rate(node_disk_io_time_seconds_total{job=\"node-exporter\",device=~\"sd[a-z]+\"}[$__rate_interval]))",
           "legendFormat": "{{device}} busy"
         }
       ],
@@ -749,7 +749,7 @@
         "step": "1m",
         "name": "Deployments (taskflow)",
         "iconColor": "rgba(0, 211, 255, 1)",
-        "expr": "changes(kube_deployment_status_observed_generation{namespace=\"taskflow\"}[$__interval]) > 0",
+        "expr": "changes(max by (namespace, deployment) (kube_deployment_status_observed_generation{namespace=\"taskflow\"})[$__interval:30s]) > 0",
         "titleFormat": "Rollout: {{deployment}}",
         "textFormat": "Deployment spec changed",
         "tagKeys": "deployment"
@@ -763,7 +763,7 @@
         "step": "1m",
         "name": "Container restarts (taskflow)",
         "iconColor": "rgba(255, 96, 96, 1)",
-        "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"taskflow\"}[$__interval]) > 0",
+        "expr": "increase(max by (namespace, pod, container) (kube_pod_container_status_restarts_total{namespace=\"taskflow\"})[$__interval:30s]) > 0",
         "titleFormat": "Restart: {{pod}}",
         "textFormat": "Container {{container}} restarted",
         "tagKeys": "pod,container"
