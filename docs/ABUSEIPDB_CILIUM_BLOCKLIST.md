@@ -44,7 +44,7 @@ not a WAF replacement, and it is never duplicated into Caddy/Coraza.
 
 | Component | Location | Notes |
 |---|---|---|
-| Synchronizer image | `gitops/images/abuseipdb-sync/` + `.github/workflows/build-abuseipdb-sync.yaml` | Go, distroless, public GHCR package `ghcr.io/stefanf81/abuseipdb-sync` (currently `0.3.1-r1`, pinned by digest in the Deployment) |
+| Synchronizer image | `gitops/images/abuseipdb-sync/` + `.github/workflows/build-abuseipdb-sync.yaml` | Go, distroless, public GHCR package `ghcr.io/stefanf81/abuseipdb-sync` (currently `0.3.2-r1`, pinned by digest in the Deployment) |
 | Controller manifests | `gitops/infrastructure/controllers/abuseipdb/` | Deployment, SA, RBAC, config, secret, Service, network policies |
 | Flux Kustomization | `gitops/clusters/taskflow/abuseipdb.yaml` | `dependsOn: infra-controllers`, SOPS decryption |
 | Deny policy | `gitops/infrastructure/configs/cilium/abuseipdb-ingress-deny.yaml` | Active: `reserved:ingress` ingest deny via `cidrGroupRef` |
