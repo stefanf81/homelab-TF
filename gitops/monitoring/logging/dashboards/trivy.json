@@ -45,7 +45,7 @@
       "id": 1,
       "type": "stat",
       "title": "Security Issues by Type",
-      "description": "Exported vulnerability, configuration, RBAC and secret findings. Infrastructure metric coverage is shown separately below; absent metrics are not converted to zero findings.",
+      "description": "Exported vulnerability, configuration, RBAC and secret findings. Vulnerabilities and exposed secrets count an image once per namespace, however many workloads run it (as the table below does). Infrastructure metric coverage is shown separately below; absent metrics are not converted to zero findings. RBAC includes cluster-role findings, which are cluster-scoped (stored with the scrape target's namespace=\"trivy-system\") and counted whatever namespaces are selected.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -58,7 +58,7 @@
       },
       "targets": [
         {
-          "expr": "sum(trivy_image_vulnerabilities{namespace=~\"$namespace\"})",
+          "expr": "sum(max by (image_registry, image_repository, image_tag, namespace, severity) (trivy_image_vulnerabilities{namespace=~\"$namespace\"}))",
           "instant": true,
           "legendFormat": "Vulnerabilities",
           "refId": "A"
@@ -76,7 +76,7 @@
           "refId": "C"
         },
         {
-          "expr": "sum(trivy_image_exposedsecrets{namespace=~\"$namespace\"})",
+          "expr": "sum(max by (image_registry, image_repository, image_tag, namespace, severity) (trivy_image_exposedsecrets{namespace=~\"$namespace\"}))",
           "instant": true,
           "legendFormat": "Exposed Secrets",
           "refId": "D"
@@ -134,7 +134,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (severity) (trivy_image_vulnerabilities{namespace=~\"$namespace\"})",
+          "expr": "sum by (severity) (max by (image_registry, image_repository, image_tag, namespace, severity) (trivy_image_vulnerabilities{namespace=~\"$namespace\"}))",
           "legendFormat": "{{severity}}",
           "refId": "A"
         }
@@ -146,7 +146,83 @@
             "mode": "palette-classic"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Critical"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "High"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Medium"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Low"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Unknown"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -157,7 +233,7 @@
           "mode": "multi"
         }
       },
-      "description": "Vulnerabilities found in scanned container images, by severity, for the selected namespaces."
+      "description": "Vulnerabilities found in scanned container images, by severity, for the selected namespaces. An image counts once per namespace, however many workloads run it."
     },
     {
       "id": 3,
@@ -175,7 +251,7 @@
       },
       "targets": [
         {
-          "expr": "topk(15, sum by (namespace) (trivy_image_vulnerabilities{namespace=~\"$namespace\"}))",
+          "expr": "topk_max(15, sum by (namespace) (max by (image_registry, image_repository, image_tag, namespace, severity) (trivy_image_vulnerabilities{namespace=~\"$namespace\"})))",
           "legendFormat": "{{namespace}}",
           "refId": "A"
         }
@@ -198,7 +274,7 @@
           "mode": "multi"
         }
       },
-      "description": "Shows at most the top 15 namespaces; compare with the totals panel for full coverage."
+      "description": "The 15 namespaces with the highest peak in the selected range (MetricsQL topk_max, so the set does not change from point to point); compare with the totals panel for full coverage. An image counts once per namespace, however many workloads run it."
     },
     {
       "id": 4,
@@ -216,7 +292,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (image_repository, image_tag, namespace, severity) (trivy_image_vulnerabilities{namespace=~\"$namespace\"})",
+          "expr": "max by (image_registry, image_repository, image_tag, namespace, severity) (trivy_image_vulnerabilities{namespace=~\"$namespace\"})",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -230,6 +306,7 @@
               "Time": true
             },
             "renameByName": {
+              "image_registry": "Registry",
               "image_repository": "Image",
               "image_tag": "Tag",
               "namespace": "Namespace",
@@ -244,10 +321,26 @@
           "custom": {
             "align": "auto",
             "filterable": true
-          },
-          "unit": "short"
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "showHeader": true,
@@ -256,7 +349,7 @@
         },
         "frameIndex": 0
       },
-      "description": "Vulnerability counts per image, tag, namespace and severity."
+      "description": "Vulnerability counts per image, tag, namespace and severity. Trivy writes one report per workload container; an image used by several workloads is counted once."
     },
     {
       "id": 5,
@@ -286,7 +379,83 @@
             "mode": "palette-classic"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Critical"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "High"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Medium"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Low"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Unknown"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -315,7 +484,7 @@
       },
       "targets": [
         {
-          "expr": "topk(15, sum by (namespace) (trivy_resource_configaudits{namespace=~\"$namespace\"}))",
+          "expr": "topk_max(15, sum by (namespace) (trivy_resource_configaudits{namespace=~\"$namespace\"}))",
           "legendFormat": "{{namespace}}",
           "refId": "A"
         }
@@ -338,7 +507,7 @@
           "mode": "multi"
         }
       },
-      "description": "Shows at most the top 15 namespaces; compare with the totals panel for full coverage."
+      "description": "The 15 namespaces with the highest peak in the selected range (MetricsQL topk_max, so the set does not change from point to point); compare with the totals panel for full coverage."
     },
     {
       "id": 7,
@@ -368,7 +537,83 @@
             "mode": "palette-classic"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Critical"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "High"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Medium"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Low"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Unknown"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -379,7 +624,7 @@
           "mode": "multi"
         }
       },
-      "description": "RBAC findings for roles and cluster roles by severity."
+      "description": "RBAC findings for roles and cluster roles by severity. Cluster-role findings are cluster-scoped (stored with the scrape target's namespace=\"trivy-system\") and included whatever namespaces are selected."
     },
     {
       "id": 8,
@@ -397,7 +642,7 @@
       },
       "targets": [
         {
-          "expr": "topk(15, sum by (namespace) (trivy_image_exposedsecrets{namespace=~\"$namespace\"}))",
+          "expr": "topk_max(15, sum by (namespace) (max by (image_registry, image_repository, image_tag, namespace, severity) (trivy_image_exposedsecrets{namespace=~\"$namespace\"})))",
           "legendFormat": "{{namespace}}",
           "refId": "A"
         }
@@ -420,7 +665,7 @@
           "mode": "multi"
         }
       },
-      "description": "Secrets found exposed in container images: the 15 namespaces with the most."
+      "description": "Secrets found exposed in container images: the 15 namespaces with the highest peak in the selected range. An image counts once per namespace, however many workloads run it."
     },
     {
       "id": 9,
@@ -461,7 +706,7 @@
           "mode": "multi"
         }
       },
-      "description": "Compliance checks that currently fail, by check title."
+      "description": "Failing controls per compliance framework (the legend is the framework title, e.g. \"National Security Agency - Kubernetes Hardening Guidance v1.0\"). Per-control detail is in the ClusterComplianceReports."
     },
     {
       "id": 10,
@@ -502,7 +747,7 @@
           "mode": "multi"
         }
       },
-      "description": "Compliance checks that currently pass, by check title."
+      "description": "Controls with no failing check recorded, per compliance framework (the legend is the framework title, e.g. \"National Security Agency - Kubernetes Hardening Guidance v1.0\"). This includes manual controls Trivy cannot test (4 in NSA 1.0, 8 in CIS 1.23), so it is an upper bound, not a count of verified passes. Per-control detail is in the ClusterComplianceReports."
     },
     {
       "id": 11,
@@ -581,7 +826,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (controller, result) (rate(controller_runtime_reconcile_total{job=~\".*trivy.*\"}[5m]))",
+          "expr": "sum by (controller, result) (rate(controller_runtime_reconcile_total{job=~\".*trivy.*\"}[$__rate_interval]))",
           "legendFormat": "{{controller}} / {{result}}",
           "refId": "A"
         }
@@ -610,7 +855,7 @@
       "id": 13,
       "type": "stat",
       "title": "Infrastructure metric coverage",
-      "description": "Whether namespaced infrastructure finding metrics exist for the selected namespaces while the Trivy scrape is healthy. This reports telemetry coverage, not the number of findings or scan freshness. An unavailable scrape returns no data.",
+      "description": "Whether namespaced infrastructure finding metrics exist for the selected namespaces while the Trivy scrape is healthy. This reports telemetry coverage, not the number of findings or scan freshness. An unavailable scrape returns no data. With kube-system in excludeNamespaces (trivy-operator release.yaml) the operator creates no namespaced InfraAssessmentReports, so this stat always reads Not exported while the scrape is up.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -682,7 +927,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "The installed Trivy Operator v0.34.0 findings collector reads **namespaced InfraAssessmentReports** for `trivy_resource_infraassessments`; it does not export **ClusterInfraAssessmentReports** such as `node-ubuntu`. A missing metric is therefore not proof of zero infrastructure findings.\n\nInspect node reports and scan currency with `kubectl get clusterinfraassessmentreports -o yaml`; use the compliance panels above for exported cluster compliance summaries. **Not exported** means no namespaced metric series for this selection; it does not certify node health."
+        "content": "The installed Trivy Operator v0.35.0 findings collector reads **namespaced InfraAssessmentReports** for `trivy_resource_infraassessments`; it does not export **ClusterInfraAssessmentReports** such as `node-ubuntu`. A missing metric is therefore not proof of zero infrastructure findings.\n\nInspect node reports and scan currency with `kubectl get clusterinfraassessmentreports -o yaml`; use the compliance panels above for exported cluster compliance summaries. **Not exported** means no namespaced metric series for this selection; it does not certify node health.\n\nThe Trivy Operator only creates namespaced InfraAssessmentReports for the control-plane pods in kube-system, and kube-system is excluded from scanning here, so the coverage stat does not change with the namespace selection."
       }
     }
   ],

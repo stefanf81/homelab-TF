@@ -47,6 +47,15 @@ type FirewallCollector struct {
 	log       *slog.Logger
 
 	lastWindowEnd time.Time
+	// now is the clock; nil means time.Now. Tests replace it.
+	now func() time.Time
+}
+
+func (c *FirewallCollector) clock() time.Time {
+	if c.now != nil {
+		return c.now().UTC()
+	}
+	return time.Now().UTC()
 }
 
 func NewFirewallCollector(cfg *Config, httpClient *http.Client, log *slog.Logger) *FirewallCollector {
@@ -67,9 +76,17 @@ func NewFirewallCollector(cfg *Config, httpClient *http.Client, log *slog.Logger
 // Run polls immediately and then on the configured interval. Windows are
 // non-overlapping: lastWindowEnd only advances after a successful fetch and
 // Loki push, so a failure is retried (and covered) by the next poll.
+//
+// Every window edge is a whole minute. Groups are stamped with the start of
+// their minute, so a minute that spanned two polls would be pushed twice with
+// the same timestamp, and Loki drops the second of two identical lines in a
+// stream (a steady bot produces identical halves), undercounting its blocks.
+// With whole-minute windows a minute is never split, and the overlap re-read
+// after a restart consists of whole minutes whose lines are byte-identical, so
+// Loki deduplicates the replay instead of counting it twice.
 func (c *FirewallCollector) Run(ctx context.Context) {
 	if c.lastWindowEnd.IsZero() {
-		c.lastWindowEnd = time.Now().UTC().Add(-c.lookback)
+		c.lastWindowEnd = c.clock().Add(-c.lookback).Truncate(time.Minute)
 	}
 	c.pollWithLogging(ctx)
 	ticker := time.NewTicker(c.interval)
@@ -94,27 +111,36 @@ func (c *FirewallCollector) pollWithLogging(ctx context.Context) {
 }
 
 func (c *FirewallCollector) pollOnce(ctx context.Context) error {
-	end := time.Now().UTC()
+	end := c.clock().Truncate(time.Minute)
 	start := c.lastWindowEnd
 	if start.IsZero() {
-		start = end.Add(-c.lookback)
+		start = end.Add(-c.lookback).Truncate(time.Minute)
 	}
 	if end.Sub(start) > c.maxWindow {
 		c.log.Warn("firewall event window truncated",
 			"requested", end.Sub(start).String(), "max", c.maxWindow.String())
-		start = end.Add(-c.maxWindow)
+		start = end.Add(-c.maxWindow).Truncate(time.Minute)
 	}
 	if !end.After(start) {
 		return nil
 	}
 
-	events, err := c.fetchEvents(ctx, start, end)
+	events, rows, err := c.fetchEvents(ctx, start, end)
 	if err != nil {
 		return err
 	}
 	groups := aggregateFirewallEvents(events)
 	if err := c.pushToLoki(ctx, groups); err != nil {
 		return err
+	}
+	// The query has no pagination and the window advances after it, so a full
+	// page (or a Loki batch cut) means later events of this window were not
+	// collected. Count it after the push, because a failed window is retried.
+	if rows >= c.limit || len(groups) > firewallLokiBatchLimit {
+		metricFirewallTruncatedWindows.Inc()
+		c.log.Warn("cloudflare firewall window hit the collection limit; later events of this window were not collected",
+			"rows", rows, "limit", c.limit, "groups", len(groups), "loki_batch_limit", firewallLokiBatchLimit,
+			"window_start", start.Format(time.RFC3339), "window_end", end.Format(time.RFC3339))
 	}
 
 	c.lastWindowEnd = end
@@ -132,7 +158,10 @@ func (c *FirewallCollector) pollOnce(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirewallCollector) fetchEvents(ctx context.Context, start, end time.Time) ([]cfFirewallEvent, error) {
+// fetchEvents returns the blocked events of the window and the number of rows
+// Cloudflare returned before the client-side action filter. A row count equal
+// to the limit means the single, unpaginated query was cut short.
+func (c *FirewallCollector) fetchEvents(ctx context.Context, start, end time.Time) ([]cfFirewallEvent, int, error) {
 	query := fmt.Sprintf(`query FirewallEvents($zoneTag: string!, $filter: FirewallEventsAdaptiveFilter_InputObject!) {
   viewer {
     zones(filter: { zoneTag: $zoneTag }) {
@@ -167,7 +196,7 @@ func (c *FirewallCollector) fetchEvents(ctx context.Context, start, end time.Tim
 		events, err = c.doGraphQL(ctx, query, filter)
 	}
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	blocked := make([]cfFirewallEvent, 0, len(events))
@@ -176,7 +205,7 @@ func (c *FirewallCollector) fetchEvents(ctx context.Context, start, end time.Tim
 			blocked = append(blocked, e)
 		}
 	}
-	return blocked, nil
+	return blocked, len(events), nil
 }
 
 func (c *FirewallCollector) doGraphQL(ctx context.Context, query string, filter map[string]any) ([]cfFirewallEvent, error) {

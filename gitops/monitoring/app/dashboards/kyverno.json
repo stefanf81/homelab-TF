@@ -122,7 +122,7 @@
       "id": 2,
       "type": "stat",
       "title": "Active policy rules",
-      "description": "Rules currently present in the cluster.",
+      "description": "Rules currently present in the cluster, including the autogen-* rules Kyverno generates for Pod controllers. The admission and background controllers both export this metric; each rule is counted once.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -136,7 +136,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(kyverno_policy_rule_info_total == 1)",
+          "expr": "count(max by (policy_type, policy_name, rule_name) (kyverno_policy_rule_info_total == 1))",
           "instant": true
         }
       ],
@@ -168,7 +168,7 @@
       "id": 3,
       "type": "stat",
       "title": "Rules not ready",
-      "description": "Policy rules whose policy is not ready.",
+      "description": "Policy rules whose policy is not ready, counted once although two controllers export them.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -182,7 +182,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(kyverno_policy_rule_info_total{status_ready=\"false\"} == 1) or (0 * count(kyverno_policy_rule_info_total))",
+          "expr": "count(max by (policy_type, policy_name, rule_name) (kyverno_policy_rule_info_total{status_ready=\"false\"} == 1)) or (0 * count(kyverno_policy_rule_info_total))",
           "instant": true
         }
       ],
@@ -226,7 +226,7 @@
       "id": 4,
       "type": "stat",
       "title": "Policy failures",
-      "description": "Rule evaluations that failed or errored in the selected range, across admission and background scans.",
+      "description": "Rule evaluations that failed or errored in the selected range, across admission requests (including Flux server-side dry runs) and background scans. Counters are created at their first event and every Kyverno restart starts new series, so a series born inside the range is counted from zero (increase_pure) while a series that already existed before the range uses increase(); a scrape gap therefore does not inflate the counts.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -240,7 +240,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(kyverno_policy_results_total{rule_result=~\"fail|error\"}[$__range])) or (0 * sum(increase(kyverno_policy_results_total[$__range])))",
+          "expr": "sum((increase_pure(kyverno_policy_results_total{rule_result=~\"fail|error\"}[$__range]) unless last_over_time(kyverno_policy_results_total{rule_result=~\"fail|error\"}[1h] offset $__range)) or increase(kyverno_policy_results_total{rule_result=~\"fail|error\"}[$__range])) or (0 * sum(increase_pure(kyverno_policy_results_total[$__range])))",
           "instant": true
         }
       ],
@@ -285,7 +285,7 @@
       "id": 5,
       "type": "stat",
       "title": "Requests denied",
-      "description": "Admission requests Kyverno rejected in the selected range. A denial means a policy is doing its job.",
+      "description": "Admission requests Kyverno rejected in the selected range. A denial means a policy is doing its job. Counters are created at their first event and every Kyverno restart starts new series, so a series born inside the range is counted from zero (increase_pure) while a series that already existed before the range uses increase(); a scrape gap therefore does not inflate the counts.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -299,7 +299,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(kyverno_admission_requests_total{request_allowed=\"false\"}[$__range])) or (0 * sum(increase(kyverno_admission_requests_total[$__range])))",
+          "expr": "sum((increase_pure(kyverno_admission_requests_total{request_allowed=\"false\"}[$__range]) unless last_over_time(kyverno_admission_requests_total{request_allowed=\"false\"}[1h] offset $__range)) or increase(kyverno_admission_requests_total{request_allowed=\"false\"}[$__range])) or (0 * sum(increase_pure(kyverno_admission_requests_total[$__range])))",
           "instant": true
         }
       ],
@@ -344,7 +344,7 @@
       "id": 6,
       "type": "stat",
       "title": "Admission review p95",
-      "description": "95th percentile latency of a whole admission review over the selected range. Kyverno webhooks typically time out at 10 s.",
+      "description": "95th percentile of the time Kyverno takes to answer an admission webhook call over the selected range. Audit-mode policies without emitWarning run after the response and are excluded. Kyverno webhooks typically time out at 10 s. The smallest histogram bucket is 5 ms, so a value below 5 ms only means \"under 5 ms\".",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -407,7 +407,7 @@
       "id": 7,
       "type": "timeseries",
       "title": "Policy results",
-      "description": "Rule evaluation results per displayed interval (minimum 5 minutes).",
+      "description": "Rule evaluation results per displayed interval (minimum 5 minutes), including Flux server-side dry runs. Counters are created at their first event and every Kyverno restart starts new series, so a series born inside the range is counted from zero (increase_pure) while a series that already existed before the range uses increase(); a scrape gap therefore does not inflate the counts.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -421,7 +421,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (rule_result) (increase(kyverno_policy_results_total[$__interval]))",
+          "expr": "sum by (rule_result) ((increase_pure(kyverno_policy_results_total[$__interval]) unless last_over_time(kyverno_policy_results_total[1h] offset $__interval)) or increase(kyverno_policy_results_total[$__interval]))",
           "legendFormat": "{{rule_result}}"
         }
       ],
@@ -538,7 +538,7 @@
       "id": 8,
       "type": "timeseries",
       "title": "Admission requests",
-      "description": "Admission requests per displayed interval (minimum 5 minutes), by whether Kyverno allowed them.",
+      "description": "Admission requests per displayed interval (minimum 5 minutes), by whether Kyverno allowed them. Counters are created at their first event and every Kyverno restart starts new series, so a series born inside the range is counted from zero (increase_pure) while a series that already existed before the range uses increase(); a scrape gap therefore does not inflate the counts.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -552,7 +552,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (request_allowed) (increase(kyverno_admission_requests_total[$__interval]))",
+          "expr": "sum by (request_allowed) ((increase_pure(kyverno_admission_requests_total[$__interval]) unless last_over_time(kyverno_admission_requests_total[1h] offset $__interval)) or increase(kyverno_admission_requests_total[$__interval]))",
           "legendFormat": "allowed={{request_allowed}}"
         }
       ],
@@ -624,7 +624,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "Admission review latency",
-      "description": "Latency of a whole admission review (all policies triggered by one request).",
+      "description": "Time Kyverno takes to answer the API server's admission webhook calls: request handling plus mutate, Enforce-mode validate, image-verify and emitWarning Audit rules; Kyverno's checks on its own policy objects are counted here too. Other Audit-mode policies, which covers both current ClusterPolicies, are evaluated after the response is sent and are not included; their rule time is in Policy execution latency. Quantiles below 5 ms are interpolated inside the smallest histogram bucket (0-5 ms), so a flat 2.5 / 4.75 / 4.95 ms means \"under 5 ms\", not a measured value.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -677,7 +677,7 @@
       "id": 10,
       "type": "timeseries",
       "title": "Policy execution latency (p95, slowest policies)",
-      "description": "95th percentile rule execution time for the eight policies with the highest peak in the selected range (MetricsQL topk_max, so the set does not change from point to point).",
+      "description": "95th percentile rule execution time for the eight policies with the highest peak in the selected range (MetricsQL topk_max, so the set does not change from point to point). The smallest histogram bucket is 5 ms and simple pattern rules finish below it, so a flat 4.75 ms line means \"under 5 ms\", not a measured value.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -720,7 +720,7 @@
       "id": 11,
       "type": "table",
       "title": "Failing rules in the selected range",
-      "description": "Policy rules with failed or errored evaluations, most first (top 25).",
+      "description": "Policy rules with failed or errored evaluations, most first (top 25); includes Flux server-side dry runs. Counters are created at their first event and every Kyverno restart starts new series, so a series born inside the range is counted from zero (increase_pure) while a series that already existed before the range uses increase(); a scrape gap therefore does not inflate the counts.",
       "gridPos": {
         "h": 9,
         "w": 16,
@@ -734,7 +734,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(25, sum by (policy_name, rule_name, resource_kind, rule_type) (increase(kyverno_policy_results_total{rule_result=~\"fail|error\"}[$__range])) > 0)",
+          "expr": "topk(25, sum by (policy_name, rule_name, resource_kind, rule_type) ((increase_pure(kyverno_policy_results_total{rule_result=~\"fail|error\"}[$__range]) unless last_over_time(kyverno_policy_results_total{rule_result=~\"fail|error\"}[1h] offset $__range)) or increase(kyverno_policy_results_total{rule_result=~\"fail|error\"}[$__range])) > 0)",
           "instant": true,
           "format": "table"
         }
@@ -800,7 +800,7 @@
       "id": 12,
       "type": "timeseries",
       "title": "Policy changes",
-      "description": "Policy creations, updates and deletions per displayed interval (minimum 5 minutes).",
+      "description": "Policy creations, updates and deletions per displayed interval (minimum 5 minutes), as seen by the admission controller (the background controller records the same changes). A controller restart re-lists every policy, which can show up as \"created\".",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -814,7 +814,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (policy_change_type) (increase(kyverno_policy_changes_total[$__interval]))",
+          "expr": "sum by (policy_change_type) (increase(kyverno_policy_changes_total{job=\"admission-controller\"}[$__interval]))",
           "legendFormat": "{{policy_change_type}}"
         }
       ],
@@ -898,7 +898,7 @@
       "id": 14,
       "type": "timeseries",
       "title": "Requeues and queue drops",
-      "description": "Reconciliation errors that were requeued, and work dropped from the queue, per second.",
+      "description": "Reconciliation errors that were requeued, and work dropped from the queue after the retry limit, per displayed interval (minimum 5 minutes). One failing object can add up to 10 requeues before it is dropped. Both counters are created at their first event, so a quiet cluster shows empty bars. Counters are created at their first event and every Kyverno restart starts new series, so a series born inside the range is counted from zero (increase_pure) while a series that already existed before the range uses increase(); a scrape gap therefore does not inflate the counts.",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -912,20 +912,30 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (controller_name) (rate(kyverno_controller_requeue_total[$__rate_interval]))",
+          "expr": "sum by (controller_name) ((increase_pure(kyverno_controller_requeue_total[$__interval]) unless last_over_time(kyverno_controller_requeue_total[1h] offset $__interval)) or increase(kyverno_controller_requeue_total[$__interval]))",
           "legendFormat": "requeue {{controller_name}}"
         },
         {
           "refId": "B",
-          "expr": "sum(rate(kyverno_controller_drop_total[$__rate_interval]))",
-          "legendFormat": "queue drops"
+          "expr": "sum by (controller_name) ((increase_pure(kyverno_controller_drop_total[$__interval]) unless last_over_time(kyverno_controller_drop_total[1h] offset $__interval)) or increase(kyverno_controller_drop_total[$__interval]))",
+          "legendFormat": "drop {{controller_name}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
+          "unit": "short",
           "color": {
             "mode": "palette-classic"
+          },
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 65,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
           }
         },
         "overrides": []
@@ -940,7 +950,9 @@
           "mode": "multi",
           "sort": "desc"
         }
-      }
+      },
+      "interval": "5m",
+      "maxDataPoints": 300
     },
     {
       "id": 15,
@@ -1054,8 +1066,8 @@
     {
       "id": 17,
       "type": "timeseries",
-      "title": "CPU vs limit",
-      "description": "CPU usage of each Kyverno controller pod divided by its CPU limit.",
+      "title": "CPU vs request",
+      "description": "CPU usage of each Kyverno controller pod divided by its CPU request. The controllers deliberately have no CPU limit (see the Kyverno HelmRelease), so values above 100% are allowed: the pod uses more than it reserved. Lines mark 100% and 200%.",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -1069,7 +1081,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"kyverno\", container!=\"\", container!~\".*init.*|kyverno-pre\", metrics_path=\"/metrics/cadvisor\"}[$__rate_interval])) / sum by (pod) (kube_pod_container_resource_limits{namespace=\"kyverno\", container!=\"\", container!~\".*init.*|kyverno-pre\", resource=\"cpu\"})",
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"kyverno\", container!=\"\", container!~\".*init.*|kyverno-pre\", metrics_path=\"/metrics/cadvisor\"}[$__rate_interval])) / sum by (pod) (kube_pod_container_resource_requests{namespace=\"kyverno\", container!=\"\", container!~\".*init.*|kyverno-pre\", resource=\"cpu\"})",
           "legendFormat": "{{pod}}"
         }
       ],
@@ -1094,11 +1106,11 @@
               },
               {
                 "color": "orange",
-                "value": 0.8
+                "value": 1
               },
               {
                 "color": "red",
-                "value": 0.95
+                "value": 2
               }
             ]
           }
@@ -1121,7 +1133,7 @@
       "id": 18,
       "type": "timeseries",
       "title": "Container restarts",
-      "description": "Container restarts per displayed interval (minimum 5 minutes).",
+      "description": "Container restarts per displayed interval (minimum 5 minutes). Series are merged across kube-state-metrics pods, so replacing kube-state-metrics does not show old restarts again.",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -1135,7 +1147,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"kyverno\"}[$__interval]))",
+          "expr": "sum by (pod) (increase(max by (namespace, pod, container) (kube_pod_container_status_restarts_total{namespace=\"kyverno\"})[$__interval:30s]))",
           "legendFormat": "{{pod}}"
         }
       ],
@@ -1177,14 +1189,14 @@
       "type": "text",
       "title": "Reading this dashboard",
       "gridPos": {
-        "h": 5,
+        "h": 11,
         "w": 24,
         "x": 0,
         "y": 46
       },
       "options": {
         "mode": "markdown",
-        "content": "**Source.** Kyverno controller metrics (`kyverno_*`) from the four controller metrics services, plus container metrics from cAdvisor and kube-state-metrics. Names and labels checked against Kyverno v1.19.1.\n\n- Policy results count rule evaluations, not distinct resources. A background scan re-counts the same failing resource every cycle.\n- By default Kyverno does not export `policy_namespace` and `resource_namespace` labels, so results are per policy and kind, not per namespace.\n- Current violations per resource are in Policy Reporter (https://kyverno.jokelab.dev); this dashboard shows evaluation activity and controller health.\n- Counters appear after their first event, so empty panels on a quiet cluster are normal."
+        "content": "**Source.** Kyverno controller metrics (`kyverno_*`) from the four controller metrics services, plus container metrics from cAdvisor and kube-state-metrics. Names and labels checked against Kyverno v1.19.1.\n\n- Policy results count rule evaluations, not distinct resources. A background scan re-counts the same failing resource every cycle, and admission results include server-side dry runs (`dry_run=\"true\"`): Flux dry-run-applies every object it manages on each reconcile (every 10 minutes for taskflow), so an unchanged object that breaks a rule is counted again on every reconcile as well. Dry runs are kept on purpose: when an Enforce rule blocks a Flux change, the dry run is the only evaluation Kyverno records.\n- `kyverno_policy_results_total` and `kyverno_admission_requests_total` do carry `resource_namespace` (results also `policy_namespace`): the chart's `metricsExposure` keys for them end in `_total` and never match Kyverno's instrument names, so their label filters do not apply. Rule info drops `policy_namespace` (it never has `resource_namespace`). The execution-duration histogram drops only `resource_namespace` and `resource_request_operation`, so it keeps `policy_namespace`; the admission-review histogram drops `resource_namespace` (it never has `policy_namespace`).\n- Rule info and policy changes are exported by both the admission and background controllers; the panels count each once.\n- The controllers have no CPU limit, so CPU is shown against the request.\n- Current violations per resource are in Policy Reporter (https://kyverno.jokelab.dev); this dashboard shows evaluation activity and controller health.\n- Counters appear after their first event, so empty panels on a quiet cluster are normal. Counts use increase_pure() for series born inside the range (a restart starts new series) and increase() for series that already existed before it.\n- Admission latency is only the synchronous part of the webhook. Audit-mode policies run after the response, so with Audit-only policies it shows webhook overhead, not rule cost. Latency histograms cannot resolve anything below their smallest 5 ms bucket."
       }
     }
   ],

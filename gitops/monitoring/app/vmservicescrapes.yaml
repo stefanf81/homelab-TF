@@ -108,6 +108,12 @@ spec:
       path: /metrics
       interval: 60s
       scheme: http
+      # Findings metrics (trivy_image_vulnerabilities, ...) carry the scanned
+      # resource's own `namespace` label. Without honorLabels the target label
+      # (namespace=trivy-system) wins and the real one is renamed to
+      # exported_namespace, so every finding showed trivy-system. Operator and
+      # controller-runtime metrics have no namespace label and keep the target's.
+      honorLabels: true
 ---
 # --- Cilium agent (eBPF datapath + policy metrics) ----------------------------
 # Headless Service `cilium-agent` is only created with prometheus.metricsService=true.

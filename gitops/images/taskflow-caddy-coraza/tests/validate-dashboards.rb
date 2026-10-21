@@ -36,6 +36,20 @@ module DashboardValidation
     errors.uniq
   end
 
+  # Caddy logs request header values verbatim as JSON strings, so a line filter on a bare quoted
+  # word is satisfied by a client header with that value: `!= "\"/waf-healthz\""` hides the client
+  # from every panel, `|= "\"transaction\""` counts its access records as Coraza audit records.
+  # Anchor on the JSON structure instead (`"uri":"/waf-healthz"`, `"transaction":{`): quotes inside
+  # header values are escaped, so client data cannot produce those.
+  FORGEABLE_NEEDLES = {
+    /"\\"\/waf-healthz\\""/ => 'bare "/waf-healthz" line filter can be forged by a request header (use "\"uri\":\"/waf-healthz\"")',
+    /"\\"transaction\\""/ => 'bare "transaction" line filter can be forged by a request header (use "\"transaction\":{")'
+  }.freeze
+
+  def self.forgeable_needle_errors(expression)
+    FORGEABLE_NEEDLES.filter_map { |pattern, message| message if expression.match?(pattern) }
+  end
+
   def self.reference_names(expression)
     expression.scan(VARIABLE_REFERENCE).map do |bare, legacy, _format, braced, _field, _braced_format|
       bare || legacy || braced
@@ -216,6 +230,7 @@ module DashboardValidation
             if panel["type"] == "logs" && mode != "range"
               errors << "#{target_context}: log panels must use range queries"
             end
+            errors.concat(forgeable_needle_errors(expression).map { |error| "#{target_context}: #{error}" })
             unless panel["type"] == "logs"
               errors.concat(parse_error_guard_errors(expression).map { |error| "#{target_context}: #{error}" })
             end

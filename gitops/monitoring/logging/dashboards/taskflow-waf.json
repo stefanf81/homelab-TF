@@ -403,7 +403,11 @@
             "fillOpacity": 65,
             "lineWidth": 1,
             "showPoints": "never",
-            "spanNulls": false
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
           }
         },
         "overrides": [
@@ -413,6 +417,21 @@
               "options": ".*all audit records.*"
             },
             "properties": [
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
               {
                 "id": "custom.lineStyle",
                 "value": {
@@ -446,7 +465,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, sum by (rule) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\".+\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | regexp `\\[msg \\\\\"(?P<rule_msg>[^\\\\\"]+)\\\\\"\\]` | label_format rule=`{{.rule_id}}: {{.rule_msg}}` [$__range])))",
+          "expr": "topk(10, sum by (rule) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\".+\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` | regexp `\\},\"messages\":\\[\\{.*?\\[msg \\\\\"(?P<rule_msg>[^\\\\\"]+)\\\\\"\\]` | label_format rule=`{{.rule_id}}: {{.rule_msg}}` [$__range])))",
           "legendFormat": "CRS {{rule}}",
           "queryType": "instant"
         }
@@ -517,7 +536,7 @@
       "id": 4,
       "type": "bargauge",
       "title": "First-matched rule categories",
-      "description": "Detected audit records categorized by their first extracted CRS rule family. Local file inclusion (930xxx) includes restricted file access and traversal.",
+      "description": "Detected audit records categorized by their first extracted CRS rule family. Local file inclusion (930xxx) includes restricted file access and traversal; protocol enforcement is 920xxx, protocol attacks (smuggling, header injection) 921xxx, session fixation 943xxx and Java attacks 944xxx.",
       "gridPos": {
         "x": 12,
         "y": 14,
@@ -531,7 +550,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (category) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\".+\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | label_format category=`{{ if hasPrefix \"942\" .rule_id }}SQL injection{{ else if hasPrefix \"941\" .rule_id }}Cross-site scripting{{ else if hasPrefix \"930\" .rule_id }}File access / LFI (930xxx){{ else if hasPrefix \"931\" .rule_id }}Remote file inclusion{{ else if hasPrefix \"932\" .rule_id }}Command injection{{ else if or (hasPrefix \"933\" .rule_id) (hasPrefix \"934\" .rule_id) }}Code injection{{ else if or (hasPrefix \"920\" .rule_id) (hasPrefix \"921\" .rule_id) }}Protocol enforcement{{ else if hasPrefix \"913\" .rule_id }}Scanner detection{{ else }}Other CRS{{ end }}` [$__range]))",
+          "expr": "sum by (category) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\".+\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` | label_format category=`{{ if hasPrefix \"942\" .rule_id }}SQL injection{{ else if hasPrefix \"941\" .rule_id }}Cross-site scripting{{ else if hasPrefix \"930\" .rule_id }}File access / LFI (930xxx){{ else if hasPrefix \"931\" .rule_id }}Remote file inclusion{{ else if hasPrefix \"932\" .rule_id }}Command injection{{ else if or (hasPrefix \"933\" .rule_id) (hasPrefix \"934\" .rule_id) }}Code injection{{ else if hasPrefix \"920\" .rule_id }}Protocol enforcement{{ else if hasPrefix \"921\" .rule_id }}Protocol attack{{ else if hasPrefix \"943\" .rule_id }}Session fixation{{ else if hasPrefix \"944\" .rule_id }}Java attack{{ else if hasPrefix \"913\" .rule_id }}Scanner detection{{ else }}Other CRS{{ end }}` [$__range]))",
           "legendFormat": "{{category}}",
           "queryType": "instant"
         }
@@ -600,7 +619,7 @@
       "id": 6,
       "type": "table",
       "title": "Top source IPs (ranked subset)",
-      "description": "Client IPs parsed from transaction.client_ip. Click an IP to investigate in Access Logs or Rate Limits, or to filter this WAF dashboard.",
+      "description": "Client IPs parsed from transaction.client_ip. Click an IP to investigate in Access Logs or Rate Limits, or to filter this WAF dashboard. If the table shows \"maximum number of series (20000) reached\", more than 20,000 distinct values were seen in the selected range (itself a sign of a scan); narrow the time range or use the bounded category panels.",
       "gridPos": {
         "x": 0,
         "y": 22,
@@ -614,7 +633,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip!=\"\" | client_ip=~\"$client_ip\" [$__range])))",
+          "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip!=\"\" | client_ip=~`$client_ip` [$__range])))",
           "queryType": "instant"
         }
       ],
@@ -658,7 +677,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "none",
           "decimals": 0,
           "noValue": "—"
         },
@@ -730,7 +749,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json request_method=\"transaction.request.method\", request_uri=\"transaction.request.uri\", client_ip=\"transaction.client_ip\", interrupted=\"transaction.is_interrupted\" | __error__=\"\" | client_ip=~\"$client_ip\" | regexp `\\[msg \\\\\"(?P<rule_msg>[^\\\\\"]+)\\\\\"\\]` | line_format `{{if eq .interrupted \"true\"}}BLOCK{{else}}DETECT{{end}} · {{.client_ip}} · {{.request_method}} {{.request_uri}} · CRS {{.rule_id}}: {{.rule_msg}} ({{.application}})`",
+          "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json request_method=\"transaction.request.method\", request_uri=\"transaction.request.uri\", client_ip=\"transaction.client_ip\", interrupted=\"transaction.is_interrupted\" | __error__=\"\" | client_ip=~`$client_ip` | regexp `\\},\"messages\":\\[\\{.*?\\[msg \\\\\"(?P<rule_msg>[^\\\\\"]+)\\\\\"\\]` | line_format `{{if eq .interrupted \"true\"}}BLOCK{{else}}DETECT{{end}} · {{.client_ip}} · {{.request_method}} {{.request_uri}} · CRS {{.rule_id}}: {{.rule_msg}} ({{.application}})`",
           "queryType": "range",
           "maxLines": 100
         }
@@ -774,7 +793,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"}[$__range])))",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"}[$__range])))",
               "queryType": "instant"
             }
           ],
@@ -837,7 +856,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\", interrupted=\"transaction.is_interrupted\" | __error__=\"\" | client_ip=~\"$client_ip\" | interrupted=\"true\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"}[$__range])))",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\", interrupted=\"transaction.is_interrupted\" | __error__=\"\" | client_ip=~`$client_ip` | interrupted=\"true\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"}[$__range])))",
               "queryType": "instant"
             }
           ],
@@ -900,7 +919,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\", interrupted=\"transaction.is_interrupted\" | __error__=\"\" | client_ip=~\"$client_ip\" | interrupted=\"false\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"}[$__range])))",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\", interrupted=\"transaction.is_interrupted\" | __error__=\"\" | client_ip=~`$client_ip` | interrupted=\"false\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"}[$__range])))",
               "queryType": "instant"
             }
           ],
@@ -963,7 +982,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "((sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"\\\"is_interrupted\\\":true\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__range])))) / (sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__range])) > 0)) * 100",
+              "expr": "((sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` |= \"\\\"is_interrupted\\\":true\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` [$__range])))) / (sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` [$__range])) > 0)) * 100",
               "queryType": "instant"
             }
           ],
@@ -1011,12 +1030,12 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"transaction\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+              "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"transaction\\\":{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
               "legendFormat": "{{application}} (all audit records)"
             },
             {
               "refId": "B",
-              "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+              "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
               "legendFormat": "{{application}} (rule detections)"
             }
           ],
@@ -1047,7 +1066,11 @@
                 "fillOpacity": 65,
                 "lineWidth": 1,
                 "showPoints": "never",
-                "spanNulls": false
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
               }
             },
             "overrides": [
@@ -1057,6 +1080,21 @@
                   "options": ".*all audit records.*"
                 },
                 "properties": [
+                  {
+                    "id": "custom.drawStyle",
+                    "value": "line"
+                  },
+                  {
+                    "id": "custom.fillOpacity",
+                    "value": 0
+                  },
+                  {
+                    "id": "custom.stacking",
+                    "value": {
+                      "group": "A",
+                      "mode": "none"
+                    }
+                  },
                   {
                     "id": "custom.lineStyle",
                     "value": {
@@ -1106,7 +1144,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+              "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
               "legendFormat": "{{application}}"
             }
           ],
@@ -1196,7 +1234,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum by (method) (count_over_time({job=\"coraza-waf\", application=~\"$application\", method=~\".+\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__interval]))",
+              "expr": "sum by (method) (count_over_time({job=\"coraza-waf\", application=~\"$application\", method=~\".+\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` [$__interval]))",
               "legendFormat": "{{method}}"
             }
           ],
@@ -1239,7 +1277,7 @@
           "id": 15,
           "type": "bargauge",
           "title": "Audit records containing each paranoia level",
-          "description": "Counts audit records containing each CRS paranoia-level tag over the selected range. A record can count at several levels; do not add these counts together. An absent count becomes zero only if WAF logs arrived in the 5 minutes ending at the selected range's end; otherwise that level has no data. Historical nonzero counts remain visible.",
+          "description": "Counts audit records whose matched rules carry each CRS paranoia-level tag over the selected range (tags are read from Coraza's rule messages only, so client-supplied text cannot add to them). A record can count at several levels; do not add these counts together. An absent count becomes zero only if WAF logs arrived in the 5 minutes ending at the selected range's end; otherwise that level has no data. Historical nonzero counts remain visible.",
           "gridPos": {
             "x": 0,
             "y": 39,
@@ -1253,25 +1291,25 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"paranoia-level/1\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` |~ `\\},\"messages\":\\[\\{.*\\[tag \\\\\"paranoia-level/1\\\\\"\\]` [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
               "legendFormat": "PL 1 (Standard)",
               "queryType": "instant"
             },
             {
               "refId": "B",
-              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"paranoia-level/2\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` |~ `\\},\"messages\":\\[\\{.*\\[tag \\\\\"paranoia-level/2\\\\\"\\]` [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
               "legendFormat": "PL 2 (Elevated)",
               "queryType": "instant"
             },
             {
               "refId": "C",
-              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"paranoia-level/3\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` |~ `\\},\"messages\":\\[\\{.*\\[tag \\\\\"paranoia-level/3\\\\\"\\]` [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
               "legendFormat": "PL 3 (High)",
               "queryType": "instant"
             },
             {
               "refId": "D",
-              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" |= \"paranoia-level/4\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
+              "expr": "sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` |~ `\\},\"messages\":\\[\\{.*\\[tag \\\\\"paranoia-level/4\\\\\"\\]` [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[5m])))",
               "legendFormat": "PL 4 (Extreme)",
               "queryType": "instant"
             }
@@ -1378,7 +1416,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"942[0-9]{3}\"} | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+              "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"942[0-9]{3}\"} | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
               "legendFormat": "{{application}}"
             }
           ],
@@ -1465,7 +1503,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"941[0-9]{3}|93[0-4][0-9]{3}\"} | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
+              "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", application=~\"$application\", rule_id=~\"941[0-9]{3}|93[0-4][0-9]{3}\"} | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__interval])))",
               "legendFormat": "{{application}}"
             }
           ],
@@ -1552,7 +1590,7 @@
           "id": 17,
           "type": "table",
           "title": "Top 10 targeted URIs",
-          "description": "Request URIs with the most audit records containing WAF detections. A record may contain multiple rule matches.",
+          "description": "Request URIs with the most audit records containing WAF detections. A record may contain multiple rule matches. If the table shows \"maximum number of series (20000) reached\", more than 20,000 distinct values were seen in the selected range (itself a sign of a scan); narrow the time range or use the bounded category panels.",
           "gridPos": {
             "x": 0,
             "y": 32,
@@ -1566,7 +1604,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "topk(10, sum by (request_uri) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json request_uri=\"transaction.request.uri\", client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | request_uri!=\"\" [$__range])))",
+              "expr": "topk(10, sum by (request_uri) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json request_uri=\"transaction.request.uri\", client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` | request_uri!=\"\" [$__range])))",
               "queryType": "instant"
             }
           ],
@@ -1610,7 +1648,7 @@
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "short",
+              "unit": "none",
               "decimals": 0,
               "noValue": "—"
             },
@@ -1638,7 +1676,7 @@
           "id": 18,
           "type": "table",
           "title": "Top 10 attacking user agents",
-          "description": "User-Agents sending traffic that triggers WAF rules.",
+          "description": "User-Agents sending traffic that triggers WAF rules. If the table shows \"maximum number of series (20000) reached\", more than 20,000 distinct values were seen in the selected range (itself a sign of a scan); narrow the time range or use the bounded category panels.",
           "gridPos": {
             "x": 12,
             "y": 32,
@@ -1652,7 +1690,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "topk(10, sum by (user_agent) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json user_agent=`transaction.request.headers[\"user-agent\"][0]`, client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | user_agent!=\"\" [$__range])))",
+              "expr": "topk(10, sum by (user_agent) (count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json user_agent=`transaction.request.headers[\"user-agent\"][0]`, client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` | user_agent!=\"\" [$__range])))",
               "queryType": "instant"
             }
           ],
@@ -1696,7 +1734,7 @@
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "short",
+              "unit": "none",
               "decimals": 0,
               "noValue": "—"
             },
@@ -1738,7 +1776,7 @@
           "id": 19,
           "type": "timeseries",
           "title": "WAF inspection latency (p95)",
-          "description": "Per-application p95 Coraza processing time in milliseconds from audited requests only. RelevantOnly auditing does not sample all normal traffic. Honors the Application and Client IP filters.",
+          "description": "Per-application p95 Coraza processing time in milliseconds (the combined value of transaction.producer.stopwatch, in nanoseconds) from audited requests only. RelevantOnly auditing does not sample all normal traffic. Honors the Application and Client IP filters.",
           "gridPos": {
             "x": 0,
             "y": 35,
@@ -1752,7 +1790,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "quantile_over_time(0.95, {job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"stopwatch\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~\"$client_ip\" | regexp \"combined=(?P<waf_latency_ns>[0-9]+)\" | waf_latency_ns!=\"\" | unwrap waf_latency_ns | __error__=\"\" [$__interval]) by (application) / 1000000",
+              "expr": "quantile_over_time(0.95, {job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"stopwatch\\\":\\\"\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` | regexp `\"stopwatch\":\"[0-9]+ [0-9]+; combined=(?P<waf_latency_ns>[0-9]+)` | waf_latency_ns!=\"\" | unwrap waf_latency_ns | __error__=\"\" [$__interval]) by (application) / 1000000",
               "legendFormat": "{{application}}"
             }
           ],
@@ -1858,23 +1896,51 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\"}[1h]))",
+              "expr": "sum by (pod) (max by (pod, container) (kube_pod_container_status_restarts_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\"}) - max by (pod, container) (kube_pod_container_status_restarts_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\"} offset $__interval))",
               "legendFormat": "{{pod}}"
             }
           ],
           "fieldConfig": {
             "defaults": {
-              "unit": "short"
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "bars",
+                "fillOpacity": 65,
+                "spanNulls": false,
+                "axisSoftMax": 1,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              }
             },
             "overrides": []
           },
-          "description": " Service-level metric: not affected by the Client IP filter."
+          "description": "Container restarts per displayed interval (minimum 5 minutes) for the frontend and backend WAF pods, as the difference of the restart counter across the interval (a kube-state-metrics pod replacement does not count as a restart). Service-level metric: not affected by the Client IP filter.",
+          "interval": "5m",
+          "maxDataPoints": 300,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
         },
         {
           "id": 13,
           "type": "stat",
-          "title": "Loki ingester flush failures/s",
-          "description": "Chunk flush failures per second, deduplicated across the Loki service and headless-service scrapes. This measures storage flush health, not append timeouts. Service-level metric: not affected by the Client IP filter.",
+          "title": "Loki chunk flush failures (selected range)",
+          "description": "Chunk flush failures in the selected range, the maximum per Loki instance (the loki scrape excludes the headless Service, so each instance is scraped once). This measures storage flush health, not append timeouts. Service-level metric: not affected by the Client IP filter.",
           "gridPos": {
             "x": 12,
             "y": 51,
@@ -1888,13 +1954,13 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(max by (instance) (rate(loki_ingester_chunks_flush_failures_total{namespace=\"monitoring\",job=\"loki\"}[$__rate_interval])))",
+              "expr": "sum(max by (instance) (increase(loki_ingester_chunks_flush_failures_total{namespace=\"monitoring\",job=\"loki\"}[$__range])))",
               "instant": true
             }
           ],
           "fieldConfig": {
             "defaults": {
-              "unit": "ops",
+              "unit": "none",
               "noValue": "Unavailable",
               "color": {
                 "mode": "thresholds"
@@ -1903,7 +1969,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "gray"
+                    "color": "gray",
+                    "value": null
                   },
                   {
                     "color": "green",
@@ -1911,10 +1978,11 @@
                   },
                   {
                     "color": "red",
-                    "value": 0.000001
+                    "value": 1
                   }
                 ]
-              }
+              },
+              "decimals": 0
             },
             "overrides": []
           }
@@ -1922,7 +1990,7 @@
         {
           "id": 14,
           "type": "stat",
-          "title": "Alloy forwarding errors",
+          "title": "Alloy dropped bytes/s",
           "gridPos": {
             "x": 18,
             "y": 51,
@@ -1980,7 +2048,7 @@
             },
             "overrides": []
           },
-          "description": " Service-level metric: not affected by the Client IP filter."
+          "description": "Bytes per second Alloy gave up sending to Loki after its retries (or dropped at once after a 4xx answer). Failed pushes that are still being retried do not show here; see Logging pipeline for send errors, retries and Loki discards (for example line_too_long). Service-level metric: not affected by the Client IP filter."
         }
       ]
     },
@@ -2005,11 +2073,11 @@
         "x": 0,
         "y": 35,
         "w": 24,
-        "h": 6
+        "h": 8
       },
       "options": {
         "mode": "markdown",
-        "content": "**How to read this dashboard**\n\n- **Coverage:** WAF metrics began on **2026-10-18 at 13:34 UTC**. Earlier events are available only in Loki. Metric counts use VictoriaMetrics `increase_pure()` to include each zero-origin counter's first burst; they cannot recover events before metrics began.\n- **Filters:** Overview cards and the activity chart use metrics: **all clients**, Application filter only. Expand **Overview filtered by client IP (scans logs)** for IP-filtered summaries. Rule bars, tables and recent detections scan Loki and honor both filters. Pod/infrastructure panels are service-wide.\n- **Zeros vs gaps:** Metric zeros require request-counter data and a successful Alloy scrape. Gaps can mean unavailable telemetry. A healthy scrape alone does not prove WAF logs are flowing. Empty rule panels mean no matching records in stored logs, not proof the pipeline is healthy.\n- **RelevantOnly auditing:** Audit records can result from rule matches or response criteria. An audit record alone is not a detection; BLOCK requires `transaction.is_interrupted=true`.\n- **Display limits:** Top tables are ranked top-10 subsets; recent logs show at most 100 records. Credential headers and sensitive parameters are redacted before ingestion.\n- **Other layers:** Cloudflare blocks and Cilium drops live on **Blocked Sources**."
+        "content": "**How to read this dashboard**\n\n- **Coverage:** WAF metrics began on **2026-10-18 at 13:34 UTC**. Earlier events are available only in Loki. Metric counts use VictoriaMetrics `increase_pure()` to include each zero-origin counter's first burst; they cannot recover events before metrics began.\n- **Filters:** Overview cards and the activity chart use metrics: **all clients**, Application filter only. Expand **Overview filtered by client IP (scans logs)** for IP-filtered summaries. Rule bars, tables and recent detections scan Loki and honor both filters. Pod/infrastructure panels are service-wide.\n- **Zeros vs gaps:** Metric zeros require request-counter data and a successful Alloy scrape. Gaps can mean unavailable telemetry. A healthy scrape alone does not prove WAF logs are flowing. Empty rule panels mean no matching records in stored logs, not proof the pipeline is healthy.\n- **RelevantOnly auditing:** Audit records can result from rule matches or response criteria. An audit record alone is not a detection; BLOCK requires `transaction.is_interrupted=true`.\n- **Display limits:** Top tables are ranked top-10 subsets; recent logs show at most 100 records.\n- **Redaction (Alloy, at ingestion):** Authorization, Proxy-Authorization, Cookie and Set-Cookie values; query values named like token, password, secret, code, state, session or api key (URI, Referer and Coraza messages); and Coraza matched data for cookies, Authorization headers, request bodies and credential-named arguments. Other matched data (for example `ARGS:q`) is the attack evidence and other headers and parameters are stored as sent. Coraza cuts matched data at 280 bytes; a fragment that long loses its \"found within\" part and is not recognised.\n- **Line size:** Loki rejects a log line over 256 KB. Alloy drops the per-message `[uri ...]` copies from audit records, which keeps even a 20 KB padded URI far below that. A record that is still too large is lost in Loki (reason `line_too_long` in Logging pipeline) while the metric panels count it.\n- **Other layers:** Cloudflare blocks and Cilium drops live on **Blocked Sources**."
       }
     },
     {
@@ -2019,7 +2087,7 @@
       "collapsed": true,
       "gridPos": {
         "x": 0,
-        "y": 41,
+        "y": 43,
         "w": 24,
         "h": 1
       },
@@ -2028,7 +2096,7 @@
           "id": 24,
           "type": "logs",
           "title": "Raw WAF detection records",
-          "description": "Latest 100 detection-bearing audit records as stored in Loki, after ingestion redaction. No line_format or rule-description regexp is applied, so the complete stored JSON is available even when a summary field cannot be extracted.",
+          "description": "Latest 100 detection-bearing audit records as stored in Loki, after ingestion redaction (credential headers, listed query parameters and the matched data of credential variables are replaced by REDACTED; other request and matched data are stored as sent, see Scope). No line_format or rule-description regexp is applied, so the complete stored JSON is available even when a summary field cannot be extracted.",
           "gridPos": {
             "x": 0,
             "y": 36,
@@ -2042,7 +2110,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"\\\"messages\\\"\" | json client_ip=\"transaction.client_ip\" | client_ip=~\"$client_ip\"",
+              "expr": "{job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | client_ip=~`$client_ip`",
               "queryType": "range",
               "maxLines": 100
             }
@@ -2073,7 +2141,7 @@
         "step": "1m",
         "name": "Deployments (taskflow)",
         "iconColor": "rgba(0, 211, 255, 1)",
-        "expr": "changes(kube_deployment_status_observed_generation{namespace=\"taskflow\"}[$__interval]) > 0",
+        "expr": "changes(max by (namespace, deployment) (kube_deployment_status_observed_generation{namespace=\"taskflow\"})[$__interval:30s]) > 0",
         "titleFormat": "Rollout: {{deployment}}",
         "textFormat": "Deployment spec changed",
         "tagKeys": "deployment"
@@ -2087,7 +2155,7 @@
         "step": "1m",
         "name": "Container restarts (taskflow)",
         "iconColor": "rgba(255, 96, 96, 1)",
-        "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"taskflow\"}[$__interval]) > 0",
+        "expr": "increase(max by (namespace, pod, container) (kube_pod_container_status_restarts_total{namespace=\"taskflow\"})[$__interval:30s]) > 0",
         "titleFormat": "Restart: {{pod}}",
         "textFormat": "Container {{container}} restarted",
         "tagKeys": "pod,container"

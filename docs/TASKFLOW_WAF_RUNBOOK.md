@@ -7,7 +7,7 @@
 - Both WAFs use Caddy `2.11.4`, Coraza Caddy `v2.6.0`, OWASP CRS, and `caddy-ratelimit` (single container, no sidecars).
 - Both WAFs run with `SecRuleEngine On` and paranoia level 2.
 - Per-client HTTP rate limiting (enabled 2026-09-26): frontend `general` 180/min, backend `api` 300/min, key `{client_ip}`, IPv6 grouped per `/64` (429 + `Retry-After` when exceeded).
-- Coraza audit JSON goes straight to stdout; Alloy redacts credentials at ingest.
+- Coraza audit JSON goes straight to stdout; Alloy redacts credential headers, sensitive query values and the matched data of credential variables at ingest (what is and is not covered: `docs/TASKFLOW_WAF_ARCHITECTURE.md`, "Redaction and line size").
 - Loki runs as one monolithic replica in `monitoring` with 30-day retention.
 - Alloy collects WAF logs plus all other Taskflow workload logs and sends them to Loki.
 - Grafana dashboards at `https://grafana.jokelab.dev/d/taskflow-waf` and `https://grafana.jokelab.dev/d/taskflow-rate-limits`.
@@ -32,10 +32,11 @@ if the revision tag is already published (bump `IMAGE_REVISION`) so published
 tags are never overwritten. A changed Dockerfile recipe with an unchanged
 `IMAGE_REVISION` fails the run. ConfigMap-only changes do not trigger that
 workflow, so a second workflow ("Validate WAF config and dashboards") runs
-`tests/validate-configs.sh` on any change to `gitops/apps/taskflow/*-waf.yaml`
-or `gitops/monitoring/` (dashboards, Loki datasource, and the Grafana sidecar
-config in `platform/release.yaml`); it validates the unmodified Caddyfiles and every
-dashboard JSON. Run either locally with:
+`tests/validate-configs.sh` on changes to `gitops/apps/taskflow/*-waf.yaml`, the
+dashboards and their kustomization, the Loki datasource, the Loki, Alloy and
+repository releases, `gitops/monitoring/app/**`, the Grafana sidecar config in
+`platform/release.yaml` and the validators themselves (see the workflow's `paths:`);
+it validates the unmodified Caddyfiles and every dashboard JSON. Run either locally with:
 
 ```bash
 TEST_IMAGE=ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3 \
@@ -164,10 +165,11 @@ kubectl -n kube-system exec ds/cilium -c cilium-agent -- ip -4 addr show cilium_
 
 Re-run this if the node is replaced or if `client_ip` starts resolving to a
 `10.42.x.x`/peer address. The "Identity drift — client_ip in pod CIDR" panel on
-the Taskflow Rate Limits dashboard turns red when real requests resolve to a
-pod-range address, which is the signal that the trusted peer changed. Trust only
-the address(es) that actually carry Gateway traffic; do **not** trust the whole
-Pod CIDR, or a pod that reaches the Gateway could be skipped as a trusted hop.
+the Taskflow Rate Limits dashboard (counted over the selected range) turns red
+when real requests resolve to a pod-range address, which is the signal that the
+trusted peer changed. Trust only the address(es) that actually carry Gateway
+traffic; do **not** trust the whole Pod CIDR, or a pod that reaches the Gateway
+could be skipped as a trusted hop.
 
 ### Stage 1 — narrow the trusted proxy range (applied 2026-09-26)
 
@@ -268,7 +270,7 @@ and that `403` Coraza blocks still occur (`is_interrupted:true` audit records).
 |---------|-------------|
 | `client_ip` in access logs is a `10.42.x.x`/peer address | The trusted proxy list does not match the actual Envoy source, so Caddy ignores XFF. Re-run Stage 0 and fix `<PEER_CIDR>` before enabling enforcement. |
 | Legitimate clients receive 429 | Limit too low for the workload (shared NAT/CGNAT, polling clients, large SPA reloads). Raise the zone `events` and observe; the 429 access logs include `client_ip`, path, host, and `rate_limit_zone`. |
-| 429s exist but every one has an empty `rate_limit_zone` | They come from the application/upstream, not the limiter (see the "Rejection mix" dashboard panel). |
+| 429s exist but every one has an empty `rate_limit_zone` | They come from the application/upstream, not the limiter (see the "Rejections by source" dashboard panel). |
 | `unrecognized directive: rate_limit` at startup | The pod runs an image without the module. Pin both WAF Deployments to the `r3` digest. |
 
 ## Empty WAF and rate-limit dashboards
@@ -280,13 +282,16 @@ range can therefore legitimately leave rule breakdowns and recent-event panels
 empty. Expand the range to 7 days to look for historical events.
 
 LogQL `count_over_time` returns an empty result when no logs match, rather than
-a numeric zero. The audit/detection and rule-family timelines, access-log
-requests-by-application chart, 429 counters, rate-limit and rejection-source
-timelines, request-rate panel, and identity-drift counter use all selected WAF
-logs (including health probes) as a zero-valued baseline in the same counting
-window. They show **0** when logs arrive without matching events, and **No data**
-when that baseline is also absent. This confirms collection activity, not WAF
-enforcement; use the canary checks below to verify enforcement end to end.
+a numeric zero. The Loki panels (client-filtered activity and rule-family
+timelines, access-log requests-by-application chart, identity-drift counter) use
+all selected WAF logs (including health probes) as a zero-valued baseline in the
+same counting window. They show **0** when logs arrive without matching events,
+and **No data** when that baseline is also absent. The metric panels (overview
+and fixed-window cards, activity, rejection-source, rate-limited and request-rate
+charts) take their zero baseline from the request counter (probes excluded), are
+gated on a successful Alloy scrape and show **Metrics unavailable** or a gap
+otherwise. Either kind confirms collection activity, not WAF enforcement; use the
+canary checks below to verify enforcement end to end.
 
 The paranoia-level gauge deliberately has different liveness semantics: its
 counts cover the selected range, but an absent level becomes zero only if WAF
@@ -309,9 +314,15 @@ a collection-health indicator.
   charts have a 300-point budget. The bucket widens with the query step for long
   time ranges, preventing sparse detections from disappearing between samples.
   Counts are per displayed interval, not a fixed 5-minute total at every zoom.
-- The category donut includes protocol enforcement, scanner detection and
-  Other CRS, so its percentages cover all extracted first-matched rules.
+- The category bars include protocol enforcement (920), protocol attack (921),
+  session fixation (943), Java attack (944), scanner detection and Other CRS, so
+  they cover all extracted first-matched rules.
   Paranoia-level counts still overlap and should not be added together.
+- Rule IDs, rule messages, paranoia-level tags and the inspection latency are
+  read only from Coraza-written parts of the audit record: the top-level
+  `},"messages":[{` array (where Coraza quotes its own `[id \"N\"]`/`[tag \"..\"]`
+  values once and client data twice) and `"stopwatch":"..."`. Request headers,
+  URIs and matched data that imitate these markers are ignored.
 - Rule-family trends and runtime/log-pipeline details are in collapsed rows,
   keeping the overview compact and deferring those queries until expanded.
 - Recent-log panels fetch at most 100 records, hide inline label badges, and
@@ -326,12 +337,16 @@ a collection-health indicator.
   Rate Limits provides separate limiter-rejection and pod-CIDR identity records.
   These panels also fetch at most 100 records, only when expanded. "Raw" means
   the JSON stored in Loki **after redaction**, not unredacted request contents.
+  Redaction is limited to what `docs/TASKFLOW_WAF_ARCHITECTURE.md` ("Redaction and
+  line size") lists: other headers, non-credential parameters and other matched
+  data (for example `ARGS:q`) are stored as sent.
 - Access/429 queries filter compact Caddy JSON lines before parsing and extract
   only the fields used by that panel. The WAF, Access Logs and Rate Limits
   dashboards refresh every 5 minutes and have navigation links that preserve the
   selected time range and application, plus a **Dashboards** dropdown to every
   other dashboard. The
-  **Client IP** textbox filter (a regular expression, `.*` = all) narrows
+  **Client IP** textbox filter (a regular expression, `.*` = all; it is inserted
+  into a backtick-quoted LogQL matcher, so escapes such as `10\.42\..*` work) narrows
   access-log panels on Access Logs and Rate Limits and the audit-derived panels
   on the WAF dashboard; it is applied at query time. Clicking a client IP in a
   top table (WAF, Rate Limits, Access Logs) opens the other dashboards
@@ -363,8 +378,8 @@ a collection-health indicator.
 
 ### Dashboard validation
 
-Run `gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh` (Docker, Ruby,
-and kubectl required). It validates the shipped Caddyfiles, dashboard JSON and layout,
+Run `gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh` (Docker, Helm, Ruby,
+Python 3 and kubectl required). It validates the shipped Caddyfiles, dashboard JSON and layout,
 panel/target identifiers, datasource-specific query modes, interval settings,
 and variable references against declared variables and supported Grafana
 built-ins. Bare, braced/formatted, and legacy references are recognized. Loki
@@ -469,12 +484,15 @@ In Grafana Explore, select the `Loki` datasource and query:
 
 # Only audit records containing a matched Coraza rule.
 # This excludes relevant HTTP responses such as 401s that Coraza audits without a match.
-{job="coraza-waf"} |= "\"messages\""
+# Match the top-level array (`},"messages":[{`), not just `"messages"`: Coraza
+# lowercases request header names into transaction.request.headers, so a client
+# header "Messages: ..." would otherwise make any audited 404 look like a detection.
+{job="coraza-waf"} |= "},\"messages\":[{"
 
 # Top rule IDs and source IPs over the selected period.
 topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[1h])))
 topk(10, sum by (transaction_client_ip) (
-  count_over_time({job="coraza-waf"} |= "\"messages\"" | json [1h])
+  count_over_time({job="coraza-waf"} |= "},\"messages\":[{" | json [1h])
 ))
 ```
 
@@ -524,8 +542,8 @@ the Helm release.
 - Original application Services remain ClusterIP.
 - Gateway access is allowed only to the WAF workloads.
 - Each WAF can reach only its corresponding application Service and cluster DNS.
-- Coraza audit parts exclude request bodies; Alloy removes credential headers and sensitive query parameters at ingest.
-- Caddy access logs redact credentials and selected sensitive query parameters.
+- Coraza audit parts exclude request bodies; Alloy removes credential headers, sensitive query values and the matched data of credential variables at ingest, on every WAF log line (audit records, access records and Coraza's per-rule lines). Other matched data and non-credential headers are stored as sent.
+- Caddy access logs redact seven query keys and three request headers itself; Alloy covers the remaining names, Referer URLs and `Set-Cookie` responses.
 - Loki and Alloy have no Gateway, LoadBalancer, or public route.
 
 ---
@@ -690,7 +708,7 @@ kubectl logs deployment/victoria-metrics-k8s-stack-grafana -n monitoring -c graf
 kubectl logs deployment/victoria-metrics-k8s-stack-grafana -n monitoring -c grafana-sc-dashboard | grep taskflow
 ```
 
-#### Overview cards show "No WAF logs" while log panels have data
+#### Overview cards show "Metrics unavailable" while log panels have data
 
 **Cause**: The overview cards read Alloy's derived metrics from VictoriaMetrics,
 not Loki. Alloy is not being scraped, or its metrics pipeline is not running.
@@ -701,15 +719,17 @@ not Loki. Alloy is not being scraped, or its metrics pipeline is not running.
 kubectl -n monitoring get vmservicescrape alloy
 # In VMUI (/vmsingle/vmui): both should return data
 #   up{job="alloy"}
-#   sum(increase(loki_process_custom_taskflow_waf_requests_total[1h]))
+#   sum(increase_pure(loki_process_custom_taskflow_waf_requests_total[1h]))
 # Alloy exposes the counters on its own metrics endpoint
 kubectl -n monitoring port-forward svc/alloy 12345:12345 &
 curl -s localhost:12345/metrics | grep loki_process_custom_taskflow_waf_ | head
 ```
 
-The counters only appear after the first matching record, so a quiet WAF can
-show "No WAF logs" legitimately; the collapsed client-filtered rows query Loki
-directly.
+The counters only appear after the first matching record, so the cards show
+"Metrics unavailable" until the request counter exists (for example after an Alloy
+restart with no traffic yet); the collapsed client-filtered rows query Loki
+directly. Use `increase_pure()`, not `increase()`, on these counters: they start
+at their first event and plain `increase()` can discard a large first value.
 
 #### Caddy access logs but no Coraza audit logs
 
@@ -721,16 +741,30 @@ directly.
 
 **Cause**: `SecAuditEngine RelevantOnly` also audits relevant response statuses. These records contain `transaction` but no `messages` array, so they are audit events rather than WAF rule detections.
 
-**Fix**: Use `{job="coraza-waf"} |= "\"messages\""` to view actual matched rules. After deploying the Alloy pipeline, verify that a new detection also has `method` and `rule_id` labels in Grafana Explore. Historic records will not gain those labels.
+**Fix**: Use `{job="coraza-waf"} |= "},\"messages\":[{"` to view actual matched rules (the anchored needle ignores a client header named `Messages`). After deploying the Alloy pipeline, verify that a new detection also has `method` and `rule_id` labels in Grafana Explore. Historic records will not gain those labels.
 
-#### Detection category slices show `Value #A`, `Value #B`, or similar
+#### Rule category bars are empty or show "Other CRS"
 
-**Cause**: Grafana pie charts name instant-query result fields by reference ID unless
-the dashboard supplies display-name overrides.
+**Cause**: The categories come from the indexed first `rule_id` label via
+`label_format`. Records without a `rule_id` label (ingested before the Alloy
+pipeline, or whose first message carries no `[id "N"]`) are not counted, and rule
+families outside the listed ones fall into "Other CRS".
 
-**Fix**: Reconcile `monitoring-logging` from a revision containing the Taskflow WAF
-dashboard overrides. The pie slices are named SQL injection, Cross-site scripting,
-Path traversal, and Command injection.
+**Fix**: Check that a new detection carries a `rule_id` label in Grafana Explore
+(`{job="coraza-waf"} |= "},\"messages\":[{"`). Historic records do not gain the label.
+
+#### Overview shows detections or blocks that the log panels do not list
+
+**Cause**: Loki rejects log lines over 256 KB (`max_line_size`). Coraza writes the
+full request URI into every matched message, so a padded attack URI could push an
+audit record over the limit; Alloy now drops those per-message copies, but a record
+dominated by characters that JSON escapes to six bytes can still exceed it. The
+Alloy metrics count the detection from the unmodified record, the log panels cannot
+show a record Loki rejected.
+
+**Fix**: Open Logging pipeline, "Discarded samples by reason" and "Rejected entries
+(lost)": a `line_too_long` count confirms it. The record is gone from Loki; the WAF
+pod's own stdout (`kubectl logs`) still has it until the container log rotates.
 
 ### Network Policy Issues
 

@@ -66,8 +66,8 @@ stable `ref` so only that rule is ever touched).
 |---|---|---|
 | Cloudflare, our denylist | `firewallCustom` events | The AbuseIPDB IP-list rule (`ref: abuseipdb`). |
 | Cloudflare, Cloudflare-owned rules | `firewallManaged` events | Cloudflare's Free Managed Ruleset also blocks scans/bots; shown separately. |
-| Cilium datapath | `hubble_drop_total{reason="POLICY_DENIED"}` and flow logs with that reason | CIDR-group denials on the direct path. |
-| Cilium Envoy (L7) | flow logs with verdict `DROPPED` and **no** `drop_reason_desc` | Envoy-enforced denials at `reserved:ingress` (the same CIDR deny and other L4/L7 denies). |
+| Cilium datapath | none for this policy | `reserved:ingress` has no BPF policy map, so the CIDR deny never reaches the datapath. `POLICY_DENIED` (BPF default-deny) and `POLICY_DENY` (BPF deny rule) drops involving identity 8 come from other policies, typically a backend refusing the gateway's upstream connection; they are not AbuseIPDB blocks. |
+| Cilium Envoy (L7) | flow logs with verdict `DROPPED` and **no** `drop_reason_desc` (source identity 8, the client address as source IP, the backend as destination); metric `hubble_drop_total{reason="DROP_REASON_UNKNOWN"}` | Envoy-enforced denials at `reserved:ingress`: the CIDR deny, shared with every other Envoy L4/L7 denial, so the export cannot tell the AbuseIPDB deny from other reasonless drops. |
 
 ## Source IP and enforcement split (Cloudflare proxy)
 
@@ -139,7 +139,10 @@ GET /api/v2/blacklist?plaintext=true&limit=…   (Accept: text/plain)
   response is never applied.
 * `abuseipdb.io/last-success` (Cilium) and
   `abuseipdb.io/cloudflare-last-success` are stored on the CIDR group, so feed
-  age survives pod restarts.
+  age survives pod restarts: at startup the synchronizer republishes the
+  `*_last_success_timestamp_seconds` and `*_feed_age_seconds` gauges from these
+  annotations, even when the first synchronization afterwards fails (for
+  example because the daily blacklist quota is spent).
 * When a sink's feed is older than `ABUSEIPDB_MAX_STALE_AGE` (default 24h), the
   documented stale behavior runs per sink: `fail-open` (default) empties that
   sink (Cilium group / Cloudflare list) so no address is blocked on very old
@@ -161,13 +164,26 @@ Cloudflare actually blocked:
   IPs stay in the log body and are parsed at query time.
 * A window only advances after **both** the API fetch and the Loki push
   succeed, so a failure is retried and covered by the next poll. Recovery
-  windows are capped at `CLOUDFLARE_FIREWALL_MAX_WINDOW` (24h).
+  windows are capped at `CLOUDFLARE_FIREWALL_MAX_WINDOW` (24h). Window edges
+  are whole minutes: groups are stamped with the start of their minute, so a
+  minute split across two polls would be pushed twice with the same timestamp
+  and Loki would drop one of two identical lines.
+* Each window is one unpaginated query of at most `CLOUDFLARE_FIREWALL_LIMIT`
+  rows (oldest first) and the window advances afterwards, so later events of a
+  window that returned the full limit are not collected (a warning is logged and
+  `cloudflare_firewall_truncated_windows_total` is incremented; the
+  `Blocked Sources` tile "Cloudflare capped windows" shows it). Cloudflare also
+  documents `firewallEventsAdaptive` as adaptively sampled at high volume, and
+  every row counts as one request, so the numbers are lower bounds under heavy
+  blocking.
 * Only one pending Cloudflare list bulk operation is allowed per account; the
   list sink waits for completion and never issues a second one.
 * On startup the collector looks back `CLOUDFLARE_FIREWALL_LOOKBACK` (5m). To
   import older events once after an outage, temporarily raise the lookback and
-  restart the pod, then revert (overlapping windows on every restart would
-  duplicate counts in Loki).
+  restart the pod, then revert. The start is aligned to a whole minute, so the
+  few minutes re-read after a restart are byte-identical to what the previous
+  pod pushed and Loki drops them as duplicates; a longer lookback re-reads (and
+  only partly deduplicates) older minutes.
 
 ### Configuration (`abuseipdb-sync-config`)
 
@@ -206,15 +222,40 @@ re-read on every cycle, so Git edits apply without a restart.
 `abuseipdb_last_http_status`, `abuseipdb_last_success_timestamp_seconds`,
 `abuseipdb_feed_age_seconds`, `abuseipdb_feed_stale`, `abuseipdb_build_info`.
 
+`abuseipdb_sync_errors_total` reasons: `download` (any failed feed request,
+including HTTP 429; `abuseipdb_last_http_status` has the status), `parse`,
+`validation` and `kube`. `abuseipdb_last_success_timestamp_seconds` and
+`abuseipdb_feed_age_seconds` follow the Cilium sink (the `last-success`
+annotation and the stale-feed logic); `abuseipdb_sync_success` covers all
+enabled sinks.
+
 Cloudflare sink: `abuseipdb_cloudflare_sync_success`, `_entries`,
 `_last_success_timestamp_seconds`, `_feed_age_seconds`, `_feed_stale`,
 `_sync_errors_total{reason}`, `_bulk_operation_pending`, `_rule_present`.
+Error reasons: `network`, `http`, `rate_limited`, `bulk`, `validation`,
+`timeout`. `_sync_success`, `_entries`, `_bulk_operation_pending` and
+`_rule_present` are not exported until the first Cloudflare push after a pod
+start (a push only follows a successful feed download), so an unknown state
+reads as "No data" instead of a false `0`; the timestamp and age gauges are
+restored from the annotation, or absent while no Cloudflare success was ever
+recorded. This lazy export is exporter 0.3.2 and later; 0.3.1 exports all of
+them as `0` from process start, does not restore the last-success timestamps
+after a restart and sets `abuseipdb_last_success_timestamp_seconds` only when
+every sink succeeded. The `AbuseIPDB Security` dashboard reads correctly on
+both: the Cloudflare status tiles show FAILING / 0 only after a push failed in
+the current process (`abuseipdb_cloudflare_sync_errors_total` exists) and the
+feed-age tiles hide the initial `0`. `_rule_present` is `0` when the rule
+check or repair failed (the rule may still exist) and `1` when the last push
+confirmed it, creating or re-enabling it if needed; `_bulk_operation_pending`
+stays `1` after a failed or timed-out bulk operation until the next successful
+push.
 
 Security Events collector: `cloudflare_firewall_collector_success`,
 `cloudflare_firewall_collector_errors_total{reason}`,
 `cloudflare_firewall_events_total{action,source}`,
 `cloudflare_firewall_last_success_timestamp_seconds`,
-`cloudflare_firewall_last_window_events`.
+`cloudflare_firewall_last_window_events`,
+`cloudflare_firewall_truncated_windows_total`.
 
 All labels are bounded; individual IPs are never metric labels. Use Loki
 (`{namespace="abuseipdb"}`, `{job="cloudflare-firewall"}`, `{job="hubble-flows"}`)
@@ -244,11 +285,12 @@ time and never stored as Prometheus labels.
     flows to `/var/run/cilium/hubble/events.log` (rotated), Alloy tails that
     file and ships it to Loki (`{job="hubble-flows"}`). This covers
     direct-to-origin traffic; for proxied traffic the source is a Cloudflare
-    edge address. The dashboards exclude unrelated drop reasons
-    (`UNSUPPORTED_L3_PROTOCOL`, `STALE_OR_UNROUTABLE_IP`,
-    `SERVICE_BACKEND_NOT_FOUND`, `DROP_REASON_UNKNOWN`). Envoy-enforced L7
-    denials at `reserved:ingress` carry **no** `drop_reason_desc` and are shown
-    as `L7/policy deny (no reason)`.
+    edge address. The dashboard counts only non-reply `DROPPED` flows involving
+    `reserved:ingress` (identity 8) whose reason is `POLICY_DENIED` or absent;
+    other drop reasons are not shown. Envoy-enforced denials at
+    `reserved:ingress` carry **no** `drop_reason_desc` and appear as "No reason
+    recorded (Envoy denials, incl. AbuseIPDB)"; the export cannot tell the
+    AbuseIPDB deny from other reasonless drops.
 
 Useful LogQL:
 
@@ -256,10 +298,12 @@ Useful LogQL:
 # blocked client IPs at the Cloudflare edge (top 20)
 topk(20, sum by (client_ip) (sum_over_time({job="cloudflare-firewall"} | json | unwrap count [$__range])))
 
-# denied source IPs in Cilium (top 20, noise excluded)
-topk(20, sum by (flow_IP_source) (count_over_time({job="hubble-flows"} | json
-  | flow_drop_reason_desc!~"UNSUPPORTED_L3_PROTOCOL|STALE_OR_UNROUTABLE_IP|SERVICE_BACKEND_NOT_FOUND|DROP_REASON_UNKNOWN"
-  | flow_IP_source!="::" | flow_IP_source!~"fe80:.*" [$__range])))
+# denied source IPs at the Gateway (top 20, same filter as the dashboard table)
+topk(20, sum by (flow_IP_source) (count_over_time({job="hubble-flows"} | json | __error__=""
+  | flow_verdict="DROPPED" | flow_is_reply!="true"
+  | (flow_destination_identity="8" or (flow_source_identity="8" and flow_drop_reason_desc=""))
+  | (flow_drop_reason_desc="POLICY_DENIED" or flow_drop_reason_desc="")
+  | flow_IP_source!="" | flow_IP_source!="::" | flow_IP_source!~"fe80:.*" [$__range])))
 
 # denials by reason
 sum by (flow_drop_reason_desc) (count_over_time({job="hubble-flows"} | json [1h]))
@@ -434,7 +478,7 @@ policy restores `200` immediately.
 | AbuseIPDB works but Cloudflare API fails | Cilium sink still updates; `abuseipdb_cloudflare_sync_success=0` and reason counter increments |
 | Feed older than `ABUSEIPDB_MAX_STALE_AGE` | corresponding `*_feed_stale=1`; `fail-open` clears that sink |
 | Malformed/truncated response | both sinks unchanged; `abuseipdb_invalid_entries_total` increments |
-| Cloudflare bulk operation pending | `abuseipdb_cloudflare_bulk_operation_pending=1`; next update waits/retries |
+| Cloudflare bulk operation pending | `abuseipdb_cloudflare_bulk_operation_pending=1` while awaited (2 min), and left at 1 after a failed or timed-out operation until the next successful push; the next interval retries |
 | Cloudflare analytics permission missing | `cloudflare_firewall_collector_errors_total{reason="authz"}`; feed sync unaffected |
 | Flux reconcile | dynamic CCG untouched (never in inventory) |
 | Pod restart | immediate synchronization; feed ages preserved from annotations |

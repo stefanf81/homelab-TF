@@ -282,8 +282,10 @@ directives `
 
 Current: **ABFHZ** (request headers, response headers, matched-rule metadata, end
 marker). It excludes request bodies. Coraza writes the records straight to stdout;
-Alloy redacts inbound credential headers and sensitive query parameter values at
-ingest (see `gitops/monitoring/logging/alloy-release.yaml`).
+Alloy redacts inbound credential headers, sensitive query parameter values and
+the matched data of credential variables at ingest (see
+[Redaction and line size](#redaction-and-line-size) and
+`gitops/monitoring/logging/alloy-release.yaml`).
 
 | Part | Content |
 |------|---------|
@@ -417,13 +419,13 @@ back as well, restore the previous digest in both WAF Deployments.
 
 ### Alloy Configuration
 
-Alloy discovers WAF pods in the `taskflow` namespace using Kubernetes service discovery. Caddy access logs and Coraza audit records share pod stdout. Alloy recognises the audit JSON key `"transaction":{` and redacts credentials before forwarding to Loki; raw Kubernetes stdout is not sanitised by this ingest-time step.
+Alloy discovers WAF pods in the `taskflow` namespace using Kubernetes service discovery. Caddy access logs, Coraza's per-rule log lines and Coraza audit records share pod stdout. Alloy redacts credentials on every line of the WAF stream before forwarding to Loki (details in [Redaction and line size](#redaction-and-line-size)) and runs the label extraction below on audit records only, recognised by the JSON key `"transaction":{`. Raw Kubernetes stdout (`kubectl logs`) is not sanitised by this ingest-time step.
 
 The pipeline normalises `method` to GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS/OTHER and extracts the first matched CRS `rule_id` from Coraza's `messages[]` array. Only those bounded values become Loki labels. Client IPs, URIs, transaction IDs, and other request-specific values remain in the log body and are parsed at query time to avoid high-cardinality labels.
 
-Loki's `json` parser skips arrays, so `messages[]` cannot be fully flattened with LogQL. The raw JSON audit record is retained for investigation; dashboard detection queries require `"messages"` and therefore exclude relevant HTTP responses that did not trigger a WAF rule.
+Loki's `json` parser skips arrays, so `messages[]` cannot be fully flattened with LogQL. The raw JSON audit record is retained for investigation; dashboard detection queries require the top-level `},"messages":[{` array and therefore exclude relevant HTTP responses that did not trigger a WAF rule.
 
-Alloy configuration (illustration only, not a deployable replacement: it omits persistent WAL settings and the metrics-only fan-out below; `gitops/monitoring/logging/alloy-release.yaml` is the source of truth):
+Alloy configuration (illustration only, not a deployable replacement: it omits persistent WAL settings and the metrics-only fan-out below, and abbreviates the matched-data and query-value regular expressions; `gitops/monitoring/logging/alloy-release.yaml` is the source of truth):
 
 ```alloy
 discovery.kubernetes "pods" {
@@ -487,18 +489,41 @@ loki.source.kubernetes "taskflow_wafs" {
 loki.process "coraza_audit" {
   forward_to = [loki.write.local.receiver]
 
+  stage.static_labels {
+    values = { source = "coraza" }
+  }
+
+  // 1) Audit records only: drop the per-message `[uri "..."]` copies (see "Redaction and line size").
   stage.match {
     selector = "{job=\"coraza-waf\"} |= \"\\\"transaction\\\":{\""
+    stage.replace {
+      expression = `( \[uri \\"(?:[^\\]|\\u[0-9a-fA-F]{4}|\\\\(?:\\"|\\\\|[^\\]))*\\"\])`
+      replace = ""
+    }
+  }
+
+  // 2) Every WAF stdout line: access records, per-rule lines and audit records.
+  stage.match {
+    selector = "{job=\"coraza-waf\"}"
 
     // stage.replace replaces captured VALUES, not the surrounding key.
-    stage.replace {
+    stage.replace {  // credential header arrays
       expression = `(?i)"(?:authorization|proxy-authorization|cookie|set-cookie)"\s*:\s*(\[\s*(?:"(?:\\.|[^"\\])*"\s*(?:,\s*"(?:\\.|[^"\\])*"\s*)*)?\])`
       replace = "[\"REDACTED\"]"
     }
-    stage.replace {
-      expression = `(?i)(?:access_token|refresh_token|id_token|code|state|password|secret)=((?:\\.|[^"\\&\s])+)`
+    stage.replace {  // [data "Matched Data: <fragment> found within <VAR>: <value>"] of credential variables
+      expression = `(?i)\[data \\"Matched Data: (...fragment...) found within (?:MATCHED_VARS?:)?(?:REQUEST_COOKIES...|REQUEST_HEADERS:(?:authorization|proxy-authorization|cookie)|REQUEST_BODY|ARGS(?:_GET|_POST)?:<name containing password, token, secret, session, ...>): (...value...)\\"\]`
       replace = "REDACTED"
     }
+    stage.replace {  // name=value query parameters; & is \u0026 in Coraza's JSON
+      expression = `(?i)(?:token|passw(?:or)?d|passphrase|pwd|secret|session|jwt|api[_-]?key|credential|code|state)=(...value up to the next & / quote / space...)`
+      replace = "REDACTED"
+    }
+  }
+
+  // 3) Audit records only: bounded labels.
+  stage.match {
+    selector = "{job=\"coraza-waf\"} |= \"\\\"transaction\\\":{\""
 
     stage.json {
       drop_malformed = true
@@ -512,8 +537,11 @@ loki.process "coraza_audit" {
       expression = "^(?P<known_method>GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$"
     }
 
+    // Anchored on the top-level messages array after the transaction object, and on
+    // Coraza's own %q quoting of [id "N"]: a client header named "Messages" is
+    // lowercased into transaction.request.headers and cannot match.
     stage.regex {
-      expression = `"messages":\[.*?\[id [^0-9]*(?P<rule_id>[0-9]+)`
+      expression = `\},"messages":\[\{.*?\[id \\"(?P<rule_id>[0-9]+)\\"\]`
     }
 
     stage.labels {
@@ -538,10 +566,39 @@ loki.write "local" {
 
   external_labels = {
     cluster = "homelab",
-    source = "coraza",
   }
 }
 ```
+
+### Redaction and line size
+
+Alloy rewrites every line of the WAF stream (`job="coraza-waf"`) before it reaches
+Loki. The metrics-only components see the unmodified copy, so counts do not depend on it.
+
+| What | How it is redacted | Not covered |
+|------|--------------------|-------------|
+| Header values | `Authorization`, `Proxy-Authorization`, `Cookie` and `Set-Cookie` arrays become `["REDACTED"]` (audit `request`/`response` headers and access-log `resp_headers`; Caddy also deletes the first three request headers from access logs) | Other headers (for example `X-Api-Key`) |
+| Query values | `name=value` where the name contains `token`, `password`, `passwd`, `passphrase`, `pwd`, `secret`, `session`, `jwt`, `api_key`/`api-key`, `credential`, `code` or `state` (case-insensitive) in the URI, `Referer` and Coraza messages. The value ends at the next `&` (`\u0026` in Coraza's JSON), quote or space | Credentials passed under other names or in the path |
+| Matched data | Coraza copies the matched variable into `[data "Matched Data: <fragment> found within <VAR>: <value>"]`. Fragment and value are replaced for `REQUEST_COOKIES`, `REQUEST_HEADERS:authorization/proxy-authorization/cookie`, `REQUEST_BODY` and `ARGS`/`ARGS_GET`/`ARGS_POST` whose name contains one of the words above; the variable name stays | Other matched data (`ARGS:q`, `User-Agent`, URIs) is the attack evidence and is stored as sent. Coraza cuts `[data]` at 280 bytes: a fragment that long loses its `found within` part and is not recognised |
+
+The regular expressions parse Coraza's double encoding (`%q` inside `encoding/json`),
+so a value with quotes, backslashes, `]`, `&` or `<` is consumed completely and
+`rule_id` extraction is unaffected. `validate-alloy-metrics.sh` runs these cases
+(audit records, per-rule lines, access records) through the real Alloy image into a
+disposable Loki. Redaction cannot be applied to `kubectl logs`, which shows the raw stream.
+
+Loki rejects lines over `max_line_size` (256 KB by default; `loki-release.yaml` does not
+change it). Coraza writes the full request URI into every matched message
+(`[uri "..."]`) as well as `transaction.request.uri`, and Caddy accepts about 20 KB of
+request headers (its default `max_header_size` is 16 KB plus Go's slack). A real ~19 KB
+padded attack URI that tripped 26 rules produced a 540 KB audit record: Loki rejected it
+(`reason="line_too_long"`, Alloy logged `max entry size '262144' bytes exceeded`) while
+the metrics still counted the detection, so the overview showed a BLOCK with no record
+behind it. Alloy therefore drops the per-message `[uri "..."]` copies from audit records;
+the same record is then about 47 KB. A record can still exceed the limit if the URI itself
+is dominated by characters that JSON escapes to six bytes (`&`, `<`, `>`); such a record is
+counted by the metrics but rejected by Loki. Check Logging pipeline, "Discarded samples by
+reason" (`line_too_long`) when the overview shows more detections than the log panels.
 
 ### Metrics derived from logs
 
@@ -550,7 +607,7 @@ Three metrics-only `loki.process` components (`waf_requests`, `waf_audit`,
 parses each access record once and derives the request counter, the duration
 histogram and the rate-limit counter from it. Caddy logs `"rate_limit_zone":null`
 for requests that were not limited, so the rate-limit counter only admits lines
-whose zone is a non-empty string. Selectors match compact JSON keys (`"msg":"handled request"`, `"transaction":{`, `"messages":[`): quotes inside logged header values are escaped, so client-controlled text cannot satisfy them.
+whose zone is a non-empty string. Selectors match compact JSON markers (`"msg":"handled request"`, `"transaction":{` and the top-level `},"messages":[{` array): quotes inside logged header values are escaped, so client-controlled text cannot satisfy them. A bare `"messages"` needle would match a client header `Messages: ...`, which Coraza lowercases into `transaction.request.headers`; only the anchored array and Coraza's own `[id \"N\"]` quoting are trusted. The probe exclusion works the same way: `stage.drop` compares the parsed `request.uri` exactly, and the dashboards' LogQL excludes the literal `"uri":"/waf-healthz"` (never a bare `"/waf-healthz"`, which a request header value can reproduce).
 
 The WAF source fans out synchronously to the Loki pipeline and the metrics components, so `loki.write` keeps a write-ahead log on the `alloy-data` PVC (`wal { enabled = true, max_segment_age = "30m" }`). This decouples the counters from a slow/unreachable Loki while disk space remains available. Segments older than 30 minutes are eventually deleted: this bounds age, **not bytes**. Sustained ingress of roughly 0.57 MiB/s can fill the 1Gi PVC before expiry; watch PVC usage and size it for peak traffic/outages. Replay is finite, not a guarantee of lossless delivery through arbitrary outages. Without the WAL, a lab test with 300,000 lines and Loki down stalled every counter at about 15%; with it they stayed exact and all lines reached Loki after recovery. The Alloy test refuses a config without it. See [monitoring deployment safety](../gitops/monitoring/platform/README.md) for update/storage precautions.
 They have `forward_to = []`, so they never write to Loki and stored logs and
@@ -571,8 +628,10 @@ VMServiceScrape collects them every 30s.
 Client IPs, URIs and User-Agents are never metric labels. Panels built on these
 metrics therefore cover all clients and honor only the Application filter; the
 Client IP filtered versions stay on Loki. Series idle for 168h are dropped
-(`max_idle_duration`). VictoriaMetrics' `increase()` counts a counter's first
-sample as an increase from zero, so a fresh series is not under-counted.
+(`max_idle_duration`). These counters are created at their first event, so
+VictoriaMetrics' plain `increase()` can discard a large first value; the
+dashboards use `increase_pure()` (MetricsQL) instead (see
+`gitops/monitoring/logging/dashboards/SOURCE.md`, "Counter semantics").
 
 `gitops/images/taskflow-caddy-coraza/tests/validate-alloy-metrics.sh` runs the
 real Alloy image over fixture logs with known counts and checks every counter
@@ -585,7 +644,7 @@ the dashboards together.
 - **Retention**: 30 days (720 hours)
 - **Storage**: 10Gi PVC (`proxmox-csi` StorageClass)
 - **Caches**: in-process results cache (`embedded_cache`, 100 MB); memcached chunk and results caches disabled
-- **Limits**: `max_query_series: 20000` (top-IP tables group by client IP and failed above 5000 distinct IPs), tenant ingestion 8 MB/s with a 16 MB burst, per-stream 3 MB/s with a 15 MB burst
+- **Limits**: `max_query_series: 20000` (the top-N tables group by a client-chosen value, such as IP, path, URI or User-Agent; `topk` limits the result but not the grouping, so a scan with more than 20,000 distinct values in the range fails the table with "maximum number of series (20000) reached for a single query", which is itself a scan signal; the category bars stay bounded), tenant ingestion 8 MB/s with a 16 MB burst, per-stream 3 MB/s with a 15 MB burst
 - **Resources**: 100m/256Mi requests, 1 CPU/768Mi limits (the CPU limit lets split range queries run in parallel)
 - **Metrics scrape**: the `loki` VMServiceScrape selects only the main Service, not the chart's headless Service, so Loki series are not duplicated
 - **Canary/Test**: Disabled
@@ -630,20 +689,20 @@ datasources:
 
 | Panel | Type | Data Source | Query |
 |-------|------|-------------|-------|
-| Detection-bearing audit records | stat | VictoriaMetrics | `increase(loki_process_custom_taskflow_waf_detection_records_total[$__range])`: audit records containing rule detections in the selected range; all clients, Application filter only |
+| Detection-bearing audit records | stat | VictoriaMetrics | `sum(increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~"$application"}[$__range]))` (zero fallback from the request counter, gated on `up{job="alloy"}`): audit records containing rule detections in the selected range; all clients, Application filter only |
 | Confirmed interruptions (BLOCK) | stat | VictoriaMetrics | Detection records with `interrupted="true"` (`transaction.is_interrupted`) in the selected range |
 | Detected without interruption | stat | VictoriaMetrics | Detection records with `interrupted="false"` |
 | Interruption rate | stat | VictoriaMetrics | Percentage of detection records that were interrupted; guarded denominator; No detections when undefined |
 | WAF activity over time | timeseries | VictoriaMetrics | Audit records vs rule detections per adaptive `$__interval` |
 | Overview filtered by client IP | 4 stats + timeseries (collapsed row) | Loki | The same five panels scanning Loki, honoring Application and Client IP |
-| Top first-matched CRS rules | bar gauge | Loki | Instant `topk(10, sum by (rule_id, rule_msg) ...)`; displays rule ID and descriptive rule message |
+| Top first-matched CRS rules | bar gauge | Loki | Instant `topk(10, sum by (rule) ...)` where `rule` is `<rule_id>: <rule_msg>`; displays rule ID and descriptive rule message |
 | First-matched rule categories | bar gauge | Loki | Horizontal bar gauge categorizing rule families (SQLi, XSS, File access / LFI 930xxx, etc.) |
 | Top source IPs | table | Loki | Instant top 10 with data links to Access Logs, Rate Limits, WAF drilldowns and an AbuseIPDB lookup |
 | Recent WAF detections | logs | Loki | Latest 100 detections with compact `BLOCK/DETECT · <ip> · <method> <uri> · CRS <id>: <msg> (<app>)` formatting |
-| Raw WAF detection records | logs (collapsed row) | Loki | Latest 100 detection-bearing audit records without `line_format`, retaining the complete stored, redacted JSON |
+| Raw WAF detection records | logs (collapsed row) | Loki | Latest 100 detection-bearing audit records without `line_format`, retaining the complete stored JSON after ingestion redaction (credential values are `REDACTED`; other request and matched data are stored as sent) |
 | WAF rule detections | timeseries (collapsed row) | Loki | Standalone detections timeseries per `$__interval` |
 | Detections by HTTP method | timeseries (collapsed row) | Loki | Counts detected audit records by indexed `method` per `$__interval` |
-| Audit records containing each paranoia level | bar gauge (collapsed row) | Loki | Selected-range counts for `paranoia-level/1` through `/4`; absent levels use a 5-minute liveness fallback |
+| Audit records containing each paranoia level | bar gauge (collapsed row) | Loki | Selected-range counts of detection records whose Coraza-written `[tag \"paranoia-level/N\"]` (N = 1-4) follows the top-level `messages` array, so client data cannot fake a level; absent levels use a 5-minute liveness fallback |
 | First-matched SQL injection | timeseries (collapsed row) | Loki | Indexed first rule ID matches `942[0-9]{3}`; counts per `$__interval` |
 | First-matched XSS, injection & traversal | timeseries (collapsed row) | Loki | Indexed first rule ID matches `941[0-9]{3}` or `93[0-4][0-9]{3}`; counts per `$__interval` |
 | Top targeted URIs | table (collapsed row) | Loki | Instant top 10, extracting only `transaction.request.uri` |
@@ -651,9 +710,9 @@ datasources:
 | WAF inspection latency (p95) | timeseries (collapsed row) | Loki | Unwraps `combined` nanoseconds from stopwatch records, calculates per-application p95, and converts to milliseconds |
 | WAF pod CPU | timeseries (collapsed row) | VictoriaMetrics | `rate(container_cpu_usage_seconds_total{...}[$__rate_interval])` |
 | WAF pod memory | timeseries (collapsed row) | VictoriaMetrics | `container_memory_working_set_bytes{...}` |
-| WAF pod restarts | timeseries (collapsed row) | VictoriaMetrics | `increase(kube_pod_container_status_restarts_total{...}[1h])` |
-| Loki ingester flush failures/s | stat (collapsed row) | VictoriaMetrics | `sum(max by (instance) (rate(loki_ingester_chunks_flush_failures_total{namespace="monitoring",job="loki"}[$__rate_interval])))` |
-| Alloy forwarding errors | stat (collapsed row) | VictoriaMetrics | `sum(rate(loki_write_dropped_bytes_total[5m]))` |
+| WAF pod restarts | timeseries (collapsed row) | VictoriaMetrics | `sum by (pod) (max by (pod, container) (kube_pod_container_status_restarts_total{...}) - max by (pod, container) (... offset $__interval))`: restarts per displayed interval (minimum 5 minutes); instance-agnostic, so a kube-state-metrics replacement is not a restart |
+| Loki chunk flush failures (selected range) | stat (collapsed row) | VictoriaMetrics | `sum(max by (instance) (increase(loki_ingester_chunks_flush_failures_total{namespace="monitoring",job="loki"}[$__range])))` |
+| Alloy dropped bytes/s | stat (collapsed row) | VictoriaMetrics | `sum(rate(loki_write_dropped_bytes_total[5m]))`: bytes Alloy gave up sending, not failed pushes that are still retried |
 
 Loki summaries use `queryType: instant`; the Prometheus `instant` flag is not a
 Loki query option. Event-count and request-rate charts use buckets of at least
@@ -661,7 +720,7 @@ Loki query option. Event-count and request-rate charts use buckets of at least
 displayed query step, with a 300-point budget to avoid gaps on long ranges. The
 WAF, Access Logs and Rate Limits dashboards refresh every 5 minutes. Summary logs wrap lines and expose extracted
 labels; collapsed Raw JSON evidence rows return complete stored records without
-`line_format`. These records retain ingestion redaction. See the runbook's
+`line_format`. These records retain ingestion redaction (see [Redaction and line size](#redaction-and-line-size) for what it covers). See the runbook's
 "Rendering and query behavior" section for the full rendering conventions.
 Audit-derived Loki panels (rule/method/paranoia/URI/User-Agent breakdowns,
 latency, evidence and the collapsed client-filtered overview) honor the
@@ -690,7 +749,9 @@ rows so the overview loads only its primary queries.
 **Dashboard**: "Taskflow Access Logs" (`/d/taskflow-access-logs`)
 
 This dashboard uses only Caddy access logs from `container="waf"`; it excludes
-`/waf-healthz` probes and keeps normal traffic separate from Coraza audit records.
+`/waf-healthz` probes (matched on the literal `"uri":"/waf-healthz"` that Caddy
+writes inside `request`, so a request header with that value cannot hide a client)
+and keeps normal traffic separate from Coraza audit records.
 It provides request volume by application, response status and method trends,
 bounded route groups, request outcomes, and recent access logs. Exact sanitized
 URIs remain in log rows; route grouping bounds grouping cardinality during scans
@@ -703,7 +764,10 @@ Each WAF uses `log_append <client_ip {client_ip}` before `coraza_waf`, so Caddy
 access logs include the resolved visitor IP even when Coraza blocks the request.
 The value is derived from the right-to-left `X-Forwarded-For` walk (trusted hops
 skipped) received from the Cilium Gateway; `CF-Connecting-IP` is not consulted.
-It is parsed at query time and is not a Loki label. Coraza audit records
+It is parsed at query time from `request.client_ip`, which Caddy writes on every
+record (the top-level `client_ip` is missing on the `/waf-healthz` handler, so a
+probe-path request with a query string would otherwise have no IP), and is not a
+Loki label. Coraza audit records
 continue to expose the same value as `transaction_client_ip` for `RelevantOnly`
 transactions. The rate limiter uses the same `{client_ip}` as its key, and
 rejections additionally carry the `rate_limit_zone` field.
@@ -713,7 +777,7 @@ rejections additionally carry the `rate_limit_zone` field.
 **Dashboard**: "Taskflow Rate Limits" (`/d/taskflow-rate-limits`)
 
 Provisioned by `gitops/monitoring/logging/dashboards/taskflow-rate-limits.json`. The
-overview cards, fixed-window cards, rejection mix, rate-limited responses and
+overview cards, fixed-window cards, rejections by source, rate-limited responses and
 request-rate charts come from the Alloy metrics (all clients, Application filter
 only); breakdown bars, tables and log samples scan the Caddy access logs in Loki
 and also honor the Client IP filter. Layout:
@@ -728,7 +792,7 @@ and also honor the Client IP filter. Layout:
   unfiltered by client IP.
 - **Breakdowns**: HTTP responses by status (all recorded codes; a 200 is not proof
   that content was served and a 403 is not automatically a Coraza block), the
-  rejection mix (Coraza blocks vs limiter vs upstream 429s), and rate-limit
+  rejections by source (Coraza blocks vs limiter vs upstream 429s), and rate-limit
   rejections by zone (`<application> / <zone>`, including unexpected zones).
 - **Client and request tables**: top-10 paths, client IPs, and hosts receiving 429
   (ranked subsets — ties can hide most entries), bounded 429 path categories
@@ -772,14 +836,14 @@ records missing an extracted request URI.
 {job="coraza-waf"} |= "\"transaction\""
 
 # Actual rule detections only (excludes relevant HTTP responses without a rule match)
-{job="coraza-waf"} |= "\"messages\""
+{job="coraza-waf"} |= "},\"messages\":[{"
 
 # Top matched CRS rules (newly ingested records after the Alloy pipeline rollout)
 topk(10, sum by (rule_id) (count_over_time({job="coraza-waf", rule_id=~".+"}[1h])))
 
 # Client IPs with the most detections; parsed at query time, not indexed
 topk(10, sum by (client_ip) (
-  count_over_time({job="coraza-waf"} |= "\"messages\"" |
+  count_over_time({job="coraza-waf"} |= "},\"messages\":[{" |
     json client_ip="transaction.client_ip" | __error__="" | client_ip!="" [1h])
 ))
 
@@ -797,7 +861,7 @@ topk(10, sum by (client_ip) (
 {job="coraza-waf", rule_id=~"941[0-9]{3}"}
 
 # Detections introduced by paranoia level 2 (rules ignored on PL 1)
-{job="coraza-waf"} |= "\"messages\"" |= "paranoia-level/2"
+{job="coraza-waf"} |~ `\},"messages":\[\{.*\[tag \\"paranoia-level/2\\"\]`
 
 # Rate-limited requests (HTTP 429) with the resolved client IP
 {job="coraza-waf", container="waf"} |= "\"handled request\"" |= "\"status\":429" |
@@ -815,7 +879,7 @@ topk(10, sum by (client_ip) (
 
 ## Caddy Access Logs
 
-Caddy logs all requests to stdout in JSON format with sensitive fields redacted:
+Caddy logs all requests to stdout in JSON format with some sensitive fields redacted (Alloy redacts more at ingest, see [Redaction and line size](#redaction-and-line-size)):
 
 ```json
 {
@@ -848,6 +912,11 @@ The Caddyfile uses `format filter` to redact sensitive query parameters and head
 | `state` | |
 | `password` | |
 | `secret` | |
+
+The Caddy filter matches these query keys exactly (case-sensitive) and deletes only
+these three request headers. Other parameters (`Password=`, `token=`, `client_secret=`,
+`api_key=`), Referer URLs and upstream `Set-Cookie` response headers are logged by
+Caddy as sent and redacted by Alloy before Loki stores them.
 
 ## Flux Kustomization Dependencies
 
@@ -1005,8 +1074,8 @@ kubectl logs -n monitoring deploy/alloy -c alloy
 - **Dropped capabilities**: All capabilities are dropped (`drop: ALL`)
 - **Network isolation**: Each WAF can only reach its corresponding application service
 - **No public exposure**: Loki and Alloy have no Gateway, LoadBalancer, or public route
-- **Sensitive data redaction**: Caddy access logs redact credentials and tokens
-- **Audit log privacy**: Coraza audit parts exclude request bodies; Alloy removes sensitive request headers and query parameters at ingest
+- **Sensitive data redaction**: Caddy access logs redact seven query keys and three request headers; Alloy redacts credentials on every WAF log line at ingest
+- **Audit log privacy**: Coraza audit parts exclude request bodies; Alloy removes sensitive request headers, query parameter values and the matched data of credential variables at ingest. Other matched data (for example `ARGS:q`) and non-credential headers are stored as sent
 - **Rate-limit identity**: The limiter keys on Caddy's validated `{client_ip}`, resolved from `X-Forwarded-For` only, right-to-left, skipping the Cloudflare ranges and the trusted peer (`10.42.0.148/32`, the node's `cilium_host` address). `CF-Connecting-IP` is ignored, so a direct-to-origin client cannot choose its identity through it; forged `X-Forwarded-For` prefixes are ignored because Cloudflare and Envoy append the real connecting address. `trusted_proxies_strict` makes the trust check mandatory (an untrusted peer yields no header parsing at all). Because the peer entry is a /32 rather than the Pod CIDR, an in-cluster pod that reaches the Gateway is not skipped as a trusted hop. Re-verify the peer with the runbook Stage 0 if the node is replaced. IP reputation blocking at Cloudflare/Cilium remains the outer layer.
 - **Not an account quota**: Rate limiting is per network client and cannot enforce per-user entitlements; those belong in the application/API layer
 

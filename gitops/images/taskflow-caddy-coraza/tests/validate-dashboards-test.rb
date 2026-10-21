@@ -327,6 +327,20 @@ class DashboardValidationTest < Minitest::Test
     assert_empty errors([evidence]), "log panels may keep malformed records visible"
   end
 
+  def test_rejects_line_filters_a_request_header_value_can_satisfy
+    probe = panel(1)
+    probe["targets"][0]["expr"] = 'sum(count_over_time({job="test"} |= "\"handled request\"" != "\"/waf-healthz\"" | json status="status" | __error__="" [$__interval]))'
+    assert errors([probe]).any? { |error| error.include?("/waf-healthz") && error.include?("forged") }
+    audit = panel(1)
+    audit["targets"][0]["expr"] = 'sum(count_over_time({job="test"} |= "\"transaction\"" | json status="status" | __error__="" [$__interval]))'
+    assert errors([audit]).any? { |error| error.include?("transaction") && error.include?("forged") }
+
+    anchored = panel(1)
+    anchored["targets"][0]["expr"] =
+      'sum(count_over_time({job="test"} |= "\"handled request\"" != "\"uri\":\"/waf-healthz\"" |= "\"transaction\":{" | json status="status" | __error__="" [$__interval]))'
+    assert_empty errors([anchored])
+  end
+
   def test_allows_prometheus_instant_flags_but_not_loki_query_type
     prometheus = panel(1)
     prometheus["datasource"]["type"] = "prometheus"
@@ -414,7 +428,9 @@ class DashboardValidationTest < Minitest::Test
     url = ENV["LOKI_URL"]
     skip "LOKI_URL required for evidence integration" unless url
     access = lambda do |uri, status, ip, zone = nil|
-      record = { "msg" => "handled request", "request" => { "uri" => uri, "method" => "GET" },
+      # Caddy writes the resolved client IP in request.client_ip on every record and also as a
+      # top-level field on the proxied (non-probe) routes.
+      record = { "msg" => "handled request", "request" => { "uri" => uri, "method" => "GET", "client_ip" => ip },
                  "status" => status, "client_ip" => ip, "extra_evidence" => "preserve this field" }
       record["rate_limit_zone"] = zone if zone
       record["resp_headers"] = { "Retry-After" => ["60"] } if zone
@@ -506,7 +522,7 @@ class DashboardValidationTest < Minitest::Test
       sequence += 1
       record = {
         "level" => "info", "msg" => "handled request", "seq" => sequence,
-        "request" => { "method" => "GET", "host" => "www.jokelab.dev", "uri" => uri,
+        "request" => { "method" => "GET", "host" => "www.jokelab.dev", "uri" => uri, "client_ip" => client_ip,
                        "headers" => with_ua ? { "User-Agent" => [user_agent] } : {} },
         "status" => status, "client_ip" => client_ip, "duration" => 0.001
       }
@@ -622,6 +638,86 @@ class DashboardValidationTest < Minitest::Test
     assert_equal "success", parsed["status"], parsed["error"]
     entries = parsed.dig("data", "result").sum { |stream| stream["values"].length }
     assert_equal 100, entries, "evidence panels display at most 100 records while totals count all matches"
+  end
+
+  SPOOF_APPLICATION = "dashboard-spoof-app"
+
+  # Caddy logs every request header value verbatim (as a JSON string array). A client that sends a
+  # header whose value is "/waf-healthz" or "transaction" must neither disappear from the access-log
+  # and rate-limit panels nor inflate the WAF audit-record series, while real probes stay excluded.
+  def push_spoof_fixtures(url)
+    base_ts = Time.now.to_i * 1_000_000_000
+    sequence = 0
+    lines = []
+    access = lambda do |client_ip, uri, status, headers: {}, zone: nil, top_level_ip: true|
+      sequence += 1
+      record = {
+        "level" => "info", "msg" => "handled request", "seq" => sequence,
+        "request" => { "remote_ip" => "127.0.0.1", "client_ip" => client_ip, "method" => "GET", "host" => "www.jokelab.dev",
+                       "uri" => uri, "headers" => headers },
+        "status" => status, "duration" => 0.001
+      }
+      # The /waf-healthz handler has no log_append, so its records carry no top-level client_ip.
+      record["client_ip"] = client_ip if top_level_ip
+      record["rate_limit_zone"] = zone if zone
+      lines << [(base_ts + sequence * 1000).to_s, JSON.generate(record)]
+    end
+    access.call("198.51.100.1", "/", 200, headers: { "User-Agent" => ["Mozilla/5.0"] })
+    access.call("203.0.113.66", "/api?q=1+UNION+SELECT+1", 403, headers: { "X-Probe" => ["/waf-healthz"] })
+    access.call("203.0.113.66", "/api/v1/auth/login", 429, headers: { "Referer" => ["/waf-healthz"] }, zone: "authentication")
+    access.call("10.42.0.77", "/", 200, headers: { "Referer" => ["/waf-healthz"] })
+    access.call("203.0.113.54", "/waf-healthz?x=1", 200, top_level_ip: false)
+    access.call("203.0.113.67", "/", 200, headers: { "User-Agent" => ["transaction"] })
+    access.call("10.42.0.1", "/waf-healthz", 200, top_level_ip: false) # the kubelet probe
+    sequence += 1
+    audit = { "transaction" => { "client_ip" => "203.0.113.99", "is_interrupted" => true,
+                                 "request" => { "method" => "GET", "uri" => "/x" } },
+              "messages" => [{ "error_message" => '[client "203.0.113.99"] Coraza: Warning. X [id "942100"] [msg "SQL"]' }] }
+    lines << [(base_ts + (sequence + 1) * 1000).to_s, JSON.generate(audit)]
+    labels = { "job" => "coraza-waf", "container" => "waf", "application" => SPOOF_APPLICATION, "pod" => "dashboard-spoof-waf" }
+    uri = URI.join(url, "/loki/api/v1/push")
+    http = Net::HTTP.new(uri.host, uri.port, nil)
+    http.open_timeout = 2
+    http.read_timeout = 10
+    pushed = http.post(uri.request_uri, JSON.generate("streams" => [{ "stream" => labels, "values" => lines }]),
+                       "Content-Type" => "application/json")
+    assert_equal "204", pushed.code, pushed.body
+  end
+
+  def test_client_headers_cannot_hide_requests_or_inflate_the_audit_series
+    url = ENV["LOKI_URL"]
+    skip "LOKI_URL required for fixture query integration" unless url
+    push_spoof_fixtures(url)
+    rate = fixture_dashboard("taskflow-rate-limits")
+    access = fixture_dashboard("taskflow-access-logs")
+    waf = fixture_dashboard("taskflow-waf")
+    base = { "$__range" => "1h", "$__interval" => "1h", "$application" => SPOOF_APPLICATION, "$pod" => ".*" }
+
+    all = base.merge("$client_ip" => ".*")
+    # Six client requests; the kubelet probe is the only record that is not counted.
+    assert_equal 6.0, instant_vector(url, fixture_query(rate, 101, all), "total requests").fetch({})
+    statuses = instant_vector(url, fixture_query(rate, 20, all), "status breakdown")
+    assert_equal({ { "status" => "200" } => 4.0, { "status" => "403" } => 1.0, { "status" => "429" } => 1.0 }, statuses)
+    outcomes = instant_vector(url, fixture_query(access, 6, all), "access outcomes")
+    assert_equal 6.0, outcomes.values.sum
+    ips = instant_vector(url, fixture_query(access, 7, all), "top client IPs")
+    assert_equal({ { "client_ip" => "203.0.113.66" } => 2.0, { "client_ip" => "198.51.100.1" } => 1.0,
+                   { "client_ip" => "10.42.0.77" } => 1.0, { "client_ip" => "203.0.113.54" } => 1.0,
+                   { "client_ip" => "203.0.113.67" } => 1.0 }, ips,
+                 "clients with a /waf-healthz header value stay visible; /waf-healthz?x=1 carries request.client_ip; probes are excluded")
+    routes = instant_vector(url, fixture_query(access, 5, all), "route groups")
+    assert_equal 6.0, routes.values.sum, "the route-group panel filters probes like the others"
+
+    spoofer = base.merge("$client_ip" => "203.0.113.66")
+    assert_equal 2.0, instant_vector(url, fixture_query(rate, 101, spoofer), "spoofer total").fetch({})
+    assert_equal 50.0, instant_vector(url, fixture_query(rate, 204, spoofer), "spoofer rate-limit share").fetch({})
+    assert_equal 1.0, instant_vector(url, fixture_query(rate, 11, all), "identity drift").fetch({}),
+                 "an in-cluster client with a /waf-healthz header must still count; the probe from 10.42.0.1 must not"
+
+    # Only the one real audit record counts. The access lines with a "transaction" User-Agent do not.
+    series = instant_vector(url, fixture_query(waf, 1, all), "audit series")
+    assert_equal({ { "application" => SPOOF_APPLICATION } => 1.0 }, series)
+    assert_equal 1.0, instant_vector(url, fixture_query(waf, 101, all), "detections").fetch({})
   end
 
   def test_provisioning_accepts_matching_render

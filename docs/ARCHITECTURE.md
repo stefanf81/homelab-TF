@@ -370,7 +370,7 @@ TF/
 │   │   ├── app/                     # VMServiceScrapes + dashboards (applied after CRDs exist)
 │   │   │   ├── vmservicescrapes.yaml # backend / postgres-exporter / redis-exporter / cilium / abuseipdb
 │   │   │   ├── abuseipdb.yaml        # AbuseIPDB synchronizer VMServiceScrape
-│   │   │   ├── dashboards/           # AbuseIPDB Security, Blocked Sources, TaskFlow Performance
+│   │   │   ├── dashboards/           # AbuseIPDB Security, Blocked Sources, TaskFlow Performance, cert-manager, Kyverno
 │   │   │   │                         # (standalone JSON + configMapGenerator + SOURCE.md)
 │   │   │   └── kustomization.yaml
 │   │   │
@@ -378,7 +378,7 @@ TF/
 │       ├── alloy-release.yaml       # Grafana Alloy Deployment (WAF logs, abuseipdb logs, Hubble flow file)
 │       ├── loki-release.yaml        # Grafana Loki (log storage, 30-day retention)
 │       ├── loki-datasource.yaml     # Loki datasource auto-provisioned in Grafana
-│       ├── dashboards/              # Falco, Trivy, WAF, access-log, rate-limit dashboards
+│       ├── dashboards/              # Falco, Trivy, WAF, access-log, rate-limit, Logging pipeline dashboards
 │       │                            # (standalone JSON + configMapGenerator + SOURCE.md)
 │       ├── repositories.yaml        # HelmRepository definitions
 │       ├── vmservicescrapes.yaml    # Alloy metrics scrape
