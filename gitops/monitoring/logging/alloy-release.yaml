@@ -331,27 +331,68 @@ spec:
               values = { source = "coraza" }
             }
 
-            // Caddy access logs and Coraza audit records share stdout. Process only
-            // audit records so Caddy's unrelated JSON fields never become labels.
+            // Caddy access logs, Coraza audit records and Coraza's per-rule log lines
+            // share stdout. Redaction runs on every line of the WAF stream; the
+            // label extraction below runs on audit records only, so Caddy's
+            // unrelated JSON fields never become labels.
+            //
+            // Coraza repeats the request URI in every matched message
+            // (`[uri "..."]`, never truncated) although the record already carries it
+            // in transaction.request.uri. A ~19 KB attack URI (Caddy accepts about
+            // 20 KB of headers) made a real audit record of 540 KB, over Loki's
+            // 256 KB max_line_size, so Loki dropped the whole record while the
+            // metrics still counted it. Drop the copies before anything else.
+            // Coraza %q-quotes the value and encoding/json escapes it again, so
+            // the token below consumes one such escape sequence at a time and the
+            // closing `\"]` cannot be confused with a quote inside the URI.
             stage.match {
               selector = "{job=\"coraza-waf\"} |= \"\\\"transaction\\\":{\""
+
+              stage.replace {
+                expression = `( \[uri \\"(?:[^\\]|\\u[0-9a-fA-F]{4}|\\\\(?:\\"|\\\\|[^\\]))*\\"\])`
+                replace    = ""
+              }
+            }
+
+            stage.match {
+              selector = "{job=\"coraza-waf\"}"
 
               // Coraza writes audit JSON straight to stdout (there is no sidecar
               // redactor anymore), so credential redaction happens here.
               // stage.replace replaces CAPTURE GROUPS, not the whole regexp.
               // Capture the entire sensitive header value array, not its key.
               // JSON strings may contain escaped quotes, backslashes and ']'.
-              // Also remove response Set-Cookie (audit part F).
+              // Also remove response Set-Cookie (audit part F, access-log resp_headers).
               stage.replace {
                 expression = `(?i)"(?:authorization|proxy-authorization|cookie|set-cookie)"\s*:\s*(\[\s*(?:"(?:\\.|[^"\\])*"\s*(?:,\s*"(?:\\.|[^"\\])*"\s*)*)?\])`
                 replace    = "[\"REDACTED\"]"
               }
 
-              // 2) secrets passed as query parameters
+              // 2) Coraza's [data "Matched Data: <fragment> found within <VAR>: <value>"]
+              // holds the value of the matched variable. Redact the fragment and the
+              // value when the variable is a cookie, an Authorization header, a request
+              // body or an argument whose name looks like a credential; the variable
+              // name stays. Other matched data (ARGS:q, User-Agent, ...) is the attack
+              // evidence and is kept. This must run before the query-parameter stage,
+              // which can consume the closing `\"]`. Coraza cuts [data] at 280 bytes,
+              // so a fragment that long loses its "found within" part and is not
+              // recognised.
               stage.replace {
-                expression = `(?i)(?:access_token|refresh_token|id_token|code|state|password|secret)=((?:\\.|[^"\\&\s])+)`
+                expression = `(?i)\[data \\"Matched Data: ((?:[^\\]|\\u[0-9a-fA-F]{4}|\\\\(?:\\"|\\\\|[^\\]))*?) found within (?:MATCHED_VARS?:)?(?:REQUEST_COOKIES(?::[^:\s\\]*)?|REQUEST_HEADERS:(?:authorization|proxy-authorization|cookie)|REQUEST_BODY|ARGS(?:_GET|_POST)?:[^:\s\\]*(?:passw(?:or)?d|passphrase|pwd|secret|token|session|credential|authorization|api[_-]?key|private[_-]?key|jwt|code|state)[^:\s\\]*): ((?:[^\\]|\\u[0-9a-fA-F]{4}|\\\\(?:\\"|\\\\|[^\\]))*)\\"\]`
                 replace    = "REDACTED"
               }
+
+              // 3) secrets passed as query parameters (URI, Referer, Coraza's own
+              // messages). The value ends at the next `&`, which Coraza's encoding/json
+              // writes as \u0026: other \uXXXX escapes (< > ...) belong to the value.
+              stage.replace {
+                expression = `(?i)(?:token|passw(?:or)?d|passphrase|pwd|secret|session|jwt|api[_-]?key|credential|code|state)=((?:[^"\\&\s]|\\[^u]|\\u(?:[^0][0-9a-fA-F]{3}|0[^0][0-9a-fA-F]{2}|00[^2][0-9a-fA-F]|002[^6]))+)`
+                replace    = "REDACTED"
+              }
+            }
+
+            stage.match {
+              selector = "{job=\"coraza-waf\"} |= \"\\\"transaction\\\":{\""
 
               stage.json {
                 // Fail closed rather than forwarding malformed audit evidence

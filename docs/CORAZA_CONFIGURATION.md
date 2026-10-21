@@ -27,7 +27,7 @@ directives `
     SecRequestBodyAccess On              #    Body processing
     SecResponseBodyAccess Off            #    Response buffering (off)
     SecAuditEngine RelevantOnly          #    Audit logging
-    SecAuditLog /dev/stdout             #  Audit JSON to stdout (Alloy redacts at ingest)
+    SecAuditLog /dev/stdout             #  Audit JSON to stdout (Alloy redacts credentials at ingest)
     SecAuditLogFormat JSON               #    JSON audit records
     SecAuditLogParts ABFHZ               #    Rule-match metadata plus request/response headers
     SecRequestBodyLimit 10485760         #    Max request body (10 MB)
@@ -198,10 +198,13 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
     {job="coraza-waf", application="taskflow-frontend"} |= "},\"messages\":[{"
     ```
    A `transaction` without `messages[]` is a relevant audited response, not a CRS match.
-3. Identify false positives from the sanitized audit log fields:
-   - `rule_id`: which CRS rule matched
-   - `variable_name`: which input triggered it (e.g., `ARGS:message`)
-   - `matched_data`: the actual payload
+3. Identify false positives from the sanitized audit record (`messages[].error_message`):
+   - `[id "N"]` (and the `rule_id` label): which CRS rule matched
+   - `[data "Matched Data: <fragment> found within <VARIABLE>: <value>"]`: which input
+     triggered it (e.g., `ARGS:message`) and the payload. For cookies, `Authorization`,
+     request bodies and credential-named arguments (`password`, `token`, `secret`,
+     `session`, ...) Alloy replaces fragment and value with `REDACTED` at ingest; the
+     variable name stays. `[data]` is cut at 280 bytes.
 4. Write the narrowest possible exclusion in the exclusion file.
 5. Validate the Caddyfile locally. The image entrypoint is already `caddy`, the
    Caddyfile imports `/etc/caddy/rate-limit.conf`, and Coraza reads the

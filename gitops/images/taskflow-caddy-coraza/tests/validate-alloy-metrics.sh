@@ -2,8 +2,13 @@
 # Runs the real Alloy image, with the processing blocks from alloy-release.yaml, over
 # fixture WAF logs and checks the logs-to-metrics series the dashboards read:
 # exact request/rate-limit/audit/detection counts, the duration histogram, and that
-# no pod, file or client data leaks into metric labels. Needs docker, ruby, python3
-# and a disposable Loki (LOKI_URL), which receives redacted fixture logs.
+# no pod, file or client data leaks into metric labels. It also checks what Alloy
+# writes to Loki: credential redaction on audit records, Coraza's per-rule lines and
+# access records (headers, query keys, Coraza matched data, Coraza's \u0026 and %q
+# escaping), the removal of the per-message URI copies that keeps a ~19 KB padded
+# URI under Loki's 256 KB line limit, and bounded method/rule_id labels. Needs docker,
+# ruby, python3 and a disposable Loki (LOKI_URL), which receives the redacted fixture
+# logs (use a fresh one after changing the pipeline: stored records are checked too).
 #
 # ALLOY_IMAGE is pinned to the app version of the Alloy Helm chart in
 # gitops/monitoring/logging/alloy-release.yaml (chart 1.14.0 -> Alloy v1.21.0);

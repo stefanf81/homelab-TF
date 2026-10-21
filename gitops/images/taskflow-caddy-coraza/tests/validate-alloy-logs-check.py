@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check redaction and bounded method labels after the real Alloy -> Loki path.
+"""Check redaction, the oversize-record shrink and bounded labels after the real Alloy -> Loki path.
 
 Usage: validate-alloy-logs-check.py truth.json disposable-loki-url
 All credentials in these fixtures are synthetic; never query production secrets.
@@ -31,14 +31,15 @@ while True:
             key = record["redaction_fixture_id"]
             assert key in truth, f"unexpected/malformed fixture reached Loki: {key}"
             assert record == truth[key]["record"], f"redaction damaged evidence or missed a value: {key}"
-            assert stream["stream"].get("method") == truth[key]["method"], f"unbounded/wrong method label: {key}"
+            assert stream["stream"].get("method", "") == truth[key]["method"], f"unbounded/wrong method label: {key}"
+            assert stream["stream"].get("rule_id", "") == truth[key].get("rule_id", ""), f"wrong rule_id label: {key}"
             seen[key] = record
     if len(seen) == len(truth):
         break
     if time.monotonic() >= deadline:
         raise AssertionError(f"missing fixture records: {sorted(set(truth) - set(seen))}")
     time.sleep(1)
-print(f"  ok   {len(seen)} audit fixtures: secrets removed, valid JSON, evidence preserved, bounded methods")
+print(f"  ok   {len(seen)} audit, rule-line and access fixtures: secrets removed (also matched data, other query keys, \\u0026), duplicate URIs dropped, oversize record stored, evidence preserved, bounded methods")
 
 # Header-key spoofs: only the top-level messages array may supply a rule_id label.
 spoofs = truth_all["spoofs"]

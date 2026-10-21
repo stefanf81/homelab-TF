@@ -112,7 +112,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "Shows Caddy access logs from the `waf` container and excludes `/waf-healthz` probes. URIs and credential headers are redacted before Loki ingestion. `client_ip` is Caddy's resolved visitor address from `X-Forwarded-For`; it is parsed at query time and is not a Loki label. The Client IP filter (regex, default `.*`) is applied at query time to the request, status, method, route, outcome, recent-log, and raw-evidence panels; the Top client IPs table shows the matching IPs."
+        "content": "Shows Caddy access logs from the `waf` container and excludes `/waf-healthz` probes (matched on Caddy's own `\"uri\":\"/waf-healthz\"` field, so a request header cannot hide a client). Authorization, Proxy-Authorization, Cookie and Set-Cookie header values and query values named like token, password, secret, code, state, session or api key are redacted before Loki ingestion (Caddy for some names, Alloy for all of them); other parameters, other headers and Referer paths are stored as sent. `client_ip` is Caddy's resolved visitor address from `X-Forwarded-For` (`request.client_ip`); it is parsed at query time and is not a Loki label. The Client IP filter (regex, default `.*`) is applied at query time to the request, status, method, route, outcome, recent-log, and raw-evidence panels; the Top client IPs table shows the matching IPs."
       }
     },
     {
@@ -133,7 +133,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`$client_ip` | request_uri!=\"\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"}[$__interval])))",
+          "expr": "sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"uri\\\":\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"request.client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`$client_ip` | request_uri!=\"\" [$__interval])) or on (application) (0 * sum by (application) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"}[$__interval])))",
           "legendFormat": "{{application}}"
         }
       ],
@@ -220,7 +220,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", status=\"status\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | client_ip=~`$client_ip` | status!=\"\" [$__interval]))",
+          "expr": "sum by (status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"uri\\\":\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", status=\"status\", client_ip=\"request.client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | client_ip=~`$client_ip` | status!=\"\" [$__interval]))",
           "legendFormat": "HTTP {{status}}"
         }
       ],
@@ -316,6 +316,81 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "HTTP 204"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "HTTP 401"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "HTTP 403"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "semi-dark-red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "HTTP 404"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "HTTP 429"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
           }
         ]
       }
@@ -338,7 +413,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (request_method) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", request_method=\"request.method\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | client_ip=~`$client_ip` | request_method!=\"\" [$__interval]))",
+          "expr": "sum by (request_method) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"uri\\\":\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", request_method=\"request.method\", client_ip=\"request.client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | client_ip=~`$client_ip` | request_method!=\"\" [$__interval]))",
           "legendFormat": "{{request_method}}"
         }
       ],
@@ -381,7 +456,7 @@
       "id": 5,
       "type": "bargauge",
       "title": "Requests by route group",
-      "description": "Bounded route groups limit grouping cardinality during scans with thousands of unique paths or query strings, including downstream split queries. Other paths / scans includes routes outside the listed groups. Open recent access-log rows for exact sanitized URIs.",
+      "description": "Bounded route groups limit grouping cardinality during scans with thousands of unique paths or query strings, including downstream split queries. The /api/v1/auth/* and /api/v1/appointments/* groups include the bare collection paths without a trailing slash. Other paths / scans includes routes outside the listed groups. Open recent access-log rows for exact sanitized URIs.",
       "gridPos": {
         "x": 12,
         "y": 11,
@@ -395,7 +470,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (route) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | client_ip=~`$client_ip` | request_uri!=\"\" | label_format request_path=`{{ regexReplaceAll \"\\\\?.*$\" .request_uri \"\" }}` | label_format route=`{{ if eq .request_path \"/\" }}/{{ else if hasPrefix \"/api/v1/auth/\" .request_path }}/api/v1/auth/*{{ else if hasPrefix \"/api/v1/appointments/\" .request_path }}/api/v1/appointments/*{{ else if or (hasPrefix \"/api/\" .request_path) (eq .request_path \"/api\") }}/api/*{{ else if hasPrefix \"/assets/\" .request_path }}/assets/*{{ else if eq .request_path \"/favicon.ico\" }}/favicon.ico{{ else }}Other paths / scans{{ end }}` | drop request_uri, request_path [$__range]))",
+          "expr": "sum by (route) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"uri\\\":\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"request.client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`$client_ip` | request_uri!=\"\" | label_format request_path=`{{ regexReplaceAll \"\\\\?.*$\" .request_uri \"\" }}` | label_format route=`{{ if eq .request_path \"/\" }}/{{ else if or (eq .request_path \"/api/v1/auth\") (hasPrefix \"/api/v1/auth/\" .request_path) }}/api/v1/auth/*{{ else if or (eq .request_path \"/api/v1/appointments\") (hasPrefix \"/api/v1/appointments/\" .request_path) }}/api/v1/appointments/*{{ else if or (hasPrefix \"/api/\" .request_path) (eq .request_path \"/api\") }}/api/*{{ else if hasPrefix \"/assets/\" .request_path }}/assets/*{{ else if eq .request_path \"/favicon.ico\" }}/favicon.ico{{ else }}Other paths / scans{{ end }}` | drop request_uri, request_path [$__range]))",
           "legendFormat": "{{route}}",
           "queryType": "instant"
         }
@@ -449,7 +524,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "none",
           "decimals": 0,
           "min": 0,
           "displayName": "${__field.name}",
@@ -478,7 +553,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (application, status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", status=\"status\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | client_ip=~`$client_ip` | status!=\"\" [$__range]))",
+          "expr": "sum by (application, status) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"uri\\\":\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", status=\"status\", client_ip=\"request.client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | request_uri != \"\" | client_ip=~`$client_ip` | status!=\"\" [$__range]))",
           "queryType": "instant"
         }
       ],
@@ -524,7 +599,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "none",
           "decimals": 0,
           "noValue": "—"
         },
@@ -553,7 +628,7 @@
       "id": 7,
       "type": "table",
       "title": "Top client IPs",
-      "description": "Resolved visitor IPs from Caddy access logs. Parsed at query time to avoid a high-cardinality Loki label.",
+      "description": "Resolved visitor IPs from Caddy access logs. Parsed at query time to avoid a high-cardinality Loki label. If the table shows \"maximum number of series (20000) reached\", more than 20,000 distinct values were seen in the selected range (itself a sign of a scan); narrow the time range or use the bounded category panels.",
       "gridPos": {
         "x": 12,
         "y": 19,
@@ -567,7 +642,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip != \"\" | client_ip=~`$client_ip` [$__range])))",
+          "expr": "topk(10, sum by (client_ip) (count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"uri\\\":\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"request.client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip != \"\" | client_ip=~`$client_ip` [$__range])))",
           "queryType": "instant"
         }
       ],
@@ -611,7 +686,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "none",
           "decimals": 0,
           "noValue": "—"
         },
@@ -679,7 +754,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json status=\"status\", request_method=\"request.method\", request_uri=\"request.uri\", client_ip=\"client_ip\", duration=\"duration\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`$client_ip` | request_uri!=\"\" | line_format `{{.status}} {{.application}} | {{.request_method}} {{.request_uri}} | ip={{.client_ip}} duration={{printf \"%.1f\" (mulf .duration 1000)}}ms`",
+          "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"uri\\\":\\\"/waf-healthz\\\"\" | json status=\"status\", request_method=\"request.method\", request_uri=\"request.uri\", client_ip=\"request.client_ip\", duration=\"duration\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`$client_ip` | request_uri!=\"\" | line_format `{{.status}} {{.application}} | {{.request_method}} {{.request_uri}} | ip={{.client_ip}} duration={{printf \"%.1f\" (mulf .duration 1000)}}ms`",
           "queryType": "range",
           "maxLines": 100
         }
@@ -711,7 +786,7 @@
           "id": 10,
           "type": "logs",
           "title": "Raw access records",
-          "description": "Latest 100 non-probe access records as stored in Loki, after Caddy redaction. Application and pod filters are preserved; JSON parsing filters the records but does not rewrite their content.",
+          "description": "Latest 100 non-probe access records as stored in Loki, after Caddy and Alloy redaction. Application and pod filters are preserved; JSON parsing filters the records but does not rewrite their content.",
           "gridPos": {
             "x": 0,
             "y": 38,
@@ -725,7 +800,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`$client_ip` | request_uri!=\"\"",
+              "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\", pod=~\"$pod\"} |= \"\\\"handled request\\\"\" != \"\\\"uri\\\":\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"request.client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`$client_ip` | request_uri!=\"\"",
               "queryType": "range",
               "maxLines": 100
             }

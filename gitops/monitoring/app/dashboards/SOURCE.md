@@ -62,7 +62,7 @@ Updating a dashboard:
    `ruby gitops/images/taskflow-caddy-coraza/tests/validate-dashboards.rb gitops/monitoring/logging/dashboards/*.json gitops/monitoring/app/dashboards/*.json`
    (add `LOKI_URL=...` for LogQL parsing) or the full suite
    `gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh`
-   (requires docker, ruby, and kubectl). The suite also renders both
+   (requires docker, helm, ruby, python3 and kubectl). The suite also renders both
    Kustomizations with `kubectl kustomize` and fails if a JSON file is not
    provisioned by their `configMapGenerator`s, drifts from its rendered
    ConfigMap, lacks the `grafana_dashboard` label, or has no valid relative
