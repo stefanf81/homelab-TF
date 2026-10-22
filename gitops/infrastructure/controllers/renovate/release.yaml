@@ -52,10 +52,11 @@ spec:
         - renovate
       allowedImages:
         - renovate/renovate
+    # 14d peak 55Mi (2026-10-22).
     resources:
       requests:
         cpu: 25m
-        memory: 128Mi
+        memory: 64Mi
       limits:
         memory: 256Mi
     extraEnv:

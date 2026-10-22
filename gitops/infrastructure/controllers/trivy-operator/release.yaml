@@ -37,11 +37,12 @@ spec:
       # Built-in Trivy server (vulnerability DB cache). Mostly idle, so a small
       # request; the CPU limit stays (scanners keep their caps, unlike long-running
       # services). Chart default: 200m / 512Mi request, 1 CPU / 1Gi limit.
+      # 14d peak 91Mi (2026-10-22); the 1Gi limit stays for DB updates.
       server:
         resources:
           requests:
             cpu: 50m
-            memory: 512Mi
+            memory: 128Mi
           limits:
             cpu: "1"
             memory: 1Gi

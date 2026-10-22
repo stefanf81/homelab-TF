@@ -56,10 +56,11 @@ spec:
               name: otlp-http
           resources:
             # No CPU limit: throttling OTLP ingestion back-pressures the backend's trace
-            # exporter. Memory may burst from 128Mi up to the 256Mi RSS cap.
+            # exporter. Memory may burst from 64Mi up to the 256Mi RSS cap
+            # (14d peak 63Mi, 2026-10-22).
             requests:
               cpu: 25m
-              memory: 128Mi
+              memory: 64Mi
             limits:
               memory: 256Mi
           startupProbe:
