@@ -21,7 +21,7 @@ gitops/
 │   └── configs/
 ├── apps/                       # 3. User-facing applications (TaskFlow frontend, backend, database)
 │   ├── taskflow/
-│   └── kyverno-policies/       #   Example ClusterPolicies (Audit mode); reconciled by kyverno-policies Kustomization
+│   └── kyverno-policies/       #   CEL ValidatingPolicies (Deny, fail-open); reconciled by kyverno-policies Kustomization
 ├── monitoring/                 # 4. VictoriaMetrics, Grafana, Loki, Alloy, and dashboards
 │   ├── platform/               #   VictoriaMetrics stack, Grafana, routes, grafana secrets
 │   ├── app/                    #   App scrapes + Grafana dashboards (TaskFlow Performance, AbuseIPDB Security, Blocked Sources, cert-manager, Kyverno)
@@ -49,7 +49,7 @@ Contains the system controllers deployed primarily via **HelmReleases**.
 * **`cilium/`**: Installs Cilium with native L2 announcements (`CiliumLoadBalancerIPPool`) to manage external LoadBalancer IPs.
 * **`proxmox-csi/`**: Installs the Proxmox CSI driver to dynamically provision high-performance virtual disk storage on your Proxmox VE hypervisor for persistent volumes (PVCs).
 * **`cert-manager/`**: Handles automated provisioning of TLS certificates.
-* **`kyverno/`**: Installs the Kyverno policy engine (admission + background/cleanup/reports controllers). Validates, mutates, and generates Kubernetes resources via `ClusterPolicy` CRs. CRDs are owned by the chart (`crds.install: true`); the Flux `HelmRelease` uses `install.crds: Skip` to avoid a CRD ownership conflict. Reconciled by `infra-controllers`.
+* **`kyverno/`**: Installs the Kyverno policy engine (admission + background/cleanup/reports controllers). Validates, mutates, and generates Kubernetes resources via CEL `ValidatingPolicy` CRs (`policies.kyverno.io/v1`; `ClusterPolicy` is removed in Kyverno 1.20). CRDs are owned by the chart (`crds.install: true`); the Flux `HelmRelease` uses `install.crds: Skip` to avoid a CRD ownership conflict. Reconciled by `infra-controllers`.
 * **`policy-reporter/`**: Installs Policy Reporter + its UI subchart — a read-only web dashboard for Kyverno, Trivy, and Falco `PolicyReport` / `ClusterPolicyReport` objects. Exposed at `https://kyverno.jokelab.dev` through the Cilium Gateway (same pattern as Grafana), protected by **GitHub OAuth**. Trivy findings are surfaced via the `trivy-operator-polr-adapter` (Trivy CRDs → PolicyReports) plus the `plugin.trivy` enrichment. Has its **own** cluster Kustomization (`policy-reporter`) that `dependsOn` both `infra-controllers` and `taskflow-app` so the Gateway exists before the HTTPRoute is programmed.
 * **`falco/`**: Installs Falco runtime security as a DaemonSet with modern eBPF driver. Uses Falcosidekick to write native Kubernetes `PolicyReport` CRDs visible in the Policy Reporter UI. Exposes Prometheus metrics on port 8765 for VictoriaMetrics scraping.
 * **`trivy-operator/`**: Installs the Trivy vulnerability scanner operator. Scans container images for CVEs, runs the **config-audit** (misconfiguration), **RBAC**, **infra-assessment**, and **exposed-secret** scanners, and executes **cluster compliance** reports (NSA, CIS, PSS) on a schedule. SBOM generation is disabled in the current configuration. Results produce `VulnerabilityReport`/`ConfigAuditReport`/… CRDs consumed by the Policy Reporter (see `docs/TRIVY_SECURITY_SCANNING.md`). Has its **own** cluster Kustomization (`trivy-operator`) that `dependsOn` `infra-controllers`.
@@ -113,13 +113,13 @@ The scaffolded manifests inside this layout include critical performance and net
 
 Kyverno provides Kubernetes-native policy enforcement; Policy Reporter gives it a UI.
 
-* **Controller** — `gitops/infrastructure/controllers/kyverno/` (HelmRelease `kyverno` v3.9.1, shipping Kyverno v1.19.1, single-replica, CRDs owned by the chart). System namespaces (`kube-system`, `flux-system`, `kyverno`, `cert-manager`, `cilium`) are excluded from enforcement.
-* **Policies** — `gitops/apps/kyverno-policies/` holds `ClusterPolicy` resources in **Audit** mode (no blocking yet). Reconciled by the `kyverno-policies` Kustomization, which `dependsOn: infra-controllers` so the CRDs exist before policies apply.
+* **Controller** — `gitops/infrastructure/controllers/kyverno/` (HelmRelease `kyverno` v3.9.2, shipping Kyverno v1.19.2, single-replica, CRDs owned by the chart). System namespaces (`kube-system`, `flux-system`, `kyverno`, `cert-manager`) are excluded from enforcement.
+* **Policies** — `gitops/apps/kyverno-policies/` holds CEL `ValidatingPolicy` resources in **Deny** mode with `failurePolicy: Ignore` (`disallow-latest-tag`, `require-common-labels`). Reconciled by the `kyverno-policies` Kustomization, which `dependsOn: infra-controllers` so the CRDs exist before policies apply.
 * **Dashboard** — `gitops/infrastructure/controllers/policy-reporter/` (HelmRelease `policy-reporter` v3.11.0, `ui.enabled`, `plugin.kyverno.enabled` + `plugin.trivy.enabled`, GitHub OAuth, six Trivy `ui.sources`). Its `HTTPRoute` serves `https://kyverno.jokelab.dev` via the shared Cilium Gateway, using the `taskflow-jokelab-cert` certificate, whose `dnsNames` already include `kyverno.jokelab.dev`. Ensure the hostname has a public DNS record before certificate issuance or renewal.
 
-**Add a policy:** drop a `ClusterPolicy` YAML into `gitops/apps/kyverno-policies/` and commit — Flux applies it automatically.
+**Add a policy:** add a `ValidatingPolicy` YAML (start with `validationActions: [Audit]`) to `gitops/apps/kyverno-policies/` and its `kustomization.yaml`, check it with `kubectl apply --dry-run=server -k gitops/apps/kyverno-policies`, and commit — Flux applies it automatically.
 
-**Go to Enforce (carefully):** flip `validationFailureAction: Audit` → `Enforce` in a policy, one at a time. Kyverno's webhook then blocks non-compliant admissions (system namespaces stay excluded).
+**Go to Deny (carefully):** once its background-scan results are all `pass`, flip `validationActions: [Audit]` → `[Deny]` in one policy at a time. See `docs/KYVERNO_POLICY_ENGINE.md` §8.
 
 **Verify:**
 ```bash
@@ -127,8 +127,8 @@ flux get kustomizations | grep -E 'infra-controllers|kyverno'
 flux get hr -n kyverno
 flux get hr -n policy-reporter
 kubectl -n kyverno get pods
-kubectl get clusterpolicy
-kubectl get clusterpolicyreport -A
+kubectl get validatingpolicies
+kubectl get policyreports -A
 ```
 
 > **Security note:** the Policy Reporter UI is protected by **GitHub OAuth** (`ui.oauth`), with the OAuth app credentials in the SOPS-encrypted `policy-reporter-github-oauth` secret. If you later remove OAuth, consider `ui.basicAuth` (SOPS-encrypted secret) to avoid exposing policy reports publicly. Also, the Let's Encrypt certificate requires a DNS record for `kyverno.jokelab.dev` resolving to the Gateway IP — without it the cert stays `Pending`. If the record exists but cert-manager's self-check still times out (hairpin NAT behind a router), add a `hosts` entry in CoreDNS to resolve the domain to the Gateway's internal IP `192.168.50.201` — see `docs/KYVERNO_POLICY_ENGINE.md` §6 for the exact patch.

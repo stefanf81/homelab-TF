@@ -5,7 +5,9 @@ installed and operated in this repository via Flux CD. It is the companion refer
 the short notes in `gitops/README.md`.
 
 - **Kyverno** — Kubernetes-native policy engine (validate / mutate / generate) driven by
-  `ClusterPolicy` custom resources. Acts as a mutating + validating admission webhook.
+  CEL `ValidatingPolicy` custom resources (`policies.kyverno.io/v1`). Acts as a mutating +
+  validating admission webhook. The legacy `ClusterPolicy` type was deprecated in Kyverno 1.19
+  and is removed in 1.20; this repo migrated on 2026-10-22.
 - **Policy Reporter** — a read-only web dashboard that visualises the `ClusterPolicyReport`
   / `PolicyReport` objects produced by **Kyverno**, **Trivy** (via the
   `trivy-operator-polr-adapter`), and **Falco**. Exposed at `https://kyverno.jokelab.dev`
@@ -13,8 +15,8 @@ the short notes in `gitops/README.md`.
 
 Both are managed entirely through Git; nothing is applied imperatively.
 
-Kyverno's own controller metrics (policy results, admission requests and latency,
-rule readiness, controller health and resources) are on the Grafana dashboard
+Kyverno's own controller metrics (policy results, blocked admissions, admission
+requests and latency, controller health and resources) are on the Grafana dashboard
 **Kyverno** (`/d/kyverno`, Security folder,
 `gitops/monitoring/app/dashboards/kyverno.json`). Per-resource violations stay in
 Policy Reporter.
@@ -25,9 +27,12 @@ inside the range with `increase_pure()` and series that already existed with
 `increase()` (a plain `increase()` drops a first scrape of 10 or more, a plain
 `increase_pure()` would count a whole lifetime after a scrape gap). Admission
 results include server-side dry runs, so Flux's drift check re-counts a failing
-object on every reconcile. Both ClusterPolicies are `Audit`, which Kyverno
-evaluates after answering the webhook, so the admission-latency panels show
-webhook overhead, not rule cost. Kyverno's histograms start at a 5 ms bucket, so
+object on every reconcile. CEL policies report under
+`kyverno_validating_policy_results_total` (no rule names) and Kyverno 1.19 exports
+no info, readiness or change metric for them, so *Active policies* counts the
+policies seen by the hourly background scan. Both policies are `Deny`, which
+Kyverno evaluates synchronously, so admission latency includes rule cost.
+Kyverno's histograms start at a 5 ms bucket, so
 quantiles below 5 ms are interpolated; finer buckets need
 `metricsConfig.bucketBoundaries` in the Kyverno HelmRelease and a restart of all
 controllers at once.
@@ -42,7 +47,7 @@ gitops/
 │   ├── kyverno/                     # Kyverno controller (reconciled by infra-controllers)
 │   │   ├── namespace.yaml           # kyverno ns + PSA enforce:privileged
 │   │   ├── repository.yaml          # HelmRepository kyverno @ https://kyverno.github.io/kyverno/
-│   │   ├── release.yaml             # HelmRelease kyverno v3.9.1, single-replica, crds: Skip
+│   │   ├── release.yaml             # HelmRelease kyverno v3.9.2, single-replica, crds: Skip
 │   │   └── kustomization.yaml
 │   └── policy-reporter/             # Policy Reporter + UI (its OWN cluster Kustomization)
 │       ├── namespace.yaml                # policy-reporter ns
@@ -58,7 +63,7 @@ gitops/
 │       ├── route.yaml                    # HTTPRoute -> policy-reporter-ui-oauth2-proxy:80 on taskflow-gateway (:443)
 │       └── kustomization.yaml
 ├── apps/
-│   └── kyverno-policies/            # Example ClusterPolicies (Audit mode)
+│   └── kyverno-policies/            # CEL ValidatingPolicies (Deny, fail-open)
 │       ├── kustomization.yaml
 │       ├── require-common-labels.yaml
 │       └── disallow-latest-tag.yaml
@@ -81,14 +86,14 @@ gitops/
 ```
 GitRepository (flux-system)
   └─ infra-controllers  ──────────────►  kyverno HelmRelease  (+ Kyverno CRDs)
-        └─ kyverno-policies  ──────────►  ClusterPolicy objects (CRDs now exist)
+        └─ kyverno-policies  ──────────►  ValidatingPolicy objects (CRDs now exist)
   └─ infra-configs
   └─ taskflow-app  ───────────────────►  Cilium Gateway + cert + taskflow workloads
         └─ policy-reporter  ───────────►  Policy Reporter + UI + HTTPRoute (Gateway now exists)
 ```
 
-- `kyverno-policies` `dependsOn: infra-controllers` so the `ClusterPolicy` CRD exists before
-  policies are applied (avoids `no matches for kind "ClusterPolicy"`).
+- `kyverno-policies` `dependsOn: infra-controllers` so the `ValidatingPolicy` CRD exists before
+  policies are applied (avoids `no matches for kind "ValidatingPolicy"`).
 - `policy-reporter` `dependsOn: [infra-controllers, taskflow-app]` so Kyverno's PolicyReport
   CRDs and the Gateway both exist before the dashboard + route are reconciled.
 
@@ -110,7 +115,7 @@ Gateway exists first, so the route programs immediately and `wait` succeeds.
 
 ### Chart & version
 - Chart: `kyverno/kyverno` from `https://kyverno.github.io/kyverno/`
-- Pinned: **3.9.1** (ships Kyverno **v1.19.1**). Requires k8s ≥ ~1.25 (the
+- Pinned: **3.9.2** (ships Kyverno **v1.19.2**). Requires k8s ≥ ~1.25 (the
   provisioned cluster is configured for k3s `v1.36.4+k3s1`).
 
 ### CRD handling — important gotcha
@@ -140,37 +145,60 @@ spec:
 ```
 
 ### Namespace exclusions
-`config.resourceFiltersExcludeNamespaces` excludes the platform from all policy enforcement:
-`kube-system`, `kyverno`, `flux-system`, `cert-manager`, `cilium`. The `kyverno` namespace is
-also auto-excluded by Kyverno's own namespace selector.
+Two layers keep the platform out of policy evaluation:
+
+- **Global resource filters.** The chart's default `resourceFilters` already skip `kube-system`,
+  `kube-public`, `kube-node-lease` and `kyverno`; `config.resourceFiltersIncludeNamespaces` adds
+  `flux-system` and `cert-manager`. (Do not use `resourceFiltersExcludeNamespaces`: despite the
+  name it *removes* a namespace from the default filters.)
+- **Per policy.** Each `ValidatingPolicy` also states its scope in
+  `matchConstraints.namespaceSelector`, so the policy file alone shows where it applies.
+  Cilium runs in `kube-system`; there is no `cilium` namespace.
 
 ### Resources (minimal / single-replica, homelab)
 All four controllers run 1 replica:
 - `admissionController` — requests 256Mi / limits 512Mi
 - `backgroundController`, `cleanupController`, `reportsController` — requests 128Mi / limits 256Mi
 
-`features.autoUpdateWebhooks.enabled: true` lets Kyverno dynamically manage its webhook
-configurations per-policy (relevant when policies switch between Audit/Enforce).
+`features.autoUpdateWebhooks.enabled: true` lets Kyverno manage its webhook configurations per
+policy; each `ValidatingPolicy` gets a webhook with the policy's own `failurePolicy`.
 
 ---
 
-## 5. Policies (Audit mode)
+## 5. Policies (enforced)
 
 Policies live in `gitops/apps/kyverno-policies/`, reconciled by the `kyverno-policies`
-Kustomization. Both shipped examples are `validationFailureAction: Audit` — they **report**
-violations but never block admission. This is deliberate for a safe bootstrap:
+Kustomization. Both are CEL `ValidatingPolicy` objects with `validationActions: [Deny]`,
+`failurePolicy: Ignore` and background scanning on:
 
-- `require-common-labels` — Deployments/StatefulSets must carry
-  `app.kubernetes.io/name` + `app.kubernetes.io/part-of`.
-- `disallow-latest-tag` — flags any container using the mutable `:latest` tag.
+| Policy | Scope | Rule |
+|---|---|---|
+| `disallow-latest-tag` | Pods in every namespace except `kube-system`, `kyverno`, `flux-system`, `cert-manager`; autogen for Deployments, StatefulSets, DaemonSets, Jobs, CronJobs | Every container and init container uses an `@sha256` digest or an explicit tag other than `latest`. Untagged images are rejected; `:latest@sha256:…` is allowed because the digest is immutable; a registry port (`host:5000/app`) is not mistaken for a tag. |
+| `require-common-labels` | Deployments and StatefulSets in `taskflow` | `app.kubernetes.io/name` and `app.kubernetes.io/part-of` are set. |
 
-Because the TaskFlow images use `:latest`, `disallow-latest-tag` lights up immediately in the
-Policy Reporter dashboard — a clean end-to-end proof the pipeline works.
+Design choices:
+
+- **Fail open.** Kyverno runs one admission replica and there is no alerting, so with
+  `failurePolicy: Fail` a crash-looping Kyverno would block every new Pod in scope. These are
+  hygiene rules, not a security boundary: while Kyverno is down Pods are admitted unchecked, and
+  the hourly background scan reports anything that slipped through. Pod security belongs in Pod
+  Security Admission namespace labels, which have no webhook to fail.
+- **Autogen without ReplicaSets.** Validating the controllers makes a bad manifest fail at Flux
+  apply time instead of producing a ReplicaSet that cannot create Pods. ReplicaSets are left out
+  because the Deployment controller updates old revision-history ReplicaSets, which must not be
+  blocked.
 
 ### How to add a policy
-1. Drop a `ClusterPolicy` (or namespaced `Policy`) YAML into `gitops/apps/kyverno-policies/`.
-2. Add it to that folder's `kustomization.yaml` `resources:` list.
-3. Commit & push. Flux applies it automatically (after `infra-controllers` is healthy).
+1. Write a `ValidatingPolicy` (`policies.kyverno.io/v1`) in `gitops/apps/kyverno-policies/`,
+   starting with `validationActions: [Audit]`, and add it to that folder's `kustomization.yaml`.
+2. Check it compiles: `kubectl apply --dry-run=server -k gitops/apps/kyverno-policies`
+   (Kyverno's policy webhook rejects invalid CEL).
+3. Commit & push, wait for the first background scan (up to 1 h), then check the reports
+   (§7) before switching to `Deny` (§8).
+
+Exceptions use `policies.kyverno.io/v1` `PolicyException` objects in the `kyverno` namespace
+(`features.policyExceptions.namespace`), referencing the policy in `spec.policyRefs` and selecting
+resources with CEL `matchConditions`.
 
 ---
 
@@ -334,8 +362,8 @@ kubectl -n policy-reporter get pods    # policy-reporter, policy-reporter-ui, po
 kubectl get crds | grep kyverno
 
 # Policies + results
-kubectl get clusterpolicy              # require-common-labels, disallow-latest-tag (Ready)
-kubectl get clusterpolicyreport -A     # audit findings (may take ~1 min after install)
+kubectl get validatingpolicies         # require-common-labels, disallow-latest-tag (READY true)
+kubectl get policyreports -A -o json | jq -r '.items[].results[]? | select(.source=="KyvernoValidatingPolicy") | "\(.policy) \(.result)"' | sort | uniq -c
 
 # Route
 kubectl -n policy-reporter get httproute policy-reporter-ui
@@ -345,16 +373,23 @@ Then open `https://kyverno.jokelab.dev` (after DNS + cert are ready).
 
 ---
 
-## 8. Moving from Audit to Enforce
+## 8. Moving from Audit to Deny
 
-1. Edit a policy in `gitops/apps/kyverno-policies/`, change
-   `validationFailureAction: Audit` → `Enforce`.
-2. Commit & push. Flux reconciles; Kyverno's webhook `failurePolicy` for that rule flips to
-   `Fail` automatically (via `autoUpdateWebhooks`).
-3. New non-compliant admissions are now **blocked**. System namespaces remain excluded.
+1. Confirm the policy's background-scan results are all `pass` (§7); any `fail` is a resource
+   that would be blocked on its next create or update.
+2. Change `validationActions: [Audit]` → `[Deny]`, commit and push. Kyverno updates the policy's
+   webhook (the `failurePolicy` stays whatever the policy sets).
+3. Prove it with server-side dry runs, which persist nothing, for example:
 
-Do this **one policy at a time** and watch `kubectl get clusterpolicyreport -A` first to see
-the blast radius. Start with low-risk policies (labels) before `:latest`/security-context.
+   ```bash
+   kubectl -n taskflow run kv-test --image=busybox --dry-run=server   # denied: untagged
+   kubectl -n taskflow run kv-test --image=nginx:1.29.3 --dry-run=server   # allowed
+   ```
+
+4. Watch *Blocked admissions* on the Grafana Kyverno dashboard; Flux server-side dry runs that
+   hit a Deny policy show up there and in the failing Kustomization's status.
+
+**Back out:** set the policy back to `[Audit]` and push; nothing else needs undoing.
 
 ---
 
@@ -380,8 +415,9 @@ the blast radius. Start with low-risk policies (labels) before `:latest`/securit
 | Certificate `taskflow-jokelab-cert` stays `InProgress` after adding a new SAN | **Two common causes:** (1) DNS record for the new SAN doesn't exist yet — create it first (§6). (2) DNS exists but cert-manager self-check times out (hairpin NAT) — see next row. |
 | HTTP-01 self-check times out with `context deadline exceeded` | Hairpin NAT: the router can't forward outbound traffic back to the internal Gateway. **Fix:** add a `hosts` entry in CoreDNS to resolve the domain to the internal Gateway IP (`192.168.50.201`) — see §6 for the exact patch. Alternative: switch to DNS-01 with Cloudflare API token. |
 | cert-manager does **not** create a new CertificateRequest after a failed order | The Issuing controller sits on a retry backoff. Deleting the failed CR does **not** reset the timer. **Fix:** delete the Certificate and let Flux recreate it — `kubectl delete certificate -n taskflow taskflow-jokelab-cert && flux -n flux-system reconcile ks taskflow-app`. This resets all issuance state to zero. |
-| `kubectl get clusterpolicyreport -A` returns nothing | Reports are generated asynchronously by the reports controller after its background scan. Wait ~1–2 min; if still empty, `kubectl -n kyverno logs deploy/kyverno-reports-controller`. |
-| Policies don't seem to evaluate `taskflow` | Confirm the policy doesn't `exclude` the `taskflow` namespace, and that `validationFailureAction` is `Audit` (reports only) not erroneously scoped. |
+| No `KyvernoValidatingPolicy` results in `kubectl get policyreports -A` | Reports are generated asynchronously by the reports controller after its background scan (on policy change, then hourly). Wait ~1–2 min; if still empty, check `spec.evaluation.background.enabled` and `kubectl -n kyverno logs deploy/kyverno-reports-controller`. |
+| A policy doesn't seem to evaluate a namespace | Check its `matchConstraints.namespaceSelector` and the global resource filters (§4); `kubectl get validatingpolicy <name> -o yaml` shows `WebhookConfigured` and `RBACPermissionsGranted` in `status`. |
+| A Flux Kustomization fails with `admission webhook "vpol.validate.kyverno.svc-…" denied the request` | A manifest breaks a Deny policy; the message names the containers or labels. Fix the manifest, or add a `PolicyException` (§5) if the exception is intended. |
 
 ---
 

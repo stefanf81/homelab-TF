@@ -64,10 +64,13 @@ Already changed but uncommitted (for context, do not redo):
   `renewBefore: 720h` and `privateKey.rotationPolicy: Always`, plus the expiry alert from #1.
 
 - [ ] **8. Kyverno to CEL + enforcement.** `ClusterPolicy` is deprecated (live warning).
-  - Migrate to `policies.kyverno.io/v1 ValidatingPolicy`; flip core rules to `Deny`.
-  - Fix the untagged-image hole (`!*:latest` misses `nginx`).
-  - Add policies for runAsNonRoot/seccomp/drop-ALL, no `hostPath`/`hostNetwork`/privileged,
-    registry allow-list.
+  - ✅ Done (2026-10-22): both policies migrated to `policies.kyverno.io/v1 ValidatingPolicy`
+    and set to `Deny` (`failurePolicy: Ignore`); Grafana Kyverno dashboard moved to the
+    `kyverno_validating_policy_*` metrics. See `docs/KYVERNO_POLICY_ENGINE.md` §5 and §8.
+  - ✅ Done: untagged-image hole fixed (untagged images and init containers are now checked).
+  - Pod security (runAsNonRoot/seccomp/drop-ALL, no `hostPath`/`hostNetwork`/privileged): use the
+    PSS labels below rather than Kyverno rules, so there is no webhook to fail.
+  - Registry allow-list (`ValidatingPolicy` or `ImageValidatingPolicy`) still open.
   - Add PSS labels to every namespace (`pod-security.kubernetes.io/enforce: baseline|restricted`).
   - ✅ Done: `seccompProfile: RuntimeDefault` + `automountServiceAccountToken: false` on all taskflow workloads.
 

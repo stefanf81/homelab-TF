@@ -1,4 +1,4 @@
-# Policy Reporter + UI: web dashboard for Kyverno ClusterPolicyReports.
+# Policy Reporter + UI: web dashboard for Kyverno PolicyReports.
 # UI reachable at https://kyverno.jokelab.dev (Cilium Gateway + Let's Encrypt, same pattern as Grafana).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

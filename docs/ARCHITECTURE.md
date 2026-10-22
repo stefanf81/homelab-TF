@@ -350,7 +350,7 @@ TF/
 │       ├── monitoring.yaml          # VictoriaMetrics + Grafana (SOPS-enabled)
 │       ├── monitoring-app.yaml      # App VMServiceScrapes + Grafana dashboards (depends on monitoring)
 │       ├── monitoring-logging.yaml  # Alloy + Loki logging stack (depends on monitoring + taskflow-app)
-│       ├── kyverno-policies.yaml    # Kyverno ClusterPolicies (dependsOn infra-controllers)
+│       ├── kyverno-policies.yaml    # Kyverno ValidatingPolicies (dependsOn infra-controllers)
 │       ├── policy-reporter.yaml     # Policy Reporter + UI (dependsOn infra-controllers + taskflow-app)
 │       ├── trivy-operator.yaml      # Trivy vulnerability scanner (dependsOn infra-controllers)
 │       ├── hubble-ui.yaml           # Hubble UI oauth2-proxy (dependsOn infra-controllers + taskflow-app)
