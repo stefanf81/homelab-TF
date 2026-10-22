@@ -428,40 +428,29 @@ def targeted_checks(report, vm, loki, args, now):
         return "PASS", f"{shown} (compare with the priorities in Falco's own logs)"
     check(report, "Falco priority values (0 emergency .. 7 debug)", falco_priorities)
 
-    def kyverno_jobs():
-        rows = vm.vector("count by (job) (kyverno_policy_changes_total)")
-        jobs = {r[0].get("job") for r in rows}
-        if not rows:
-            return "SKIP", "no kyverno_policy_changes_total series"
-        if "admission-controller" not in jobs:
-            return "FAIL", f"jobs {sorted(jobs)}: the Policy changes panel filters job=\"admission-controller\""
-        return "PASS", f"jobs {sorted(jobs)}"
-    check(report, "Kyverno policy-change job label", kyverno_jobs)
-
     def kyverno_labels():
-        if not vm.vector("count(kyverno_policy_results_total)"):
-            return "SKIP", "no kyverno_policy_results_total series"
-        rows = vm.vector('count(kyverno_policy_results_total{resource_namespace!=""})')
+        if not vm.vector("count(kyverno_validating_policy_results_total)"):
+            return "SKIP", "no kyverno_validating_policy_results_total series"
+        rows = vm.vector('count(kyverno_validating_policy_results_total{resource_namespace!=""})')
         if rows:
             return "WARN", f"{rows[0][1]:g} series still carry resource_namespace: restart the four Kyverno Deployments so the metricsExposure change applies"
         return "PASS", "policy results carry no resource_namespace (metricsExposure applied)"
     check(report, "Kyverno metric label exposure", kyverno_labels)
 
-    def kyverno_rules():
-        rows = vm.vector("count(max by (policy_type, policy_name, rule_name) (kyverno_policy_rule_info_total == 1))")
+    def kyverno_policies():
+        # Kyverno 1.19 exports no info metric for CEL policies; the Active policies
+        # panel counts the ValidatingPolicies seen by the hourly background scan.
+        rows = vm.vector('count(count by (policy_name) (increase_pure(kyverno_validating_policy_results_total{execution_cause="background_scan"}[2h]) > 0))')
         shown = int(rows[0][1]) if rows else 0
         if args.no_kubectl:
-            return "PASS" if shown else "SKIP", f"dashboard counts {shown} active rules (kubectl skipped)"
-        total = 0
-        for kind in ("clusterpolicies.kyverno.io", "policies.kyverno.io"):
-            with contextlib.suppress(RuntimeError):
-                for item in kubectl_json("get", kind, "-A").get("items", []):
-                    total += len(item.get("spec", {}).get("rules") or [])
-                    total += len((item.get("status", {}).get("autogen") or {}).get("rules") or [])
-        if shown == total:
-            return "PASS", f"{shown} rules (spec + autogen) on both sides"
-        return "WARN", f"dashboard counts {shown}, policies define {total} (spec + autogen); check for duplicate exporters or not-ready rules"
-    check(report, "Kyverno active rule count vs policies", kyverno_rules)
+            return "PASS" if shown else "SKIP", f"dashboard counts {shown} active policies (kubectl skipped)"
+        with contextlib.suppress(RuntimeError):
+            names = {item["metadata"]["name"] for item in kubectl_json("get", "validatingpolicies.policies.kyverno.io").get("items", [])}
+            if shown == len(names):
+                return "PASS", f"{shown} ValidatingPolicies on both sides"
+            return "WARN", f"dashboard counts {shown}, cluster has {len(names)} ({', '.join(sorted(names))}); a policy that matches no resources is not counted"
+        return "SKIP", "could not list ValidatingPolicies"
+    check(report, "Kyverno active policies vs ValidatingPolicies", kyverno_policies)
 
     def cert_expiry():
         rows = vm.vector("certmanager_certificate_expiration_timestamp_seconds")
