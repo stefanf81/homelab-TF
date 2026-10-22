@@ -345,10 +345,18 @@ spec:
             # Replicate the sidecar's folder structure in Grafana so annotated
             # ConfigMaps are imported into folders instead of one flat list.
             foldersFromFilesStructure: true
+          # The chart sets HEALTH_PORT only on the init sidecars, so both
+          # long-running sidecars defaulted to 8080 in the shared pod network and
+          # the second one's health server failed with "Address in use". Use the
+          # chart's own per-sidecar ports (dashboards 8084, datasources 8082).
+          env:
+            HEALTH_PORT: "8084"
         datasources:
           reloadURL: "http://localhost:3000/api/admin/provisioning/datasources/reload"
           searchNamespace:
             - monitoring
+          env:
+            HEALTH_PORT: "8082"
       # Grafana is exposed via an HTTPRoute on the public Gateway
       ingress:
         enabled: false
