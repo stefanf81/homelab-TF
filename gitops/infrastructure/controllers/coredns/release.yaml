@@ -25,10 +25,15 @@ spec:
   values:
     image:
       repository: coredns/coredns
-      tag: 1.14.7
+      # renovate: datasource=docker depName=coredns/coredns
+      tag: 1.15.0
       pullPolicy: IfNotPresent
 
     replicaCount: 1
+    # Single replica: start the new pod before stopping the old one so DNS stays up.
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
     priorityClassName: system-cluster-critical
     k8sAppLabelOverride: kube-dns
 
