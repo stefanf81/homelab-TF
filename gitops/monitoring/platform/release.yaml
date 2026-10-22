@@ -318,6 +318,11 @@ spec:
           token_url: https://github.com/login/oauth/access_token
           api_url: https://api.github.com/user
       sidecar:
+        # The chart's default lagged (2.11.2) behind the Loki chart's sidecar;
+        # pin it so Renovate keeps both Grafana sidecars current.
+        image:
+          # renovate: datasource=docker depName=quay.io/kiwigrid/k8s-sidecar
+          tag: 2.14.1
         # Applies to both grafana-sc-dashboard and grafana-sc-datasources.
         # 14d peaks (2026-10-22): 96Mi / 84Mi, CPU bursts to ~40m on resync.
         resources:
