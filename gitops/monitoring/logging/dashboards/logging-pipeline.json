@@ -207,7 +207,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase_pure(loki_discarded_samples_total{reason!=\"rate_limited\"}[$__range])) or (0 * sum(loki_distributor_bytes_received_total))",
+          "expr": "sum((increase_pure(loki_discarded_samples_total{reason!=\"rate_limited\"}[$__range]) unless last_over_time(loki_discarded_samples_total{reason!=\"rate_limited\"}[1h] offset $__range)) or increase(loki_discarded_samples_total{reason!=\"rate_limited\"}[$__range])) or (0 * sum(loki_distributor_bytes_received_total))",
           "instant": true
         }
       ],

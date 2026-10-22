@@ -388,7 +388,7 @@ def targeted_checks(report, vm, loki, args, now):
             return "PASS", f"{len(req)} container(s) with a CPU request and no CPU limit"
         return fn
     check(report, "Taskflow backend CPU request (panel denominator)", requests_not_limits("taskflow", "backend"))
-    check(report, "Kyverno CPU requests (panel denominator)", requests_not_limits("kyverno", ".+"))
+    check(report, "Kyverno CPU requests (panel denominator)", requests_not_limits("kyverno", "kyverno|controller"))
 
     def http_buckets():
         if not vm.vector('count(http_server_requests_seconds_count{namespace="taskflow",service="backend"})'):

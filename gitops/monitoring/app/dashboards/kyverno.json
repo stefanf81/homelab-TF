@@ -1015,7 +1015,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"kyverno\", container!=\"\", container!~\".*init.*|kyverno-pre\", metrics_path=\"/metrics/cadvisor\"}) / sum by (pod) (kube_pod_container_resource_limits{namespace=\"kyverno\", container!=\"\", container!~\".*init.*|kyverno-pre\", resource=\"memory\"})",
+          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"kyverno\", container=~\"kyverno|controller\", metrics_path=\"/metrics/cadvisor\"}) / sum by (pod) (kube_pod_container_resource_limits{namespace=\"kyverno\", container=~\"kyverno|controller\", resource=\"memory\"})",
           "legendFormat": "{{pod}}"
         }
       ],
@@ -1081,7 +1081,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"kyverno\", container!=\"\", container!~\".*init.*|kyverno-pre\", metrics_path=\"/metrics/cadvisor\"}[$__rate_interval])) / sum by (pod) (kube_pod_container_resource_requests{namespace=\"kyverno\", container!=\"\", container!~\".*init.*|kyverno-pre\", resource=\"cpu\"})",
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"kyverno\", container=~\"kyverno|controller\", metrics_path=\"/metrics/cadvisor\"}[$__rate_interval])) / sum by (pod) (kube_pod_container_resource_requests{namespace=\"kyverno\", container=~\"kyverno|controller\", resource=\"cpu\"})",
           "legendFormat": "{{pod}}"
         }
       ],
@@ -1147,7 +1147,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (pod) (increase(max by (namespace, pod, container) (kube_pod_container_status_restarts_total{namespace=\"kyverno\"})[$__interval:30s]))",
+          "expr": "sum by (pod) (increase(max by (namespace, pod, container) (kube_pod_container_status_restarts_total{namespace=\"kyverno\", container=~\"kyverno|controller\"})[$__interval:30s]))",
           "legendFormat": "{{pod}}"
         }
       ],

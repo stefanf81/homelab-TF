@@ -982,7 +982,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "((sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` |= \"\\\"is_interrupted\\\":true\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` [$__range])))) / (sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` [$__range])) > 0)) * 100",
+              "expr": "((sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\", interrupted=\"transaction.is_interrupted\" | __error__=\"\" | client_ip=~`$client_ip` | interrupted=\"true\" [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` [$__range])))) / (sum(count_over_time({job=\"coraza-waf\", application=~\"$application\"} |= \"},\\\"messages\\\":[{\" | json client_ip=\"transaction.client_ip\" | __error__=\"\" | client_ip=~`$client_ip` [$__range])) > 0)) * 100",
               "queryType": "instant"
             }
           ],

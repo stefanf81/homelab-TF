@@ -37,6 +37,11 @@ class WafDashboardMetricsTest(unittest.TestCase):
         for name in ("taskflow-rate-limits", "taskflow-waf"):
             path = ROOT / f"gitops/monitoring/logging/dashboards/{name}.json"
             cls.dashboards[name] = {p["id"]: p for p in panels(json.loads(path.read_text())["panels"])}
+        # Other dashboards whose counter queries are checked against the same gap fixtures.
+        cls.extra = {}
+        for name in ("falco-official", "logging-pipeline"):
+            path = ROOT / f"gitops/monitoring/logging/dashboards/{name}.json"
+            cls.extra[name] = {p["id"]: p for p in panels(json.loads(path.read_text())["panels"])}
         image = os.environ.get("VM_IMAGE", "victoriametrics/victoria-metrics:v1.154.0")
         flags = ["-memory.allowedBytes=96MiB", "-storage.minFreeDiskSpaceBytes=10MB"]
         binary = os.environ.get("VM_BINARY")
@@ -174,6 +179,29 @@ class WafDashboardMetricsTest(unittest.TestCase):
                 "values": values,
                 "timestamps": [(cls.end + t) * 1000 for t in offsets],
             })
+        # Falco rule matches and Loki discards: the same missing-sample shape, plus
+        # a series born inside the window whose first burst must still count.
+        gap = list(range(-7200, -899, 30)) + list(range(-240, 1, 30))
+        gap_values = [5000 if t < -240 else (5001 if t < -120 else 5003) for t in gap]
+        born = list(range(-240, 1, 30))
+        steady = list(range(-7200, 1, 30))
+        for name, labels, offsets, values in [
+            ("falcosecurity_falco_rules_matches_total",
+             {"namespace": "falco", "pod": "falco-a", "rule_name": "gap", "source": "syscall", "priority": "5"},
+             gap, gap_values),
+            ("falcosecurity_falco_rules_matches_total",
+             {"namespace": "falco", "pod": "falco-a", "rule_name": "born", "source": "syscall", "priority": "4"},
+             born, [7] * len(born)),
+            ("loki_discarded_samples_total", {"reason": "line_too_long", "tenant": "gap"}, gap, gap_values),
+            ("loki_discarded_samples_total", {"reason": "too_far_behind", "tenant": "born"}, born, [7] * len(born)),
+            ("loki_distributor_bytes_received_total", {"tenant": "fake"}, steady,
+             [1000 * i for i in range(len(steady))]),
+        ]:
+            rows.append({
+                "metric": {"__name__": name, **labels},
+                "values": values,
+                "timestamps": [(cls.end + t) * 1000 for t in offsets],
+            })
         offsets = list(range(-3600, 1, 30))
         rows.append({
             "metric": {"__name__": "up", "job": "alloy"},
@@ -184,11 +212,13 @@ class WafDashboardMetricsTest(unittest.TestCase):
         cls.request("/internal/force_flush")
 
     def query(self, dashboard, panel, application, ref="A", window="1h", when=None, interval="15m", range_step=None):
-        target = next(t for t in self.dashboards[dashboard][panel]["targets"] if t["refId"] == ref)
+        items = self.dashboards.get(dashboard) or self.extra[dashboard]
+        target = next(t for t in items[panel]["targets"] if t["refId"] == ref)
         expr = target["expr"]
         substitutions = {
             "$__rate_interval_ms": "300000", "$__rate_interval": "5m",
             "$__range": window, "$__interval": interval, "$application": application,
+            "$namespace": ".*", "$source": ".*", "$priority": ".*", "$pod": ".*",
         }
         for variable, value in substitutions.items():
             expr = expr.replace(variable, value)
@@ -271,6 +301,28 @@ class WafDashboardMetricsTest(unittest.TestCase):
             (("pod", "taskflow-backend-waf-new"),): 1,
             (("pod", "taskflow-frontend-waf-old"),): 0,
         }, self.waf(12, ".*", interval="5m", range_step=30))
+
+    def test_falco_and_loki_range_counters_survive_gaps_and_keep_first_bursts(self):
+        # Instant queries over the selected range: a gap at the window start must
+        # not replay the 5000 lifetime total; a series born inside keeps its 7.
+        expected = {
+            1: {(("rule_name", "gap"),): 2, (("rule_name", "born"),): 7},
+            2: {(("source", "syscall"),): 9},
+            3: {(("priority", "5"),): 2, (("priority", "4"),): 7},
+        }
+        for panel, values in expected.items():
+            with self.subTest(dashboard="falco-official", panel=panel):
+                self.assertEqual(values, self.query("falco-official", panel, ".*", window="5m"))
+        with self.subTest(dashboard="logging-pipeline", panel=3):
+            self.assertEqual({(): 9}, self.query("logging-pipeline", 3, ".*", window="5m"))
+        # Charts are range queries: the engine loads the pre-gap baseline, so the
+        # plain increase_pure() bars count 3, not the lifetime total.
+        with self.subTest(dashboard="falco-official", panel=19):
+            self.assertEqual({(("rule_name", "gap"),): 3, (("rule_name", "born"),): 7},
+                             self.query("falco-official", 19, ".*", interval="5m", range_step=30))
+        with self.subTest(dashboard="logging-pipeline", panel=7):
+            self.assertEqual({(("reason", "line_too_long"),): 3, (("reason", "too_far_behind"),): 7},
+                             self.query("logging-pipeline", 7, ".*", interval="5m", range_step=30))
 
     def test_mixed_429s_and_nonempty_zones(self):
         self.assertEqual({(): 7}, self.rate(102, "mixed"))
