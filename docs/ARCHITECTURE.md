@@ -149,7 +149,7 @@ Gateway `taskflow-gateway` (Cilium, :80/:443)
   ├── `/` ────────────────────────────────▶ frontend WAF ─▶ frontend:8080
   └── `grafana.jokelab.dev` ──────────────▶ Grafana (monitoring)
 
-Backend ──▶ Redis (384MB LRU)
+Backend ──▶ Redis (64MB LRU)
 Backend ──▶ Jaeger (OTLP; UI is internal and port-forward-only)
 Backend ──▶ PostgreSQL (10Gi Proxmox CSI)
 
@@ -189,18 +189,18 @@ VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 | Replicas | 1 |
 | Storage | 10 GiB PVC, storageClass: proxmox-csi (ReadWriteOnce) |
 | SecurityContext | runAsNonRoot UID/GID 70 (postgres), drop ALL capabilities, fsGroup 70 with OnRootMismatch policy |
-| Tuning | `shared_buffers=384MB`, `effective_cache_size=700MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `max_connections=50`, `max_parallel_maintenance_workers=2` (PG18 compact-radix-tree VACUUM: up to ~20x less index memory, parallel maintenance) |
+| Tuning | `shared_buffers=128MB`, `effective_cache_size=256MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `max_connections=50`, `max_parallel_maintenance_workers=2` (PG18 compact-radix-tree VACUUM: up to ~20x less index memory, parallel maintenance) |
 | SSD tuning | `random_page_cost=1.1`, `effective_io_concurrency=200`, `checkpoint_timeout=300s`, `wal_buffers=16MB`, `max_wal_size=2GB` |
-| Resources | CPU: 500m–2 cores, Memory: 768–1024 MiB |
+| Resources | CPU: 250m request, no limit; Memory: 512 MiB (request = limit) |
 
 ### 5.5 Redis Deployment (`gitops/apps/taskflow/redis.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `redis:8.10.1-alpine` |
+| Image | `redis:8.10.2-alpine` |
 | Replicas | 1 |
 | Storage | emptyDir (ephemeral, no persistence) |
-| Memory Guard | `--maxmemory 384mb`, `allkeys-lru`, lazyfree eviction, 10 samples |
-| Resources | CPU: 250m–1 core, Memory: 256–512 MiB |
+| Memory Guard | `--maxmemory 64mb`, `allkeys-lru`, lazyfree eviction, 10 samples |
+| Resources | CPU: 50m request, no limit; Memory: 128 MiB (request = limit) |
 
 ### 5.6 Jaeger Deployment (`gitops/apps/taskflow/jaeger.yaml`)
 | Property | Value |

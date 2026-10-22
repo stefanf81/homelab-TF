@@ -33,15 +33,16 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             # Cap memory to leave headroom for Redis overhead; evict LRU keys on pressure.
+            # used_memory peaked at 1.9 MB (2026-10-22), so 64mb is ~30x the working set.
             - "--maxmemory"
-            - "384mb"
+            - "64mb"
             - "--maxmemory-policy"
             - "allkeys-lru"
             # Explicitly disable RDB snapshots AND AOF: /data is an emptyDir, so
             # persistence would not survive a Pod replacement. Redis's compiled
             # defaults otherwise enable RDB (save 3600 1 / 300 100 / 60 10000) and
             # stop-writes-on-bgsave-error, causing pointless fork/COW memory spikes
-            # in this 512Mi container and turning transient bgsave failures into
+            # in this small container and turning transient bgsave failures into
             # write errors (MISCONF). Re-add only together with a real PVC.
             - "--save"
             - ""
@@ -56,7 +57,7 @@ spec:
             # on small CPU budgets with one shared Lettuce connection (BENCHMARKS.md §59).
             # Guard against client-connection memory blowup. Caps the combined output
             # buffers of all connected clients (Lettuce + redis_exporter) at 5% of
-            # maxmemory (~19 MB here). Exceeding the cap drops the greediest connection
+            # maxmemory (~3 MB here). Exceeding the cap drops the greediest connection
             # rather than OOM-killing the pod.
             - "--maxmemory-clients"
             - "5%"
@@ -91,13 +92,13 @@ spec:
               name: redis
           resources:
             # No CPU limit (a throttled L2 cache stalls the backend's hot path); the small
-            # request reflects real use. Memory request == limit: maxmemory 384mb plus
+            # request reflects real use. Memory request == limit: maxmemory 64mb plus
             # overhead stays reserved and the pod is not an eviction candidate.
             requests:
               cpu: 50m
-              memory: 512Mi
+              memory: 128Mi
             limits:
-              memory: 512Mi
+              memory: 128Mi
           volumeMounts:
             - name: redis-storage
               mountPath: /data

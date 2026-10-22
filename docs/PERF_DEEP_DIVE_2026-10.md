@@ -713,19 +713,24 @@ existing values:
 
 ## 5. PERF-04 — PostgreSQL tuning
 
-### 5.1 Memory budget of the 1 GiB container
+### 5.1 Memory budget of the 512 MiB container
+
+> **Updated 2026-10-22:** all databases total ~17 MB and the container peaked at
+> 102 MiB over 14 days, so `shared_buffers` went from 384 MB to 128 MB and the
+> container from 1 GiB to 512 MiB (request == limit). The worst-case rows below
+> are theoretical; raise both values together if the data approaches ~100 MB.
 
 | Consumer | Typical | Worst case | Notes |
 |---|---|---|---|
-| `shared_buffers` | 384 MB | 384 MB | Counted once (shared memory), once touched |
+| `shared_buffers` | 128 MB | 128 MB | Counted once (shared memory), once touched; was 384 MB |
 | Backends (Hikari pool + exporter + psql) | 15 × ~6 MB ≈ 90 MB | 50 × ~10 MB ≈ 500 MB | `max_connections=50` |
 | `work_mem` sorts/hashes | ~0 | 25 × 2 × 8 MB = 400 MB | Per sort/hash node per backend |
 | Autovacuum | small | 3 × `autovacuum_work_mem` | Defaults to `maintenance_work_mem` (64 MB) → 192 MB |
 | `/dev/shm` (parallel query) | ~0 | few MB | Counts against the limit when used |
 | Page cache for data files | reclaimable | — | Charged to the cgroup, reclaimed under pressure |
 
-Typical total ≈ 500–600 MB; the theoretical worst case exceeds 1 GiB only with
-dozens of concurrent large sorts. Capping autovacuum at 32 MB per worker
+Typical total ≈ 250 MB (measured peak 102 MiB); the theoretical worst case
+exceeds 512 MiB only with many concurrent large sorts across most connections. Capping autovacuum at 32 MB per worker
 (`autovacuum_work_mem=32MB`; PostgreSQL 17+'s radix-tree TID store makes this
 go much further than it used to) removes 96 MB from the worst case without
 affecting index builds, which keep `maintenance_work_mem=64MB`.
@@ -753,7 +758,7 @@ affecting index builds, which keep `maintenance_work_mem=64MB`.
 | `huge_pages` | try | try | keep | Would need node hugepages + a `hugepages-2Mi` resource on the pod; gain for 384 MB of buffers is small |
 | `max_parallel_workers_per_gather` | 2 | 2 | keep | Useful once the CPU limit is gone (PERF-02); OLTP queries rarely qualify |
 | `idle_in_transaction_session_timeout` | 0 | — | only after checking `pg_stat_activity` | Could kill a legitimate long transaction (check the SSE endpoint's behaviour first) |
-| `shared_buffers` | 128MB | 384MB | keep unless DB ≪ 384 MB and memory is needed elsewhere | Check DB size and hit ratio (§2.5) |
+| `shared_buffers` | 128MB | 128MB | **lowered from 384MB (2026-10-22)**: DB ≈ 17 MB ≪ 384 MB | Re-check DB size and hit ratio (§2.5) as data grows |
 
 ### 5.3 The storage layer
 

@@ -80,8 +80,12 @@ effective_cache_size=1152MB   # but container memory limit is only 1024Mi
 
 **Current config** (`postgres-db.yaml`):
 ```yaml
-effective_cache_size=700MB    # matches realistic OS page cache
+effective_cache_size=256MB    # matches realistic cache inside the 512Mi cap
 ```
+
+> **2026-10-22:** container cut to 512 MiB and `shared_buffers` to 128 MB (database
+> is ~17 MB), so the hint dropped from 700 MB to 256 MB. The history below explains
+> the earlier 1152 MB → 700 MB correction.
 
 The value was corrected because the container is capped at 1024 MiB; Postgres RSS is ~384 (shared_buffers) + ~300 (30 backends × ~10 MiB) ≈ 800–900 MiB, leaving only ~300 MiB of real OS page cache. The original 1152 MiB hint (~2×+ reality) made index scans look artificially cheap and could cause suboptimal plans under load.
 

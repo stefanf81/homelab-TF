@@ -34,17 +34,18 @@ spec:
           image: postgres:18.6-alpine
           imagePullPolicy: IfNotPresent
           args:
-            # Memory — trimmed limit to 1024Mi (from 1536Mi) for the memory-constrained
-            # node; shared_buffers + concurrent work_mem still fit for a low-traffic homelab.
+            # Memory — sized to the data, not a guess: all databases total ~17 MB and the
+            # container peaked at 102Mi over 14 days (2026-10-22), so 128MB of shared_buffers
+            # still holds the whole dataset several times over. Raise shared_buffers and the
+            # 512Mi limit together if the data approaches ~100 MB.
             # Budget: docs/PERF_DEEP_DIVE_2026-10.md §5.1.
             - "-c"
-            - "shared_buffers=384MB"
+            - "shared_buffers=128MB"
             - "-c"
-            # effective_cache_size is a PLANNER HINT for how much data is cached. The container is
-            # capped at 1024Mi; Postgres RSS (~384 shared + ~300 for 30 backends) leaves only ~300Mi
-            # of real OS page cache, so 1152MB was overstated and could steer the planner to
-            # suboptimal plans. Set to ~700MB to match reality (see docs/PERFORMANCE.md #2.1).
-            - "effective_cache_size=700MB"
+            # effective_cache_size is a PLANNER HINT for how much data is cached (shared_buffers
+            # plus OS page cache). Inside the 512Mi cap that is ~128 shared + ~130 page cache, so
+            # ~256MB matches reality (see docs/PERFORMANCE.md #2.1).
+            - "effective_cache_size=256MB"
             - "-c"
             - "work_mem=8MB"
             - "-c"
@@ -138,13 +139,13 @@ spec:
             # No CPU limit: checkpoints, autovacuum and parallel query burst and a CFS
             # quota throttles them even on an idle node; the request guarantees the share
             # under contention. Memory request == limit (last eviction candidate). The
-            # 1024Mi budget fits 384 shared_buffers + work_mem + connections + page cache
-            # (docs/PERF_DEEP_DIVE_2026-10.md §5.1).
+            # 512Mi budget fits 128 shared_buffers + ~25 pooled connections + work_mem +
+            # page cache, ~5x the 14-day peak of 102Mi (docs/PERF_DEEP_DIVE_2026-10.md §5.1).
             requests:
               cpu: 250m
-              memory: 1024Mi
+              memory: 512Mi
             limits:
-              memory: 1024Mi
+              memory: 512Mi
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql
