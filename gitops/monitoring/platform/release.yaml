@@ -288,6 +288,14 @@ spec:
         analytics:
           # No update/version-check egress needed in a single-node homelab.
           check_for_updates: false
+        plugins:
+          # Grafana 13 preinstalls 18 plugins and runs every backend datasource as
+          # its own process (~21-27Mi RSS each) inside this container's memory
+          # limit. Only prometheus, loki and victoriametrics-metrics-datasource are
+          # provisioned, so the rest are disabled; disable_plugins also stops them
+          # from being preinstalled. The Logs/Metrics Drilldown apps stay: they are
+          # frontend-only and work with the provisioned datasources.
+          disable_plugins: "influxdb,mssql,mysql,grafana-postgresql-datasource,elasticsearch,opentsdb,stackdriver,zipkin,tempo,jaeger,grafana-pyroscope-datasource,grafana-pyroscope-app,grafana-exploretraces-app,grafana-advisor-app"
         auth:
           disable_login_form: true
         "auth.github":
@@ -351,3 +359,8 @@ spec:
           memory: 256Mi
         limits:
           memory: 1Gi
+      # The chart sets GOMEMLIMIT for the grafana-server process only, but the
+      # backend plugin processes share the container limit. 0.8 (819MiB) keeps
+      # ~200Mi for the remaining plugins instead of the default 0.9 (921MiB).
+      goMemLimit:
+        factor: 0.8
