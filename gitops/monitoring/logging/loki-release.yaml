@@ -111,6 +111,30 @@ spec:
       affinity: ~
       service:
         type: ClusterIP
+      # Without requests the gateway pod was BestEffort (first eviction
+      # candidate). 14d peaks (2026-10-22): nginx 16Mi, exporter 14Mi, ~1m CPU.
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          memory: 64Mi
+      metrics:
+        resources:
+          requests:
+            cpu: 5m
+            memory: 16Mi
+          limits:
+            memory: 64Mi
+
+    # loki-sc-rules sidecar. 14d peak 97Mi, CPU bursts to ~32m on resync.
+    sidecar:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
 
     # The chart enables large Memcached caches by default. They are unnecessary
     # for one local Loki replica and exceed the available node memory.

@@ -310,6 +310,14 @@ spec:
           token_url: https://github.com/login/oauth/access_token
           api_url: https://api.github.com/user
       sidecar:
+        # Applies to both grafana-sc-dashboard and grafana-sc-datasources.
+        # 14d peaks (2026-10-22): 96Mi / 84Mi, CPU bursts to ~40m on resync.
+        resources:
+          requests:
+            cpu: 10m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
         dashboards:
           reloadURL: "http://localhost:3000/api/admin/provisioning/dashboards/reload"
           # Grafana runs in `monitoring`; limit ConfigMap discovery to this
