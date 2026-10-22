@@ -1,32 +1,33 @@
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   name: require-common-labels
   annotations:
     policies.kyverno.io/title: Require Common Labels
     policies.kyverno.io/category: Best Practices
     policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Deployment, StatefulSet
     policies.kyverno.io/description: >-
-      Requires TaskFlow Deployments and StatefulSets to carry the
-      app.kubernetes.io/name and app.kubernetes.io/part-of labels. Audit-only:
-      reports violations, does not block admission.
+      TaskFlow Deployments and StatefulSets must carry the
+      app.kubernetes.io/name and app.kubernetes.io/part-of labels.
 spec:
-  validationFailureAction: Audit
-  background: true
-  rules:
-    - name: require-app-labels
-      match:
-        any:
-          - resources:
-              kinds:
-                - Deployment
-                - StatefulSet
-              namespaces:
-                - taskflow
-      validate:
-        message: "Deployments/StatefulSets must have app.kubernetes.io/name and app.kubernetes.io/part-of labels."
-        pattern:
-          metadata:
-            labels:
-              app.kubernetes.io/name: "?*"
-              app.kubernetes.io/part-of: "?*"
+  validationActions: [Audit]
+  # Fail open; see disallow-latest-tag.yaml.
+  failurePolicy: Ignore
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: taskflow
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets]
+  validations:
+    - expression: >-
+        ['app.kubernetes.io/name', 'app.kubernetes.io/part-of'].all(l,
+          object.metadata.?labels[?l].orValue('') != '')
+      message: Deployments/StatefulSets must set app.kubernetes.io/name and app.kubernetes.io/part-of.

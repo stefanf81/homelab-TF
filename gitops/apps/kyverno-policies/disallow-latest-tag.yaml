@@ -1,36 +1,59 @@
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   name: disallow-latest-tag
   annotations:
     policies.kyverno.io/title: Disallow Latest Tag
     policies.kyverno.io/category: Best Practices
     policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
     policies.kyverno.io/description: >-
-      Flags running Pods that use the mutable :latest tag. Audit-only: reports
-      violations, does not block admission.
+      Every container and init container must reference an image by an
+      @sha256 digest or by an explicit tag other than `latest`. Untagged
+      images (which default to latest) are rejected; digest-pinned images,
+      including `:latest@sha256:...`, are allowed because the digest is
+      immutable.
 spec:
-  validationFailureAction: Audit
-  background: true
-  rules:
-    - name: require-image-tag-not-latest
-      match:
-        any:
-          - resources:
-              kinds:
-                - Pod
-      exclude:
-        any:
-          - resources:
-              namespaces:
-                - kube-system
-                - kyverno
-                - flux-system
-                - cert-manager
-                - cilium
-      validate:
-        message: "Using the :latest tag is discouraged; pin a specific version."
-        pattern:
-          spec:
-            containers:
-              - image: "!*:latest"
+  validationActions: [Audit]
+  # Fail open: Kyverno runs a single admission replica and these are hygiene
+  # rules, not a security boundary. While Kyverno is down, Pods are admitted
+  # unchecked and the background scan reports anything that slipped through.
+  failurePolicy: Ignore
+  evaluation:
+    background:
+      enabled: true
+  # Validate pod templates on the controllers too, so a bad manifest fails at
+  # Flux apply time. ReplicaSets are left out on purpose: the Deployment
+  # controller updates old revision-history ReplicaSets, which must not be
+  # blocked.
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, kyverno, flux-system, cert-manager]
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  variables:
+    - name: containers
+      expression: object.spec.containers + object.spec.?initContainers.orValue([])
+    # The tag is read from the last path segment so a registry port
+    # (registry:5000/app) is not mistaken for a tag.
+    - name: unpinned
+      expression: >-
+        variables.containers.filter(c,
+          !c.image.contains('@sha256:') &&
+          (!c.image.substring(c.image.lastIndexOf('/') + 1).contains(':') ||
+           c.image.endsWith(':latest'))
+        ).map(c, c.name)
+  validations:
+    - expression: size(variables.unpinned) == 0
+      messageExpression: >-
+        'Containers ' + variables.unpinned.join(', ') +
+        ' must use an explicit, non-latest tag or an @sha256 digest.'
