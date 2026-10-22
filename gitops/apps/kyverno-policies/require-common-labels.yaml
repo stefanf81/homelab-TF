@@ -11,7 +11,7 @@ metadata:
       TaskFlow Deployments and StatefulSets must carry the
       app.kubernetes.io/name and app.kubernetes.io/part-of labels.
 spec:
-  validationActions: [Audit]
+  validationActions: [Deny]
   # Fail open; see disallow-latest-tag.yaml.
   failurePolicy: Ignore
   evaluation:

@@ -14,7 +14,7 @@ metadata:
       including `:latest@sha256:...`, are allowed because the digest is
       immutable.
 spec:
-  validationActions: [Audit]
+  validationActions: [Deny]
   # Fail open: Kyverno runs a single admission replica and these are hygiene
   # rules, not a security boundary. While Kyverno is down, Pods are admitted
   # unchecked and the background scan reports anything that slipped through.
