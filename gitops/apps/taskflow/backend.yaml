@@ -39,9 +39,9 @@ spec:
       initContainers:
         # NOTE: intentionally uses the mutable alpine:3.24.2 tag (not a Flux digest pin)
         # because this is a transient init container, not a served image. Pin to a digest
-        # if you want fully hermetic boots: image: alpine:3.24.2@sha256:<digest>
+        # if you want fully hermetic boots: image: alpine:3.24.3@sha256:<digest>
         - name: wait-for-db
-          image: alpine:3.24.2
+          image: alpine:3.24.3
           securityContext:
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
