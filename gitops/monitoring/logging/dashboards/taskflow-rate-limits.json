@@ -116,7 +116,7 @@
       "id": 201,
       "type": "stat",
       "title": "Total requests",
-      "description": "Caddy requests handled in the selected range, health probes excluded. From Alloy metrics, so it covers all clients and honors only the Application filter. The Client IP filtered count is in the collapsed row \"Totals filtered by client IP\".",
+      "description": "Caddy requests handled in the selected range, health probes excluded. From Alloy metrics, so it covers all clients and honors only the Application filter. The Client IP filtered count is in the collapsed row \"Totals filtered by client IP\". Counts use a one-hour pre-window history guard to avoid replaying old totals after scrape gaps. Missing events cannot be reconstructed exactly; a gap beyond that guard can still count an old cumulative value as a first burst. Use Loki for investigation after outages.",
       "gridPos": {
         "x": 0,
         "y": 1,
@@ -130,7 +130,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range]))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum((increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range]) unless last_over_time(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[1h] offset $__range)) or increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range]))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -185,7 +185,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum((increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[$__range]) unless last_over_time(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[1h] offset $__range)) or increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -248,7 +248,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum((increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__range]) unless last_over_time(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[1h] offset $__range)) or increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -311,7 +311,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(100 * (sum(increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) / (sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])) > 0)) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(100 * (sum((increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__range]) unless last_over_time(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[1h] offset $__range)) or increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) / (sum((increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range]) unless last_over_time(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[1h] offset $__range)) or increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])) > 0)) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -378,7 +378,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[5m])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[5m])))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum((increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[5m]) unless last_over_time(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[1h] offset 5m)) or increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[5m])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[5m])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -441,7 +441,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[1h])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[1h])))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum((increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[1h]) unless last_over_time(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[1h] offset 1h)) or increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[1h])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[1h])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -504,7 +504,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[24h])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[24h])))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum((increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[24h]) unless last_over_time(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[1h] offset 24h)) or increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[24h])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[24h])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -676,17 +676,17 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_audit_records_total{application=~\"$application\",interrupted=\"true\"}[$__interval])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum((increase_pure(loki_process_custom_taskflow_waf_audit_records_total{application=~\"$application\",interrupted=\"true\"}[$__interval]) unless last_over_time(loki_process_custom_taskflow_waf_audit_records_total{application=~\"$application\",interrupted=\"true\"}[1h] offset $__interval)) or increase(loki_process_custom_taskflow_waf_audit_records_total{application=~\"$application\",interrupted=\"true\"}[$__interval])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "legendFormat": "Coraza block"
         },
         {
           "refId": "B",
-          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum((increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval]) unless last_over_time(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[1h] offset $__interval)) or increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "legendFormat": "Caddy rate limit"
         },
         {
           "refId": "C",
-          "expr": "(clamp_min((sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[$__interval])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) - (sum(increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))), 0)) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(clamp_min((sum((increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[$__interval]) unless last_over_time(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[1h] offset $__interval)) or increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\",status=\"429\"}[$__interval])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) - (sum((increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval]) unless last_over_time(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[1h] offset $__interval)) or increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))), 0)) and on() (min(up{job=\"alloy\"}) == 1)",
           "legendFormat": "Other 429 (upstream/app)"
         }
       ],
@@ -871,7 +871,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum by (application) (increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval])) or on (application) (0 * sum by (application) (increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum by (application) ((increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval]) unless last_over_time(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[1h] offset $__interval)) or increase(loki_process_custom_taskflow_waf_rate_limited_total{application=~\"$application\",zone=~\".+\"}[$__interval])) or on (application) (0 * sum by (application) (increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "legendFormat": "{{application}}"
         }
       ],
@@ -958,7 +958,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum by (application) (increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__rate_interval])) / ($__rate_interval_ms / 1000)) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum by (application) ((increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__rate_interval]) unless last_over_time(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[1h] offset $__rate_interval)) or increase(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__rate_interval])) / ($__rate_interval_ms / 1000)) and on() (min(up{job=\"alloy\"}) == 1)",
           "legendFormat": "{{application}}"
         }
       ],
@@ -1846,7 +1846,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{zone=~\".+\"}[5m])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total[5m])))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum((increase_pure(loki_process_custom_taskflow_waf_rate_limited_total{zone=~\".+\"}[5m]) unless last_over_time(loki_process_custom_taskflow_waf_rate_limited_total{zone=~\".+\"}[1h] offset 5m)) or increase(loki_process_custom_taskflow_waf_rate_limited_total{zone=~\".+\"}[5m])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total[5m])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],

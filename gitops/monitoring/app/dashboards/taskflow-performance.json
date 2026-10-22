@@ -305,7 +305,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "s"
+                "value": "percentunit"
               }
             ]
           },

@@ -116,7 +116,7 @@
       "id": 201,
       "type": "stat",
       "title": "Detection-bearing audit records",
-      "description": "Coraza audit records containing rule matches in the selected range, from Alloy metrics. From Alloy metrics, so it covers all clients and honors only the Application filter. RelevantOnly auditing records only relevant transactions; normal traffic produces no audit records.",
+      "description": "Coraza audit records containing rule matches in the selected range, from Alloy metrics (all clients, Application filter only). RelevantOnly auditing records only relevant transactions; normal traffic produces no audit records. Counts use a one-hour pre-window history guard to avoid replaying old totals after scrape gaps. Missing events cannot be reconstructed exactly; a gap beyond that guard can still count an old cumulative value as a first burst. Use Loki for investigation after outages.",
       "gridPos": {
         "x": 0,
         "y": 1,
@@ -130,7 +130,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum((increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__range]) unless last_over_time(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[1h] offset $__range)) or increase(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -193,7 +193,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"true\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum((increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"true\"}[$__range]) unless last_over_time(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"true\"}[1h] offset $__range)) or increase(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"true\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -256,7 +256,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"false\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum((increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"false\"}[$__range]) unless last_over_time(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"false\"}[1h] offset $__range)) or increase(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"false\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -319,7 +319,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(100 * (sum(increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"true\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) / (sum(increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__range])) > 0)) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(100 * (sum((increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"true\"}[$__range]) unless last_over_time(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"true\"}[1h] offset $__range)) or increase(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\",interrupted=\"true\"}[$__range])) or (0 * sum(increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__range])))) / (sum((increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__range]) unless last_over_time(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[1h] offset $__range)) or increase(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__range])) > 0)) and on() (min(up{job=\"alloy\"}) == 1)",
           "instant": true
         }
       ],
@@ -367,12 +367,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum by (application) (increase_pure(loki_process_custom_taskflow_waf_audit_records_total{application=~\"$application\"}[$__interval])) or on (application) (0 * sum by (application) (increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum by (application) ((increase_pure(loki_process_custom_taskflow_waf_audit_records_total{application=~\"$application\"}[$__interval]) unless last_over_time(loki_process_custom_taskflow_waf_audit_records_total{application=~\"$application\"}[1h] offset $__interval)) or increase(loki_process_custom_taskflow_waf_audit_records_total{application=~\"$application\"}[$__interval])) or on (application) (0 * sum by (application) (increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "legendFormat": "{{application}} (all audit records)"
         },
         {
           "refId": "B",
-          "expr": "(sum by (application) (increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__interval])) or on (application) (0 * sum by (application) (increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
+          "expr": "(sum by (application) ((increase_pure(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__interval]) unless last_over_time(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[1h] offset $__interval)) or increase(loki_process_custom_taskflow_waf_detection_records_total{application=~\"$application\"}[$__interval])) or on (application) (0 * sum by (application) (increase_pure(loki_process_custom_taskflow_waf_requests_total{application=~\"$application\"}[$__interval])))) and on() (min(up{job=\"alloy\"}) == 1)",
           "legendFormat": "{{application}} (rule detections)"
         }
       ],
@@ -1896,7 +1896,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "sum by (pod) (max by (pod, container) (kube_pod_container_status_restarts_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\"}) - max by (pod, container) (kube_pod_container_status_restarts_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\"} offset $__interval))",
+              "expr": "sum by (pod) (increase(max by (namespace, pod, container) (kube_pod_container_status_restarts_total{namespace=\"taskflow\", pod=~\"taskflow-(frontend|backend)-waf-.*\"})[$__interval:30s]))",
               "legendFormat": "{{pod}}"
             }
           ],
@@ -1921,7 +1921,7 @@
             },
             "overrides": []
           },
-          "description": "Container restarts per displayed interval (minimum 5 minutes) for the frontend and backend WAF pods, as the difference of the restart counter across the interval (a kube-state-metrics pod replacement does not count as a restart). Service-level metric: not affected by the Client IP filter.",
+          "description": "Container restarts per displayed interval (minimum 5 minutes) for the frontend and backend WAF pods. Counter increases include observed restarts during a new pod's first interval; series are merged across kube-state-metrics instances before calculating increases, so replacing the exporter does not replay old restarts. Service-level metric: not affected by the Client IP filter.",
           "interval": "5m",
           "maxDataPoints": 300,
           "options": {
@@ -1990,7 +1990,7 @@
         {
           "id": 14,
           "type": "stat",
-          "title": "Alloy dropped bytes/s",
+          "title": "Alloy dropped bytes/s (last 5m)",
           "gridPos": {
             "x": 18,
             "y": 51,
