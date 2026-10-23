@@ -126,9 +126,11 @@ spec:
                   key: REDIS_PASSWORD
             # JVM sizing is owned by the DEPLOYMENT (this JAVA_TOOL_OPTIONS), not the
             # image CMD. The image deliberately carries only environment-invariant flags
-            # (AOT, CDS archive, ExitOnOOM) — setting sizing flags in the CMD would
-            # silently win over this env (JVM "last-wins" precedence for non-sticky
-            # flags) and recreate the precedence bug where this block was a no-op.
+            # (the Java 25 AOT cache via -XX:AOTCache, ExitOnOOM) — setting sizing flags
+            # in the CMD would silently win over this env (JVM "last-wins" precedence for
+            # non-sticky flags) and recreate the precedence bug where this block was a no-op.
+            # Never add -Xshare:* here: the JVM refuses to start when it is combined with
+            # the image's -XX:AOTCache, regardless of argument order.
             #
             # Heap: -XX:MaxRAMPercentage=50.0 sizes the heap to 50% of the 2Gi cgroup
             # limit = 1 GiB, leaving ~1 GiB for off-heap (metaspace + Netty/Lettuce
