@@ -219,7 +219,7 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
    ruby -ryaml -e 'puts YAML.load_file(ARGV[0]).fetch("data").fetch("frontend-exclusions.conf")' \
      gitops/apps/taskflow/frontend-waf.yaml > "$tmp/coraza/frontend-exclusions.conf"
    docker run --rm -v "$tmp/caddy:/etc/caddy:ro" -v "$tmp/coraza:/etc/coraza:ro" \
-     ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3 \
+     ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.7-coraza2.6.2-r6 \
      validate --config /etc/caddy/Caddyfile --adapter caddyfile
    rm -rf "$tmp"
    ```

@@ -58,7 +58,7 @@ gitops/
 │       ├── oauth2-proxy-repository.yaml  # HelmRepository oauth2-proxy
 │       ├── oauth2-proxy-release.yaml     # HelmRelease oauth2-proxy (github_users allow-list)
 │       ├── oauth2-proxy-network-policy.yaml # Gateway -> oauth2-proxy ingress only
-│       ├── release.yaml                  # HelmRelease policy-reporter v3.11.0, ui + plugins, ui.oauth disabled, metrics on, crds: Skip
+│       ├── release.yaml                  # HelmRelease policy-reporter v3.11.1, ui + plugins, ui.oauth disabled, metrics on, crds: Skip
 │       ├── trivy-adapter-release.yaml    # HelmRelease trivy-operator-polr-adapter v0.11.5 (Trivy CRDs -> PolicyReports)
 │       ├── route.yaml                    # HTTPRoute -> policy-reporter-ui-oauth2-proxy:80 on taskflow-gateway (:443)
 │       └── kustomization.yaml
@@ -206,7 +206,7 @@ resources with CEL `matchConditions`.
 
 ### Install
 - Chart: `policy-reporter/policy-reporter` from `https://kyverno.github.io/policy-reporter`
-- Pinned: **3.11.0** (ships Policy Reporter + UI app **3.11.0**)
+- Pinned: **3.11.1** (ships Policy Reporter + UI app **3.11.1**)
 - Values: `ui.enabled: true` (UI subchart, service `policy-reporter-ui:8080`),
   `plugin.kyverno.enabled: true` + `plugin.trivy.enabled: true` (enrich the UI with
   policy descriptions/YAML and Trivy vulnerability details), `ui.oauth` (GitHub OAuth,

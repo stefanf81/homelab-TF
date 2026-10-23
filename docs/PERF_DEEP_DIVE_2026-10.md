@@ -7,7 +7,7 @@ on *this* node, what is wrong today and why, the options with a verdict, the
 recommended change as ready-to-commit YAML, how to measure before and after,
 and how to roll it out and back.
 
-Sources were read at the versions this repository runs: Cilium v1.20.2
+Sources were read at the versions this repository runs: Cilium v1.20.3
 (`install/kubernetes/cilium/values.yaml`, `templates/cilium-envoy/*`,
 `pkg/datapath/linux/bandwidth/bandwidth.go`, `Documentation/operations/performance/tuning.rst`,
 `Documentation/network/kubernetes/bandwidth-manager.rst`), PostgreSQL 18
@@ -123,7 +123,7 @@ configured in Git but have no effect:
 
 | Component | Repo sets | Chart reads | Effect today |
 |---|---|---|---|
-| Kyverno admission controller (chart 3.9.1) | `admissionController.resources` | `admissionController.container.resources` | Chart defaults: 100m / 128Mi request, 384Mi memory limit, no CPU limit — not the intended 256Mi/512Mi + 500m. The other three controllers use the top-level key correctly. |
+| Kyverno admission controller (chart 3.9.x) | `admissionController.resources` | `admissionController.container.resources` | Chart defaults: 100m / 128Mi request, 384Mi memory limit, no CPU limit — not the intended 256Mi/512Mi + 500m. The other three controllers use the top-level key correctly. |
 | Grafana Alloy (chart 1.13.1) | top-level `resources` | `alloy.resources` (template merges `.Values.alloy`) | **No requests or limits on the Alloy container** — it can grow without bound; only the config-reloader sidecar has its 10m/50Mi default request |
 | Hubble UI (Cilium chart) | `hubble.ui.resources` | `hubble.ui.backend.resources` and `hubble.ui.frontend.resources` | Both UI containers run without requests or limits |
 | Policy Reporter plugins | (nothing) | `plugin.kyverno.resources`, `plugin.trivy.resources` | The two plugin Deployments run BestEffort |
@@ -251,7 +251,7 @@ kubectl -n taskflow exec -it deploy/postgres-db -- psql -U postgres -d taskflow
 ```
 
 ```sql
--- size vs shared_buffers (384MB): if the DB fits, reads are memory-speed already
+-- size vs shared_buffers (128MB): if the DB fits, reads are memory-speed already
 SELECT pg_size_pretty(pg_database_size('taskflow'));
 
 -- buffer hit ratio (≥ 99 % expected for a small OLTP DB)
@@ -867,9 +867,9 @@ spec:
           image: postgres:18.6-alpine
           args:
             - "-c"
-            - "shared_buffers=384MB"
+            - "shared_buffers=128MB"
             - "-c"
-            - "effective_cache_size=700MB"
+            - "effective_cache_size=256MB"
             - "-c"
             - "work_mem=8MB"
             - "-c"
@@ -909,8 +909,8 @@ spec:
             - "-c"
             - "log_lock_waits=on"
           resources:
-            requests: {cpu: 250m, memory: 1Gi}
-            limits: {memory: 1Gi}
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {memory: 512Mi}
           volumeMounts:
             - {name: postgres-storage, mountPath: /var/lib/postgresql}
             - {name: dshm, mountPath: /dev/shm}

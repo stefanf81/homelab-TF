@@ -53,7 +53,7 @@ kubectl port-forward -n kube-system svc/hubble-relay 4244:80
 |------|----------|
 | `namespace.yaml` | `hubble-ui` namespace |
 | `repository.yaml` | HelmRepository `oauth2-proxy` (`https://oauth2-proxy.github.io/manifests`) |
-| `release.yaml` | HelmRelease `hubble-ui-oauth2-proxy` (oauth2-proxy chart 10.7.0) |
+| `release.yaml` | HelmRelease `hubble-ui-oauth2-proxy` (oauth2-proxy chart 10.7.1) |
 | `route.yaml` | HTTPRoute `hubble-ui` → `hubble-ui-oauth2-proxy:80` (container port 4180) |
 | `hubble-ui-secrets.yaml` | SOPS-encrypted Secret (GitHub OAuth credentials) |
 | `network-policy.yaml` | CiliumNetworkPolicy `allow-gateway-to-hubble-ui` |
@@ -302,7 +302,7 @@ nohup kubectl port-forward -n kube-system svc/hubble-relay 4244:80 &
 
 ### Hubble CLI version mismatch warning
 
-**Cause**: CLI version older than the Cilium/Hubble relay version (Cilium 1.20.2).
+**Cause**: CLI version older than the Cilium/Hubble relay version (Cilium 1.20.3).
 
 **Fix**: Update CLI:
 ```bash

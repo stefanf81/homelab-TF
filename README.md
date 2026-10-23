@@ -22,7 +22,7 @@ You also need access to a **Proxmox VE 8.x** host with an API token (with VM cre
 - `modules/proxmox` – Provisions the pinned Ubuntu 26.04 VM; cloud-init installs k3s `v1.36.4+k3s1` at boot (no SSH provisioning; the only SSH use is the one-shot kubeconfig fetch in `modules/k3s-kubeconfig`).
 - `modules/k3s-kubeconfig` – SSHs into the node once cloud-init finishes, fetches `/etc/rancher/k3s/k3s.yaml`, and writes a local `kubeconfig.yaml`.
 - `gitops/` – Declarative Flux v2 manifests:
-  - `gitops/infrastructure/controllers` – Cilium v1.20.2, cert-manager, CoreDNS, Proxmox CSI, Kyverno, Falco, Policy Reporter, Trivy Operator, Hubble UI oauth2-proxy, AbuseIPDB synchronizer.
+  - `gitops/infrastructure/controllers` – Cilium v1.20.3, cert-manager, CoreDNS, Proxmox CSI, Kyverno, Falco, Policy Reporter, Trivy Operator, Hubble UI oauth2-proxy, AbuseIPDB synchronizer.
   - `gitops/infrastructure/configs` – Cilium L2 announcement policy (`192.168.50.200-250`), `GatewayClass`, and the AbuseIPDB ingress deny policy.
   - `gitops/apps/taskflow` – Spring Boot 4.1.1 backend, Angular 22 frontend, PostgreSQL 18.6, Redis 8.10, Jaeger.
   - `gitops/monitoring` – VictoriaMetrics TSDB + Grafana stack + metrics-server + Loki/Alloy + 11 custom dashboards (Taskflow WAF/Access Logs/Rate Limits/Performance, Blocked Sources, AbuseIPDB, Falco, Trivy, Kyverno, cert-manager, Logging pipeline).
@@ -79,7 +79,7 @@ export KUBECONFIG=$PWD/kubeconfig.yaml
 kubectl get nodes
 ```
 
-### 3️⃣ Bootstrap Cilium CNI (v1.20.2)
+### 3️⃣ Bootstrap Cilium CNI (v1.20.3)
 
 Because k3s is installed with `--flannel-backend=none` (CNI-free), the node remains `NotReady` until Cilium is installed:
 
@@ -92,7 +92,7 @@ sudo tar xzvfC cilium-darwin-arm64.tar.gz /usr/local/bin
 rm cilium-darwin-arm64.tar.gz{,.sha256sum}
 
 # Bootstrap Cilium onto the cluster
-cilium install --version 1.20.2
+cilium install --version 1.20.3
 cilium status --wait
 ```
 
@@ -204,7 +204,7 @@ To ensure production-grade security, resiliency, and performance on a single-nod
 * **Reproducible Cloud-Init:** The Ubuntu cloud image is release-pinned and SHA-256 verified, and k3s is installed at the explicit version configured by `k3s_version`.
 
 ### 2. Cilium CNI, Network Security & Gateway API
-* **High-Performance eBPF CNI:** Flannel and k3s network policies are disabled (`--flannel-backend=none --disable-network-policy`) to let **Cilium v1.20.2** handle eBPF routing, SNAT masquerading, and network security policies.
+* **High-Performance eBPF CNI:** Flannel and k3s network policies are disabled (`--flannel-backend=none --disable-network-policy`) to let **Cilium v1.20.3** handle eBPF routing, SNAT masquerading, and network security policies.
 * **Kubernetes Gateway API:** Deployed standard Gateway API CRDs (`gateway-api`) and enabled Cilium's Gateway API controller (`gatewayAPI.enabled = true`).
 * **ServiceLB Deconfliction & L2 Announcements:** K3s ServiceLB is disabled (`--disable servicelb`). Cilium L2 announcements (`CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy`) advertise gateway IP `192.168.50.201`.
 * **Zero-Trust Network Policies:** Ingress to database/cache tiers (`postgres-db`, `redis`, `jaeger`) is restricted strictly to backend pods.
@@ -212,8 +212,8 @@ To ensure production-grade security, resiliency, and performance on a single-nod
 
 ### 3. Storage Resiliency & Database Performance
 * **Proxmox CSI Storage:** PostgreSQL PVC (`postgres-pvc.yaml`) uses **10Gi** storage on the `proxmox-csi` StorageClass, enabling dynamic disk attachments and hypervisor-level backups.
-* **PostgreSQL RAM Tuning:** `shared_buffers = 384MB`, `effective_cache_size = 700MB`, `work_mem = 8MB`, `maintenance_work_mem = 64MB`, `max_connections = 50`.
-* **Redis Cache Protection:** Ephemeral L2 cache running with `--maxmemory 384mb` and `--maxmemory-policy allkeys-lru`.
+* **PostgreSQL RAM Tuning:** `shared_buffers = 128MB`, `effective_cache_size = 256MB`, `work_mem = 8MB`, `maintenance_work_mem = 64MB`, `max_connections = 50` within a 512MiB container budget (sized to actual ~17MB data size).
+* **Redis Cache Protection:** Ephemeral L2 cache running with `--maxmemory 64mb` and `--maxmemory-policy allkeys-lru` within a 128MiB container budget.
 * **JVM Heap & Off-Heap Guard:** Spring Boot backend uses `MaxRAMPercentage=50.0` (1 GiB heap at 2 GiB limit) with bounded off-heap (`MaxMetaspaceSize=256m`) and Guaranteed QoS (`requests == limits = 2Gi`).
 
 ### 4. Provider Plugin Cache

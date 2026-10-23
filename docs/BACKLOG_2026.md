@@ -63,7 +63,7 @@ Already changed but uncommitted (for context, do not redo):
   (one failure must not take down app + Grafana + Kyverno + Hubble), add
   `renewBefore: 720h` and `privateKey.rotationPolicy: Always`, plus the expiry alert from #1.
 
-- [ ] **8. Kyverno to CEL + enforcement.** `ClusterPolicy` is deprecated (live warning).
+- [x] **8. Kyverno to CEL + enforcement.** Migrated to `ValidatingPolicy` (Deny, fail-open).
   - ✅ Done (2026-10-22): both policies migrated to `policies.kyverno.io/v1 ValidatingPolicy`
     and set to `Deny` (`failurePolicy: Ignore`); Grafana Kyverno dashboard moved to the
     `kyverno_validating_policy_*` metrics. See `docs/KYVERNO_POLICY_ENGINE.md` §5 and §8.
@@ -80,7 +80,7 @@ Already changed but uncommitted (for context, do not redo):
 
 - [ ] **10. Small fixes:**
   - metrics-server: `--kubelet-certificate-authority` instead of `--kubelet-insecure-tls`.
-  - CoreDNS pinned image (`1.14.7` vs chart `1.14.6`): align or annotate with a `# renovate:` marker.
+  - ✅ Done (2026-10-22): CoreDNS image pinned to `1.15.0` with `# renovate:` marker and surge-first `rollingUpdate`.
   - ✅ Done: Jaeger QoS comment fixed (Burstable, not Guaranteed).
   - Widen the L2 interface regex (`ens*`, `eno*`).
   - Reserve `192.168.50.201` (dedicated pool or Cilium LB-IPAM `serviceSelector`).

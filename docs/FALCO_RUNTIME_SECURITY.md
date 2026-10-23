@@ -85,7 +85,7 @@ spec:
   chart:
     spec:
       chart: falco
-      version: 9.2.0
+      version: 9.2.1
       sourceRef:
         kind: HelmRepository
         name: falco
@@ -286,7 +286,7 @@ The dashboard defines five template variables that become dropdown filters at th
 
 ## 5. Complete Metrics Reference
 
-These are the **actual** metrics that Falco 0.45.0 (chart 9.2.0, modern eBPF driver) exposes on the `/metrics` endpoint. Use these names in PromQL queries, alerting rules (`VMRules`), or custom Grafana panels.
+These are the **actual** metrics that Falco 0.45.1 (chart 9.2.1, modern eBPF driver) exposes on the `/metrics` endpoint. Use these names in PromQL queries, alerting rules (`VMRules`), or custom Grafana panels.
 
 ### Alert & Rule Metrics
 
@@ -334,7 +334,7 @@ These are the **actual** metrics that Falco 0.45.0 (chart 9.2.0, modern eBPF dri
 | `dir` | Buffer drop direction (`enter` is always 0) | `exit` |
 | `drop` | Buffer drop category | `clone_fork`, `execve`, `connect`, `open`, `dir_file`, `close`, `proc`, `other_interest` |
 | `engine_name` | Scap engine type | `modern_bpf` |
-| `version` | Falco semantic version | `0.45.0` |
+| `version` | Falco semantic version | `0.45.1` |
 
 ---
 

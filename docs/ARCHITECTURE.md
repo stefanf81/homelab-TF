@@ -47,7 +47,7 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 
 ### 3.1 Runtime
 - **Distribution**: k3s (single-node cluster)
-- **CNI**: Cilium v1.20.2 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
+- **CNI**: Cilium v1.20.3 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
 - **Storage**: Proxmox CSI (dynamic VM virtual disk provisioning)
 
 ### 3.2 Cilium Configuration (`gitops/infrastructure/controllers/cilium/release.yaml`)
@@ -168,7 +168,7 @@ VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 | OOM Policy | `-XX:+ExitOnOutOfMemoryError` (fail fast) |
 | Resources | CPU: 2 cores (req=limit), Memory: 2Gi (Guaranteed QoS, req==limit) |
 | SecurityContext | readOnlyRootFS, runAsNonRoot UID/GID 10001, drop ALL capabilities |
-| Init Container | `alpine:3.24.2` — waits for DB (port 5432) + Redis (port 6379) via nc |
+| Init Container | `alpine:3.24.3` — waits for DB (port 5432) + Redis (port 6379) via nc |
 | Probes | Startup: `/actuator/health/liveness`, Liveness: same, Readiness: `/actuator/health/readiness` |
 | Termination Grace Period | 45s (for Spring graceful shutdown) |
 
@@ -209,7 +209,7 @@ VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 | Replicas | 1 |
 | Memory Guard | `--set=extensions.jaeger_storage.backends.some_storage.memory.max_traces=5000` |
 | Ports | UI: 16686, OTLP-gRPC: 4317, OTLP-HTTP: 4318 |
-| Resources | CPU: 250m (req=limit), Memory: 128–256 MiB |
+| Resources | CPU: 25m request, no limit; Memory: 64–256 MiB |
 
 ### 5.7 Cloudflare DDNS (`gitops/apps/taskflow/cloudflare-ddns.yaml`)
 Keeps the `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`,
@@ -235,7 +235,7 @@ image with a SOPS-encrypted Cloudflare API token.
 ### 5.10 Monitoring Stack (`gitops/monitoring/`)
 | Component | Implementation |
 |-----------|----------------|
-| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.95.2) in namespace `monitoring` |
+| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.96.0) in namespace `monitoring` |
 | CRDs | Installed by the chart (VMServiceScrape, VMSingle, …) |
 | Persistence | VictoriaMetrics TSDB on a **Proxmox CSI-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `proxmox-csi`) |
 | Grafana auth | GitHub OAuth authentication (`auth.github`) with credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana UI is routed via the Gateway API (see `routes.yaml`); VictoriaMetrics UI is kept strictly internal and accessed via port-forwarding |
@@ -315,13 +315,13 @@ TF/
 │   │
 │   ├── infrastructure/
 │   │   ├── controllers/             # HelmRelease + Repository for platform add-ons
-│   │   │   ├── cilium/release.yaml  # Cilium v1.20.2 (eBPF, Gateway API, L2 announcements)
-│   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.1) with Let's Encrypt certificate automation
-│   │   │   ├── coredns/             # CoreDNS HelmRelease (v1.47.1) — replaces K3s packaged addon
+│   │   │   ├── cilium/release.yaml  # Cilium v1.20.3 (eBPF, Gateway API, L2 announcements)
+│   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.2) with Let's Encrypt certificate automation
+│   │   │   ├── coredns/             # CoreDNS HelmRelease (v1.49.0) — replaces K3s packaged addon
 │   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
 │   │   │   ├── gateway-api/         # Standard Gateway API CRDs + TLSRoute CRD
-│   │   │   ├── kyverno/             # Kyverno policy engine (v3.9.1 / Kyverno v1.19.1)
-│   │   │   ├── falco/               # Falco runtime security (v9.2.0-rc1 chart, modern eBPF)
+│   │   │   ├── kyverno/             # Kyverno policy engine (v3.9.2 / Kyverno v1.19.2)
+│   │   │   ├── falco/               # Falco runtime security (v9.2.1 chart, modern eBPF)
 │   │   │   ├── policy-reporter/     # Policy Reporter + UI dashboard
 │   │   │   ├── trivy-operator/      # Trivy vulnerability scanner operator
 │   │   │   ├── abuseipdb/           # AbuseIPDB synchronizer (IP reputation → Cilium + Cloudflare)
@@ -411,7 +411,7 @@ flux reconcile kustomization taskflow-app -n flux-system
 
 | Area | Current State | TODO |
 |------|-------------|------|
-| TLS/HTTPS | ✅ Resolved | cert-manager HelmRelease (v1.21.1) + Let's Encrypt HTTP-01 certificates + HTTPS Gateway listener are fully active |
+| TLS/HTTPS | ✅ Resolved | cert-manager HelmRelease (v1.21.2) + Let's Encrypt HTTP-01 certificates + HTTPS Gateway listener are fully active |
 | Multi-node HA | Single k3s node | Add worker nodes via additional Proxmox VMs |
 | GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` module is planned, not yet created) |
 | Pod Disruption Budgets | ✅ Resolved | PDBs added for backend (`backend-pdb.yaml`), frontend (`frontend-pdb.yaml`), and postgres (`postgres-db.yaml`) — all `minAvailable: 1` |
@@ -491,13 +491,13 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
 ```
 
 - **`infra-controllers`** (`gitops/infrastructure/controllers/`) installs the platform via HelmRelease objects:
-  - `cilium/release.yaml` — Cilium 1.20.2 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
-  - `cert-manager/release.yaml` — cert-manager 1.21.1 (fully active, managing TLS certificates).
-  - `coredns/release.yaml` — CoreDNS 1.47.1 (replaces K3s packaged addon, manages DNS with custom LAN hairpin-NAT overrides).
+  - `cilium/release.yaml` — Cilium 1.20.3 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
+  - `cert-manager/release.yaml` — cert-manager 1.21.2 (fully active, managing TLS certificates).
+  - `coredns/release.yaml` — CoreDNS 1.49.0 (replaces K3s packaged addon, manages DNS with custom LAN hairpin-NAT overrides).
   - `proxmox-csi/` — Proxmox CSI driver (dynamic storage provisioning of virtual disks with native hypervisor backup integration).
   - `gateway-api/` — the standard Gateway API CRDs.
-  - `kyverno/release.yaml` — Kyverno 3.9.1 (Kubernetes-native policy engine, mutating + validating admission webhook).
-  - `falco/release.yaml` — Falco 9.2.0-rc1 chart (runtime security, modern eBPF driver, Falcosidekick → PolicyReports).
+  - `kyverno/release.yaml` — Kyverno 3.9.2 (Kubernetes-native policy engine, mutating + validating admission webhook).
+  - `falco/release.yaml` — Falco 9.2.1 chart (runtime security, modern eBPF driver, Falcosidekick → PolicyReports).
   - `policy-reporter/` — Policy Reporter + UI dashboard (visualizes Kyverno/Trivy/Falco PolicyReports).
   - `trivy-operator/release.yaml` — Trivy Operator (vulnerability scanning of running containers/images).
   - `hubble-ui/` — Hubble UI oauth2-proxy (GitHub OAuth, public access at `hubble.jokelab.dev`).

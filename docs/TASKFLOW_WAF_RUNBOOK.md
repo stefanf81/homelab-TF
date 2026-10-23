@@ -4,7 +4,7 @@
 
 - `taskflow-frontend-waf` receives `www.jokelab.dev/` traffic.
 - `taskflow-backend-waf` receives `www.jokelab.dev/api` traffic.
-- Both WAFs use Caddy `2.11.4`, Coraza Caddy `v2.6.0`, OWASP CRS, and `caddy-ratelimit` (single container, no sidecars).
+- Both WAFs use Caddy `2.11.7`, Coraza Caddy `v2.6.2`, OWASP CRS, and `caddy-ratelimit` (single container, no sidecars).
 - Both WAFs run with `SecRuleEngine On` and paranoia level 2.
 - Per-client HTTP rate limiting (enabled 2026-09-26): frontend `general` 180/min, backend `api` 300/min, key `{client_ip}`, IPv6 grouped per `/64` (429 + `Retry-After` when exceeded).
 - Coraza audit JSON goes straight to stdout; Alloy redacts credential headers, sensitive query values and the matched data of credential variables at ingest (what is and is not covered: `docs/TASKFLOW_WAF_ARCHITECTURE.md`, "Redaction and line size").
@@ -39,7 +39,7 @@ repository releases, `gitops/monitoring/app/**`, the Grafana sidecar config in
 it validates the unmodified Caddyfiles and every dashboard JSON. Run either locally with:
 
 ```bash
-TEST_IMAGE=ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3 \
+TEST_IMAGE=ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.7-coraza2.6.2-r6 \
   gitops/images/taskflow-caddy-coraza/tests/run-tests.sh
 gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh
 ```
@@ -55,7 +55,7 @@ Build and publish the image locally if needed:
 ```bash
 # Build for linux/amd64 (k3s node architecture)
 docker buildx build --platform linux/amd64 --load \
-  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3 \
+  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.7-coraza2.6.2-r6 \
   gitops/images/taskflow-caddy-coraza
 
 # Authenticate to GHCR (requires write:packages; prefer a classic PAT — gho_ tokens may lack GHCR scopes)
@@ -64,15 +64,15 @@ echo "$GITHUB_TOKEN" | docker login ghcr.io -u stefanf81 --password-stdin
 unset GITHUB_TOKEN
 
 # Push the image
-docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3
+docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.7-coraza2.6.2-r6
 
 # Verify both modules are present
-docker run --rm ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3 list-modules \
+docker run --rm ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.7-coraza2.6.2-r6 list-modules \
   | grep -E 'http.handlers.waf|http.handlers.rate_limit'
 
 # Get digest for pinning
 docker inspect --format='{{index .RepoDigests 0}}' \
-  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3
+  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.7-coraza2.6.2-r6
 ```
 
 Replace the image reference in both WAF Deployments with the digest returned by
@@ -587,9 +587,9 @@ curl -s -o /dev/null -w "%{http_code}" \
 **Fix**: Rebuild for the correct platform:
 ```bash
 docker buildx build --platform linux/amd64 --load \
-  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3 \
+  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.7-coraza2.6.2-r6 \
   gitops/images/taskflow-caddy-coraza
-docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.4-coraza2.6.0-r3
+docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.7-coraza2.6.2-r6
 # Update digest in frontend-waf.yaml and backend-waf.yaml
 ```
 
