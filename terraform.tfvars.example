@@ -15,7 +15,7 @@ gateway        = "192.168.50.1"
 
 # k3s
 k3s_token   = "replace-with-a-long-random-token"
-k3s_version = "v1.36.4+k3s1"
+k3s_version = "v1.37.1+k3s1"
 
 # Optional overrides
 # proxmox_insecure = false

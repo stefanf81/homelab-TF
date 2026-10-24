@@ -116,7 +116,7 @@ Gateway exists first, so the route programs immediately and `wait` succeeds.
 ### Chart & version
 - Chart: `kyverno/kyverno` from `https://kyverno.github.io/kyverno/`
 - Pinned: **3.9.2** (ships Kyverno **v1.19.2**). Requires k8s ≥ ~1.25 (the
-  provisioned cluster is configured for k3s `v1.36.4+k3s1`).
+  provisioned cluster is configured for k3s `v1.37.1+k3s1`).
 
 ### CRD handling — important gotcha
 Chart **v3** ships its CRDs as **templated resources** controlled by the `crds.install: true`

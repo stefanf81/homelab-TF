@@ -7,7 +7,7 @@ on *this* node, what is wrong today and why, the options with a verdict, the
 recommended change as ready-to-commit YAML, how to measure before and after,
 and how to roll it out and back.
 
-Sources were read at the versions this repository runs: Cilium v1.20.3
+Sources were read at the versions this repository ran in October 2026: Cilium v1.20.3
 (`install/kubernetes/cilium/values.yaml`, `templates/cilium-envoy/*`,
 `pkg/datapath/linux/bandwidth/bandwidth.go`, `Documentation/operations/performance/tuning.rst`,
 `Documentation/network/kubernetes/bandwidth-manager.rst`), PostgreSQL 18

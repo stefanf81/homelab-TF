@@ -302,7 +302,7 @@ nohup kubectl port-forward -n kube-system svc/hubble-relay 4244:80 &
 
 ### Hubble CLI version mismatch warning
 
-**Cause**: CLI version older than the Cilium/Hubble relay version (Cilium 1.20.3).
+**Cause**: CLI version older than the Cilium/Hubble relay version (Cilium 1.20.4).
 
 **Fix**: Update CLI:
 ```bash

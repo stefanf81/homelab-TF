@@ -60,8 +60,8 @@ Audit logs, access logs (including rate-limit 429s), and Coraza records from the
 | Coraza | `taskflow` | v2.6.2 | WAF engine (OWASP ModSecurity compatible) |
 | OWASP CRS | `taskflow` | v4.25.0 | Core Rule Set for attack detection |
 | caddy-ratelimit | `taskflow` | commit `5625512f24` | Sliding-window per-client HTTP rate limiting (429) |
-| Alloy | `monitoring` | 1.14.1 (chart) | Log collection agent |
-| Loki | `monitoring` | 19.0.3 (chart) | Log aggregation and storage |
+| Alloy | `monitoring` | 1.14.3 (chart) | Log collection agent |
+| Loki | `monitoring` | 19.2.1 (chart) | Log aggregation and storage |
 | Grafana | `monitoring` | via victoria-metrics-k8s-stack | Dashboard visualization |
 
 ## Traffic Flow

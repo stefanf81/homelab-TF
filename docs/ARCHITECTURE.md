@@ -12,9 +12,9 @@ TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE,
 | Component | Tool / Version | Purpose |
 |-----------|---------------|---------|
 | IaC Engine | OpenTofu (minimum ≥ 1.8.0) | VM provisioning & kubeconfig fetch |
-| Provider | `bpg/proxmox` v0.111.1 | Proxmox VE API integration |
+| Provider | `bpg/proxmox` v0.118.0 | Proxmox VE API integration |
 | Cloud Image | Ubuntu 26.04 (Resolute), release-20260823, SHA-256 pinned | k3s host OS |
-| k3s | v1.36.4+k3s1 | Kubernetes distribution |
+| k3s | v1.37.1+k3s1 | Kubernetes distribution |
 | Orchestration | Makefile (`make init`, `make apply`) | Enforces correct provisioning sequence |
 
 ### 2.2 VM Specifications (defaults in `variables.tf`)
@@ -47,7 +47,7 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 
 ### 3.1 Runtime
 - **Distribution**: k3s (single-node cluster)
-- **CNI**: Cilium v1.20.3 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
+- **CNI**: Cilium v1.20.4 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
 - **Storage**: Proxmox CSI (dynamic VM virtual disk provisioning)
 
 ### 3.2 Cilium Configuration (`gitops/infrastructure/controllers/cilium/release.yaml`)
@@ -267,7 +267,7 @@ image with a SOPS-encrypted Cloudflare API token.
 ```
 TF/
 ├── main.tf                          # Root: proxmox + k3s-kubeconfig modules
-├── providers.tf                     # bpg/proxmox v0.111.1, >= 1.8.0
+├── providers.tf                     # bpg/proxmox v0.118.0, >= 1.8.0
 ├── variables.tf                     # All input vars (VM specs, SSH key, k3s token)
 ├── Makefile                         # OpenTofu workflow with plugin cache
 ├── .gitignore                       # State files, secrets, kubeconfig, keys
@@ -315,8 +315,8 @@ TF/
 │   │
 │   ├── infrastructure/
 │   │   ├── controllers/             # HelmRelease + Repository for platform add-ons
-│   │   │   ├── cilium/release.yaml  # Cilium v1.20.3 (eBPF, Gateway API, L2 announcements)
-│   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.2) with Let's Encrypt certificate automation
+│   │   │   ├── cilium/release.yaml  # Cilium v1.20.4 (eBPF, Gateway API, L2 announcements)
+│   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.3) with Let's Encrypt certificate automation
 │   │   │   ├── coredns/             # CoreDNS HelmRelease (v1.49.0) — replaces K3s packaged addon
 │   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
 │   │   │   ├── gateway-api/         # Standard Gateway API CRDs + TLSRoute CRD
@@ -411,7 +411,7 @@ flux reconcile kustomization taskflow-app -n flux-system
 
 | Area | Current State | TODO |
 |------|-------------|------|
-| TLS/HTTPS | ✅ Resolved | cert-manager HelmRelease (v1.21.2) + Let's Encrypt HTTP-01 certificates + HTTPS Gateway listener are fully active |
+| TLS/HTTPS | ✅ Resolved | cert-manager HelmRelease (v1.21.3) + Let's Encrypt HTTP-01 certificates + HTTPS Gateway listener are fully active |
 | Multi-node HA | Single k3s node | Add worker nodes via additional Proxmox VMs |
 | GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` module is planned, not yet created) |
 | Pod Disruption Budgets | ✅ Resolved | PDBs added for backend (`backend-pdb.yaml`), frontend (`frontend-pdb.yaml`), and postgres (`postgres-db.yaml`) — all `minAvailable: 1` |
@@ -491,8 +491,8 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
 ```
 
 - **`infra-controllers`** (`gitops/infrastructure/controllers/`) installs the platform via HelmRelease objects:
-  - `cilium/release.yaml` — Cilium 1.20.3 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
-  - `cert-manager/release.yaml` — cert-manager 1.21.2 (fully active, managing TLS certificates).
+  - `cilium/release.yaml` — Cilium 1.20.4 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
+  - `cert-manager/release.yaml` — cert-manager 1.21.3 (fully active, managing TLS certificates).
   - `coredns/release.yaml` — CoreDNS 1.49.0 (replaces K3s packaged addon, manages DNS with custom LAN hairpin-NAT overrides).
   - `proxmox-csi/` — Proxmox CSI driver (dynamic storage provisioning of virtual disks with native hypervisor backup integration).
   - `gateway-api/` — the standard Gateway API CRDs.

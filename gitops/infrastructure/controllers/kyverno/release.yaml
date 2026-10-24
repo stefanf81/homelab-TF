@@ -8,8 +8,8 @@ spec:
   chart:
     spec:
       chart: kyverno
-      # Chart v3.9.1 ships Kyverno v1.19.1.
-      # Cluster is k8s 1.36.2 (supported, k8s >= 1.25 required).
+      # Chart v3.9.2 ships Kyverno v1.19.2.
+      # Cluster is k8s 1.37.1 (supported, k8s >= 1.25 required).
       version: 3.9.2
       sourceRef:
         kind: HelmRepository
