@@ -77,7 +77,7 @@ spec:
       # Explicitly pin xdsMode so cilium-config (envoy-xds-mode) and
       # cilium-envoy-config (bootstrap-config.json) always agree across
       # chart upgrades even if SSA field ownership drifts.
-      xdsMode: "sotw"
+      xdsMode: "split"
       resources:
         requests:
           cpu: 50m
