@@ -1,8 +1,13 @@
 apiVersion: source.toolkit.fluxcd.io/v1
-kind: HelmRepository
+kind: OCIRepository
 metadata:
   name: jetstack
   namespace: cert-manager
 spec:
   interval: 24h
-  url: https://charts.jetstack.io
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    tag: v1.21.3
+  url: oci://quay.io/jetstack/charts/cert-manager

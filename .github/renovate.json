@@ -81,6 +81,7 @@
       "description": "Group Falco components together",
       "matchPackageNames": [
         "falco",
+        "ghcr.io/falcosecurity/charts/falco",
         "falcosecurity/falcosidekick"
       ],
       "groupName": "Falco Stack"
@@ -97,6 +98,7 @@
       "description": "Group Proxmox CSI components together",
       "matchPackageNames": [
         "proxmox-csi-plugin",
+        "ghcr.io/sergelogvinov/charts/proxmox-csi-plugin",
         "ghcr.io/sergelogvinov/proxmox-csi-controller"
       ],
       "groupName": "Proxmox CSI"
@@ -110,8 +112,9 @@
       "groupName": "Metrics Server"
     },
     {
+      "description": "Helm charts: HTTP HelmRepository (helm) and OCIRepository (docker) sources.",
       "matchManagers": ["flux"],
-      "matchDatasources": ["helm"],
+      "matchDatasources": ["helm", "docker"],
       "matchUpdateTypes": ["minor", "patch"],
       "labels": ["dependencies", "helm"]
     },

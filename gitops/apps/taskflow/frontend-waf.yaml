@@ -1,7 +1,6 @@
-# MANUAL RELOAD REQUIRED: Caddy runs with `admin off` and the Deployment is not
-# restarted automatically when this ConfigMap changes. After editing the
-# Caddyfile, apply the change:
-#   kubectl -n taskflow rollout restart deployment/taskflow-frontend-waf
+# Config reload: Caddy runs with `admin off`, so it cannot hot-reload. Reloader
+# (gitops/infrastructure/controllers/reloader) rolls this Deployment whenever the
+# ConfigMap below changes (annotation on the Deployment).
 #
 # Audit pipeline: Coraza writes JSON audit records directly to stdout
 # (SecAuditLog /dev/stdout); Alloy performs credential redaction at ingest.
@@ -159,6 +158,8 @@ kind: Deployment
 metadata:
   name: taskflow-frontend-waf
   namespace: taskflow
+  annotations:
+    configmap.reloader.stakater.com/reload: taskflow-frontend-waf-config
   labels:
     app.kubernetes.io/name: taskflow-frontend-waf
     app.kubernetes.io/component: waf
@@ -166,6 +167,7 @@ metadata:
     app.kubernetes.io/protects: taskflow-frontend
 spec:
   replicas: 1
+  revisionHistoryLimit: 3
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -186,6 +188,10 @@ spec:
       priorityClassName: taskflow-critical
       terminationGracePeriodSeconds: 30
       automountServiceAccountToken: false
+      # User namespace (container UIDs map to an unprivileged host range) and no
+      # per-Service environment variables; see backend.yaml.
+      hostUsers: false
+      enableServiceLinks: false
       securityContext:
         fsGroup: 100
         seccompProfile:
@@ -224,6 +230,19 @@ spec:
               mountPath: /config
             - name: tmp
               mountPath: /tmp
+          # Gateway keeps sending to the old pod until its endpoint is withdrawn.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          # Loading the CRS rule set takes a few seconds; liveness starts afterwards.
+          startupProbe:
+            httpGet:
+              path: /waf-healthz
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 3
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /waf-healthz

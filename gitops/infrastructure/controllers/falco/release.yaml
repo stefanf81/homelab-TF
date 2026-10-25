@@ -5,19 +5,9 @@ metadata:
   namespace: falco
 spec:
   interval: 30m
-  chart:
-    spec:
-      chart: falco
-      # Falco chart 9.2.0 -> Falco 0.45.0. Cluster runs Ubuntu 26.04 /
-      # kernel 7.0, where Falco 0.44.1 (chart 9.1.0) crashes with
-      # "could not parse param ... type 223 (clone)" (falcosecurity/falco#3955).
-      # The fix landed in 0.45.0; do not go back below chart 9.2.0.
-      version: 9.2.1
-      sourceRef:
-        kind: HelmRepository
-        name: falco
-        namespace: falco
-      interval: 12h
+  chartRef:
+    kind: OCIRepository
+    name: falco
   install:
     createNamespace: true
     crds: CreateReplace

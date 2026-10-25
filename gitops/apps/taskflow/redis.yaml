@@ -3,11 +3,15 @@ kind: Deployment
 metadata:
   name: redis
   namespace: taskflow
+  annotations:
+    # Roll the pods when a referenced ConfigMap/Secret changes (Reloader).
+    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: redis
     app.kubernetes.io/part-of: taskflow
 spec:
   replicas: 1
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: redis
@@ -19,6 +23,9 @@ spec:
       priorityClassName: taskflow-critical
       # No workload here talks to the Kubernetes API, so no token is mounted.
       automountServiceAccountToken: false
+      # User namespace and no per-Service environment variables; see backend.yaml.
+      hostUsers: false
+      enableServiceLinks: false
       securityContext:
         seccompProfile:
           type: RuntimeDefault
@@ -29,7 +36,7 @@ spec:
           # core binary, but we use the standard redis-server CMD (not redis-full.conf),
           # so none of those modules load and the cache behavior is identical to 7.x.
           # License: RSALv2 / SSPLv1 / AGPLv3 (tri-licensed).
-          image: redis:8.10.2-alpine
+          image: redis:8.10.2-alpine@sha256:0bf6577d7774e592b29d093e3ac9390eb91e13d72c21e506afce736de5e0eeb0
           imagePullPolicy: IfNotPresent
           args:
             # Cap memory to leave headroom for Redis overhead; evict LRU keys on pressure.
@@ -80,6 +87,8 @@ spec:
                   name: redis-secret
                   key: REDIS_PASSWORD
           securityContext:
+            # Persistence is off and /data is an emptyDir: nothing else is written.
+            readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             runAsNonRoot: true
             runAsUser: 10001

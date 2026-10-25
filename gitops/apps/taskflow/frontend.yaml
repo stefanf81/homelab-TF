@@ -8,6 +8,7 @@ metadata:
     app.kubernetes.io/part-of: taskflow
 spec:
   replicas: 1
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: taskflow-frontend
@@ -18,6 +19,10 @@ spec:
     spec:
       priorityClassName: taskflow-critical
       automountServiceAccountToken: false
+      # User namespace (container UIDs map to an unprivileged host range) and no
+      # per-Service environment variables; see backend.yaml.
+      hostUsers: false
+      enableServiceLinks: false
       securityContext:
         fsGroup: 10001
         seccompProfile:
@@ -52,6 +57,11 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+          # Keep serving while the endpoint is removed from the WAF's upstream.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
           resources:
             # nginx serving static files idles near zero CPU: small request, no CPU limit
             # (no throttling jitter during traffic spikes), memory capped at 256Mi.

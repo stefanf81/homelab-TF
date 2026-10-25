@@ -84,7 +84,11 @@ runcmd:
             - "${var.docker_hub_mirror}"
     MIRROR_EOF
     fi
-  - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=${var.k3s_version} K3S_TOKEN='${var.k3s_token}' sh -s - server --tls-san=${split("/", var.ip_address)[0]} --kubelet-arg="system-reserved=cpu=200m,memory=500Mi" --kubelet-arg="kube-reserved=cpu=200m,memory=500Mi" --node-label="topology.kubernetes.io/region=homelab" --node-label="topology.kubernetes.io/zone=${var.proxmox_node}" --disable servicelb --disable traefik --disable coredns --disable metrics-server --disable local-storage --flannel-backend=none --disable-network-policy
+  - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=${var.k3s_version} K3S_TOKEN='${var.k3s_token}' sh -s - server --tls-san=${split("/", var.ip_address)[0]} --kubelet-arg="system-reserved=cpu=200m,memory=500Mi" --kubelet-arg="kube-reserved=cpu=200m,memory=500Mi" --node-label="topology.kubernetes.io/region=homelab" --node-label="topology.kubernetes.io/zone=${var.proxmox_node}" --disable servicelb --disable traefik --disable coredns --disable metrics-server --disable local-storage --flannel-backend=none --disable-network-policy --disable-kube-proxy
+  # Cloud-init has done its job once k3s is installed. Without this, a Proxmox-side
+  # stop/start after a snippet change gives the VM a new NoCloud instance-id and
+  # re-runs this runcmd, re-installing k3s with the old pinned version and flags.
+  - touch /etc/cloud/cloud-init.disabled
 EOF
     file_name = "k3s-cloud-config.yaml"
   }
@@ -151,7 +155,10 @@ resource "proxmox_virtual_environment_vm" "k3s_node" {
   }
 
   lifecycle {
-    ignore_changes = [tags, initialization[0].user_account, network_device[0].mac_address]
+    # user_data_file_id is ForceNew: never replace the node because the cloud-init
+    # snippet changed. Snippet edits apply to new nodes; the running node is changed
+    # by hand (docs/REMEDIATION_PLAN_2026-10.md REL-00).
+    ignore_changes = [tags, initialization[0].user_account, network_device[0].mac_address, initialization[0].user_data_file_id]
   }
 }
 

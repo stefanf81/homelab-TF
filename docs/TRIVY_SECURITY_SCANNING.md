@@ -26,7 +26,7 @@ gitops/
 │   │   ├── release.yaml             # HelmRelease trivy-operator v0.37.0, scanners + compliance (own kustomization)
 │   │   └── kustomization.yaml
 │   └── policy-reporter/              # Policy Reporter + adapter (see docs/KYVERNO_POLICY_ENGINE.md)
-│       ├── trivy-adapter-repository.yaml  # HelmRepository trivy-operator-polr-adapter
+│       ├── trivy-adapter-repository.yaml  # OCIRepository trivy-operator-polr-adapter
 │       ├── trivy-adapter-release.yaml     # HelmRelease trivy-operator-polr-adapter v0.11.5
 │       └── ...
 └── monitoring/
@@ -185,7 +185,7 @@ Trivy does **not** natively write `wgpolicyk8s.io` `PolicyReport`/`ClusterPolicy
 objects; the Policy Reporter UI reads those to build its report list. The
 **`trivy-operator-polr-adapter`** bridges the gap:
 
-- Chart `trivy-operator-polr-adapter` v0.11.5 (`https://fjogeleit.github.io/trivy-operator-polr-adapter`,
+- Chart `trivy-operator-polr-adapter` v0.11.5 (`oci://ghcr.io/fjogeleit/charts/trivy-operator-polr-adapter`,
   HelmRelease `trivy-operator-polr-adapter` in `policy-reporter` namespace).
 - `useWatchList: false` (a client-go cache-sync workaround), and the `crds.install: false` gate keeps the `wgpolicyk8s.io` CRDs
   owned by Kyverno (which already installs them).

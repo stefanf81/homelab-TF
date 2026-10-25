@@ -100,14 +100,17 @@ kubectl get httproute -n taskflow taskflow-route -o yaml
 
 The route must report `Accepted=True` and `ResolvedRefs=True`.
 
-## Apply Caddyfile changes (manual reload)
+## Apply Caddyfile changes
 
-Both WAFs run Caddy with `admin off`, so editing the ConfigMap does **not** reload
-the running config. After changing `Caddyfile` or `*-exclusions.conf` in Git:
+Both WAFs run Caddy with `admin off`, so Caddy cannot hot-reload. Reloader
+(`gitops/infrastructure/controllers/reloader`) rolls each WAF Deployment when its
+ConfigMap changes (`configmap.reloader.stakater.com/reload` annotation). After
+changing `Caddyfile`, `rate-limit.conf` or `*-exclusions.conf` in Git:
 
 ```bash
 flux reconcile kustomization taskflow-app -n flux-system --with-source
-kubectl -n taskflow rollout restart deployment/taskflow-backend-waf deployment/taskflow-frontend-waf
+# Reloader starts the rollout; only if it is not running:
+#   kubectl -n taskflow rollout restart deployment/taskflow-backend-waf deployment/taskflow-frontend-waf
 kubectl -n taskflow rollout status deployment/taskflow-backend-waf
 kubectl -n taskflow rollout status deployment/taskflow-frontend-waf
 ```
@@ -178,8 +181,8 @@ yields a different address:
 
 1. Replace the peer entry in the `trusted_proxies` line of both WAF ConfigMaps
    (keep the Cloudflare ranges) and update the "OBSERVED PEER" comment.
-2. Reconcile and roll: `flux reconcile kustomization taskflow-app -n flux-system --with-source`
-   then `kubectl -n taskflow rollout restart deployment/taskflow-backend-waf deployment/taskflow-frontend-waf`.
+2. Reconcile: `flux reconcile kustomization taskflow-app -n flux-system --with-source`;
+   Reloader rolls both WAFs (wait with `kubectl -n taskflow rollout status ...`).
 3. Run the identity checks below.
 
 ### Stage 2 — verify the client identity (passed 2026-09-26; re-run after changes)
@@ -526,7 +529,7 @@ Then reconcile `taskflow-app`. To disable one WAF without changing the other, re
 only its route backend and leave the other WAF route unchanged.
 
 To roll back **rate limiting only**, comment out the `rate_limit { ... }` block in
-the WAF ConfigMap(s), reconcile `taskflow-app`, and rollout restart both WAF
+the WAF ConfigMap(s) and reconcile `taskflow-app`; Reloader rolls both WAF
 Deployments (see "Rate limiting" -> "Tune or disable"). This does not affect
 Cilium, the Gateway, Coraza, CRS, or the applications. Keep the narrowed
 trusted-proxy configuration. To also roll back the image, restore the previous

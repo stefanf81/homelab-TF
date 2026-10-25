@@ -5,15 +5,9 @@ metadata:
   namespace: policy-reporter
 spec:
   interval: 30m
-  chart:
-    spec:
-      chart: trivy-operator-polr-adapter
-      version: 0.11.5
-      sourceRef:
-        kind: HelmRepository
-        name: trivy-operator-polr-adapter
-        namespace: policy-reporter
-      interval: 12h
+  chartRef:
+    kind: OCIRepository
+    name: trivy-operator-polr-adapter
   install:
     createNamespace: true
     remediation:

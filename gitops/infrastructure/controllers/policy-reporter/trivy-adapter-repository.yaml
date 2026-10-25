@@ -1,8 +1,13 @@
 apiVersion: source.toolkit.fluxcd.io/v1
-kind: HelmRepository
+kind: OCIRepository
 metadata:
   name: trivy-operator-polr-adapter
   namespace: policy-reporter
 spec:
   interval: 24h
-  url: https://fjogeleit.github.io/trivy-operator-polr-adapter
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    tag: 0.11.5
+  url: oci://ghcr.io/fjogeleit/charts/trivy-operator-polr-adapter

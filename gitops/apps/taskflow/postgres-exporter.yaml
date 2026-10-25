@@ -7,12 +7,16 @@ kind: Deployment
 metadata:
   name: postgres-exporter
   namespace: taskflow
+  annotations:
+    # Roll the pods when a referenced ConfigMap/Secret changes (Reloader).
+    reloader.stakater.com/auto: "true"
   labels:
     app: postgres-exporter
     app.kubernetes.io/name: postgres-exporter
     app.kubernetes.io/part-of: taskflow
 spec:
   replicas: 1
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: postgres-exporter
@@ -23,13 +27,16 @@ spec:
     spec:
       # No workload here talks to the Kubernetes API, so no token is mounted.
       automountServiceAccountToken: false
+      # User namespace and no per-Service environment variables; see backend.yaml.
+      hostUsers: false
+      enableServiceLinks: false
       securityContext:
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: postgres-exporter
-          # Pin a specific tag; rotate to a @sha256 digest for full hermeticity.
-          image: prometheuscommunity/postgres-exporter:v0.20.1
+          # Tag + digest pin: Renovate bumps both together.
+          image: prometheuscommunity/postgres-exporter:v0.20.1@sha256:ac5ec343104fae0e2d84a27bb8d69b38430a11910c5382cad85d478d2bab713e
           # Collectors that are off by default. stat_checkpointer is the only source
           # of checkpoint statistics since PostgreSQL 17 (pg_stat_checkpointer).
           # stat_statements needs `CREATE EXTENSION pg_stat_statements;` in the

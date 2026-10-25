@@ -407,8 +407,9 @@ does not touch Cilium, Gateway API, Coraza, CRS, or the applications:
 1. Comment out or delete the `rate_limit` block in the `rate-limit.conf` keys of
    `gitops/apps/taskflow/{frontend,backend}-waf.yaml`.
 2. `flux reconcile kustomization taskflow-app -n flux-system --with-source`
-3. `kubectl -n taskflow rollout restart deployment/taskflow-backend-waf deployment/taskflow-frontend-waf`
-   (Caddy runs with `admin off`; a ConfigMap change alone does not reload it).
+3. Reloader rolls both WAF Deployments when their ConfigMaps change (Caddy runs
+   with `admin off` and cannot hot-reload); `kubectl -n taskflow rollout status
+   deployment/taskflow-backend-waf deployment/taskflow-frontend-waf` waits for it.
 4. After the rollout Caddy runs without the limiter. The image can stay at `r3`
    — the module is simply unused.
 

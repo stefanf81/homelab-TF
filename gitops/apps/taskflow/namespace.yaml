@@ -2,6 +2,14 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: taskflow
+  labels:
+    # Pod Security Admission: every TaskFlow pod (and cert-manager's HTTP-01 solver
+    # pods created here) already meets the restricted profile; enforce it so a
+    # regression is rejected by the API server itself, with no webhook involved.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
 ---
 # Default resource guardrails for the namespace. Catches a misconfigured Deployment that
 # requests unbounded memory before it can starve the single k3s node.

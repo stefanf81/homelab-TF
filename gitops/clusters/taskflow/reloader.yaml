@@ -1,0 +1,21 @@
+# Reloader gets namespaced RBAC in every namespace it watches (see
+# gitops/infrastructure/controllers/reloader/release.yaml), so those namespaces
+# must exist first.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: reloader
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: taskflow-app
+    - name: abuseipdb
+  interval: 1h
+  retryInterval: 5m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./gitops/infrastructure/controllers/reloader
+  prune: true
+  wait: true

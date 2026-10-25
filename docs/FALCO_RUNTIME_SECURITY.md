@@ -59,17 +59,23 @@ metadata:
     pod-security.kubernetes.io/enforce: privileged
 ```
 
-### Helm Repository (`gitops/infrastructure/controllers/falco/repository.yaml`)
-Defines the official Falco Helm chart repository source:
+### Chart source (`gitops/infrastructure/controllers/falco/repository.yaml`)
+The official Falco chart, pulled as an OCI artifact. The version is pinned here
+(`ref.tag`), not in the HelmRelease:
 ```yaml
 apiVersion: source.toolkit.fluxcd.io/v1
-kind: HelmRepository
+kind: OCIRepository
 metadata:
   name: falco
   namespace: falco
 spec:
   interval: 24h
-  url: https://falcosecurity.github.io/charts
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    tag: 9.2.1
+  url: oci://ghcr.io/falcosecurity/charts/falco
 ```
 
 ### Helm Release (`gitops/infrastructure/controllers/falco/release.yaml`)
@@ -82,15 +88,9 @@ metadata:
   namespace: falco
 spec:
   interval: 30m
-  chart:
-    spec:
-      chart: falco
-      version: 9.2.1
-      sourceRef:
-        kind: HelmRepository
-        name: falco
-        namespace: falco
-      interval: 12h
+  chartRef:
+    kind: OCIRepository
+    name: falco
   install:
     createNamespace: true
     crds: CreateReplace

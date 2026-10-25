@@ -472,10 +472,11 @@ The single most important design decision here is: **no SSH provisioners for k3s
 - `proxmox_download_file` pulls the Ubuntu 26.04 cloud image into the `local` datastore.
 - `proxmox_virtual_environment_file.cloud_config` builds a **cloud-init snippet** (heredoc from column 0 to avoid YAML-whitespace parsing bugs) that, at first boot, installs kernel tweaks, multipath/iscsi storage packages, and **runs the k3s install script** with our exact flags:
   ```
-  --flannel-backend=none --disable-network-policy --disable servicelb --disable traefik --disable coredns --disable metrics-server
+  --flannel-backend=none --disable-network-policy --disable-kube-proxy --disable servicelb --disable traefik --disable coredns --disable metrics-server --disable local-storage
   ```
+  `--disable-kube-proxy` was added on 2026-10-25; a node installed before that still runs kube-proxy until `disable-kube-proxy: true` is set by hand (`docs/REMEDIATION_PLAN_2026-10.md` PERF-01). The last `runcmd` step touches `/etc/cloud/cloud-init.disabled`, so cloud-init never re-runs the installer.
   These flags are why Cilium (not Flannel/kube-proxy/servicelb/traefik) is the *only* networking + ingress + LB stack. They are set **once at boot**, not by Terraform on every apply — so Terraform never re-runs a fragile script against a live node.
-- `proxmox_virtual_environment_vm` creates the VM. Note `ignore_changes` on `tags` / `user_account` / `mac_address` so day-2 tweaks don't trigger a VM rebuild.
+- `proxmox_virtual_environment_vm` creates the VM. Note `ignore_changes` on `tags` / `user_account` / `mac_address` / `user_data_file_id` so day-2 tweaks (including snippet edits) don't trigger a VM rebuild.
 
 Then `modules/k3s-kubeconfig/main.tf` is a `null_resource` with a `local-exec` that **polls over SSH** until `/etc/rancher/k3s/k3s.yaml` exists, copies it locally, and `sed`s `127.0.0.1` → the VM IP so the kubeconfig is usable from your laptop. Its `triggers` include `vm_recreate_id` (= the Proxmox VM ID), so **destroying/rebuilding the VM auto-re-fetches** the kubeconfig (new certs) — no stale-cert errors.
 

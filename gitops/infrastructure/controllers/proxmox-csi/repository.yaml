@@ -1,9 +1,13 @@
 apiVersion: source.toolkit.fluxcd.io/v1
-kind: HelmRepository
+kind: OCIRepository
 metadata:
   name: proxmox-csi
   namespace: csi-proxmox
 spec:
-  type: oci
   interval: 24h
-  url: oci://ghcr.io/sergelogvinov/charts
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    tag: 0.5.13
+  url: oci://ghcr.io/sergelogvinov/charts/proxmox-csi-plugin
