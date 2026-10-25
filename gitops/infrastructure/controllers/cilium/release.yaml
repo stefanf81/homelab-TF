@@ -74,6 +74,10 @@ spec:
     # under contention and with the worst OOM score on the node.
     envoy:
       rollOutPods: true
+      # Explicitly pin xdsMode so cilium-config (envoy-xds-mode) and
+      # cilium-envoy-config (bootstrap-config.json) always agree across
+      # chart upgrades even if SSA field ownership drifts.
+      xdsMode: "sotw"
       resources:
         requests:
           cpu: 50m
