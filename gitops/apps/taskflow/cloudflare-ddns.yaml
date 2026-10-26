@@ -3,12 +3,16 @@ kind: Deployment
 metadata:
   name: cloudflare-ddns
   namespace: taskflow
+  annotations:
+    # Roll the pods when a referenced ConfigMap/Secret changes (Reloader).
+    reloader.stakater.com/auto: "true"
   labels:
     app: cloudflare-ddns
     app.kubernetes.io/name: cloudflare-ddns
     app.kubernetes.io/part-of: taskflow
 spec:
   replicas: 1
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: cloudflare-ddns
@@ -19,12 +23,15 @@ spec:
     spec:
       # No workload here talks to the Kubernetes API, so no token is mounted.
       automountServiceAccountToken: false
+      # User namespace and no per-Service environment variables; see backend.yaml.
+      hostUsers: false
+      enableServiceLinks: false
       securityContext:
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: cloudflare-ddns
-          image: favonia/cloudflare-ddns:1.18.0
+          image: favonia/cloudflare-ddns:1.18.0@sha256:345b41895a8846d74c62d30bd27e61101a754f8ab8da10c68115823883803afb
           env:
             - name: CF_API_TOKEN
               valueFrom:
@@ -46,5 +53,6 @@ spec:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
             runAsUser: 1000
+            runAsGroup: 1000
             capabilities:
               drop: ["ALL"]

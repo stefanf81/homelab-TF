@@ -6,3 +6,8 @@ metadata:
     app.kubernetes.io/name: abuseipdb-sync
     app.kubernetes.io/component: ip-reputation-sync
     app.kubernetes.io/part-of: infrastructure
+    # Pod Security Admission: the synchronizer already meets the restricted profile.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest

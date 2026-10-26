@@ -46,16 +46,16 @@ gitops/
 ├── infrastructure/controllers/
 │   ├── kyverno/                     # Kyverno controller (reconciled by infra-controllers)
 │   │   ├── namespace.yaml           # kyverno ns + PSA enforce:privileged
-│   │   ├── repository.yaml          # HelmRepository kyverno @ https://kyverno.github.io/kyverno/
+│   │   ├── repository.yaml          # OCIRepository kyverno @ oci://ghcr.io/kyverno/charts/kyverno
 │   │   ├── release.yaml             # HelmRelease kyverno v3.9.2, single-replica, crds: Skip
 │   │   └── kustomization.yaml
 │   └── policy-reporter/             # Policy Reporter + UI (its OWN cluster Kustomization)
 │       ├── namespace.yaml                # policy-reporter ns
-│       ├── repository.yaml               # HelmRepository policy-reporter @ https://kyverno.github.io/policy-reporter
-│       ├── trivy-adapter-repository.yaml # HelmRepository trivy-operator-polr-adapter @ https://fjogeleit.github.io/trivy-operator-polr-adapter
+│       ├── repository.yaml               # OCIRepository policy-reporter @ oci://ghcr.io/kyverno/charts/policy-reporter
+│       ├── trivy-adapter-repository.yaml # OCIRepository trivy-operator-polr-adapter @ oci://ghcr.io/fjogeleit/charts/trivy-operator-polr-adapter
 │       ├── policy-reporter-secrets.yaml  # (legacy) SOPS OAuth secret, unused after the oauth2-proxy migration
 │       ├── policy-reporter-ui-oauth-secrets.yaml # SOPS OAuth credentials for oauth2-proxy (client-id/client-secret/cookie-secret)
-│       ├── oauth2-proxy-repository.yaml  # HelmRepository oauth2-proxy
+│       ├── oauth2-proxy-repository.yaml  # OCIRepository oauth2-proxy @ oci://ghcr.io/oauth2-proxy/charts/oauth2-proxy
 │       ├── oauth2-proxy-release.yaml     # HelmRelease oauth2-proxy (github_users allow-list)
 │       ├── oauth2-proxy-network-policy.yaml # Gateway -> oauth2-proxy ingress only
 │       ├── release.yaml                  # HelmRelease policy-reporter v3.11.1, ui + plugins, ui.oauth disabled, metrics on, crds: Skip
@@ -114,7 +114,7 @@ Gateway exists first, so the route programs immediately and `wait` succeeds.
 ## 4. Kyverno controller details
 
 ### Chart & version
-- Chart: `kyverno/kyverno` from `https://kyverno.github.io/kyverno/`
+- Chart: `kyverno` from `oci://ghcr.io/kyverno/charts/kyverno` (OCIRepository + HelmRelease `chartRef`)
 - Pinned: **3.9.2** (ships Kyverno **v1.19.2**). Requires k8s ≥ ~1.25 (the
   provisioned cluster is configured for k3s `v1.37.1+k3s1`).
 
@@ -205,7 +205,7 @@ resources with CEL `matchConditions`.
 ## 6. Policy Reporter + UI
 
 ### Install
-- Chart: `policy-reporter/policy-reporter` from `https://kyverno.github.io/policy-reporter`
+- Chart: `policy-reporter` from `oci://ghcr.io/kyverno/charts/policy-reporter`
 - Pinned: **3.11.1** (ships Policy Reporter + UI app **3.11.1**)
 - Values: `ui.enabled: true` (UI subchart, service `policy-reporter-ui:8080`),
   `plugin.kyverno.enabled: true` + `plugin.trivy.enabled: true` (enrich the UI with
@@ -221,7 +221,7 @@ Two components surface Trivy results in the UI:
    then emits its WAF-like `policy` metrics (`policy_report_info`, `policy_report_result`,
    ...) so findings also appear in the main Policy Reporter metrics.
 2. **`trivy-operator-polr-adapter`** (HelmRelease `trivy-operator-polr-adapter` v0.11.5,
-   chart from `https://fjogeleit.github.io/trivy-operator-polr-adapter`) — converts the
+   chart from `oci://ghcr.io/fjogeleit/charts/trivy-operator-polr-adapter`) — converts the
    Trivy CRDs into vanilla `wgpolicyk8s.io/v1alpha2` `PolicyReport` /
    `ClusterPolicyReport` objects, so they are visible directly in the UI's **report
    list**. All adapters are enabled (vulnerability, config-audit, RBAC, exposed-secret,

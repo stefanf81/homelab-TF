@@ -22,7 +22,7 @@ You also need access to a **Proxmox VE 8.x** host with an API token (with VM cre
 - `modules/proxmox` – Provisions the pinned Ubuntu 26.04 VM; cloud-init installs k3s `v1.37.1+k3s1` at boot (no SSH provisioning; the only SSH use is the one-shot kubeconfig fetch in `modules/k3s-kubeconfig`).
 - `modules/k3s-kubeconfig` – SSHs into the node once cloud-init finishes, fetches `/etc/rancher/k3s/k3s.yaml`, and writes a local `kubeconfig.yaml`.
 - `gitops/` – Declarative Flux v2 manifests:
-  - `gitops/infrastructure/controllers` – Cilium v1.20.4, cert-manager, CoreDNS, Proxmox CSI, Kyverno, Falco, Policy Reporter, Trivy Operator, Hubble UI oauth2-proxy, AbuseIPDB synchronizer.
+  - `gitops/infrastructure/controllers` – Cilium v1.20.4, cert-manager, CoreDNS, Proxmox CSI, Kyverno, Falco, Policy Reporter, Trivy Operator, Hubble UI oauth2-proxy, AbuseIPDB synchronizer, Reloader.
   - `gitops/infrastructure/configs` – Cilium L2 announcement policy (`192.168.50.200-250`), `GatewayClass`, and the AbuseIPDB ingress deny policy.
   - `gitops/apps/taskflow` – Spring Boot 4.1.1 backend, Angular 22 frontend, PostgreSQL 18.6, Redis 8.10, Jaeger.
   - `gitops/monitoring` – VictoriaMetrics TSDB + Grafana stack + metrics-server + Loki/Alloy + 11 custom dashboards (Taskflow WAF/Access Logs/Rate Limits/Performance, Blocked Sources, AbuseIPDB, Falco, Trivy, Kyverno, cert-manager, Logging pipeline).

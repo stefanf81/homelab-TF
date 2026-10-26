@@ -8,6 +8,7 @@ metadata:
     app.kubernetes.io/part-of: taskflow
 spec:
   replicas: 1
+  revisionHistoryLimit: 3
   # The shared RWO volume must never be mounted by old and new PostgreSQL pods.
   strategy:
     type: Recreate
@@ -23,6 +24,10 @@ spec:
       # Room for the shutdown checkpoint (the image stops Postgres with SIGINT, a fast shutdown).
       terminationGracePeriodSeconds: 60
       automountServiceAccountToken: false
+      # No per-Service environment variables (see backend.yaml). hostUsers stays at the
+      # default here: the PGDATA volume is owned by host UID 70, and moving it into a
+      # user namespace needs an idmapped mount of the proxmox-csi volume (test first).
+      enableServiceLinks: false
       securityContext:
         fsGroup: 70
         # Skip recursive chown when permissions already match (k8s ≥1.28).
@@ -31,7 +36,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: postgres
-          image: postgres:18.6-alpine
+          image: postgres:18.6-alpine@sha256:898c60cb390d1085bc97bdd6a1ae968757421df394b071848b52b1c09c89d6a5
           imagePullPolicy: IfNotPresent
           args:
             # Memory — sized to the data, not a guess: all databases total ~17 MB and the
@@ -113,6 +118,8 @@ spec:
             # postgres:18-alpine runs as UID/GID 70 by design. Do NOT "normalize" this to
             # 10001 — the PGDATA volume ownership depends on UID 70, and changing it will
             # prevent PostgreSQL from starting. fsGroup 70 + OnRootMismatch handles perms.
+            # Writes go only to PGDATA, the socket directory and /tmp (all mounted below).
+            readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             runAsNonRoot: true
             runAsUser: 70
@@ -153,6 +160,11 @@ spec:
             # default /dev/shm is 64MB. Memory-backed, counted against the limit only when used.
             - name: dshm
               mountPath: /dev/shm
+            # Unix socket and postmaster lock file (pg_isready probes use the socket).
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
           # pg_isready reports "rejecting connections" during crash recovery. The startup
           # budget (120 × 5s = 10 min) lets WAL replay finish instead of killing Postgres
           # mid-recovery in a loop; liveness only starts after startup succeeds. Exec
@@ -183,6 +195,12 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 256Mi
+        - name: run
+          emptyDir:
+            sizeLimit: 1Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
 ---
 apiVersion: v1
 kind: Service

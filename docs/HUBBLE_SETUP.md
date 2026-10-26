@@ -52,7 +52,7 @@ kubectl port-forward -n kube-system svc/hubble-relay 4244:80
 | File | Resource |
 |------|----------|
 | `namespace.yaml` | `hubble-ui` namespace |
-| `repository.yaml` | HelmRepository `oauth2-proxy` (`https://oauth2-proxy.github.io/manifests`) |
+| `repository.yaml` | OCIRepository `oauth2-proxy` (`oci://ghcr.io/oauth2-proxy/charts/oauth2-proxy`, tag 10.7.1) |
 | `release.yaml` | HelmRelease `hubble-ui-oauth2-proxy` (oauth2-proxy chart 10.7.1) |
 | `route.yaml` | HTTPRoute `hubble-ui` → `hubble-ui-oauth2-proxy:80` (container port 4180) |
 | `hubble-ui-secrets.yaml` | SOPS-encrypted Secret (GitHub OAuth credentials) |

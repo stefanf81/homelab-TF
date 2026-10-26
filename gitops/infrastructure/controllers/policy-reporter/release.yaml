@@ -5,16 +5,9 @@ metadata:
   namespace: policy-reporter
 spec:
   interval: 30m
-  chart:
-    spec:
-      chart: policy-reporter
-      # Chart v3.11.0 -> Policy Reporter / UI app v3.11.0. Cluster is k8s 1.36.4.
-      version: 3.11.1
-      sourceRef:
-        kind: HelmRepository
-        name: policy-reporter
-        namespace: policy-reporter
-      interval: 12h
+  chartRef:
+    kind: OCIRepository
+    name: policy-reporter
   install:
     createNamespace: true
     # PolicyReport CRDs (wgpolicyk8s.io) are already installed by Kyverno.

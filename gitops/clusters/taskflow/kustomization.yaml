@@ -16,3 +16,4 @@ resources:
   - hubble-ui.yaml
   - renovate.yaml
   - renovate-job.yaml
+  - reloader.yaml

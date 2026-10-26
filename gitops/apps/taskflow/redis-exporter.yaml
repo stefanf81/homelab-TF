@@ -6,12 +6,16 @@ kind: Deployment
 metadata:
   name: redis-exporter
   namespace: taskflow
+  annotations:
+    # Roll the pods when a referenced ConfigMap/Secret changes (Reloader).
+    reloader.stakater.com/auto: "true"
   labels:
     app: redis-exporter
     app.kubernetes.io/name: redis-exporter
     app.kubernetes.io/part-of: taskflow
 spec:
   replicas: 1
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: redis-exporter
@@ -22,13 +26,16 @@ spec:
     spec:
       # No workload here talks to the Kubernetes API, so no token is mounted.
       automountServiceAccountToken: false
+      # User namespace and no per-Service environment variables; see backend.yaml.
+      hostUsers: false
+      enableServiceLinks: false
       securityContext:
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: redis-exporter
-          # Pin a specific tag; rotate to a @sha256 digest for full hermeticity.
-          image: oliver006/redis_exporter:v1.96.0
+          # Tag + digest pin: Renovate bumps both together.
+          image: oliver006/redis_exporter:v1.96.0@sha256:3d57b9eb142a62ffc600063606a41cd471cd53d81bed10be5b56b3a8918f2c26
           args:
             - "--redis.addr=redis:6379"
           env:

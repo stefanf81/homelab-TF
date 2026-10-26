@@ -9,6 +9,9 @@ kind: Deployment
 metadata:
   name: abuseipdb-sync
   namespace: abuseipdb
+  annotations:
+    # Roll the pod when its ConfigMaps or Secret change (Reloader).
+    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: abuseipdb-sync
     app.kubernetes.io/component: ip-reputation-sync
@@ -28,6 +31,10 @@ spec:
     spec:
       serviceAccountName: abuseipdb-sync
       automountServiceAccountToken: true
+      # User namespace (container UIDs map to an unprivileged host range) and no
+      # per-Service environment variables.
+      hostUsers: false
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532

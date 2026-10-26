@@ -2029,7 +2029,9 @@ Rollback before the deletion step: annotate the instance
 
 Follow-ups once the operator runs:
 
-- **OCI chart sources** (`OCIRepository` + HelmRelease `chartRef`; layerSelector
+- ✅ Partly done 2026-10-25 (`POD_SPEC_REVIEW_2026-10.md`): every infrastructure chart
+  below except the monitoring ones moved; VictoriaMetrics and Loki wait for the CI scripts.
+  **OCI chart sources** (`OCIRepository` + HelmRelease `chartRef`; layerSelector
   `application/vnd.cncf.helm.chart.content.v1.tar+gzip`): available for cilium
   (`oci://quay.io/cilium/charts/cilium`), cert-manager
   (`oci://quay.io/jetstack/charts/cert-manager`), coredns

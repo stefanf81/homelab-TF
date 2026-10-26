@@ -3,11 +3,15 @@ kind: Deployment
 metadata:
   name: taskflow-backend
   namespace: taskflow
+  annotations:
+    # Roll the pods when a referenced ConfigMap/Secret changes (Reloader).
+    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: taskflow-backend
     app.kubernetes.io/part-of: taskflow
 spec:
   replicas: 1
+  revisionHistoryLimit: 3
   # One surge pod, never below one ready pod. The surge pod needs only the backend's
   # CPU request (500m) of free capacity now that requests reflect real usage.
   strategy:
@@ -26,6 +30,12 @@ spec:
       priorityClassName: taskflow-critical
       # The backend never calls the Kubernetes API.
       automountServiceAccountToken: false
+      # User namespace: UID 10001 in the container maps to an unprivileged, per-pod
+      # host UID range, so a container escape lands as nobody on the node.
+      hostUsers: false
+      # Do not inject <SERVICE>_PORT / <SERVICE>_SERVICE_HOST variables for every
+      # Service in the namespace (db, redis, jaeger, ...); DNS is used instead.
+      enableServiceLinks: false
       securityContext:
         # The mount hides the image directory; make it writable by the runtime UID/GID.
         fsGroup: 10001
@@ -37,11 +47,9 @@ spec:
       # backend's prod profile so Spring finishes active requests before the pod is killed.
       terminationGracePeriodSeconds: 45
       initContainers:
-        # NOTE: intentionally uses the mutable alpine:3.24.2 tag (not a Flux digest pin)
-        # because this is a transient init container, not a served image. Pin to a digest
-        # if you want fully hermetic boots: image: alpine:3.24.3@sha256:<digest>
+        # Tag + digest pin: Renovate bumps both together.
         - name: wait-for-db
-          image: alpine:3.24.3
+          image: alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
           securityContext:
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
@@ -119,11 +127,6 @@ spec:
                 secretKeyRef:
                   name: taskflow-jwt-keys
                   key: APP_RSA_PUBLIC_KEY
-            - name: SPRING_REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: redis-secret
-                  key: REDIS_PASSWORD
             # JVM sizing is owned by the DEPLOYMENT (this JAVA_TOOL_OPTIONS), not the
             # image CMD. The image deliberately carries only environment-invariant flags
             # (the Java 25 AOT cache via -XX:AOTCache, ExitOnOOM) — setting sizing flags
@@ -184,6 +187,19 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+          # Let Cilium/Envoy drop the endpoint before Spring starts its graceful shutdown
+          # (server.shutdown=graceful, 30s phase timeout): 10s + 30s fits the 45s grace period.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 10
+          # In-place resize: CPU changes apply without a restart; memory restarts the
+          # container because the JVM sizes its heap (MaxRAMPercentage) at start-up.
+          resizePolicy:
+            - resourceName: cpu
+              restartPolicy: NotRequired
+            - resourceName: memory
+              restartPolicy: RestartContainer
           resources:
             # CPU: request sized to real usage, no limit. A CPU limit is a CFS quota that
             # throttles the JVM's bursts (JIT, GC, start-up) even on an idle node; the old

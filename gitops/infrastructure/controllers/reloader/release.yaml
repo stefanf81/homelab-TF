@@ -1,0 +1,49 @@
+# Reloader rolls a Deployment when a ConfigMap or Secret it references changes.
+#
+# Opt-in per Deployment:
+#   reloader.stakater.com/auto: "true"                  every referenced ConfigMap/Secret
+#   configmap.reloader.stakater.com/reload: <name>[,..]  only the listed ConfigMaps (WAFs)
+#
+# Scoped mode: watchGlobally=false with an explicit namespace list makes the chart
+# create a namespaced Role + RoleBinding in each namespace instead of a ClusterRole,
+# so Reloader can read Secrets only where it has work to do. Add a namespace here
+# before annotating workloads in it.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: reloader
+  namespace: reloader
+spec:
+  interval: 30m
+  chartRef:
+    kind: OCIRepository
+    name: reloader
+  install:
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  upgrade:
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  values:
+    fullnameOverride: reloader
+    reloader:
+      watchGlobally: false
+      namespaces:
+        - taskflow
+        - abuseipdb
+      readOnlyRootFileSystem: true
+      deployment:
+        hostUsers: false
+        containerSecurityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 128Mi

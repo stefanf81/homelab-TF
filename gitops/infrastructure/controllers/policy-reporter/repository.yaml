@@ -1,8 +1,14 @@
 apiVersion: source.toolkit.fluxcd.io/v1
-kind: HelmRepository
+kind: OCIRepository
 metadata:
   name: policy-reporter
   namespace: policy-reporter
 spec:
   interval: 24h
-  url: https://kyverno.github.io/policy-reporter
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    # Chart v3.11.0 -> Policy Reporter / UI app v3.11.0. Cluster is k8s 1.36.4.
+    tag: 3.11.1
+  url: oci://ghcr.io/kyverno/charts/policy-reporter

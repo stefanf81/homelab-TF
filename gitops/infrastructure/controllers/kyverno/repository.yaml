@@ -1,8 +1,15 @@
 apiVersion: source.toolkit.fluxcd.io/v1
-kind: HelmRepository
+kind: OCIRepository
 metadata:
   name: kyverno
   namespace: kyverno
 spec:
   interval: 24h
-  url: https://kyverno.github.io/kyverno/
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    # Chart v3.9.2 ships Kyverno v1.19.2.
+    # Cluster is k8s 1.37.1 (supported, k8s >= 1.25 required).
+    tag: 3.9.2
+  url: oci://ghcr.io/kyverno/charts/kyverno

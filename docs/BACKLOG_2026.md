@@ -50,9 +50,10 @@ Already changed but uncommitted (for context, do not redo):
 
 ## P1 — Correctness & hygiene (next few days)
 
-- [ ] **5. Reloader.** Deploy stakater/reloader; add `reloader.stakater.com/auto: "true"` to
-  backend, frontend, and both WAFs. Delete the manual rollout runbooks
-  (`*-waf.yaml:1-4`, FLUX docs). Covers ConfigMap **and** Secret rotations.
+- [x] **5. Reloader.** ✅ Done (2026-10-25): stakater/reloader in scoped mode (namespaced RBAC
+  for `taskflow` and `abuseipdb` only). WAFs reload on their ConfigMap; backend, Redis,
+  exporters, cloudflare-ddns and abuseipdb-sync use `reloader.stakater.com/auto`. Postgres is
+  deliberately excluded (its password only applies at initdb).
 
 - [ ] **6. Remove the unused OAuth secret.** Delete `policy-reporter-secrets.yaml`
   (`policy-reporter-github-oauth`), the live secret, and revoke the GitHub app;
