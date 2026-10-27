@@ -95,7 +95,7 @@ spec:
           - name: ready
           - name: hosts
             configBlock: |-
-              192.168.50.55 ubuntu
+              ${NODE_IP} ubuntu
               ${GATEWAY_IP} ${DOMAIN} www.${DOMAIN} grafana.${DOMAIN} kyverno.${DOMAIN} hubble.${DOMAIN}
               ttl 60
               reload 15s

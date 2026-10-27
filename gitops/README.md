@@ -35,7 +35,7 @@ gitops/
 └── FLUX_BOOTSTRAP.md    # Instructions for remote Git & Flux CD integration
 ```
 
-**Cluster variables.** `clusters/taskflow/cluster-vars.yaml` holds `DOMAIN` and `GATEWAY_IP`. Kustomizations that render them (`infra-controllers`, `taskflow-app`, `monitoring`, `policy-reporter`, `hubble-ui`) declare `postBuild.substituteFrom: cluster-vars`; manifests use `${DOMAIN}` / `${GATEWAY_IP}`. Write a literal `${...}` as `$${...}`. `scripts/validate-gitops.sh` emulates the substitution and fails if a path uses a variable without the `postBuild` block.
+**Cluster variables.** `clusters/taskflow/cluster-vars.yaml` holds `DOMAIN`, `GATEWAY_IP`, `NODE_IP`, `LAN_CIDR` and the `LB_POOL_START`/`LB_POOL_STOP` range. Kustomizations that render them (`infra-controllers`, `infra-configs`, `taskflow-app`, `monitoring`, `policy-reporter`, `hubble-ui`, `abuseipdb`) declare `postBuild.substituteFrom: cluster-vars`; manifests use `${DOMAIN}`, `${NODE_IP}` and so on. Write a literal `${...}` as `$${...}`. `scripts/validate-gitops.sh` emulates the substitution and fails if a path uses a variable without the `postBuild` block.
 
 ### 1. `clusters/` (The Entrypoint & Orchestration Layer)
 This is where your Flux CD controllers start scanning. When you bootstrap Flux on your k3s node, you point it to a subfolder inside `clusters/` (e.g., `gitops/clusters/taskflow/`).
