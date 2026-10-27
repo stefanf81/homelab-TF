@@ -636,7 +636,7 @@ VictoriaMetrics' plain `increase()` can discard a large first value; the
 dashboards use `increase_pure()` (MetricsQL) instead (see
 `gitops/monitoring/logging/dashboards/SOURCE.md`, "Counter semantics").
 
-`gitops/images/taskflow-caddy-coraza/tests/validate-alloy-metrics.sh` runs the
+`gitops/monitoring/tests/validate-alloy-metrics.sh` runs the
 real Alloy image over fixture logs with known counts and checks every counter
 and the histogram; `validate-configs.sh` and CI run it. Change the pipeline and
 the dashboards together.

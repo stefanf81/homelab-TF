@@ -103,7 +103,7 @@ end
 
 if $PROGRAM_NAME == __FILE__
   begin
-    repo_root = ARGV[0] || File.expand_path("../../../..", __dir__)
+    repo_root = ARGV[0] || File.expand_path("../../..", __dir__)
     DashboardProvisioningValidation.run(repo_root)
   rescue StandardError => error
     warn error.message

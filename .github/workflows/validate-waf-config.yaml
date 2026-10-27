@@ -19,7 +19,7 @@ on:
       - 'gitops/monitoring/logging/repositories.yaml'
       - 'gitops/monitoring/platform/release.yaml'
       - 'gitops/images/taskflow-caddy-coraza/tests/validate-*'
-      - 'gitops/images/taskflow-caddy-coraza/tests/loki-validation.yaml'
+      - 'gitops/monitoring/tests/**'
       - '.github/workflows/validate-waf-config.yaml'
   push:
     branches:
@@ -35,7 +35,7 @@ on:
       - 'gitops/monitoring/logging/repositories.yaml'
       - 'gitops/monitoring/platform/release.yaml'
       - 'gitops/images/taskflow-caddy-coraza/tests/validate-*'
-      - 'gitops/images/taskflow-caddy-coraza/tests/loki-validation.yaml'
+      - 'gitops/monitoring/tests/**'
       - '.github/workflows/validate-waf-config.yaml'
 
 concurrency:
