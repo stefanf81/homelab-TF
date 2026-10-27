@@ -16,9 +16,10 @@ metadata:
     kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   distribution:
-    # Pinned to the running minor for the takeover; move to "2.10.x" once the
-    # operator is Ready and image automation still commits.
-    version: "2.9.x"
+    # Patch releases roll out automatically; minor bumps are a reviewed change.
+    # 2.10: object identity GA (token RBAC no longer granted; unused here),
+    # notification APIs v1, ImageRepository tags in Flux storage (one rescan).
+    version: "2.10.x"
     registry: ghcr.io/fluxcd
   components:
     - source-controller
