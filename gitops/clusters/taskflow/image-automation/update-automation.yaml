@@ -1,0 +1,31 @@
+# Periodically rewrites the `# {"$imagepolicy": ...:digest}` markers in the app
+# manifests (under ./gitops/apps/taskflow) and pushes the change to main.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageUpdateAutomation
+metadata:
+  name: taskflow-images
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        email: fluxcdbot@users.noreply.github.com
+        name: fluxcdbot
+      messageTemplate: |
+        chore: automated TaskFlow image update
+
+        {{ range .Changed.Changes -}}
+        - {{ .OldValue }} -> {{ .NewValue }}
+        {{ end -}}
+    push:
+      branch: main
+  update:
+    path: ./gitops/apps/taskflow
+    strategy: Setters

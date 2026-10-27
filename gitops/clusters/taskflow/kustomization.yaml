@@ -7,7 +7,7 @@ resources:
   - infra-controllers.yaml
   - infra-configs.yaml
   - abuseipdb.yaml
-  - image-automation.yaml
+  - image-automation
   - taskflow.yaml
   - monitoring.yaml
   - monitoring-logging.yaml

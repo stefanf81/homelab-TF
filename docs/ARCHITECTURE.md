@@ -354,7 +354,7 @@ TF/
 │       ├── policy-reporter.yaml     # Policy Reporter + UI (dependsOn infra-controllers + taskflow-app)
 │       ├── trivy-operator.yaml      # Trivy vulnerability scanner (dependsOn infra-controllers)
 │       ├── hubble-ui.yaml           # Hubble UI oauth2-proxy (dependsOn infra-controllers + taskflow-app)
-│       └── image-automation.yaml    # ImageRepository + ImagePolicy + ImageUpdateAutomation
+│       └── image-automation/        # ImageRepository + ImagePolicy + ImageUpdateAutomation
 │
 │   ├── monitoring/                  # Observability stack
 │   │   ├── platform/                # Operator + CRDs + storage + Grafana secret
@@ -445,7 +445,7 @@ This is the path that actually matters day-to-day:
 ```
 1. You push a new :latest image to ghcr.io/stefanf81/taskflow-backend
         │
-2. Flux ImageRepository (gitops/clusters/taskflow/image-automation.yaml)
+2. Flux ImageRepository (gitops/clusters/taskflow/image-automation/)
    polls ghcr every 10m, sees :latest moved to a new sha256 digest
         │
 3. Flux ImagePolicy (digestReflectionPolicy: Always) records the new digest
@@ -530,7 +530,7 @@ AbuseIPDB-listed sources are rejected even earlier than the HTTPRoute chain: at 
 | Read-only root FS | backend, frontend, WAF, exporters, DDNS | Containers can't write to their image layer; only explicit `emptyDir` mounts (`/tmp`, Caddy data/config) are writable. Postgres, Redis and Jaeger intentionally run with a writable root FS (documented exceptions). |
 | Non-root + dropped caps | every container | `runAsNonRoot: true`, `capabilities.drop: [ALL]`. Backend/frontend/Redis/Jaeger use UID `10001`; Postgres uses image-native UID `70`. |
 | Secret encryption | `.sops.yaml` + `taskflow-secrets.yaml` | `POSTGRES_PASSWORD`, `SPRING_SECURITY_PASSWORD`, and `REDIS_PASSWORD` are age-encrypted; Flux decrypts at apply time using the `sops-age` Secret. The plaintext `key.txt` is `.gitignore`d. |
-| Immutable images | `image-automation.yaml` | Flux pins every app image to a `@sha256:` digest in Git. |
+| Immutable images | `image-automation/` | Flux pins every app image to a `@sha256:` digest in Git. |
 | IP reputation denylist | `gitops/platform/abuseipdb/` + `gitops/infrastructure/configs/cilium/abuseipdb-ingress-deny.yaml` | AbuseIPDB-listed sources are blocked at the Cloudflare edge (proxied path) and by Cilium on `reserved:ingress` (direct path). The `CiliumCIDRGroup` and Cloudflare list are runtime-managed and never in Git. |
 
 ### 10.7 What to touch when you want to change X

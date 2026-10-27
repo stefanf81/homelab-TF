@@ -93,7 +93,7 @@ kubectl get secret -n taskflow db-secret backend-secret redis-secret taskflow-jw
 TaskFlow's backend/frontend run the mutable `:latest` tag. Flux pins the
 current digest and commits `repo:latest@sha256:<digest>` to Git so every rollout
 is auditable and automatic when a new `:latest` is pushed to ghcr. This is wired
-in `gitops/clusters/taskflow/image-automation.yaml` (ImageRepository +
+in `gitops/clusters/taskflow/image-automation/` (ImageRepository +
 ImagePolicy + ImageUpdateAutomation) and the `# {"$imagepolicy": ...}` markers in
 `gitops/apps/taskflow/backend.yaml` and `frontend.yaml`.
 
