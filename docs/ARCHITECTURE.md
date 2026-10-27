@@ -196,7 +196,7 @@ VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 ### 5.5 Redis Deployment (`gitops/apps/taskflow/redis.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `redis:8.10.2-alpine` |
+| Image | `redis:8.10.3-alpine` |
 | Replicas | 1 |
 | Storage | emptyDir (ephemeral, no persistence) |
 | Memory Guard | `--maxmemory 64mb`, `allkeys-lru`, lazyfree eviction, 10 samples |
@@ -235,7 +235,7 @@ image with a SOPS-encrypted Cloudflare API token.
 ### 5.10 Monitoring Stack (`gitops/monitoring/`)
 | Component | Implementation |
 |-----------|----------------|
-| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.96.0) in namespace `monitoring` |
+| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.97.0) in namespace `monitoring` |
 | CRDs | Installed by the chart (VMServiceScrape, VMSingle, …) |
 | Persistence | VictoriaMetrics TSDB on a **Proxmox CSI-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `proxmox-csi`) |
 | Grafana auth | GitHub OAuth authentication (`auth.github`) with credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana UI is routed via the Gateway API (see `routes.yaml`); VictoriaMetrics UI is kept strictly internal and accessed via port-forwarding |

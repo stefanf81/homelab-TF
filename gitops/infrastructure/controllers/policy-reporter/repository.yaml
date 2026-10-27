@@ -10,5 +10,5 @@ spec:
     operation: copy
   ref:
     # Chart v3.11.0 -> Policy Reporter / UI app v3.11.0. Cluster is k8s 1.36.4.
-    tag: 3.11.1
+    tag: 3.11.2
   url: oci://ghcr.io/kyverno/charts/policy-reporter

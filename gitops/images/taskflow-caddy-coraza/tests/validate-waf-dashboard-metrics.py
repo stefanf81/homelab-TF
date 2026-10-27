@@ -4,7 +4,7 @@
 No cluster access or external TSDB URL is accepted: fixture imports and flushes
 only target the disposable process/container created here. Requires Python 3 and
 Docker, or VM_BINARY pointing to a local VictoriaMetrics executable.
-VM_IMAGE defaults to the VMSingle image bundled with stack chart 0.96.0; use the
+VM_IMAGE defaults to the VMSingle image bundled with stack chart 0.97.0; use the
 same version when supplying VM_BINARY.
 """
 import json
@@ -42,7 +42,7 @@ class WafDashboardMetricsTest(unittest.TestCase):
         for name in ("falco-official", "logging-pipeline"):
             path = ROOT / f"gitops/monitoring/logging/dashboards/{name}.json"
             cls.extra[name] = {p["id"]: p for p in panels(json.loads(path.read_text())["panels"])}
-        image = os.environ.get("VM_IMAGE", "victoriametrics/victoria-metrics:v1.154.0")
+        image = os.environ.get("VM_IMAGE", "victoriametrics/victoria-metrics:v1.155.0")
         flags = ["-memory.allowedBytes=96MiB", "-storage.minFreeDiskSpaceBytes=10MB"]
         binary = os.environ.get("VM_BINARY")
         if binary:

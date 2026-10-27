@@ -198,7 +198,7 @@ The adapter writes named reports (e.g. `trivy-nginx` in each namespace, or clust
 `trivy-operator.source=VulnerabilityReport`) so the UI can group them under its configured
 **sources**.
 
-Policy Reporter's own HelmRelease (`policy-reporter`, v3.11.1) additionally has:
+Policy Reporter's own HelmRelease (`policy-reporter`, v3.11.2) additionally has:
 
 - `plugin.trivy.enabled: true` — lets Policy Reporter enrich the reports / metrics with
   severity data (so the `policy_report_info`/`policy_report_result` metrics and the
