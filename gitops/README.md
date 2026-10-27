@@ -14,17 +14,18 @@ gitops/
 ├── clusters/                   # 1. Cluster entrypoints (The Bootstrap Target)
 │   └── taskflow/
 ├── infrastructure/             # 2. Platform/System services (Helm charts & System configs)
-│   ├── controllers/
-│   │   ├── kyverno/            #   Kyverno policy engine (HelmRelease; reconciled by infra-controllers)
-│   │   ├── policy-reporter/    #   Policy Reporter + UI (own Kustomization; dashboard at kyverno.jokelab.dev)
-│   │   ├── falco/              #   Falco runtime security (modern eBPF, PolicyReport integration)
-│   │   ├── trivy-operator/     #   Trivy vulnerability scanner (own Kustomization; dependsOn infra-controllers)
-│   │   └── abuseipdb/          #   AbuseIPDB synchronizer (IP reputation → Cilium + Cloudflare; own Kustomization)
+│   ├── controllers/            #   Controllers and CRD providers (Cilium, cert-manager, CoreDNS, Proxmox CSI, Kyverno, Falco, Trivy, Reloader, Flux Operator)
+│   ├── flux-instance/          #   FluxInstance managed by the Flux Operator
 │   └── configs/
-├── apps/                       # 3. User-facing applications (TaskFlow frontend, backend, database)
+├── platform/                   # 3. Platform workloads with their own Kustomization (need the app tier, SOPS secrets or ordering)
+│   ├── policy-reporter/        #   Policy Reporter + UI (dashboard at kyverno.<domain>)
+│   ├── hubble-ui/              #   Hubble UI behind oauth2-proxy
+│   ├── renovate/               #   Renovate operator and job
+│   └── abuseipdb/              #   AbuseIPDB synchronizer (IP reputation -> Cilium + Cloudflare)
+├── apps/                       # 4. User-facing applications (TaskFlow frontend, backend, database)
 │   ├── taskflow/
 │   └── kyverno-policies/       #   CEL ValidatingPolicies (Deny, fail-open); reconciled by kyverno-policies Kustomization
-├── monitoring/                 # 4. VictoriaMetrics, Grafana, Loki, Alloy, and dashboards
+├── monitoring/                 # 5. VictoriaMetrics, Grafana, Loki, Alloy, and dashboards
 │   ├── platform/               #   VictoriaMetrics stack, Grafana, routes, grafana secrets
 │   ├── app/                    #   App scrapes + Grafana dashboards (TaskFlow Performance, AbuseIPDB Security, Blocked Sources, cert-manager, Kyverno)
 │   └── logging/                #   Loki, Alloy (WAF logs + derived WAF metrics, abuseipdb-sync logs, Hubble flow export) + WAF, Access Logs, Rate Limits, Falco, Trivy, Logging pipeline dashboards
@@ -33,6 +34,8 @@ gitops/
 ├── README.md                   # GitOps directory overview
 └── FLUX_BOOTSTRAP.md    # Instructions for remote Git & Flux CD integration
 ```
+
+**Cluster variables.** `clusters/taskflow/cluster-vars.yaml` holds `DOMAIN` and `GATEWAY_IP`. Kustomizations that render them (`infra-controllers`, `taskflow-app`, `monitoring`, `policy-reporter`, `hubble-ui`) declare `postBuild.substituteFrom: cluster-vars`; manifests use `${DOMAIN}` / `${GATEWAY_IP}`. Write a literal `${...}` as `$${...}`. `scripts/validate-gitops.sh` emulates the substitution and fails if a path uses a variable without the `postBuild` block.
 
 ### 1. `clusters/` (The Entrypoint & Orchestration Layer)
 This is where your Flux CD controllers start scanning. When you bootstrap Flux on your k3s node, you point it to a subfolder inside `clusters/` (e.g., `gitops/clusters/taskflow/`).
@@ -105,10 +108,10 @@ The scaffolded manifests inside this layout include critical performance and net
   sops -e -i gitops/apps/taskflow/taskflow-secrets.yaml
   ```
   The AbuseIPDB synchronizer uses the same mechanism
-  (`gitops/infrastructure/controllers/abuseipdb/abuseipdb-secrets.yaml`, holding
+  (`gitops/platform/abuseipdb/abuseipdb-secrets.yaml`, holding
   the AbuseIPDB API key and the Cloudflare API token):
   ```bash
-  sops gitops/infrastructure/controllers/abuseipdb/abuseipdb-secrets.yaml
+  sops gitops/platform/abuseipdb/abuseipdb-secrets.yaml
   ```
 
 ### 4. Policy Engine & Dashboard (Kyverno + Policy Reporter)
@@ -117,7 +120,7 @@ Kyverno provides Kubernetes-native policy enforcement; Policy Reporter gives it 
 
 * **Controller** — `gitops/infrastructure/controllers/kyverno/` (HelmRelease `kyverno` v3.9.2, shipping Kyverno v1.19.2, single-replica, CRDs owned by the chart). System namespaces (`kube-system`, `flux-system`, `kyverno`, `cert-manager`) are excluded from enforcement.
 * **Policies** — `gitops/apps/kyverno-policies/` holds CEL `ValidatingPolicy` resources in **Deny** mode with `failurePolicy: Ignore` (`disallow-latest-tag`, `require-common-labels`). Reconciled by the `kyverno-policies` Kustomization, which `dependsOn: infra-controllers` so the CRDs exist before policies apply.
-* **Dashboard** — `gitops/infrastructure/controllers/policy-reporter/` (HelmRelease `policy-reporter` v3.11.2, `ui.enabled`, `plugin.kyverno.enabled` + `plugin.trivy.enabled`, GitHub OAuth, six Trivy `ui.sources`). Its `HTTPRoute` serves `https://kyverno.jokelab.dev` via the shared Cilium Gateway, using the `taskflow-jokelab-cert` certificate, whose `dnsNames` already include `kyverno.jokelab.dev`. Ensure the hostname has a public DNS record before certificate issuance or renewal.
+* **Dashboard** — `gitops/platform/policy-reporter/` (HelmRelease `policy-reporter` v3.11.2, `ui.enabled`, `plugin.kyverno.enabled` + `plugin.trivy.enabled`, GitHub OAuth, six Trivy `ui.sources`). Its `HTTPRoute` serves `https://kyverno.jokelab.dev` via the shared Cilium Gateway, using the `taskflow-jokelab-cert` certificate, whose `dnsNames` already include `kyverno.jokelab.dev`. Ensure the hostname has a public DNS record before certificate issuance or renewal.
 
 **Add a policy:** add a `ValidatingPolicy` YAML (start with `validationActions: [Audit]`) to `gitops/apps/kyverno-policies/` and its `kustomization.yaml`, check it with `kubectl apply --dry-run=server -k gitops/apps/kyverno-policies`, and commit — Flux applies it automatically.
 

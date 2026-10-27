@@ -16,7 +16,7 @@ spec:
     - name: trivy-operator
   interval: 30m
   retryInterval: 5m
-  path: ./gitops/infrastructure/controllers/policy-reporter
+  path: ./gitops/platform/policy-reporter
   prune: true
   sourceRef:
     kind: GitRepository

@@ -16,13 +16,14 @@
   "flux": {
     "managerFilePatterns": [
       "/^gitops\\/infrastructure\\/controllers\\/.+\\.ya?ml$/",
+      "/^gitops\\/platform\\/.+\\.ya?ml$/",
       "/^gitops\\/monitoring\\/.+\\.ya?ml$/"
     ]
   },
   "kubernetes": {
     "managerFilePatterns": [
       "/^gitops\\/apps\\/.+\\.ya?ml$/",
-      "/^gitops\\/infrastructure\\/controllers\\/renovate\\/.+\\.ya?ml$/"
+      "/^gitops\\/platform\\/renovate\\/.+\\.ya?ml$/"
     ]
   },
   "customManagers": [

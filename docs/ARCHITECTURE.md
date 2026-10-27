@@ -109,17 +109,17 @@ taskflow-app                     monitoring (VictoriaMetrics + Grafana + CRDs;
 |------|------|----------|-------|------|---------|------------|
 | `infra-controllers` | `./gitops/infrastructure/controllers` | 30m | ✅ | ✅ | 10m | — |
 | `infra-configs` | `./gitops/infrastructure/configs` | 30m | ✅ | ✅ | 10m | infra-controllers |
-| `abuseipdb` | `./gitops/infrastructure/controllers/abuseipdb` | 30m | ✅ | ✅ | 5m | infra-controllers |
+| `abuseipdb` | `./gitops/platform/abuseipdb` | 30m | ✅ | ✅ | 5m | infra-controllers |
 | `taskflow-app` | `./gitops/apps/taskflow` | 10m | ✅ | ✅ | 5m | infra-configs |
 | `monitoring` | `./gitops/monitoring/platform` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app |
 | `monitoring-app` | `./gitops/monitoring/app` | 30m | ✅ | ✅ | 10m | monitoring |
 | `monitoring-logging` | `./gitops/monitoring/logging` | 30m | ✅ | ✅ | 10m | monitoring, taskflow-app |
 | `kyverno-policies` | `./gitops/apps/kyverno-policies` | 30m | ✅ | ✅ | 5m | infra-controllers |
-| `policy-reporter` | `./gitops/infrastructure/controllers/policy-reporter` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app, trivy-operator |
+| `policy-reporter` | `./gitops/platform/policy-reporter` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app, trivy-operator |
 | `trivy-operator` | `./gitops/infrastructure/controllers/trivy-operator` | 30m | ✅ | ✅ | 5m | infra-controllers |
-| `hubble-ui` | `./gitops/infrastructure/controllers/hubble-ui` | 10m | ✅ | ✅ | 5m | infra-controllers, taskflow-app |
-| `renovate` | `./gitops/infrastructure/controllers/renovate` | 1h | ✅ | ✅ | 5m | infra-controllers |
-| `renovate-job` | `./gitops/infrastructure/controllers/renovate/job` | 1h | ✅ | ✅ | 5m | renovate |
+| `hubble-ui` | `./gitops/platform/hubble-ui` | 10m | ✅ | ✅ | 5m | infra-controllers, taskflow-app |
+| `renovate` | `./gitops/platform/renovate` | 1h | ✅ | ✅ | 5m | infra-controllers |
+| `renovate-job` | `./gitops/platform/renovate/job` | 1h | ✅ | ✅ | 5m | renovate |
 
 ### 4.3 Image Automation (Digest Pinning)
 ```
@@ -531,7 +531,7 @@ AbuseIPDB-listed sources are rejected even earlier than the HTTPRoute chain: at 
 | Non-root + dropped caps | every container | `runAsNonRoot: true`, `capabilities.drop: [ALL]`. Backend/frontend/Redis/Jaeger use UID `10001`; Postgres uses image-native UID `70`. |
 | Secret encryption | `.sops.yaml` + `taskflow-secrets.yaml` | `POSTGRES_PASSWORD`, `SPRING_SECURITY_PASSWORD`, and `REDIS_PASSWORD` are age-encrypted; Flux decrypts at apply time using the `sops-age` Secret. The plaintext `key.txt` is `.gitignore`d. |
 | Immutable images | `image-automation.yaml` | Flux pins every app image to a `@sha256:` digest in Git. |
-| IP reputation denylist | `gitops/infrastructure/controllers/abuseipdb/` + `gitops/infrastructure/configs/cilium/abuseipdb-ingress-deny.yaml` | AbuseIPDB-listed sources are blocked at the Cloudflare edge (proxied path) and by Cilium on `reserved:ingress` (direct path). The `CiliumCIDRGroup` and Cloudflare list are runtime-managed and never in Git. |
+| IP reputation denylist | `gitops/platform/abuseipdb/` + `gitops/infrastructure/configs/cilium/abuseipdb-ingress-deny.yaml` | AbuseIPDB-listed sources are blocked at the Cloudflare edge (proxied path) and by Cilium on `reserved:ingress` (direct path). The `CiliumCIDRGroup` and Cloudflare list are runtime-managed and never in Git. |
 
 ### 10.7 What to touch when you want to change X
 
@@ -542,9 +542,9 @@ AbuseIPDB-listed sources are rejected even earlier than the HTTPRoute chain: at 
 | Expose a new URL path | `gitops/apps/taskflow/httproute.yaml` | Flux reconciles Gateway |
 | Change the external IP range | `gitops/infrastructure/configs/cilium/ippool.yaml` | `flux reconcile kustomization infra-configs` |
 | Rotate a DB/app secret | `sops edit gitops/apps/taskflow/taskflow-secrets.yaml` | Flux re-decrypts on next sync |
-| Tune the AbuseIPDB sync (interval, list size, exceptions) | `gitops/infrastructure/controllers/abuseipdb/config.yaml` | `flux reconcile kustomization abuseipdb -n flux-system` |
+| Tune the AbuseIPDB sync (interval, list size, exceptions) | `gitops/platform/abuseipdb/config.yaml` | `flux reconcile kustomization abuseipdb -n flux-system` |
 | Pause either denylist sink | `abuseipdb-ingress-deny` file (Cilium) / `CLOUDFLARE_SYNC_ENABLED` (edge) | see rollback in `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md` |
-| Rotate the AbuseIPDB key / Cloudflare token | `sops edit gitops/infrastructure/controllers/abuseipdb/abuseipdb-secrets.yaml` | Flux re-decrypts on next sync |
+| Rotate the AbuseIPDB key / Cloudflare token | `sops edit gitops/platform/abuseipdb/abuseipdb-secrets.yaml` | Flux re-decrypts on next sync |
 | Bump Cilium/Proxmox CSI/cert-manager version | the `version:` in the relevant `release.yaml` | Flux upgrades (CRDs `CreateReplace`) |
 | Change VM size/network | `terraform.tfvars` + `variables.tf` | `make apply` (note: some changes force VM recreate → auto re-fetch kubeconfig) |
 | Add a TLS cert | `gitops/infrastructure/controllers/cert-manager/` + HTTPS listener in `gateway.yaml` | see ISSUES.md #19 |

@@ -534,7 +534,7 @@ for example:
           resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 256Mi}}
         frontend:
           resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 128Mi}}
-# infrastructure/controllers/policy-reporter/release.yaml — plugins had none
+# platform/policy-reporter/release.yaml — plugins had none
     plugin:
       kyverno:
         enabled: true

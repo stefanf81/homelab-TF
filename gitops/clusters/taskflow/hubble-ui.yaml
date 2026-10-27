@@ -13,7 +13,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./gitops/infrastructure/controllers/hubble-ui
+  path: ./gitops/platform/hubble-ui
   prune: true
   wait: true
   decryption:

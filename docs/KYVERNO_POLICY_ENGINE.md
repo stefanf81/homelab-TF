@@ -70,7 +70,7 @@ gitops/
 └── clusters/taskflow/
     ├── infra-controllers.yaml       # reconciles infrastructure/controllers (incl. kyverno)
     ├── kyverno-policies.yaml        # reconciles apps/kyverno-policies (dependsOn infra-controllers)
-    └── policy-reporter.yaml         # reconciles infrastructure/controllers/policy-reporter
+    └── policy-reporter.yaml         # reconciles platform/policy-reporter
                                      #   (dependsOn infra-controllers + taskflow-app)
 ```
 
@@ -248,7 +248,7 @@ The UI is published through the **shared** `taskflow-gateway` (Cilium, `cilium` 
 exactly like Grafana:
 
 ```yaml
-# gitops/infrastructure/controllers/policy-reporter/route.yaml
+# gitops/platform/policy-reporter/route.yaml
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -327,7 +327,7 @@ alongside `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`.
 ### Authentication (GitHub OAuth via oauth2-proxy)
 The Policy Reporter UI's built-in GitHub OAuth has **no user/org allow-list**, so
 `ui.oauth.enabled` is disabled and the UI is fronted by an oauth2-proxy
-(`gitops/infrastructure/controllers/policy-reporter/oauth2-proxy-release.yaml`):
+(`gitops/platform/policy-reporter/oauth2-proxy-release.yaml`):
 
 - `provider = "github"` with `redirect_url = https://kyverno.jokelab.dev/oauth2/callback`
 - Login is restricted with `github_users = ["stefanf81"]`; with no org/repo
@@ -336,7 +336,7 @@ The Policy Reporter UI's built-in GitHub OAuth has **no user/org allow-list**, s
   SOPS-encrypted `policy-reporter-ui-github-oauth` Secret
   (`policy-reporter-ui-oauth-secrets.yaml`). Create a GitHub OAuth App with the
   callback above, replace the `PLACEHOLDER_*` values, and re-encrypt:
-  `sops -e -i gitops/infrastructure/controllers/policy-reporter/policy-reporter-ui-oauth-secrets.yaml`.
+  `sops -e -i gitops/platform/policy-reporter/policy-reporter-ui-oauth-secrets.yaml`.
   Until then login fails closed.
 - The old `policy-reporter-github-oauth` secret is unused after the migration.
 - The HTTPRoute targets the oauth2-proxy (`policy-reporter-ui-oauth2-proxy:80`),
@@ -397,7 +397,7 @@ Then open `https://kyverno.jokelab.dev` (after DNS + cert are ready).
 
 - **Remove a policy:** delete its file + kustomization entry, commit. Flux prunes it.
 - **Remove Policy Reporter:** delete `policy-reporter.yaml` from the cluster kustomization list
-  and `gitops/infrastructure/controllers/policy-reporter/`, commit. Flux prunes the release
+  and `gitops/platform/policy-reporter/`, commit. Flux prunes the release
   (and its owned resources). Optionally remove `kyverno.jokelab.dev` from the cert SAN and the
   `policy-reporter` entry from the Gateway `allowedRoutes`.
 - **Remove Kyverno:** remove `kyverno` from `infrastructure/controllers/kustomization.yaml` and
