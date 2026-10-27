@@ -31,5 +31,5 @@ check the living documents for current state.
 ## Validation
 
 `scripts/validate-gitops.sh` renders every path Flux reconciles and schema-checks
-it (CI: `.github/workflows/validate-gitops.yaml`, which also runs `tofu fmt` and
-`tofu validate`).
+it (CI: `.github/workflows/validate-gitops.yaml`, which also runs `tofu fmt`,
+`tofu validate` and `tflint`). Locally: `make validate-gitops`, `make lint`.
