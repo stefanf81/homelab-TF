@@ -11,6 +11,8 @@ on:
     paths:
       - 'gitops/**'
       - 'scripts/validate-gitops.sh'
+      - 'scripts/check-tool-versions.sh'
+      - 'mise.toml'
       - '*.tf'
       - 'modules/**'
       - '.terraform.lock.hcl'
@@ -57,6 +59,9 @@ jobs:
       - name: Build and validate
         run: scripts/validate-gitops.sh
 
+      - name: Check mise.toml matches the CI tool pins
+        run: scripts/check-tool-versions.sh
+
   opentofu:
     name: OpenTofu fmt, validate and tflint
     runs-on: ubuntu-latest
@@ -71,7 +76,7 @@ jobs:
       - name: Set up OpenTofu
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
-          tofu_version: 1.10.x
+          tofu_version: 1.12.9
 
       - name: Format check
         run: tofu fmt -check -recursive

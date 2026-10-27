@@ -13,6 +13,8 @@ Before starting bring-up from scratch, ensure the following CLI tools are instal
 - **Kubernetes Management:** `kubectl`, [Flux CLI](https://fluxcd.io/flux/cmd/) (≥ 2.x), [Cilium CLI](https://github.com/cilium/cilium-cli)
 - **Secrets Management:** [SOPS](https://github.com/getsops/sops) (≥ v3.9), [age](https://github.com/FiloSottile/age)
 
+`mise install` (see `mise.toml`) installs pinned versions of OpenTofu, kubectl, Kustomize, Helm, kubeconform, tflint, Flux, SOPS and age; `make lint` and `make validate-gitops` run the same checks as CI.
+
 You also need access to a **Proxmox VE 8.x** host with an API token (with VM creation, Datastore, and Network privileges).
 
 ---
