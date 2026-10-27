@@ -9,7 +9,6 @@
   "minimumReleaseAge": "3 days",
   "enabledManagers": ["custom.regex", "dockerfile", "flux", "github-actions", "kubernetes", "mise"],
   "ignorePaths": [
-    "gitops/clusters/taskflow/flux-system/gotk-components.yaml",
     "gitops/infrastructure/controllers/gateway-api/**",
     "**/*-secrets.yaml"
   ],
@@ -45,12 +44,6 @@
         "ghcr.io/stefanf81/taskflow-backend",
         "ghcr.io/stefanf81/taskflow-frontend"
       ],
-      "enabled": false
-    },
-    {
-      "description": "Flux system manifests are generated and must be regenerated as a unit.",
-      "matchManagers": ["flux"],
-      "matchPackageNames": ["fluxcd/flux2"],
       "enabled": false
     },
     {

@@ -6,7 +6,7 @@ GitOps state.
 ## 0. Prereqs
 
 - A remote Git repository containing this tree
-- `tofu`, `kubectl`, `flux`, and the Cilium CLI on your workstation
+- `tofu`, `kubectl`, `helm`, `flux`, and the Cilium CLI on your workstation
 - `key.txt` present locally for the SOPS age secret
 
 ## 1. Provision the VM and fetch kubeconfig
@@ -29,32 +29,32 @@ cilium status --wait
 
 If the node stays NotReady, fix Cilium before moving on.
 
-## 3. Bootstrap Flux
+## 3. Install the Flux Operator
 
-The bootstrap manifests already live in `gitops/clusters/taskflow/flux-system/`.
+Flux is installed and upgraded by the Flux Operator from the `FluxInstance` in
+`gitops/infrastructure/flux-instance/flux-instance.yaml` (all six controllers,
+including image automation). Install the operator by hand once; after the first
+sync, the `flux-operator` HelmRelease in Git adopts this release (same name and
+namespace) and keeps it updated.
 
 ```bash
-kubectl apply -k gitops/clusters/taskflow/flux-system
+helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator \
+  --namespace flux-system --create-namespace
 ```
 
-Flux then installs the Flux Operator (`clusters/taskflow/flux-operator.yaml`),
-which takes over the install from the `FluxInstance` in
-`gitops/infrastructure/flux-instance/` (all six controllers, including image
-automation). Once `flux-system/` is removed from Git, bootstrap becomes:
+## 4. Seed the Git, SOPS and GHCR secrets
+
+The `FluxInstance` syncs over HTTPS with the `flux-system` basic-auth Secret; the
+token needs write access because image automation pushes digest pins (see 7.1).
+Flux decrypts `*-secrets.yaml` via the `sops-age` Secret. The WAF and application
+images also require the manually managed GHCR pull secret before `taskflow-app`
+reconciles. Create all of them before applying the `FluxInstance`.
 
 ```bash
-helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator -n flux-system --create-namespace
-kubectl apply -f gitops/infrastructure/flux-instance/flux-instance.yaml
-```
+kubectl -n flux-system create secret generic flux-system \
+  --from-literal=username=<github-user> \
+  --from-literal=password=<PAT with contents:write>
 
-## 4. Seed SOPS and GHCR secrets
-
-Flux decrypts `*-secrets.yaml` via the `sops-age` Secret in `flux-system`.
-Create it after applying the bootstrap manifests, because that apply creates the
-`flux-system` namespace. The WAF and application images also require the
-manually managed GHCR pull secret before `taskflow-app` reconciles.
-
-```bash
 kubectl create secret generic sops-age -n flux-system \
   --from-file=age.agekey=key.txt
 
@@ -65,11 +65,15 @@ kubectl create secret docker-registry ghcr-pull-secret -n taskflow \
   --docker-password=<read-packages-token>
 ```
 
-## 5. Reconcile Flux
+## 5. Apply the FluxInstance
+
+The operator deploys the controllers and creates the `flux-system`
+GitRepository + Kustomization that sync `gitops/clusters/taskflow`.
 
 ```bash
-flux reconcile source git flux-system
-flux reconcile kustomization flux-system -n flux-system
+kubectl apply -f gitops/infrastructure/flux-instance/flux-instance.yaml
+kubectl -n flux-system wait fluxinstance/flux --for=condition=Ready --timeout=5m
+flux get kustomization flux-system
 ```
 
 ## 5. Reconcile the platform and app layers
@@ -97,8 +101,8 @@ in `gitops/clusters/taskflow/image-automation/` (ImageRepository +
 ImagePolicy + ImageUpdateAutomation) and the `# {"$imagepolicy": ...}` markers in
 `gitops/apps/taskflow/backend.yaml` and `frontend.yaml`.
 
-A fresh `flux bootstrap` will silently re-break this in **two** ways. Both were
-hit and fixed; document them so they aren't hit again.
+Two things broke this in the past (with the old `flux bootstrap` install). Both
+were hit and fixed; document them so they aren't hit again.
 
 ### 7.1 The Git source MUST be writable
 
@@ -126,14 +130,13 @@ kubectl -n flux-system events --for imageupdateautomation/taskflow-images | tail
      --from-literal=username=<github-user> \
      --from-literal=password=<PAT>
    ```
-3. Point the GitRepository at HTTPS in `gitops/clusters/taskflow/flux-system/gotk-sync.yaml`:
+3. Keep `spec.sync.url` in `gitops/infrastructure/flux-instance/flux-instance.yaml`
+   on HTTPS (`pullSecret: flux-system` stays the same):
    ```yaml
-   url: https://github.com/stefanf81/homelab-TF.git   # was ssh://git@github.com/...
+   url: https://github.com/stefanf81/homelab-TF.git   # not ssh://git@github.com/...
    ```
-   (`secretRef: name: flux-system` stays the same.)
-4. Apply and force a reconcile:
+4. Force a reconcile:
    ```bash
-   kubectl -n flux-system apply -f gitops/clusters/taskflow/flux-system/gotk-sync.yaml
    kubectl -n flux-system annotate imageupdateautomation taskflow-images \
      reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
    ```
@@ -184,11 +187,6 @@ image:
 
 ### 7.4 Troubleshooting: image automation stuck or controllers missing
 
-> The image controllers are now declared in the `FluxInstance`
-> (`gitops/infrastructure/flux-instance/flux-instance.yaml`) and the Flux Operator
-> reinstalls them if they go missing. The manual fix below only applies to a
-> cluster where the operator is not running.
-
 **Symptom:** A new `:latest` is pushed to ghcr.io but the cluster never rolls out.
 The `ImageUpdateAutomation` shows `GitOperationFailed`, or the controller pods
 don't exist:
@@ -198,13 +196,13 @@ kubectl -n flux-system get pods -l app.kubernetes.io/component=image-reflector-c
 # No resources found
 ```
 
-**Root cause:** The image automation controllers (`image-reflector-controller` and
-`image-automation-controller`) are **not** installed by `flux bootstrap` — they
-require the `--components-extra` flag. If someone re-bootstraps Flux or the
-controllers are otherwise removed, the automation breaks silently. Existing
-`ImageRepository`/`ImagePolicy`/`ImageUpdateAutomation` resources can also get
-stuck in a terminating state with finalizers (`DeletionTimestamp` set) because
-the missing controllers can never process the finalizer cleanup.
+**Root cause:** The image controllers are declared in the `FluxInstance`
+(`gitops/infrastructure/flux-instance/flux-instance.yaml`), so they only go
+missing if the operator is down or the component was dropped from that list.
+Before the operator they were applied by hand and lost on every regeneration
+of the bootstrap manifests. Existing `ImageRepository`/`ImagePolicy`/
+`ImageUpdateAutomation` resources can get stuck terminating with finalizers
+(`DeletionTimestamp` set) while the controllers are missing.
 
 **Full diagnostic checklist:**
 
@@ -233,25 +231,17 @@ kubectl -n flux-system get gitrepository flux-system \
   -o jsonpath='{.status.conditions[?(@.type=="Ready")]}' | jq .
 ```
 
-**Fix — install missing controllers:**
+**Fix — restore missing controllers:**
 
 ```bash
-# Extract only the image-controller manifests from a full Flux install export:
-flux install \
-  --components-extra=image-reflector-controller,image-automation-controller \
-  --export > /tmp/flux-image-controllers.yaml
+# Is the operator running and the instance Ready?
+kubectl -n flux-system get deploy flux-operator
+kubectl -n flux-system get fluxinstance flux
+kubectl -n flux-system get fluxinstance flux -o jsonpath='{.spec.components}'
 
-# Filter to just the image-reflector and image-automation resources
-python3 -c "
-import yaml
-with open('/tmp/flux-image-controllers.yaml') as f:
-    docs = list(yaml.safe_load_all(f))
-keep = [d for d in docs if d and ('image-reflector' in yaml.dump(d) or 'image-automation' in yaml.dump(d))]
-with open('/tmp/flux-image-only.yaml', 'w') as f:
-    yaml.dump_all(keep, f)
-"
-
-kubectl apply -f /tmp/flux-image-only.yaml
+# Make the operator re-apply the distribution immediately
+kubectl -n flux-system annotate fluxinstance/flux \
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 ```
 
 **Fix — unstick terminating resources (only needed if resources have

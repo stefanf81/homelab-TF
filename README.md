@@ -100,11 +100,16 @@ cilium status --wait
 
 ### 4️⃣ Bootstrap Flux CD
 
-Apply the Flux sync manifests. This creates the `flux-system` namespace.
+Flux is installed by the Flux Operator. Install the operator (this creates the
+`flux-system` namespace), create the secrets from step 5 and the `flux-system`
+Git secret, then apply the `FluxInstance`. Full sequence:
+[`gitops/FLUX_BOOTSTRAP.md`](gitops/FLUX_BOOTSTRAP.md) §3–5.
 
 ```bash
-# Apply Flux CRDs and Git sync components
-kubectl apply -k gitops/clusters/taskflow/flux-system
+helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator \
+  --namespace flux-system --create-namespace
+# ...create the flux-system and sops-age secrets...
+kubectl apply -f gitops/infrastructure/flux-instance/flux-instance.yaml
 ```
 
 ### 5️⃣ Seed SOPS Age Private Key and Reconcile All Layers
