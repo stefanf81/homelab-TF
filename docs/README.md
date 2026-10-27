@@ -12,19 +12,19 @@
 | `SOPS_TUTORIAL.md`, `FLUX_SOPS_RECONCILIATION_TROUBLESHOOTING.md`, `K3s_kubeconfig_troubleshooting_cheatsheet.md` | Runbooks |
 | `BACKEND_INTEGRATION_CONTEXT.md` | Application contract |
 
-## Point-in-time reports (dated snapshots, not updated)
+## Point-in-time reports (`reports/`: dated snapshots, not updated)
 
 Referenced from manifest comments for their rationale; read them as history, and
 check the living documents for current state.
 
 | Document | Snapshot |
 |---|---|
-| `SOTA_HOMELAB_2026.md` | September 2026 gap analysis |
-| `BACKLOG_2026.md` | September 2026 backlog (item status is updated as work lands) |
-| `CLUSTER_AUDIT_2026-10.md` | October 2026 platform audit |
-| `REMEDIATION_PLAN_2026-10.md` | Issue-by-issue follow-up to the audit |
-| `PERF_DEEP_DIVE_2026-10.md` | Measurements behind PERF-02/03/04 |
-| `POD_SPEC_REVIEW_2026-10.md` | Pod-spec feature review |
+| `reports/SOTA_HOMELAB_2026.md` | September 2026 gap analysis |
+| `reports/BACKLOG_2026.md` | September 2026 backlog (item status is updated as work lands) |
+| `reports/CLUSTER_AUDIT_2026-10.md` | October 2026 platform audit |
+| `reports/REMEDIATION_PLAN_2026-10.md` | Issue-by-issue follow-up to the audit |
+| `reports/PERF_DEEP_DIVE_2026-10.md` | Measurements behind PERF-02/03/04 |
+| `reports/POD_SPEC_REVIEW_2026-10.md` | Pod-spec feature review |
 
 `archive/` holds superseded migration guides.
 

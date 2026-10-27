@@ -413,7 +413,7 @@ flux reconcile kustomization taskflow-app -n flux-system
 |------|-------------|------|
 | TLS/HTTPS | ✅ Resolved | cert-manager HelmRelease (v1.21.3) + Let's Encrypt HTTP-01 certificates + HTTPS Gateway listener are fully active |
 | Multi-node HA | Single k3s node | Add worker nodes via additional Proxmox VMs |
-| GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FLUX_BOOTSTRAP.md` (OpenTofu does not bootstrap Flux; the Flux Operator takeover is tracked in `BACKLOG_2026.md` item 4) |
+| GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FLUX_BOOTSTRAP.md` (OpenTofu does not bootstrap Flux; the Flux Operator takeover is tracked in `reports/BACKLOG_2026.md` item 4) |
 | Pod Disruption Budgets | ✅ Resolved | PDBs added for backend (`backend-pdb.yaml`), frontend (`frontend-pdb.yaml`), and postgres (`postgres-db.yaml`) — all `minAvailable: 1` |
 | Backend scaling | Intentionally single replica | Local SSE connections and the current database connection budget are not multi-replica safe; add distributed event fan-out and connection pooling before autoscaling. |
 | Backup strategy | Proxmox hypervisor backups | Configure scheduled VM backups at the Proxmox level (using PBS or vzdump) |
@@ -474,7 +474,7 @@ The single most important design decision here is: **no SSH provisioners for k3s
   ```
   --flannel-backend=none --disable-network-policy --disable-kube-proxy --disable servicelb --disable traefik --disable coredns --disable metrics-server --disable local-storage
   ```
-  `--disable-kube-proxy` was added on 2026-10-25; a node installed before that still runs kube-proxy until `disable-kube-proxy: true` is set by hand (`docs/REMEDIATION_PLAN_2026-10.md` PERF-01). The last `runcmd` step touches `/etc/cloud/cloud-init.disabled`, so cloud-init never re-runs the installer.
+  `--disable-kube-proxy` was added on 2026-10-25; a node installed before that still runs kube-proxy until `disable-kube-proxy: true` is set by hand (`docs/reports/REMEDIATION_PLAN_2026-10.md` PERF-01). The last `runcmd` step touches `/etc/cloud/cloud-init.disabled`, so cloud-init never re-runs the installer.
   These flags are why Cilium (not Flannel/kube-proxy/servicelb/traefik) is the *only* networking + ingress + LB stack. They are set **once at boot**, not by Terraform on every apply — so Terraform never re-runs a fragile script against a live node.
 - `proxmox_virtual_environment_vm` creates the VM. Note `ignore_changes` on `tags` / `user_account` / `mac_address` / `user_data_file_id` so day-2 tweaks (including snippet edits) don't trigger a VM rebuild.
 

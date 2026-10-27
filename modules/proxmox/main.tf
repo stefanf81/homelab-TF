@@ -157,7 +157,7 @@ resource "proxmox_virtual_environment_vm" "k3s_node" {
   lifecycle {
     # user_data_file_id is ForceNew: never replace the node because the cloud-init
     # snippet changed. Snippet edits apply to new nodes; the running node is changed
-    # by hand (docs/REMEDIATION_PLAN_2026-10.md REL-00).
+    # by hand (docs/reports/REMEDIATION_PLAN_2026-10.md REL-00).
     ignore_changes = [tags, initialization[0].user_account, network_device[0].mac_address, initialization[0].user_data_file_id]
   }
 }

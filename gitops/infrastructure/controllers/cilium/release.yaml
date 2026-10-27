@@ -42,7 +42,7 @@ spec:
     # something else restarts them.
     rollOutCiliumPods: true
     # Agent resources (the chart ships none). No CPU limit: CFS throttling stretches
-    # endpoint regeneration after policy/config changes (docs/PERF_DEEP_DIVE_2026-10.md §3).
+    # endpoint regeneration after policy/config changes (docs/reports/PERF_DEEP_DIVE_2026-10.md §3).
     resources:
       requests:
         cpu: 100m
@@ -84,7 +84,7 @@ spec:
     # tcp_slow_start_after_idle=0), so they also cover the host-network Envoy's
     # connections to Cloudflare; pods get BBR on new sockets (kernel >= 5.18 and eBPF
     # host routing, both present). Existing sockets keep CUBIC: restart cilium-envoy
-    # and the workloads after this rolls out (docs/PERF_DEEP_DIVE_2026-10.md §4.4).
+    # and the workloads after this rolls out (docs/reports/PERF_DEEP_DIVE_2026-10.md §4.4).
     bandwidthManager:
       enabled: true
       bbr: true

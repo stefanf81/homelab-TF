@@ -5,7 +5,7 @@ clusters (the `home-operations` community and similar setups) do in 2026.
 
 This is a **reference document only** — it records the comparison and the
 rationale behind each SOTA practice. No action items are tracked here; see
-`ARCHITECTURE.md` §9 for the current known-limitations list.
+`docs/ARCHITECTURE.md` §9 for the current known-limitations list.
 
 Status: informational snapshot, September 2026.
 
