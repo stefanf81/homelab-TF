@@ -1,0 +1,82 @@
+name: Validate GitOps manifests and OpenTofu
+
+# Renders every path a Flux Kustomization reconciles and schema-validates it, and
+# checks the OpenTofu root. validate-waf-config.yaml covers the WAF/dashboard
+# specifics; this workflow covers everything else under gitops/ plus modules/.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'gitops/**'
+      - 'scripts/validate-gitops.sh'
+      - '*.tf'
+      - 'modules/**'
+      - '.terraform.lock.hcl'
+      - '.github/workflows/validate-gitops.yaml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gitops:
+    name: Build and schema-validate Flux paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Same pinned kubectl (embedded Kustomize) as validate-waf-config.yaml.
+      - name: Install pinned kubectl (with embedded Kustomize)
+        env:
+          KUBECTL_VERSION: v1.37.1
+        run: |
+          curl -fsSLo /tmp/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          curl -fsSLo /tmp/kubectl.sha256 "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256"
+          echo "$(cat /tmp/kubectl.sha256)  /tmp/kubectl" | sha256sum --check
+          sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+
+      # go install verifies the module against the Go checksum database.
+      - name: Install pinned kubeconform
+        env:
+          KUBECONFORM_VERSION: v0.8.0
+        run: |
+          go install "github.com/yannh/kubeconform/cmd/kubeconform@${KUBECONFORM_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build and validate
+        run: scripts/validate-gitops.sh
+
+  opentofu:
+    name: OpenTofu fmt and validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: 1.10.x
+
+      - name: Format check
+        run: tofu fmt -check -recursive
+
+      # No backend and no credentials needed: this only type-checks the configuration.
+      - name: Validate
+        run: |
+          tofu init -backend=false -input=false
+          tofu validate

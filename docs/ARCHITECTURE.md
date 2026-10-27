@@ -413,7 +413,7 @@ flux reconcile kustomization taskflow-app -n flux-system
 |------|-------------|------|
 | TLS/HTTPS | ✅ Resolved | cert-manager HelmRelease (v1.21.3) + Let's Encrypt HTTP-01 certificates + HTTPS Gateway listener are fully active |
 | Multi-node HA | Single k3s node | Add worker nodes via additional Proxmox VMs |
-| GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` module is planned, not yet created) |
+| GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FLUX_BOOTSTRAP.md` (OpenTofu does not bootstrap Flux; the Flux Operator takeover is tracked in `BACKLOG_2026.md` item 4) |
 | Pod Disruption Budgets | ✅ Resolved | PDBs added for backend (`backend-pdb.yaml`), frontend (`frontend-pdb.yaml`), and postgres (`postgres-db.yaml`) — all `minAvailable: 1` |
 | Backend scaling | Intentionally single replica | Local SSE connections and the current database connection budget are not multi-replica safe; add distributed event fan-out and connection pooling before autoscaling. |
 | Backup strategy | Proxmox hypervisor backups | Configure scheduled VM backups at the Proxmox level (using PBS or vzdump) |

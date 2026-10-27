@@ -2,8 +2,10 @@
 
 This directory contains the Git repository tree reconciled by Flux. The current
 bootstrap manifest points at `https://github.com/stefanf81/homelab-TF.git`; see
-`./FLUX_BOOTSTRAP.md` for bootstrap and recovery procedures. The Terraform
-`modules/flux-bootstrap` module is **planned but not yet created**.
+`./FLUX_BOOTSTRAP.md` for bootstrap and recovery procedures. Flux itself is
+being moved under the Flux Operator (`infrastructure/flux-instance/`); until
+that takeover is verified, `clusters/taskflow/flux-system/` remains the
+bootstrap source. OpenTofu does not bootstrap Flux.
 
 ## Directory Structure & Architecture
 
@@ -140,4 +142,4 @@ See `docs/KYVERNO_POLICY_ENGINE.md` for the full reference (CRD gotchas, trouble
 1. Create a remote repository.
 2. Push this `gitops/` directory into it.
 3. Follow `./FLUX_BOOTSTRAP.md`.
-4. Bootstrap Flux manually per `./FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` Terraform module is planned but not yet created).
+4. Bootstrap Flux manually per `./FLUX_BOOTSTRAP.md` (OpenTofu does not bootstrap Flux).
