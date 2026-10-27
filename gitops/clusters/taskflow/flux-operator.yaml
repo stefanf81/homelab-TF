@@ -1,0 +1,35 @@
+# Flux Operator first, then the FluxInstance (its CRD comes from the operator
+# chart). See gitops/infrastructure/flux-instance/flux-instance.yaml.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flux-operator
+  namespace: flux-system
+spec:
+  interval: 1h
+  retryInterval: 5m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./gitops/infrastructure/controllers/flux-operator
+  prune: true
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flux-instance
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: flux-operator
+  interval: 1h
+  retryInterval: 5m
+  timeout: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./gitops/infrastructure/flux-instance
+  prune: true
+  wait: true

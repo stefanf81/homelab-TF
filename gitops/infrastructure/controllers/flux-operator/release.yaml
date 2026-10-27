@@ -1,0 +1,34 @@
+# Flux Operator: installs, upgrades and self-heals Flux from the FluxInstance in
+# gitops/infrastructure/flux-instance/. Its CRDs carry helm.sh/resource-policy:
+# keep, so uninstalling this release does not delete the FluxInstance.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: flux-operator
+  namespace: flux-system
+spec:
+  interval: 30m
+  chartRef:
+    kind: OCIRepository
+    name: flux-operator
+  install:
+    crds: Create
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  values:
+    # No Web UI: Flux state is already visible through the flux CLI and Grafana.
+    web:
+      enabled: false
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: null
+        memory: 512Mi

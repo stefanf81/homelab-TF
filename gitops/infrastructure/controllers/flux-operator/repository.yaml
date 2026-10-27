@@ -1,0 +1,14 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: flux-operator
+  namespace: flux-system
+spec:
+  interval: 12h
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    # Operator v0.62.0 embeds Flux up to v2.10.x.
+    tag: 0.62.0
+  url: oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator

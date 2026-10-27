@@ -1,0 +1,50 @@
+# Flux itself, managed by the Flux Operator (REL-06).
+#
+# Replaces the CLI bootstrap manifests in gitops/clusters/taskflow/flux-system/.
+# The operator adopts the running install without downtime: it takes field
+# ownership, strips the bootstrap Kustomize labels and marks every object
+# `kustomize.toolkit.fluxcd.io/ssa: Ignore` + `prune: Disabled`, so the old
+# flux-system/ manifests stop being applied and can be deleted from Git without
+# anything being pruned.
+#
+# The two image controllers were previously applied by hand (FLUX_BOOTSTRAP.md
+# §7.4) and lost on every regeneration of gotk-components.yaml; they are now part
+# of the declared install.
+#
+# prune: disabled - deleting this object makes the operator uninstall the Flux
+# controllers, so Flux must never garbage-collect it.
+apiVersion: fluxcd.controlplane.io/v1
+kind: FluxInstance
+metadata:
+  name: flux
+  namespace: flux-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  distribution:
+    # Pinned to the running minor for the takeover; move to "2.10.x" once the
+    # operator is Ready and image automation still commits.
+    version: "2.9.x"
+    registry: ghcr.io/fluxcd
+  components:
+    - source-controller
+    - kustomize-controller
+    - helm-controller
+    - notification-controller
+    - image-reflector-controller
+    - image-automation-controller
+  cluster:
+    type: kubernetes
+    multitenant: false
+    networkPolicy: true
+    domain: cluster.local
+  # Same objects as gotk-sync.yaml (GitRepository 1m, Kustomization 10m),
+  # authenticated with the existing HTTPS PAT secret that image automation
+  # also uses to push.
+  sync:
+    kind: GitRepository
+    url: https://github.com/stefanf81/homelab-TF.git
+    ref: refs/heads/main
+    path: ./gitops/clusters/taskflow
+    pullSecret: flux-system
+    interval: 1m

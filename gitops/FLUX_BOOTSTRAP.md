@@ -37,6 +37,16 @@ The bootstrap manifests already live in `gitops/clusters/taskflow/flux-system/`.
 kubectl apply -k gitops/clusters/taskflow/flux-system
 ```
 
+Flux then installs the Flux Operator (`clusters/taskflow/flux-operator.yaml`),
+which takes over the install from the `FluxInstance` in
+`gitops/infrastructure/flux-instance/` (all six controllers, including image
+automation). Once `flux-system/` is removed from Git, bootstrap becomes:
+
+```bash
+helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator -n flux-system --create-namespace
+kubectl apply -f gitops/infrastructure/flux-instance/flux-instance.yaml
+```
+
 ## 4. Seed SOPS and GHCR secrets
 
 Flux decrypts `*-secrets.yaml` via the `sops-age` Secret in `flux-system`.
@@ -173,6 +183,11 @@ image:
 ```
 
 ### 7.4 Troubleshooting: image automation stuck or controllers missing
+
+> The image controllers are now declared in the `FluxInstance`
+> (`gitops/infrastructure/flux-instance/flux-instance.yaml`) and the Flux Operator
+> reinstalls them if they go missing. The manual fix below only applies to a
+> cluster where the operator is not running.
 
 **Symptom:** A new `:latest` is pushed to ghcr.io but the cluster never rolls out.
 The `ImageUpdateAutomation` shows `GitOperationFailed`, or the controller pods

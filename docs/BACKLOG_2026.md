@@ -43,6 +43,9 @@ Already changed but uncommitted (for context, do not redo):
     `k3s secrets-encrypt reencrypt`; document key rotation (`rotate-keys`) in a runbook.
 
 - [ ] **4. Image-automation controllers into Git.** A re-bootstrap silently breaks digest pinning.
+  - 🟡 In progress (2026-10-27): Flux Operator v0.62.0 + `FluxInstance` (Flux 2.9.x, all six
+    controllers) added in `gitops/clusters/taskflow/flux-operator.yaml`. Remaining: verify the
+    takeover, delete `clusters/taskflow/flux-system/`, move the instance to `2.10.x`.
   - Regenerate `gotk-components.yaml` with
     `flux install --components-extra=image-reflector-controller,image-automation-controller --export`
     (or add a `gotk-components-image.yaml` referenced by the flux-system kustomization).
