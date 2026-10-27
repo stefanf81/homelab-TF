@@ -282,7 +282,7 @@ spec:
           # GitHub OAuth needs cross-site navigation back to Grafana.
           cookie_samesite: lax
         server:
-          domain: grafana.jokelab.dev
+          domain: grafana.${DOMAIN}
           root_url: "https://%(domain)s/"
           serve_from_sub_path: false
         analytics:

@@ -1,0 +1,16 @@
+# Per-cluster values substituted into manifests by Kustomizations that declare
+# `postBuild.substituteFrom: cluster-vars` (infra-controllers, taskflow-app,
+# monitoring, policy-reporter, hubble-ui). Use ${NAME} in a manifest; flux's
+# substitution also rewrites `${...}` text, so write a literal one as `$${...}`.
+# scripts/validate-gitops.sh applies the same values before schema validation
+# and fails if a path uses a variable without the postBuild block.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-vars
+  namespace: flux-system
+data:
+  # Public DNS zone; hostnames are <name>.${DOMAIN}.
+  DOMAIN: jokelab.dev
+  # Cilium LB-IPAM address of the shared Gateway (must be inside ippool.yaml).
+  GATEWAY_IP: 192.168.50.201
