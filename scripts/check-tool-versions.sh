@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
-# Fail if the tool versions pinned in mise.toml differ from the ones CI installs in
-# .github/workflows/validate-gitops.yaml.
+# Fail if mise.toml's client tools drift from what the cluster runs:
+#   - flux2 minor must equal the FluxInstance distribution minor;
+#   - kubectl minor must equal the k3s minor (default k3s_version in variables.tf).
+# CI reads every other pin from mise.toml directly (scripts/tool-versions.sh).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-wf=.github/workflows/validate-gitops.yaml
+eval "$(scripts/tool-versions.sh)"
+minor() { echo "$1" | sed -nE 's/^v?([0-9]+\.[0-9]+).*/\1/p'; }
+
+flux_instance="$(sed -nE 's/^ *version: *"?([0-9]+\.[0-9]+)\.x"?.*/\1/p' gitops/infrastructure/flux-instance/flux-instance.yaml)"
+k3s="$(sed -nE '/variable "k3s_version"/,/^}/ s/^ *default *= *"v?([0-9]+\.[0-9]+).*/\1/p' variables.tf)"
+
 fail=0
-check() { # <mise tool> <workflow key> <strip leading v: 0|1>
-  local want have
-  want="$(sed -nE "s/^$1 *= *\"([^\"]+)\".*/\1/p" mise.toml)"
-  have="$(sed -nE "s/^ *$2: *v?([0-9][^ #]*).*/\1/p" "$wf" | head -1)"
-  if [ -z "$want" ] || [ "$want" != "$have" ]; then
-    echo "MISMATCH $1: mise.toml=${want:-<missing>} $wf ($2)=${have:-<missing>}" >&2
+compare() { # <what> <mise value> <cluster value> <cluster source>
+  if [ -z "$2" ] || [ -z "$3" ] || [ "$2" != "$3" ]; then
+    echo "MISMATCH $1: mise.toml=${2:-<missing>} vs ${4}=${3:-<missing>}" >&2
     fail=1
   fi
 }
-check kubectl KUBECTL_VERSION 1
-check kubeconform KUBECONFORM_VERSION 1
-check opentofu tofu_version 0
-check tflint tflint_version 1
-[ "$fail" -eq 0 ] && echo "tool versions consistent"
+compare "flux2 minor" "$(minor "${FLUX2_VERSION:-}")" "$flux_instance" "FluxInstance"
+compare "kubectl minor" "$(minor "${KUBECTL_VERSION:-}")" "$k3s" "k3s_version"
+
+[ "$fail" -eq 0 ] && echo "toolchain pins match the cluster (flux $flux_instance, k8s $k3s)"
 exit "$fail"

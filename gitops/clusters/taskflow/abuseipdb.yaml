@@ -31,7 +31,7 @@ spec:
     provider: sops
     secretRef:
       name: sops-age
-  # ${NODE_IP} / ${LAN_CIDR} / ${LB_POOL_*} come from cluster-vars.yaml.
+  # Substitutes LAN_CIDR from cluster-vars.yaml.
   postBuild:
     substituteFrom:
       - kind: ConfigMap

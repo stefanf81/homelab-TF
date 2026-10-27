@@ -22,7 +22,7 @@ spec:
     provider: sops
     secretRef:
       name: sops-age
-  # ${DOMAIN} / ${GATEWAY_IP} come from cluster-vars.yaml.
+  # Substitutes DOMAIN, GATEWAY_IP from cluster-vars.yaml.
   postBuild:
     substituteFrom:
       - kind: ConfigMap

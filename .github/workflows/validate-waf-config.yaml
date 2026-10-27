@@ -21,6 +21,7 @@ on:
       - 'gitops/images/taskflow-caddy-coraza/tests/validate-*'
       - 'gitops/monitoring/tests/**'
       - '.github/workflows/validate-waf-config.yaml'
+      - 'mise.toml'
   push:
     branches:
       - main
@@ -37,6 +38,7 @@ on:
       - 'gitops/images/taskflow-caddy-coraza/tests/validate-*'
       - 'gitops/monitoring/tests/**'
       - '.github/workflows/validate-waf-config.yaml'
+      - 'mise.toml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -57,14 +59,15 @@ jobs:
         with:
           persist-credentials: false
 
-      # Pinned so the embedded Kustomize version does not drift with the runner
-      # image. Update deliberately alongside the repo's toolchain.
+      # Tool versions come from mise.toml (single source; Renovate bumps it).
+      - name: Read tool versions from mise.toml
+        run: scripts/tool-versions.sh >> "$GITHUB_ENV"
+
+      # Pinned so the embedded Kustomize version does not drift with the runner image.
       - name: Install pinned kubectl (with embedded Kustomize)
-        env:
-          KUBECTL_VERSION: v1.37.1
         run: |
-          curl -fsSLo /tmp/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          curl -fsSLo /tmp/kubectl.sha256 "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256"
+          curl -fsSLo /tmp/kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          curl -fsSLo /tmp/kubectl.sha256 "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256"
           echo "$(cat /tmp/kubectl.sha256)  /tmp/kubectl" | sha256sum --check
           sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
           kubectl version --client --output=yaml

@@ -8,7 +8,7 @@
 # RenovateJob is skipped explicitly: the catalog schema lags the operator and rejects
 # spec.renovateConfig, which the deployed operator version accepts.
 #
-# Needs: kubectl (embedded Kustomize) or kustomize, and kubeconform.
+# Needs: kubectl (embedded Kustomize) or kustomize, kubeconform and ruby.
 # Usage: scripts/validate-gitops.sh [path ...]   (default: all Flux Kustomization paths)
 set -euo pipefail
 
@@ -30,52 +30,37 @@ else
   )
 fi
 
-VARS=gitops/clusters/taskflow/cluster-vars.yaml
+# CRD schemas from the community catalog, pinned to a commit so upstream changes
+# cannot change results without a change here. Bump deliberately.
+CRD_CATALOG_REF=3eb90d47aba8d61919d4419dd38301536e32a94b
 
-# Emulate Flux postBuild substitution with the values from cluster-vars.yaml:
-# ${NAME} -> value, and the escape $${ -> ${. With --check the stream is passed
-# through unchanged, but the run fails if any ${NAME} defined in cluster-vars is
-# still present, i.e. a path uses a variable without a postBuild block.
-substitute() { # <apply|check>
-  python3 -c '
-import re, sys
-mode = sys.argv[1]
-data, in_data = {}, False
-for line in open(sys.argv[2]):
-    if line.startswith("data:"):
-        in_data = True
-    elif in_data and (m := re.match(r"  ([A-Z][A-Z0-9_]*): *(.+?) *$", line)):
-        data[m[1]] = m[2].strip("\"\x27")
-    elif in_data and line.strip() and not line.startswith(" "):
-        in_data = False
-text = sys.stdin.read()
-if mode == "apply":
-    text = re.sub(r"(?<!\$)\$\{([A-Z][A-Z0-9_]*)\}", lambda m: data.get(m[1], m[0]), text)
-    text = text.replace("$${", "${")
-else:
-    left = sorted({k for k in data if "${" + k + "}" in text})
-    if left:
-        sys.exit("uses " + ", ".join(left) + " but its Flux Kustomization has no postBuild.substituteFrom cluster-vars")
-sys.stdout.write(text)
-' "$1" "$VARS"
+# Flux applies a path without kustomization.yaml by generating one over every
+# manifest below it; approximate that by concatenating them.
+render() {
+  if [ -f "$1/kustomization.yaml" ]; then
+    build "$1"
+  else
+    find "$1" -type f \( -name '*.yaml' -o -name '*.yml' \) | sort | while read -r f; do
+      echo '---'; cat "$f"
+    done
+  fi
 }
 
 fail=0
 for p in "${paths[@]}"; do
-  if [ ! -f "$p/kustomization.yaml" ]; then
-    echo "SKIP  $p (no kustomization.yaml; Flux applies plain manifests)"
+  if [ ! -d "$p" ]; then
+    echo "MISSING $p (referenced by a Flux Kustomization)" >&2
+    fail=1
     continue
   fi
   echo "CHECK $p"
-  mode=check
-  if grep -ls "^  path: \./$p\$" gitops/clusters/taskflow/*.yaml | xargs -r grep -q 'name: cluster-vars'; then
-    mode=apply
-  fi
-  if ! { build "$p" | substitute "$mode" | kubeconform \
+  # flux-postbuild.rb applies cluster-vars substitution exactly when the path's Flux
+  # Kustomization declares it, and fails on undefined or unsubstituted variables.
+  if ! { render "$p" | ruby scripts/flux-postbuild.rb "$p" | kubeconform \
       -summary -ignore-missing-schemas \
       -skip RenovateJob \
       -schema-location default \
-      -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+      -schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRD_CATALOG_REF}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
       -; }; then
     fail=1
   fi

@@ -1,9 +1,9 @@
 # Local toolchain for this repo: `mise install` (https://mise.jdx.dev).
 #
-# Versions match what CI and the cluster use: kubectl/kubeconform/tflint/OpenTofu are the
-# pins in .github/workflows/validate-gitops.yaml (keep them equal), flux2 is the FluxInstance
-# distribution minor (gitops/infrastructure/flux-instance/flux-instance.yaml), kubectl follows
-# the k3s minor. Renovate's mise manager keeps this file current.
+# Single source of tool versions: CI reads these pins via scripts/tool-versions.sh, and
+# Renovate's mise manager bumps them. flux2 must stay on the FluxInstance minor
+# (gitops/infrastructure/flux-instance/flux-instance.yaml) and kubectl on the k3s minor;
+# scripts/check-tool-versions.sh enforces both, and Renovate only proposes patches for them.
 [tools]
 opentofu    = "1.12.9"
 kubectl     = "1.37.1"

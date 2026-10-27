@@ -15,7 +15,7 @@ spec:
     name: flux-system
   wait: true
   timeout: 10m
-  # ${NODE_IP} / ${LAN_CIDR} / ${LB_POOL_*} come from cluster-vars.yaml.
+  # Substitutes LB_POOL_START, LB_POOL_STOP from cluster-vars.yaml.
   postBuild:
     substituteFrom:
       - kind: ConfigMap
