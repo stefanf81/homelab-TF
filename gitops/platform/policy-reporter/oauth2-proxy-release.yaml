@@ -34,12 +34,12 @@ spec:
       existingSecret: policy-reporter-ui-github-oauth
       configFile: |-
         provider = "github"
-        redirect_url = "https://kyverno.jokelab.dev/oauth2/callback"
+        redirect_url = "https://kyverno.${DOMAIN}/oauth2/callback"
         upstreams = ["http://policy-reporter-ui.policy-reporter.svc.cluster.local:8080"]
         http_address = "0.0.0.0:4180"
         cookie_secure = true
-        cookie_domains = [".jokelab.dev"]
-        whitelist_domains = [".jokelab.dev"]
+        cookie_domains = [".${DOMAIN}"]
+        whitelist_domains = [".${DOMAIN}"]
         reverse_proxy = true
         set_xauthrequest = true
         skip_provider_button = true

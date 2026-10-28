@@ -24,11 +24,11 @@ spec:
     - name: taskflow-gateway
       sectionName: http # only the plaintext listener
   hostnames:
-    - "jokelab.dev"
-    - "www.jokelab.dev"
-    - "grafana.jokelab.dev"
-    - "kyverno.jokelab.dev"
-    - "hubble.jokelab.dev"
+    - "${DOMAIN}"
+    - "www.${DOMAIN}"
+    - "grafana.${DOMAIN}"
+    - "kyverno.${DOMAIN}"
+    - "hubble.${DOMAIN}"
   rules:
     - matches:
         - path:
@@ -52,7 +52,7 @@ spec:
     - name: taskflow-gateway
       sectionName: https
   hostnames:
-    - "jokelab.dev"
+    - "${DOMAIN}"
   rules:
     - matches:
         - path:
@@ -61,7 +61,7 @@ spec:
       filters:
         - type: RequestRedirect
           requestRedirect:
-            hostname: "www.jokelab.dev"
+            hostname: "www.${DOMAIN}"
             scheme: https
             port: 443
             statusCode: 301

@@ -2,11 +2,12 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - flux-system
+  - cluster-vars.yaml
   - flux-operator.yaml
   - infra-controllers.yaml
   - infra-configs.yaml
   - abuseipdb.yaml
-  - image-automation.yaml
+  - image-automation
   - taskflow.yaml
   - monitoring.yaml
   - monitoring-logging.yaml

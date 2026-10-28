@@ -15,3 +15,8 @@ spec:
     name: flux-system
   wait: true
   timeout: 10m
+  # Substitutes LB_POOL_START, LB_POOL_STOP from cluster-vars.yaml.
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-vars

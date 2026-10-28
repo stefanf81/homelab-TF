@@ -17,7 +17,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="${REPO_ROOT:-$(cd "$HERE/../../../.." && pwd)}"
+REPO_ROOT="${REPO_ROOT:-$(cd "$HERE/../../.." && pwd)}"
 RELEASE="${ALLOY_RELEASE:-$REPO_ROOT/gitops/monitoring/logging/alloy-release.yaml}"
 ALLOY_IMAGE="${ALLOY_IMAGE:-grafana/alloy:v1.21.2}"
 ALLOY_PORT="${ALLOY_PORT:-12367}"

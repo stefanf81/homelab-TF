@@ -33,7 +33,7 @@ Already changed but uncommitted (for context, do not redo):
     CronJob for Postgres, both to Cloudflare R2 / Backblaze B2; keep Proxmox PBS for VM-level.
   - Enable CSI VolumeSnapshot support (snapshot controller + CRDs) if proxmox-csi supports
     snapshots on `local-lvm`.
-  - Write RPO/RTO in `PERFORMANCE.md`; perform one restore drill.
+  - Write RPO/RTO in `docs/PERFORMANCE.md`; perform one restore drill.
   - Long-term: replace the Postgres Deployment with **CloudNativePG** (WAL archiving → S3, PITR).
 
 - [ ] **3. k3s secrets encryption at rest.** `sops-age`, Helm release values, and decrypted Secrets

@@ -479,7 +479,7 @@ compare against each tool's own upstream best practice.
   export file permissions allow it.
 - **VMSingle**: drop unused high-cardinality series (API-server request
   histograms, unused cAdvisor metrics) with vmagent `metricRelabelConfigs`
-  (already noted as open in `PERFORMANCE.md`).
+  (already noted as open in `docs/PERFORMANCE.md`).
 
 ### 2.7 GitOps and supply chain
 

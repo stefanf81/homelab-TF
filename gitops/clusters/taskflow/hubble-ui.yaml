@@ -13,10 +13,15 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./gitops/infrastructure/controllers/hubble-ui
+  path: ./gitops/platform/hubble-ui
   prune: true
   wait: true
   decryption:
     provider: sops
     secretRef:
       name: sops-age
+  # Substitutes DOMAIN from cluster-vars.yaml.
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-vars

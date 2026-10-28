@@ -148,7 +148,7 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10, while `postgres-db.yaml`
 | 8 | **Redis / Jaeger QoS** — Guaranteed (requests==limits) | ⚠️ Redis and Jaeger use Burstable QoS (requests < limits). This is intentional: Redis is ephemeral and Jaeger is a dev tool. Guaranteed QoS is not required for either. |
 | 9 | **Backend startup probe** tightened 20→15 failures | ✅ Applied in `backend.yaml` |
 | 10 | **Scrape intervals** relaxed to 60s for postgres/redis exporters | ✅ Applied in `vmservicescrapes.yaml` |
-| 11 | **Flux image-poll interval** 5m→10m | ✅ Applied in `image-automation.yaml` |
+| 11 | **Flux image-poll interval** 5m→10m | ✅ Applied in `image-automation/*-repository.yaml` |
 ### Note on item 3 (JVM sizing) — resolution of the TF-vs-image conflict
 The previous config had a **silent bug**: `backend.yaml` set `-Xmx1024m` + `-XX:MaxDirectMemorySize=512m`
 in `JAVA_TOOL_OPTIONS`, while the Dockerfile set `MaxRAMPercentage=75.0` + `MaxDirectMemorySize=256m`.

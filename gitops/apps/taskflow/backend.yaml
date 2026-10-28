@@ -147,7 +147,7 @@ spec:
             # from killing the JVM and triggering a needless pod restart.
             #
             # CPU count: -XX:ActiveProcessorCount=2. The container has no CPU limit
-            # (docs/PERF_DEEP_DIVE_2026-10.md §3), and without one the JVM would size GC
+            # (docs/reports/PERF_DEEP_DIVE_2026-10.md §3), and without one the JVM would size GC
             # and JIT threads, ForkJoin pools and Netty/Lettuce event loops for every node
             # CPU. Pinning 2 keeps them as they were under the old 2-CPU limit.
             #

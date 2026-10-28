@@ -12,7 +12,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./gitops/infrastructure/controllers/renovate/job
+  path: ./gitops/platform/renovate/job
   prune: true
   wait: true
   decryption:

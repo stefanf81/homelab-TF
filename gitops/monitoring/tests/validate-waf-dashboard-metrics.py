@@ -20,7 +20,7 @@ import urllib.parse
 import urllib.request
 
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = Path(__file__).resolve().parents[3]
 PREFIX = "loki_process_custom_taskflow_waf_"
 
 

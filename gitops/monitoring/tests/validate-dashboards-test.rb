@@ -351,7 +351,7 @@ class DashboardValidationTest < Minitest::Test
   end
 
   def waf_dashboard_files
-    Dir[File.expand_path("../../../monitoring/logging/dashboards/taskflow-*.json", __dir__)].sort
+    Dir[File.expand_path("../logging/dashboards/taskflow-*.json", __dir__)].sort
   end
 
   def test_actual_evidence_panels_are_lazy_and_do_not_rewrite_lines
@@ -393,7 +393,7 @@ class DashboardValidationTest < Minitest::Test
   end
 
   def test_blocked_sources_counts_are_neutral_and_sparse_charts_do_not_bridge_gaps
-    path = File.expand_path("../../../monitoring/app/dashboards/blocked-sources.json", __dir__)
+    path = File.expand_path("../app/dashboards/blocked-sources.json", __dir__)
     dashboard = JSON.parse(File.read(path))
     items = dashboard["panels"].to_h { |p| [p["id"], p] }
     [1, 4].each do |id|
@@ -485,7 +485,7 @@ class DashboardValidationTest < Minitest::Test
   FIXTURE_APPLICATION = "dashboard-fixture-app"
 
   def fixture_dashboard(name)
-    JSON.parse(File.read(File.expand_path("../../../monitoring/logging/dashboards/#{name}.json", __dir__)))
+    JSON.parse(File.read(File.expand_path("../logging/dashboards/#{name}.json", __dir__)))
   end
 
   def fixture_panel_expr(dashboard, id, ref = "A")

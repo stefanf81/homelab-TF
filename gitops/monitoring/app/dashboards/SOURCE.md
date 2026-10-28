@@ -59,7 +59,7 @@ Updating a dashboard:
 
 1. Edit the JSON file (keep the `uid` and the datasource template variables).
 2. Run the dashboard validation:
-   `ruby gitops/images/taskflow-caddy-coraza/tests/validate-dashboards.rb gitops/monitoring/logging/dashboards/*.json gitops/monitoring/app/dashboards/*.json`
+   `ruby gitops/monitoring/tests/validate-dashboards.rb gitops/monitoring/logging/dashboards/*.json gitops/monitoring/app/dashboards/*.json`
    (add `LOKI_URL=...` for LogQL parsing) or the full suite
    `gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh`
    (requires docker, helm, ruby, python3 and kubectl). The suite also renders both

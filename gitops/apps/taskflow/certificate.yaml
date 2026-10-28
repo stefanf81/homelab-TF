@@ -6,11 +6,11 @@ metadata:
 spec:
   secretName: taskflow-tls-secret
   dnsNames:
-    - "jokelab.dev"
-    - "www.jokelab.dev"
-    - "grafana.jokelab.dev"
-    - "kyverno.jokelab.dev"
-    - "hubble.jokelab.dev"
+    - "${DOMAIN}"
+    - "www.${DOMAIN}"
+    - "grafana.${DOMAIN}"
+    - "kyverno.${DOMAIN}"
+    - "hubble.${DOMAIN}"
   issuerRef:
     name: letsencrypt-http01-production
     kind: ClusterIssuer

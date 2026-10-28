@@ -45,7 +45,7 @@ not a WAF replacement, and it is never duplicated into Caddy/Coraza.
 | Component | Location | Notes |
 |---|---|---|
 | Synchronizer image | `gitops/images/abuseipdb-sync/` + `.github/workflows/build-abuseipdb-sync.yaml` | Go, distroless, public GHCR package `ghcr.io/stefanf81/abuseipdb-sync` (currently `0.3.2-r1`, pinned by digest in the Deployment) |
-| Controller manifests | `gitops/infrastructure/controllers/abuseipdb/` | Deployment, SA, RBAC, config, secret, Service, network policies |
+| Controller manifests | `gitops/platform/abuseipdb/` | Deployment, SA, RBAC, config, secret, Service, network policies |
 | Flux Kustomization | `gitops/clusters/taskflow/abuseipdb.yaml` | `dependsOn: infra-controllers`, SOPS decryption |
 | Deny policy | `gitops/infrastructure/configs/cilium/abuseipdb-ingress-deny.yaml` | Active: `reserved:ingress` ingest deny via `cidrGroupRef` |
 | Cloudflare edge sink | managed by the synchronizer via the Cloudflare API | IP list `abuseipdb` + zone rule `ref: abuseipdb` (action `block`) |
@@ -327,7 +327,7 @@ more so future restarts use the normal lookback.
   cluster-admin.
 * Secrets: SOPS-encrypted Secret `abuseipdb-sync` (`.sops.yaml` matches
   `*-secrets.yaml`) holding `ABUSEIPDB_API_KEY` and `CLOUDFLARE_API_TOKEN`.
-  Edit with `sops gitops/infrastructure/controllers/abuseipdb/abuseipdb-secrets.yaml`;
+  Edit with `sops gitops/platform/abuseipdb/abuseipdb-secrets.yaml`;
   never commit plaintext.
 * The Cloudflare token is a **separate least-privilege token** (do not reuse the
   DDNS token): `Account Filter Lists: Edit` + `Zone WAF: Edit` +
@@ -367,7 +367,7 @@ The SOPS-encrypted secret already holds both credentials. On a rebuild, populate
 or rotate them with:
 
 ```bash
-sops gitops/infrastructure/controllers/abuseipdb/abuseipdb-secrets.yaml
+sops gitops/platform/abuseipdb/abuseipdb-secrets.yaml
 # bump the image in gitops/images/abuseipdb-sync/Dockerfile, push to main; CI builds it
 # then commit, and:
 flux reconcile kustomization flux-system --with-source
@@ -509,7 +509,7 @@ GitOps rollback: remove `- abuseipdb-ingress-deny.yaml` from
 
 Full removal: delete `gitops/clusters/taskflow/abuseipdb.yaml`, its entry in
 `gitops/clusters/taskflow/kustomization.yaml`, the
-`gitops/infrastructure/controllers/abuseipdb/` directory and the monitoring
+`gitops/platform/abuseipdb/` directory and the monitoring
 entry, then delete the leftover runtime objects manually:
 `kubectl delete ccg abuseipdb`, and the Cloudflare rule + list.
 

@@ -109,17 +109,17 @@ taskflow-app                     monitoring (VictoriaMetrics + Grafana + CRDs;
 |------|------|----------|-------|------|---------|------------|
 | `infra-controllers` | `./gitops/infrastructure/controllers` | 30m | ✅ | ✅ | 10m | — |
 | `infra-configs` | `./gitops/infrastructure/configs` | 30m | ✅ | ✅ | 10m | infra-controllers |
-| `abuseipdb` | `./gitops/infrastructure/controllers/abuseipdb` | 30m | ✅ | ✅ | 5m | infra-controllers |
+| `abuseipdb` | `./gitops/platform/abuseipdb` | 30m | ✅ | ✅ | 5m | infra-controllers |
 | `taskflow-app` | `./gitops/apps/taskflow` | 10m | ✅ | ✅ | 5m | infra-configs |
 | `monitoring` | `./gitops/monitoring/platform` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app |
 | `monitoring-app` | `./gitops/monitoring/app` | 30m | ✅ | ✅ | 10m | monitoring |
 | `monitoring-logging` | `./gitops/monitoring/logging` | 30m | ✅ | ✅ | 10m | monitoring, taskflow-app |
 | `kyverno-policies` | `./gitops/apps/kyverno-policies` | 30m | ✅ | ✅ | 5m | infra-controllers |
-| `policy-reporter` | `./gitops/infrastructure/controllers/policy-reporter` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app, trivy-operator |
+| `policy-reporter` | `./gitops/platform/policy-reporter` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app, trivy-operator |
 | `trivy-operator` | `./gitops/infrastructure/controllers/trivy-operator` | 30m | ✅ | ✅ | 5m | infra-controllers |
-| `hubble-ui` | `./gitops/infrastructure/controllers/hubble-ui` | 10m | ✅ | ✅ | 5m | infra-controllers, taskflow-app |
-| `renovate` | `./gitops/infrastructure/controllers/renovate` | 1h | ✅ | ✅ | 5m | infra-controllers |
-| `renovate-job` | `./gitops/infrastructure/controllers/renovate/job` | 1h | ✅ | ✅ | 5m | renovate |
+| `hubble-ui` | `./gitops/platform/hubble-ui` | 10m | ✅ | ✅ | 5m | infra-controllers, taskflow-app |
+| `renovate` | `./gitops/platform/renovate` | 1h | ✅ | ✅ | 5m | infra-controllers |
+| `renovate-job` | `./gitops/platform/renovate/job` | 1h | ✅ | ✅ | 5m | renovate |
 
 ### 4.3 Image Automation (Digest Pinning)
 ```
@@ -354,7 +354,7 @@ TF/
 │       ├── policy-reporter.yaml     # Policy Reporter + UI (dependsOn infra-controllers + taskflow-app)
 │       ├── trivy-operator.yaml      # Trivy vulnerability scanner (dependsOn infra-controllers)
 │       ├── hubble-ui.yaml           # Hubble UI oauth2-proxy (dependsOn infra-controllers + taskflow-app)
-│       └── image-automation.yaml    # ImageRepository + ImagePolicy + ImageUpdateAutomation
+│       └── image-automation/        # ImageRepository + ImagePolicy + ImageUpdateAutomation
 │
 │   ├── monitoring/                  # Observability stack
 │   │   ├── platform/                # Operator + CRDs + storage + Grafana secret
@@ -413,7 +413,7 @@ flux reconcile kustomization taskflow-app -n flux-system
 |------|-------------|------|
 | TLS/HTTPS | ✅ Resolved | cert-manager HelmRelease (v1.21.3) + Let's Encrypt HTTP-01 certificates + HTTPS Gateway listener are fully active |
 | Multi-node HA | Single k3s node | Add worker nodes via additional Proxmox VMs |
-| GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FLUX_BOOTSTRAP.md` (the `modules/flux-bootstrap` module is planned, not yet created) |
+| GitOps remote repo | Local scaffolding only | Bootstrap Flux via `gitops/FLUX_BOOTSTRAP.md` (OpenTofu does not bootstrap Flux; the Flux Operator takeover is tracked in `reports/BACKLOG_2026.md` item 4) |
 | Pod Disruption Budgets | ✅ Resolved | PDBs added for backend (`backend-pdb.yaml`), frontend (`frontend-pdb.yaml`), and postgres (`postgres-db.yaml`) — all `minAvailable: 1` |
 | Backend scaling | Intentionally single replica | Local SSE connections and the current database connection budget are not multi-replica safe; add distributed event fan-out and connection pooling before autoscaling. |
 | Backup strategy | Proxmox hypervisor backups | Configure scheduled VM backups at the Proxmox level (using PBS or vzdump) |
@@ -445,7 +445,7 @@ This is the path that actually matters day-to-day:
 ```
 1. You push a new :latest image to ghcr.io/stefanf81/taskflow-backend
         │
-2. Flux ImageRepository (gitops/clusters/taskflow/image-automation.yaml)
+2. Flux ImageRepository (gitops/clusters/taskflow/image-automation/)
    polls ghcr every 10m, sees :latest moved to a new sha256 digest
         │
 3. Flux ImagePolicy (digestReflectionPolicy: Always) records the new digest
@@ -474,7 +474,7 @@ The single most important design decision here is: **no SSH provisioners for k3s
   ```
   --flannel-backend=none --disable-network-policy --disable-kube-proxy --disable servicelb --disable traefik --disable coredns --disable metrics-server --disable local-storage
   ```
-  `--disable-kube-proxy` was added on 2026-10-25; a node installed before that still runs kube-proxy until `disable-kube-proxy: true` is set by hand (`docs/REMEDIATION_PLAN_2026-10.md` PERF-01). The last `runcmd` step touches `/etc/cloud/cloud-init.disabled`, so cloud-init never re-runs the installer.
+  `--disable-kube-proxy` was added on 2026-10-25; a node installed before that still runs kube-proxy until `disable-kube-proxy: true` is set by hand (`docs/reports/REMEDIATION_PLAN_2026-10.md` PERF-01). The last `runcmd` step touches `/etc/cloud/cloud-init.disabled`, so cloud-init never re-runs the installer.
   These flags are why Cilium (not Flannel/kube-proxy/servicelb/traefik) is the *only* networking + ingress + LB stack. They are set **once at boot**, not by Terraform on every apply — so Terraform never re-runs a fragile script against a live node.
 - `proxmox_virtual_environment_vm` creates the VM. Note `ignore_changes` on `tags` / `user_account` / `mac_address` / `user_data_file_id` so day-2 tweaks (including snippet edits) don't trigger a VM rebuild.
 
@@ -530,8 +530,8 @@ AbuseIPDB-listed sources are rejected even earlier than the HTTPRoute chain: at 
 | Read-only root FS | backend, frontend, WAF, exporters, DDNS | Containers can't write to their image layer; only explicit `emptyDir` mounts (`/tmp`, Caddy data/config) are writable. Postgres, Redis and Jaeger intentionally run with a writable root FS (documented exceptions). |
 | Non-root + dropped caps | every container | `runAsNonRoot: true`, `capabilities.drop: [ALL]`. Backend/frontend/Redis/Jaeger use UID `10001`; Postgres uses image-native UID `70`. |
 | Secret encryption | `.sops.yaml` + `taskflow-secrets.yaml` | `POSTGRES_PASSWORD`, `SPRING_SECURITY_PASSWORD`, and `REDIS_PASSWORD` are age-encrypted; Flux decrypts at apply time using the `sops-age` Secret. The plaintext `key.txt` is `.gitignore`d. |
-| Immutable images | `image-automation.yaml` | Flux pins every app image to a `@sha256:` digest in Git. |
-| IP reputation denylist | `gitops/infrastructure/controllers/abuseipdb/` + `gitops/infrastructure/configs/cilium/abuseipdb-ingress-deny.yaml` | AbuseIPDB-listed sources are blocked at the Cloudflare edge (proxied path) and by Cilium on `reserved:ingress` (direct path). The `CiliumCIDRGroup` and Cloudflare list are runtime-managed and never in Git. |
+| Immutable images | `image-automation/` | Flux pins every app image to a `@sha256:` digest in Git. |
+| IP reputation denylist | `gitops/platform/abuseipdb/` + `gitops/infrastructure/configs/cilium/abuseipdb-ingress-deny.yaml` | AbuseIPDB-listed sources are blocked at the Cloudflare edge (proxied path) and by Cilium on `reserved:ingress` (direct path). The `CiliumCIDRGroup` and Cloudflare list are runtime-managed and never in Git. |
 
 ### 10.7 What to touch when you want to change X
 
@@ -542,9 +542,9 @@ AbuseIPDB-listed sources are rejected even earlier than the HTTPRoute chain: at 
 | Expose a new URL path | `gitops/apps/taskflow/httproute.yaml` | Flux reconciles Gateway |
 | Change the external IP range | `gitops/infrastructure/configs/cilium/ippool.yaml` | `flux reconcile kustomization infra-configs` |
 | Rotate a DB/app secret | `sops edit gitops/apps/taskflow/taskflow-secrets.yaml` | Flux re-decrypts on next sync |
-| Tune the AbuseIPDB sync (interval, list size, exceptions) | `gitops/infrastructure/controllers/abuseipdb/config.yaml` | `flux reconcile kustomization abuseipdb -n flux-system` |
+| Tune the AbuseIPDB sync (interval, list size, exceptions) | `gitops/platform/abuseipdb/config.yaml` | `flux reconcile kustomization abuseipdb -n flux-system` |
 | Pause either denylist sink | `abuseipdb-ingress-deny` file (Cilium) / `CLOUDFLARE_SYNC_ENABLED` (edge) | see rollback in `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md` |
-| Rotate the AbuseIPDB key / Cloudflare token | `sops edit gitops/infrastructure/controllers/abuseipdb/abuseipdb-secrets.yaml` | Flux re-decrypts on next sync |
+| Rotate the AbuseIPDB key / Cloudflare token | `sops edit gitops/platform/abuseipdb/abuseipdb-secrets.yaml` | Flux re-decrypts on next sync |
 | Bump Cilium/Proxmox CSI/cert-manager version | the `version:` in the relevant `release.yaml` | Flux upgrades (CRDs `CreateReplace`) |
 | Change VM size/network | `terraform.tfvars` + `variables.tf` | `make apply` (note: some changes force VM recreate → auto re-fetch kubeconfig) |
 | Add a TLS cert | `gitops/infrastructure/controllers/cert-manager/` + HTTPS listener in `gateway.yaml` | see ISSUES.md #19 |

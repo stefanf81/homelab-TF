@@ -27,12 +27,12 @@ spec:
       existingSecret: hubble-ui-github-oauth
       configFile: |-
         provider = "github"
-        redirect_url = "https://hubble.jokelab.dev/oauth2/callback"
+        redirect_url = "https://hubble.${DOMAIN}/oauth2/callback"
         upstreams = ["http://hubble-ui.kube-system.svc.cluster.local:80"]
         http_address = "0.0.0.0:4180"
         cookie_secure = true
-        cookie_domains = [".jokelab.dev"]
-        whitelist_domains = [".jokelab.dev"]
+        cookie_domains = [".${DOMAIN}"]
+        whitelist_domains = [".${DOMAIN}"]
         reverse_proxy = true
         set_xauthrequest = true
         skip_provider_button = true

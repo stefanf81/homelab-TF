@@ -11,7 +11,7 @@ or merges updates.
 The SOPS-encrypted GitHub credential is at:
 
 ```bash
-sops gitops/infrastructure/controllers/renovate/job/renovate-secrets.yaml
+sops gitops/platform/renovate/job/renovate-secrets.yaml
 ```
 
 Use a fine-grained PAT for the dedicated GitHub bot account, restricted to

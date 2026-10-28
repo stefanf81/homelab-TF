@@ -19,7 +19,7 @@ spec:
     - name: infra-controllers
   interval: 30m
   retryInterval: 5m
-  path: ./gitops/infrastructure/controllers/abuseipdb
+  path: ./gitops/platform/abuseipdb
   prune: true
   sourceRef:
     kind: GitRepository
@@ -31,3 +31,8 @@ spec:
     provider: sops
     secretRef:
       name: sops-age
+  # Substitutes LAN_CIDR from cluster-vars.yaml.
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-vars

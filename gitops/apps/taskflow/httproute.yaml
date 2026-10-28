@@ -8,7 +8,7 @@ spec:
     - name: taskflow-gateway
       sectionName: https # serve only on :443; plaintext :80 is redirected by http-to-https-redirect
   hostnames:
-    - "www.jokelab.dev"
+    - "www.${DOMAIN}"
   rules:
     # The administrator event stream is intentionally long lived (30 minutes).
     # It must not inherit the 10-second request timeout for regular API calls.

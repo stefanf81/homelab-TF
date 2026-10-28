@@ -1,0 +1,10 @@
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: taskflow-backend
+  namespace: flux-system
+spec:
+  image: ghcr.io/stefanf81/taskflow-backend
+  interval: 10m0s
+  # secretRef:
+  #   name: ghcr-pull

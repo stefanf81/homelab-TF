@@ -29,3 +29,8 @@ spec:
     provider: sops
     secretRef:
       name: sops-age
+  # Substitutes DOMAIN from cluster-vars.yaml.
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-vars

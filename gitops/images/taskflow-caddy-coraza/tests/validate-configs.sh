@@ -16,6 +16,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../../.." && pwd)"
+MON_TESTS="$REPO_ROOT/gitops/monitoring/tests"
 WAF_DIR="$REPO_ROOT/gitops/apps/taskflow"
 LOKI_RELEASE="$REPO_ROOT/gitops/monitoring/logging/loki-release.yaml"
 LOKI_REPOSITORIES="$REPO_ROOT/gitops/monitoring/logging/repositories.yaml"
@@ -38,19 +39,19 @@ if ((${#DASHBOARDS[@]} == 0)); then
 fi
 
 echo "== validating Grafana dashboard structure"
-env -u LOKI_URL ruby "$HERE/validate-dashboards.rb" "${DASHBOARDS[@]}"
+env -u LOKI_URL ruby "$MON_TESTS/validate-dashboards.rb" "${DASHBOARDS[@]}"
 
 echo "== validating dashboard provisioning (Kustomize render)"
-ruby "$HERE/validate-dashboard-provisioning.rb" "$REPO_ROOT"
+ruby "$MON_TESTS/validate-dashboard-provisioning.rb" "$REPO_ROOT"
 
 echo "== validating pinned Helm renders and monitoring safety guards"
-ruby "$HERE/validate-monitoring-configs.rb"
+ruby "$MON_TESTS/validate-monitoring-configs.rb"
 
 echo "== testing WAF dashboard MetricsQL against disposable VictoriaMetrics"
-python3 "$HERE/validate-waf-dashboard-metrics.py"
+python3 "$MON_TESTS/validate-waf-dashboard-metrics.py"
 
 echo "== resolving deployed Loki version from its Helm release/repository"
-EXPECTED_LOKI_VERSION="$(ruby "$HERE/validate-loki-version.rb" "$LOKI_RELEASE" "$LOKI_REPOSITORIES")"
+EXPECTED_LOKI_VERSION="$(ruby "$MON_TESTS/validate-loki-version.rb" "$LOKI_RELEASE" "$LOKI_REPOSITORIES")"
 export EXPECTED_LOKI_VERSION
 LOKI_IMAGE="${LOKI_IMAGE:-grafana/loki:$EXPECTED_LOKI_VERSION}"
 # Even an overridden/digest-pinned image must report the deployed version.
@@ -97,19 +98,19 @@ done
 
 echo "== validating LogQL with $LOKI_IMAGE"
 loki_container="$(docker run -d --rm --publish 127.0.0.1::3100 \
-  -v "$HERE/loki-validation.yaml:/etc/loki/validation.yaml:ro" \
+  -v "$MON_TESTS/loki-validation.yaml:/etc/loki/validation.yaml:ro" \
   "$LOKI_IMAGE" -config.file=/etc/loki/validation.yaml)"
 loki_port="$(docker inspect --format '{{(index (index .NetworkSettings.Ports "3100/tcp") 0).HostPort}}' "$loki_container")"
 export LOKI_URL="http://127.0.0.1:$loki_port"
-if ! ruby "$HERE/validate-dashboards.rb" "${DASHBOARDS[@]}"; then
+if ! ruby "$MON_TESTS/validate-dashboards.rb" "${DASHBOARDS[@]}"; then
   docker logs "$loki_container" >&2
   exit 1
 fi
 
 echo "== testing dashboard validation guards"
-ruby "$HERE/validate-dashboards-test.rb"
+ruby "$MON_TESTS/validate-dashboards-test.rb"
 
 # Runs after the guards so LOKI_URL (exported above) is the disposable Loki.
-"$HERE/validate-alloy-metrics.sh"
+"$MON_TESTS/validate-alloy-metrics.sh"
 
 echo "all config validations passed"

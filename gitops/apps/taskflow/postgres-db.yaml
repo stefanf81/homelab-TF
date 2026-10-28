@@ -43,7 +43,7 @@ spec:
             # container peaked at 102Mi over 14 days (2026-10-22), so 128MB of shared_buffers
             # still holds the whole dataset several times over. Raise shared_buffers and the
             # 512Mi limit together if the data approaches ~100 MB.
-            # Budget: docs/PERF_DEEP_DIVE_2026-10.md §5.1.
+            # Budget: docs/reports/PERF_DEEP_DIVE_2026-10.md §5.1.
             - "-c"
             - "shared_buffers=128MB"
             - "-c"
@@ -88,7 +88,7 @@ spec:
             # replicas. With off, a crash can lose up to 3 × wal_writer_delay (~600ms) of
             # transactions users already saw as confirmed bookings. Cost: one fdatasync per
             # write transaction; measure it with pg_test_fsync / pgbench
-            # (docs/PERF_DEEP_DIVE_2026-10.md §5.4) and set "off" only if it matters.
+            # (docs/reports/PERF_DEEP_DIVE_2026-10.md §5.4) and set "off" only if it matters.
             - "-c"
             - "synchronous_commit=on"
             # JIT only compiles plans above jit_above_cost, but a misestimated short OLTP
@@ -147,7 +147,7 @@ spec:
             # quota throttles them even on an idle node; the request guarantees the share
             # under contention. Memory request == limit (last eviction candidate). The
             # 512Mi budget fits 128 shared_buffers + ~25 pooled connections + work_mem +
-            # page cache, ~5x the 14-day peak of 102Mi (docs/PERF_DEEP_DIVE_2026-10.md §5.1).
+            # page cache, ~5x the 14-day peak of 102Mi (docs/reports/PERF_DEEP_DIVE_2026-10.md §5.1).
             requests:
               cpu: 250m
               memory: 512Mi

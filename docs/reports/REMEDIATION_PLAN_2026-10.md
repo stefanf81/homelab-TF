@@ -2531,7 +2531,7 @@ Statements in the repository that the review found to be wrong or stale:
 | `backend.yaml` resources comment | Guaranteed QoS means CPU is never throttled | CFS quota still throttles without the static CPU manager | PERF-02 |
 | `redis.yaml:50-58` | Reads stay on the main thread unless `io-threads-do-reads` | That option is a no-op in Redis 8 | PERF-05 |
 | `kyverno/release.yaml` `admissionController.resources`, `alloy-release.yaml` top-level `resources`, `cilium/release.yaml` `hubble.ui.resources` | Resource requests/limits for these components | The charts read `admissionController.container.resources`, `alloy.resources` and `hubble.ui.backend/frontend.resources`; the blocks are ignored (Alloy runs with no limits at all) | PERF-02 |
-| `docs/CLUSTER_AUDIT_2026-10.md` | Narrow oauth2-proxy/Grafana scopes to `user:email` | oauth2-proxy's GitHub provider needs `read:org`; keep the defaults (corrected in the audit) | SEC-07 |
+| `docs/reports/CLUSTER_AUDIT_2026-10.md` | Narrow oauth2-proxy/Grafana scopes to `user:email` | oauth2-proxy's GitHub provider needs `read:org`; keep the defaults (corrected in the audit) | SEC-07 |
 
 ---
 

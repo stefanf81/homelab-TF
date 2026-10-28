@@ -1,0 +1,17 @@
+# Flux image automation for TaskFlow's mutable `:latest` images.
+#
+# Strategy: digest pinning. Instead of re-pulling `:latest` blindly (imagePullPolicy:
+# Always), we let Flux resolve `:latest` to its current sha256 digest and rewrite the
+# manifest to `repo:latest@sha256:<digest>`. When a new `:latest` is pushed to ghcr,
+# the ImagePolicy (digestReflectionPolicy: Always) picks up the new digest, the
+# ImageUpdateAutomation commits the updated reference to Git, and Flux rolls out the
+# new (unique) digest. The digest in Git is the auditable source of truth, and a plain
+# `rollout restart` will NOT silently change the running software.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - frontend-repository.yaml
+  - backend-repository.yaml
+  - frontend-policy.yaml
+  - backend-policy.yaml
+  - update-automation.yaml

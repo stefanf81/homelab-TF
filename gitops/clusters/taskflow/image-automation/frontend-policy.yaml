@@ -1,0 +1,16 @@
+# Filter down to the single `latest` tag, then track its digest (not its tag) so we
+# detect re-pushes of the same mutable tag.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: taskflow-frontend
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: taskflow-frontend
+  filterTags:
+    pattern: '^latest$'
+  policy:
+    alphabetical: {}
+  digestReflectionPolicy: Always
+  interval: 10m0s

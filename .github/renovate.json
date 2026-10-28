@@ -7,7 +7,7 @@
   "prConcurrentLimit": 5,
   "prHourlyLimit": 0,
   "minimumReleaseAge": "3 days",
-  "enabledManagers": ["custom.regex", "dockerfile", "flux", "github-actions", "kubernetes"],
+  "enabledManagers": ["custom.regex", "dockerfile", "flux", "github-actions", "kubernetes", "mise"],
   "ignorePaths": [
     "gitops/clusters/taskflow/flux-system/gotk-components.yaml",
     "gitops/infrastructure/controllers/gateway-api/**",
@@ -16,13 +16,14 @@
   "flux": {
     "managerFilePatterns": [
       "/^gitops\\/infrastructure\\/controllers\\/.+\\.ya?ml$/",
+      "/^gitops\\/platform\\/.+\\.ya?ml$/",
       "/^gitops\\/monitoring\\/.+\\.ya?ml$/"
     ]
   },
   "kubernetes": {
     "managerFilePatterns": [
       "/^gitops\\/apps\\/.+\\.ya?ml$/",
-      "/^gitops\\/infrastructure\\/controllers\\/renovate\\/.+\\.ya?ml$/"
+      "/^gitops\\/platform\\/renovate\\/.+\\.ya?ml$/"
     ]
   },
   "customManagers": [
@@ -125,6 +126,13 @@
     {
       "matchPackageNames": ["renovate/renovate"],
       "labels": ["dependencies", "renovate"]
+    },
+    {
+      "description": "flux2 and kubectl in mise.toml follow the cluster's Flux and k3s minors (scripts/check-tool-versions.sh); only patch updates are automatic.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["flux2", "kubectl"],
+      "matchUpdateTypes": ["minor", "major"],
+      "enabled": false
     }
   ]
 }

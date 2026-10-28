@@ -15,7 +15,7 @@ metadata:
 # requests unbounded memory before it can starve the single k3s node.
 #
 # Deliberately no CPU default limit and no CPU max: long-running TaskFlow workloads run
-# without CPU limits (docs/PERF_DEEP_DIVE_2026-10.md §3). A CPU `default` would inject
+# without CPU limits (docs/reports/PERF_DEEP_DIVE_2026-10.md §3). A CPU `default` would inject
 # a limit into them, and a CPU `max` makes the LimitRanger reject every container that
 # has no CPU limit ("maximum cpu usage per Container is 4.  No limit is specified").
 # CPU requests still get a default, and memory stays bounded.

@@ -1,7 +1,7 @@
 # Scheduling priority for the TaskFlow request path and data stores.
 #
 # With CPU limits removed and requests sized to real usage
-# (docs/PERF_DEEP_DIVE_2026-10.md §3), these pods are no longer Guaranteed QoS.
+# (docs/reports/PERF_DEEP_DIVE_2026-10.md §3), these pods are no longer Guaranteed QoS.
 # The priority keeps them first in the scheduling queue and last among eviction
 # candidates under node pressure (the kubelet ranks by usage above requests, then
 # priority). preemptionPolicy: Never — it never evicts other pods to make room;

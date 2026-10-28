@@ -5,7 +5,7 @@ require "yaml"
 require "tempfile"
 require "open3"
 
-ROOT = File.expand_path("../../../..", __dir__)
+ROOT = File.expand_path("../../..", __dir__)
 
 def assert(condition, message)
   raise message unless condition

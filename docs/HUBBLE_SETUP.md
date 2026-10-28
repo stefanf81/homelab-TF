@@ -47,7 +47,7 @@ kubectl port-forward -n kube-system svc/hubble-relay 4244:80
 | `gitops/infrastructure/controllers/cilium/release.yaml` | Updated: enabled `hubble`, `hubble.relay`, `hubble.ui`, `hubble.metrics` |
 | `gitops/infrastructure/controllers/coredns/release.yaml` | Updated: added `hubble.jokelab.dev` to hosts |
 
-### Hubble UI (`gitops/infrastructure/controllers/hubble-ui/`)
+### Hubble UI (`gitops/platform/hubble-ui/`)
 
 | File | Resource |
 |------|----------|

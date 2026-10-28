@@ -66,9 +66,9 @@ creation_rules:
 3. **`gitops/apps/taskflow/taskflow-secrets.yaml`**: The encrypted application secrets.
 4. **`gitops/infrastructure/controllers/proxmox-csi/proxmox-csi-secrets.yaml`**: Proxmox CSI storage secrets.
 5. **`gitops/monitoring/platform/grafana-secrets.yaml`**: Grafana admin and GitHub OAuth secrets.
-6. **`gitops/infrastructure/controllers/hubble-ui/hubble-ui-secrets.yaml`**: Hubble OAuth credentials.
-7. **`gitops/infrastructure/controllers/policy-reporter/policy-reporter-secrets.yaml`**: Policy Reporter OAuth credentials.
-8. **`gitops/infrastructure/controllers/renovate/job/renovate-secrets.yaml`**: Renovate GitHub credentials.
+6. **`gitops/platform/hubble-ui/hubble-ui-secrets.yaml`**: Hubble OAuth credentials.
+7. **`gitops/platform/policy-reporter/policy-reporter-secrets.yaml`**: Policy Reporter OAuth credentials.
+8. **`gitops/platform/renovate/job/renovate-secrets.yaml`**: Renovate GitHub credentials.
 9. **`gitops/apps/taskflow/taskflow-jwt-secrets.yaml`**: TaskFlow JWT key material.
 
 ---

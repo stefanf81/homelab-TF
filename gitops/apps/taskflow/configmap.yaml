@@ -16,7 +16,7 @@ data:
   # the earlier comment referencing it was stale. If you ever serve the app from a
   # new hostname, add it here AND to certificate.yaml's dnsNames AND httproute.yaml's
   # hostnames, or the browser's /api calls will be CORS-rejected.
-  APP_CORS_ALLOWED_ORIGINS: "https://jokelab.dev,https://www.jokelab.dev"
+  APP_CORS_ALLOWED_ORIGINS: "https://${DOMAIN},https://www.${DOMAIN}"
   # Client-IP resolution (the backend's 20/min per-IP auth limiter keys on it).
   # Required since the hardened image: the prod profile has no default and aborts
   # startup without it.
