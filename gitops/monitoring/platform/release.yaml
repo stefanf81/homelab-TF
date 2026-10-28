@@ -218,7 +218,7 @@ spec:
         # controller; the chart ships its RBAC rules and Flux applies the new
         # CRDs via `upgrade.crds: CreateReplace`. Pods roll once on this bump.
         # renovate: datasource=docker depName=victoriametrics/operator
-        tag: v0.75.1
+        tag: v0.75.2
       resources:
         requests:
           cpu: 50m
