@@ -130,7 +130,7 @@
     {
       "description": "flux2 and kubectl in mise.toml follow the cluster's Flux and k3s minors (scripts/check-tool-versions.sh); only patch updates are automatic.",
       "matchManagers": ["mise"],
-      "matchPackageNames": ["flux2", "kubectl"],
+      "matchDepNames": ["flux2", "kubectl"],
       "matchUpdateTypes": ["minor", "major"],
       "enabled": false
     }
