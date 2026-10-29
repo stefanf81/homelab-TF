@@ -74,7 +74,7 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 
 ---
 
-## 4. GitOps Layer (Flux CD 2.9.x, managed by the Flux Operator)
+## 4. GitOps Layer (Flux CD 2.10.x, managed by the Flux Operator)
 
 ### 4.1 Kustomization Dependency Chain
 ```
