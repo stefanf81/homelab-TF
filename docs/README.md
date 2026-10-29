@@ -25,6 +25,7 @@ check the living documents for current state.
 | `reports/REMEDIATION_PLAN_2026-10.md` | Issue-by-issue follow-up to the audit |
 | `reports/PERF_DEEP_DIVE_2026-10.md` | Measurements behind PERF-02/03/04 |
 | `reports/POD_SPEC_REVIEW_2026-10.md` | Pod-spec feature review |
+| `reports/CILIUM_REVIEW_2026-10.md` | Cilium settings vs. Cilium 1.20 tuning guide and home-operations repos |
 
 `archive/` holds superseded migration guides.
 
