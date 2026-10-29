@@ -42,7 +42,7 @@ What is left, by priority:
 
 | # | Change | Gain here | Cost / risk | When |
 |---|---|---|---|---|
-| 1a | `routingMode: native` + `bpfClockProbe: true` (§4.2) | Pod route MTU 1450 → 1500. No VXLAN device. Cheaper CT timestamps | Agent restart; existing connections may reset. WAF trusted-proxy IP must be checked again | Planned window |
+| 1a | `routingMode: native` + `bpfClockProbe: true` (§4.2) | Pod route MTU 1450 → 1500. No VXLAN device. Cheaper CT timestamps. Measured same-node gain elsewhere: none (§7); mostly prep for a second node | Agent restart; existing connections may reset. WAF trusted-proxy IP must be checked again | Planned window |
 | 1b | `bpf.datapathMode: netkit` (§4.2) | Lowest per-packet cost Cilium offers | **Not in place.** The 1.20 agent refuses to start while veth pods exist, so the switch is a node reboot. Open netkit policy bug ([cilium#47913](https://github.com/cilium/cilium/issues/47913)). Gateway-on-netkit is not proven by any reference repo | Next node rebuild, after #47913 ships a fix |
 | 2 | virtio-net multiqueue on the VM NIC (§4.3) | RX/TX softirq spread over 6 vCPUs instead of one; `fq` gets one leaf per queue | NIC hot-replug or VM reboot; slightly more CPU per packet | Optional, with the next planned reboot |
 | 3 | Cilium agent/operator Grafana dashboards (§4.1) | Visibility to prove items 1–2 (BPF map pressure, regeneration time, drops) | Bootstrap-ordering trap (see §4.1) | Any time |
@@ -367,3 +367,36 @@ Cilium's Gateway for this cluster.
 - https://osv.dev/vulnerability/CVE-2026-56742
 - https://pve.proxmox.com/wiki/Qemu/KVM_Virtual_Machines (virtio-net multiqueue)
 - Cilium v1.20.4 source: `daemon/cmd/endpoint_restore.go`, `install/kubernetes/cilium/values.schema.json`
+
+## 7. Published benchmarks, and how far they transfer
+
+No benchmark compares "everything Cilium supports". What exists, by area:
+
+| Area | Best available source | What it shows | Relevance to this node |
+|---|---|---|---|
+| CNI datapath (Cilium vs Calico, eBPF vs legacy host routing, encryption) | Cilium's own [CNI benchmark](https://docs.cilium.io/en/stable/operations/performance/benchmark/) (`benchmark.rst`). **Still Cilium 1.9.6 on kernel 5.10, 2021**, two bare-metal hosts with 100 Gbit E810 NICs, netperf | eBPF host routing beats legacy host routing and Calico, most clearly on connection rate (TCP_CRR, 32 processes). WireGuard needs less CPU than IPsec per Gbit | Confirms the settings already here (eBPF host routing, KPR). Says nothing about netkit, BIG TCP or 1.20 |
+| Independent CNI comparison | InfraBuilder/Ducastel series, last edition **August 2020** (Cilium 1.8.2, 10 Gbit) | Historical only | None |
+| Tunnel (VXLAN) vs native routing | [Talos hybrid cluster test](https://dev.to/bnovickovs/comparing-cilium-networking-setups-on-a-talos-hybrid-kubernetes-cluster-3gdk) (Sep 2025, `cilium connectivity perf`) | Cross-node: native ~7–8 % lower RR/CRR latency, throughput mixed. **Same-node: identical** (TCP_RR ~34 µs, TCP_CRR ~67 µs in both modes) | All traffic here is same-node, so expect no measurable gain from native routing beyond the MTU |
+| netkit vs veth | Vendor material only: Meta's [FOSDEM 2025 slides](https://fosdem.org/2025/events/attachments/fosdem-2025-4045-an-introduction-to-netkit-the-bpf-programmable-network-device/slides/237196/An_Introd_TgFgOaU.pdf) (p99 > 12 s → ~100 ms in a 4× stacking test with heavy softirq); ByteDance case study (~10 %) | Large wins under extreme softirq pressure | Not this cluster's regime. No independent benchmark exists |
+| kube-proxy modes | Kubernetes blog (nftables ≈ IPVS), AKS (nftables p50 ≈ iptables p01 at 5k–10k Services); Isovalent (eBPF > IPVS > iptables) | Differences matter at thousands of Services | ~40 Services here; KPR is already on |
+| Gateway API implementations | [howardjohn/gateway-api-bench](https://github.com/howardjohn/gateway-api-bench) Part 1 (Cilium 1.17.2, single-node kind, 16-core) | Cilium: ~20k qps ceiling regardless of connections ("bottlenecked to single core"; others 130k–400k at 16–512 conns), p99 0.118 ms at 1 conn, 503s during route changes, Envoy config update stops silently past ~1.5 MB (one CEC per Gateway), highest control-plane CPU at route scale | The qps ceiling is ~1000× above this site's traffic. Route changes cause brief 503s: deploy route changes off-peak. 6 HTTPRoutes are far below the 1.5 MB limit. Part 2 dropped Cilium; [cilium#39974](https://github.com/cilium/cilium/issues/39974) has only a partial 1.19 rerun ("CPU and memory quite a bit better") and no full rerun |
+| BBR | Google/Isovalent material (Internet-path gains); no Cilium-specific 2026 benchmark | Gains on lossy, long paths | Cloudflare → origin over a home uplink is exactly that path; keep it |
+| Hubble overhead | Tuning guide: 1–15 % depending on traffic and aggregation | — | Small at this traffic; measure agent CPU before turning anything off |
+
+Several 2026 blog "benchmarks" (Cilium vs Calico vs Flannel with Gbps and p99 tables) publish no hardware, versions or method, and contradict each other. Ignore them.
+
+Two open Gateway issues read close to this setup:
+
+- [cilium#47940](https://github.com/cilium/cilium/issues/47940) (open; 1.19.6–1.20.3): Envoy's connections to **same-node** backends get an RST, so requests alternate 200/503. It is nondeterministic across reboots. The original report is Ubuntu 26.04 + k3s + KPR + VXLAN + Envoy DaemonSet; a second report adds Tailscale in netfilter mode. Not seen here, but every backend is same-node and this node runs Tailscale. If alternating 503s with rising `upstream_cx_connect_timeout` appear after a reboot, check `sysctl net.ipv4.conf.all.src_valid_mark` first (the maintainer's lead, unverified).
+- [cilium#48367](https://github.com/cilium/cilium/issues/48367) (fixed by PR #48951, merged 2026-10-12; release not confirmed): CiliumEnvoyConfig rewritten every ~1 s, causing 403s. The trigger is several HTTPRoutes on the **same hostname and listener** with equal-length path prefixes. Here, the two routes on the apex domain sit on different listeners (`http` vs `https`), so it does not trigger. `kubectl get cec -A -w` should show a stable generation.
+
+### 7.1 Measuring this node instead
+
+Generic numbers do not transfer to a 6-vCPU virtio VM. Before and after any §4 change, run:
+
+```bash
+# pod↔pod and host↔pod on the single node: throughput, RR, CRR, 3 samples
+cilium connectivity perf --other-node=false --crr --samples 3 --duration 10s --report-dir ./perf-$(date +%F)
+```
+
+For the Gateway path, compare Envoy downstream p95/p99 from the existing `cilium-envoy` scrape (PERF deep dive §2.3) over the same weekday window. Optionally, run a short load test from a LAN host against `https://192.168.50.201` with the `Host` header set (for example `oha -z 30s -c 16 -H 'Host: www.jokelab.dev'`). Keep it short and off-peak: the WAF rate limits apply.
