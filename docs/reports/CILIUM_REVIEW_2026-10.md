@@ -42,14 +42,16 @@ What is left, by priority:
 
 | # | Change | Gain here | Cost / risk | When |
 |---|---|---|---|---|
-| 1 | Maintenance-window bundle: `routingMode: native`, `bpf.datapathMode: netkit`, `bpfClockProbe: true` (§4.2) | Lowest per-packet cost Cilium offers. Pod route MTU 1450 → 1500. No VXLAN device. Cheaper CT timestamps | Every pod must restart. WAF trusted-proxy IP must be checked again. Gateway-on-netkit is not proven by any reference repo | Planned window or next node rebuild |
-| 2 | virtio-net multiqueue on the VM NIC (§4.3) | RX/TX softirq spread over 6 vCPUs instead of one; `fq` gets one leaf per queue | NIC hot-replug or VM reboot | With the next planned reboot |
+| 1a | `routingMode: native` + `bpfClockProbe: true` (§4.2) | Pod route MTU 1450 → 1500. No VXLAN device. Cheaper CT timestamps | Agent restart; existing connections may reset. WAF trusted-proxy IP must be checked again | Planned window |
+| 1b | `bpf.datapathMode: netkit` (§4.2) | Lowest per-packet cost Cilium offers | **Not in place.** The 1.20 agent refuses to start while veth pods exist, so the switch is a node reboot. Open netkit policy bug ([cilium#47913](https://github.com/cilium/cilium/issues/47913)). Gateway-on-netkit is not proven by any reference repo | Next node rebuild, after #47913 ships a fix |
+| 2 | virtio-net multiqueue on the VM NIC (§4.3) | RX/TX softirq spread over 6 vCPUs instead of one; `fq` gets one leaf per queue | NIC hot-replug or VM reboot; slightly more CPU per packet | Optional, with the next planned reboot |
 | 3 | Cilium agent/operator Grafana dashboards (§4.1) | Visibility to prove items 1–2 (BPF map pressure, regeneration time, drops) | Bootstrap-ordering trap (see §4.1) | Any time |
 | 4 | Longer L2-announcement lease timers (§4.1) | ~5× fewer Lease writes to k3s's SQLite (kine) | Agent restart (seconds) | Optional |
 | 5 | `gatewayAPI.enableAlpn` (HTTP/2 from Cloudflare to Envoy) | Multiplexed edge→origin connections | Needs Cloudflare "HTTP/2 to Origin" | With SEC-01, as already planned |
 
 Nothing in the table is a large win for human-scale traffic. Item 1 is the only
-one that changes the datapath itself.
+one that changes the datapath itself. §6 summarises what the community ran into
+with these settings between May and October 2026.
 
 ## 1. What is configured today
 
@@ -166,23 +168,26 @@ events queue is full"), `bpf.monitorAggregation` (already `medium`),
 reconnect to a local pod costs microseconds, and it stays below Caddy's idle
 timeout, so Envoy closes first: the right order).
 
-### 4.2 Maintenance-window bundle
+### 4.2 Datapath changes (window or rebuild)
 
 Cilium's tuning guide: these "change the underlying datapath fundamentals and
 therefore require Pod or even node restarts". On a single node there is nothing to
-drain to, so do them **together**, once, either in a planned window or as the
-first-boot configuration of the next node rebuild (preferred; backlog item 12,
-3-node HA, brings one anyway).
+drain to. They split into two steps with different risk:
+
+- **Step A, a planned window:** native routing + clock probe. No pod-device change.
+- **Step B, the next node rebuild:** netkit. It is the default for a fresh node, and
+  an in-place switch needs a reboot anyway (see below). Wait until
+  [cilium#47913](https://github.com/cilium/cilium/issues/47913) has a released fix.
 
 ```yaml
     routingMode: native
     ipv4NativeRoutingCIDR: 10.42.0.0/16   # k3s cluster-cidr
     autoDirectNodeRoutes: true            # nodes share the 192.168.50.0/24 L2 segment
+    bpfClockProbe: true                   # jiffies instead of ktime for CT timestamps
     bpf:
-      datapathMode: netkit                # L3 mode; kernel >= 6.8, eBPF host routing
+      datapathMode: netkit                # step B only: L3 mode; kernel >= 6.8, eBPF host routing
       masquerade: true
       hostLegacyRouting: false
-    bpfClockProbe: true                   # jiffies instead of ktime for CT timestamps
 ```
 
 What each one buys:
@@ -208,32 +213,56 @@ Pre-checks, in this order:
 
 1. `uname -r` ≥ 6.8 (Ubuntu 26.04's kernel is well past that), and
    `cilium-dbg status | grep 'Host Routing'` shows `BPF`.
-2. **Gateway on netkit is not proven by the references.** All three netkit users
-   run Envoy Gateway, not Cilium's Gateway with the host-network Envoy and L7
+2. **Gateway on netkit is not proven by the references.** All netkit users among
+   them run Envoy Gateway, not Cilium's Gateway with the host-network Envoy and L7
    redirects. Also, netkit "is incompatible with TPROXY (`bpf.tproxy`)", which is
-   off here. Test in the window and keep the rollback ready.
-3. Write down `ip -4 addr show cilium_host` before the change, and compare it after
+   off here. Test it on the rebuilt node before cutting DNS over.
+3. **Keep `endpointRoutes` and `socketLB.hostNamespaceOnly` unset.** The open bug
+   cilium#47913 (1.20.x, reproduced by a maintainer on 2026-10-26) is reported for
+   netkit *combined with* both. Same-node Service replies are reclassified as new
+   flows and dropped by ingress policies (Postgres SYN-ACKs, DNS answers). This
+   cluster has ingress policies everywhere, and all its traffic is same-node. The
+   minimal trigger is not established, so this lowers the risk without removing it.
+4. Write down `ip -4 addr show cilium_host` before the change, and compare it after
    (WAF `trusted_proxies 10.42.0.148/32`). Cilium normally restores the router IP
    from its state directory, but a rebuild or a state wipe gives a new one. If it
    changes, update both WAF ConfigMaps (the image test suite checks they match).
 
-Runbook:
+**Why netkit cannot be switched in place on 1.20.** On restore the agent checks
+every pod endpoint whose host interface still exists, and exits fatally if any
+uses another device type (`daemon/cmd/endpoint_restore.go`,
+`validateDatapathModeCompatibility`):
 
-1. Push the values. Flux upgrades; `rollOutCiliumPods` restarts the agent.
-2. Immediately restart every pod that is not host-network:
-   `kubectl get ns -o name | cut -d/ -f2 | xargs -I{} kubectl -n {} rollout restart deploy,sts,ds`,
-   then delete any leftover bare pods. Old veth pods and new netkit pods cannot run
-   side by side.
-3. Restart `ds/cilium-envoy` so its sockets pick up the new routes.
-4. Verify: `cilium-dbg status` shows `Device Mode: netkit`, `Routing: Network:
-   Native`, `Clock Source for BPF: jiffies`. `ip route` in a pod shows no `mtu 1450`.
-   Smoke-test Gateway HTTPS, WAF → backend, backend → Postgres/Redis, DNS, the
-   FQDN policy of `abuseipdb-sync`, and Hubble drops still arriving in Loki.
-5. Rollback: revert the commit, then repeat step 2 (the same full restart is needed
-   going back).
+> Cannot start cilium-agent with datapath-mode=netkit: detected N existing
+> endpoint(s) using incompatible datapath-modes … Please delete these pods or
+> correct the cilium-agent operational datapath-mode.
 
-Expect several minutes of full outage. That is why the node rebuild is the better
-moment.
+The same check blocks a rollback (netkit → veth). A homelab hit exactly this on
+2026-10-28 (jimmy-ungerman/pork3s#2999): agents crash-looped, two Ceph OSDs went
+down, and recovery meant suspending the HelmRelease and restoring the old mode.
+Here, with one node, a crash-looping agent means the whole site is down. Also, the
+HelmRelease's `upgrade.remediation` would roll back to veth mid-incident, which
+fails the same check. On a running node, the only clean in-place path is a
+reboot: `/var/run/cilium` is tmpfs, so the endpoints and their links are gone on
+boot. In practice that is a rebuild without the reinstall, which is why step B
+belongs to the rebuild.
+
+Runbook for step A (native routing + clock probe):
+
+1. Push the values. Flux upgrades; `rollOutCiliumPods` restarts the agent (seconds;
+   connections may reset because existing CT timestamps are reinterpreted).
+2. Restart workloads at leisure so pod routes lose `mtu 1450`
+   (`kubectl -n <ns> rollout restart deploy,sts`), and restart `ds/cilium-envoy`.
+3. Verify: `cilium-dbg status` shows `Routing: Network: Native` and
+   `Clock Source for BPF: jiffies`. `ip route | grep cilium_host` shows no `mtu`.
+   `cilium_host` still has `10.42.0.148`. Smoke-test Gateway HTTPS, WAF → backend,
+   backend → Postgres/Redis, DNS, the FQDN policy of `abuseipdb-sync`, and Hubble
+   drops still arriving in Loki.
+4. Rollback: revert the commit; the agent restarts in tunnel mode.
+
+Step B on the rebuilt node: put `datapathMode: netkit` in the values before
+the first Cilium install, check `cilium-dbg status` for `Device Mode: netkit`,
+then run the same smoke tests.
 
 ### 4.3 VM layer: virtio-net multiqueue
 
@@ -249,10 +278,15 @@ directly:
   }
 ```
 
-The guest driver enables all queues by default. Proxmox applies the change as a NIC
-hot-replug, or at the next reboot, so do it together with a planned reboot (or §4.2).
-Check afterwards with `ethtool -l eth0` and `tc qdisc show dev eth0` (one `fq` per
-queue under `mq`).
+Proxmox applies the change as a NIC hot-replug, or at the next reboot, so do it
+together with a planned reboot. Check afterwards with `ethtool -l eth0`. If
+"Current hardware settings → Combined" is below the pre-set maximum, set it with
+`ethtool -L eth0 combined 6`, as the Proxmox docs instruct (recent guest kernels
+normally enable all queues on their own). Then check `tc qdisc show dev eth0`: one
+`fq` per queue under `mq`. The Proxmox docs recommend multiqueue for VMs that
+"process a great number of incoming connections", such as a reverse proxy. They
+warn that it raises host and guest CPU load as traffic grows, so at this traffic
+it is a nice-to-have, not a fix.
 
 ### 4.4 With SEC-01 or Cloudflare "HTTP/2 to Origin"
 
@@ -271,3 +305,65 @@ This verdict is unchanged from PERF-03.
   This could collapse repeated scanner drops before they reach Loki. Check how
   aggregated records count per IP before using it, because `blocked-sources` counts
   log lines.
+
+## 6. Community experience, May–October 2026
+
+Reddit could not be read from the research environment: it blocks both the HTTP
+client and the search crawler. The sources below are the community's public record
+instead: the reference repositories' commit history since March 2026, cilium/cilium
+issues and release discussions, other homelab repositories' PRs, and blog write-ups.
+
+### 6.1 What the reference repositories changed and reverted
+
+| When | Repository | Change | Take-away |
+|---|---|---|---|
+| 2026-03-02 | bjw-s | Downgraded 1.19.1 → 1.18.7, back on 1.19.x a week later | Even the most-copied repos roll back minor releases; let x.y.0/x.y.1 soak |
+| 2026-05-13 | bjw-s | "Simplify towards defaults": dropped netkit, `bpfClockProbe`, `endpointRoutes`, XDP acceleration, `pmtuDiscovery`, `localRedirectPolicies` | The trend is fewer knobs, not more |
+| 2026-07-19 → 07-26 | onedr0p | netkit → veth → netkit the same day, then veth for good, only because Kata cannot use netkit | netkit ran there for months without datapath complaints |
+| 2026-08-18 | buroa | Tried `loadBalancer.acceleration: native` + `dsrDispatch: opt`, reverted the same day | XDP/DSR tuning is fragile even on bare metal; irrelevant on a VM |
+| 2026-10-23 | onedr0p | Fixed `cgroup.automount` → `autoMount`. The misspelt key had been silently ignored (joryirving still carries it) | The Cilium chart schema does not reject unknown keys. This repo had the same class of bug (`hubble.ui.resources`, PERF-02 §1.5). A check against the 1.20.4 `values.yaml` found **no unknown keys** in `release.yaml` today |
+| 2026-10-24/25 | onedr0p, buroa, szinn | Removed values equal to chart defaults | Explicit defaults are not wrong here (several are documented decisions), but the direction is clear |
+
+### 6.2 Issues reported against 1.20.x, and whether they apply here
+
+| Issue | Status | Applies here? |
+|---|---|---|
+| Agent ↔ Envoy xDS livelock, 85–100 % CPU on every node after 1.20.0 ([cilium#47624](https://github.com/cilium/cilium/issues/47624)); reported with a separate Envoy DaemonSet too | Fixed in 1.20.1 (#47899) | No, on 1.20.4. If agent/Envoy CPU ever pins, this is the first suspect |
+| 1.20.3: BackendTLSPolicy handling caused high CPU and stopped Gateway forwarding | Reverted in 1.20.4 ([release discussion](https://github.com/cilium/cilium/discussions/49581)) | No BackendTLSPolicy in this repo; on 1.20.4. Renovate's `minimumReleaseAge: 3 days` would not have caught it (the fix took ~8 days), so read the Gateway section of each Cilium release note |
+| 1.20.4 behaviour change: CiliumEnvoyConfig redirects only Services in its own namespace | Shipped | No CiliumEnvoyConfig here |
+| netkit + `endpointRoutes` + `hostNamespaceOnly` drops same-node Service replies ([cilium#47913](https://github.com/cilium/cilium/issues/47913)) | Open; fix PR #47914 in draft | Only once netkit is enabled; see §4.2. At least two homelabs reverted to veth over it in October |
+| 1.20 agent refuses to start when the datapath mode changes under existing pods ([pork3s#2999](https://github.com/jimmy-ungerman/pork3s/pull/2999)) | By design | Shapes the §4.2 plan |
+| CPU lockup after Cilium start ([cilium#49370](https://github.com/cilium/cilium/issues/49370)) | Open; maintainer suspects kernel/hardware | No: bare-metal `qede` NICs, one node in ~95 |
+| CVE-2026-49445: world-accessible Envoy `admin.sock` with L7 enabled | Fixed in 1.19.2 | No, on 1.20.4 |
+| CVE-2026-56742: HTTPRoute mirroring into other namespaces, bypassing ReferenceGrant | Fixed in 1.17.17 / 1.18.11 / 1.19.5 | Probably not: the advisories found list no 1.20 range, but none confirms 1.20 explicitly (check GHSA-w7c2-w76w-5hmj). Low impact here regardless: every HTTPRoute is written by the repo owner |
+| 1.20.4 security release: Go 1.26.10, distrust of a compromised eMudhra intermediate CA | Shipped | Already on it |
+
+### 6.3 Cilium Gateway API in practice
+
+There is no consensus to leave it. One homelab moved *from* Cilium Gateway to Envoy
+Gateway in October, citing a "same-node proxy/host-firewall failure"
+(bart-kochanowicz/homelab#88). Host firewall is off here. Another moved the other
+way, from Envoy Gateway to Cilium Gateway, to simplify the stack
+(rciliberto/lab-gitops#76). A 1.19.5 → 1.20.1 upgrade write-up reports a smooth
+upgrade with Gateway API 1.6, and the Gateway finally showing
+`PROGRAMMED=True` (enaplo.hu, 2026-09-11). Nothing found argues against staying on
+Cilium's Gateway for this cluster.
+
+### 6.4 Sources
+
+- Reference repositories' history: `git log` of the Cilium paths of onedr0p/home-ops,
+  bjw-s-labs/home-ops, buroa/k8s-gitops, joryirving/home-ops, szinn/k8s-homelab,
+  mirceanton/home-ops, fetched 2026-10-29
+- https://github.com/cilium/cilium/issues/47624
+- https://github.com/cilium/cilium/issues/47913
+- https://github.com/cilium/cilium/issues/49370
+- https://github.com/cilium/cilium/discussions/49581
+- https://github.com/jimmy-ungerman/pork3s/pull/2999
+- https://github.com/jsimcina/k8s-home/pull/3461
+- https://github.com/bart-kochanowicz/homelab/pull/88
+- https://github.com/rciliberto/lab-gitops/pull/76
+- https://enaplo.hu/2026/09/11/cilium-gateway-api-the-1-20-update/
+- https://osv.dev/vulnerability/CVE-2026-49445
+- https://osv.dev/vulnerability/CVE-2026-56742
+- https://pve.proxmox.com/wiki/Qemu/KVM_Virtual_Machines (virtio-net multiqueue)
+- Cilium v1.20.4 source: `daemon/cmd/endpoint_restore.go`, `install/kubernetes/cilium/values.schema.json`
