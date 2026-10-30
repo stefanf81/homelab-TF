@@ -97,6 +97,15 @@ spec:
         create: "false"
     l2announcements:
       enabled: true
+      # The lease holder renews every leaseRetryPeriod (chart default 2s), which is
+      # a Lease write to k3s's SQLite datastore every 2s per announced IP, forever.
+      # With one node nothing fails over and a restarted agent re-acquires its own
+      # lease at once, so longer timers cost nothing today. Once a second node
+      # joins, leaseDuration is the worst-case ARP failover time.
+      # docs/reports/CILIUM_REVIEW_2026-10.md §4.1
+      leaseDuration: 30s
+      leaseRenewDeadline: 20s
+      leaseRetryPeriod: 5s
     hubble:
       enabled: true
       relay:

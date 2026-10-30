@@ -5,6 +5,14 @@ metadata:
   namespace: taskflow
 spec:
   secretName: taskflow-tls-secret
+  # ECDSA P-256 instead of the RSA-2048 default: cheaper TLS handshakes at the
+  # Gateway, and accepted by Cloudflare "Full (strict)". Changing the algorithm
+  # makes cert-manager issue a new certificate once; the old Secret keeps serving
+  # until the new one is ready. Always is the default since cert-manager v1.18.
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
   dnsNames:
     - "${DOMAIN}"
     - "www.${DOMAIN}"

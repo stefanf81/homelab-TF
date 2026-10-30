@@ -124,6 +124,11 @@ metadata:
   namespace: monitoring
 spec:
   jobLabel: app.kubernetes.io/name
+  # Copies the Service's `k8s-app: cilium` label onto every series as
+  # k8s_app="cilium", as Cilium's own ServiceMonitor does. The vendored
+  # Cilium Agent dashboard filters every query on it.
+  targetLabels:
+    - k8s-app
   namespaceSelector:
     matchNames:
       - kube-system

@@ -50,7 +50,9 @@ suggested order is in §4.
 They were validated with `caddy validate` and `tests/run-tests.sh` on a Caddy
 2.11.7 build with the image's two plugins, a CoreDNS 1.15.0 start-up on the
 rendered chart 1.49.0 Corefile, and `scripts/validate-gitops.sh`. Items 3 and 5
-are still open.
+are still open. From §3, the Cilium agent and Hubble dashboards, the longer
+L2-announcement lease timers and the ECDSA key on the current certificate are
+applied as well.
 
 ## 1. The request path and every timer on it
 

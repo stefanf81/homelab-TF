@@ -67,3 +67,28 @@ configMapGenerator:
         app.kubernetes.io/name: kyverno
         app.kubernetes.io/component: security
         app.kubernetes.io/part-of: taskflow-observability
+  # Vendored from the Cilium chart (see SOURCE.md for the version and local changes).
+  - name: cilium-agent-dashboard
+    files:
+      - cilium-agent.json
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        grafana_folder: Platform
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/name: cilium
+        app.kubernetes.io/component: observability
+        app.kubernetes.io/part-of: taskflow-observability
+  - name: hubble-dashboard
+    files:
+      - hubble.json
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        grafana_folder: Platform
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/name: hubble
+        app.kubernetes.io/component: observability
+        app.kubernetes.io/part-of: taskflow-observability
