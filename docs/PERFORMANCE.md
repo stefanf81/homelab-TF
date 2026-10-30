@@ -127,7 +127,7 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10, while `postgres-db.yaml`
 |---|------|-------|------|
 | 3.1 | `synchronous_commit` tuning | `postgres-db.yaml` | `synchronous_commit=off` trades the last WAL-writer interval of acknowledged writes for lower commit latency; it is suitable only for this explicitly accepted homelab durability profile. |
 | 3.2 | gzip / `Cache-Control` on nginx | `frontend` repo `nginx.conf` | ✅ Already done in the app repo: `gzip on; comp_level 6`, `Cache-Control "public"` + `expires 6M` on static assets. |
-| 3.3 | HTTP/2 | `backend.yaml` Service + `gateway` | ✅ Backend `server.http2.enabled=true` (app repo) + `appProtocol: kubernetes.io/h2c` on the backend Service so Cilium Gateway multiplexes to the backend. |
+| 3.3 | HTTP/2 | `backend.yaml` Service, `backend-waf.yaml` | Backend `server.http2.enabled=true` (app repo) and `appProtocol: kubernetes.io/h2c` on the backend Service, but no hop uses it: the Gateway routes to the WAFs (`gatewayAPI.enableAppProtocol` is off) and the backend WAF pins its upstream to HTTP/1.1. Intentional, see `reports/NETWORK_REVIEW_2026-10.md` §2.7. |
 | 3.4 | JVM GC logging / `-XX:MaxGCPauseMillis` | `backend.yaml` | ✅ Applied: rotated `-Xlog:gc*` + `MaxGCPauseMillis=100`. |
 | 3.5 | Single replica / autoscaling | `backend.yaml` | Backend is intentionally fixed at one replica. Local SSE state and the PostgreSQL connection budget must be redesigned before autoscaling is reintroduced. PDBs protect backend and frontend availability. |
 | 3.6 | `random_page_cost=1.1` assumes SSD | `postgres-db.yaml` | Reasonable for Proxmox-CSI-backed-SSD; re-check if you move DB to spinning disk. |
