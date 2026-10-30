@@ -164,6 +164,16 @@ hubble:
       - httpV2
 ```
 
+### Hubble metrics in Grafana (`Hubble Flows`)
+
+The Hubble metrics above are scraped by VictoriaMetrics (`hubble-metrics`
+VMServiceScrape) and shown in the **Hubble Flows** dashboard (Platform folder):
+flows processed, drops by reason, DNS queries and response types, TCP flags,
+ICMP and HTTP. It is vendored from the Cilium chart; panels for metrics this
+cluster does not produce were removed (`gitops/monitoring/app/dashboards/SOURCE.md`).
+The **Cilium Agent** dashboard next to it covers the datapath itself: BPF map
+pressure, drops, policy regeneration and endpoint health.
+
 ### Flow export to Loki (`Blocked Sources`)
 
 Hubble telemetry is also used as a data source for Grafana without the Hubble

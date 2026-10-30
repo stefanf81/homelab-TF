@@ -50,9 +50,22 @@ suggested order is in §4.
 They were validated with `caddy validate` and `tests/run-tests.sh` on a Caddy
 2.11.7 build with the image's two plugins, a CoreDNS 1.15.0 start-up on the
 rendered chart 1.49.0 Corefile, and `scripts/validate-gitops.sh`. Items 3 and 5
-are still open. From §3, the Cilium agent and Hubble dashboards, the longer
-L2-announcement lease timers and the ECDSA key on the current certificate are
-applied as well.
+were still open at that point. From §3, the Cilium agent and Hubble dashboards,
+the longer L2-announcement lease timers and the ECDSA key on the current
+certificate are applied as well.
+
+**Follow-up checks (2026-10-30):**
+
+- **Item 3 is closed, nothing to change.** The backend (`taskflow-enterprise`)
+  sends a `: keepalive` comment every 20 s (`app.sse.heartbeat-interval-ms=20000`),
+  sets `Cache-Control: no-cache` and `X-Accel-Buffering: no`, and its 30-minute
+  emitter timeout sits inside the route's 31 minutes.
+- **The frontend's nginx** uses `keepalive_timeout 65`, confirming the §1.1 row.
+- **Cloudflare already caches the hashed bundles** (`cf-cache-status: MISS`, then
+  `HIT`; HTML is `DYNAMIC`), so no cache rule is needed. What remains is Smart
+  Tiered Cache (§2.6).
+- **HTTP/2 to the origin does not need SEC-01** (§2.6).
+- Item 5 is still open.
 
 ## 1. The request path and every timer on it
 
@@ -73,7 +86,7 @@ a connection the server has just closed.
 | Cloudflare → Envoy | 900 s (Cloudflare "Proxy idle timeout") | 1 h: Cilium sets no HCM `idle_timeout`, so Envoy's default applies (`envoy_http_connection_manager.go`) | ✅ |
 | Envoy → WAF | 60 s (`proxy-idle-timeout-seconds`, chart `envoy.idleTimeoutDurationSeconds`) | 5 min (Caddy server `idle` default) | ✅ |
 | WAF → backend | **2 min** (Caddy `keepalive` default) | **60 s** (`SERVER_TOMCAT_KEEP_ALIVE_TIMEOUT`, `configmap.yaml:55`) | ❌ §2.1 |
-| WAF → frontend | **2 min** (Caddy default) | 65 s in the stock `nginx.conf` (**verify** in the frontend repo) | ❌ likely, §2.1 |
+| WAF → frontend | **2 min** (Caddy default) | 65 s (`keepalive_timeout 65` in the frontend repo's `nginx.conf`) | ❌ §2.1 |
 | backend → Postgres / Redis | Hikari / Lettuce pools | Neither server closes idle clients | ✅ |
 
 ### 1.2 Request and stream timers
@@ -203,7 +216,7 @@ them `<namespace>:<service>:<port>`):
 sum by (envoy_cluster_name) (increase(envoy_cluster_upstream_rq_timeout[7d]))
 ```
 
-### 2.3 The SSE stream depends on a heartbeat (verify)
+### 2.3 The SSE stream depends on a heartbeat (verified: 20 s, see the status note in §0)
 
 The events route allows 31 minutes, but two idle timers sit in front of it. Both
 are satisfied as long as the backend writes something (an event or a `:`
@@ -355,13 +368,22 @@ brief network outage on a single-node cluster.
   (`privateKey: {algorithm: ECDSA, size: 256}`; cert-manager re-issues when the
   stored key no longer matches the spec). The gain is small, though: Cloudflare
   reuses origin connections for up to 900 s, so full handshakes are rare.
-- **HTTP/2 to the origin** (`gatewayAPI.enableAlpn` plus Cloudflare "HTTP/2 to
-  Origin"): unchanged, do it with SEC-01. The references all advertise
-  `h2, http/1.1`.
+- **HTTP/2 to the origin.** Cloudflare's "HTTP/2 to Origin" is on by default on
+  every plan (up to 200 streams per connection) and falls back to HTTP/1.1
+  because Envoy advertises no ALPN. `gatewayAPI.enableAlpn: true` alone switches
+  it, independent of SEC-01. The flag also turns on `appProtocol` handling, but
+  Cilium 1.20.4 only switches a backend to HTTP/2 for `kubernetes.io/h2c`
+  (`envoy_cluster.go`), and no route backend uses that, so Envoy → backends
+  stays HTTP/1.1. Small gain: Cloudflare already reuses HTTP/1.1 connections.
+  The references all advertise `h2, http/1.1`.
+- **Smart Tiered Cache** (free, dashboard: Caching → Tiered Cache → Smart).
+  Each Cloudflare data center currently fetches every bundle from the origin
+  once; with tiered cache only one upper-tier location does. This is the
+  largest remaining edge gain.
 - **Compression.** The references compress at the gateway (Envoy Gateway
   `compressor`: zstd, brotli, gzip). Cilium's Gateway has no compression filter,
   and none is needed: the backend compresses responses of 1 KiB and larger
-  (`SERVER_COMPRESSION_*`), and the frontend's nginx uses gzip level 6.
+  (`SERVER_COMPRESSION_*`), and the frontend's nginx serves precompressed Brotli and gzip files.
   Cloudflare re-encodes for visitors anyway. Spring's MIME list correctly leaves
   out `text/event-stream`: compressing SSE would buffer events.
 - **Client IP chain.** Envoy appends the Cloudflare edge address

@@ -62,6 +62,8 @@ Already changed but uncommitted (for context, do not redo):
 - [ ] **7. Certificate hardening.** Split `certificate.yaml` into per-hostname Certificates
   (one failure must not take down app + Grafana + Kyverno + Hubble), add
   `renewBefore: 720h` and `privateKey.rotationPolicy: Always`, plus the expiry alert from #1.
+  - ✅ Done (2026-10-30): `privateKey: {algorithm: ECDSA, size: 256, rotationPolicy: Always}`.
+    Per-hostname split, `renewBefore` and the expiry alert remain.
 
 - [x] **8. Kyverno to CEL + enforcement.** Migrated to `ValidatingPolicy` (Deny, fail-open).
   - ✅ Done (2026-10-22): both policies migrated to `policies.kyverno.io/v1 ValidatingPolicy`

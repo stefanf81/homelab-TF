@@ -56,7 +56,8 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 | IPAM | `kubernetes` mode |
 | BPF masquerade | Enabled (offloads SNAT to eBPF) |
 | Gateway API | Built-in controller enabled |
-| L2 announcements | Enabled (for external IP exposure) |
+| L2 announcements | Enabled (for external IP exposure); lease 30s / renew deadline 20s / retry 5s, so the lease holder writes to the k3s datastore every 5s instead of every 2s |
+| Metrics | Agent, operator, Hubble (`dns`, `drop`, `tcp`, `flow`, `icmp`, `httpV2`) and Envoy scraped by VictoriaMetrics; Grafana dashboards `Cilium Agent` and `Hubble Flows` (Platform folder) |
 | Operator replicas | 1 (single-node optimized) |
 | Hubble flow export | `hubble.export.static` — DROPPED/ERROR flows written to `/var/run/cilium/hubble/events.log` for Loki/Grafana (`Blocked Sources`) |
 
@@ -567,7 +568,8 @@ the app because its Grafana route targets the TaskFlow Gateway:
   `infra-controllers` and `taskflow-app`.
 - **`monitoring-app`** Kustomization (`gitops/monitoring/app`) applies the
   VMServiceScrapes and the Grafana dashboards (`TaskFlow Performance`,
-  `AbuseIPDB Security`, `Blocked Sources`, `cert-manager`, `Kyverno`). Depends on
+  `AbuseIPDB Security`, `Blocked Sources`, `cert-manager`, `Kyverno`, and
+  `Cilium Agent` and `Hubble Flows`, vendored from the Cilium chart). Depends on
   `monitoring` so the VMServiceScrape CRD already exists.
 - **`monitoring-logging`** Kustomization (`gitops/monitoring/logging`) runs
   Loki + Alloy, which ships the WAF audit logs, the `abuseipdb-sync` logs and
