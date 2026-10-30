@@ -131,6 +131,12 @@ data:
             reverse_proxy http://backend.taskflow.svc.cluster.local:8080 {
                 transport http {
                     versions 1.1
+                    # Retire idle connections before Tomcat closes them
+                    # (server.tomcat.keep-alive-timeout = 60s, configmap.yaml).
+                    # With Caddy's 2m default, a POST could be sent into a
+                    # connection Tomcat was just closing and fail with a 502
+                    # (Go retries only idempotent requests).
+                    keepalive 50s
                 }
                 header_up Host {http.request.host}
                 header_up X-Real-IP {client_ip}

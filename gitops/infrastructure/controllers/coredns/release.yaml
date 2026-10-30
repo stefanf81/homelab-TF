@@ -100,15 +100,34 @@ spec:
               ttl 60
               reload 15s
               fallthrough
+          # `pods verified` answers pod A records only for pods that exist (CoreDNS
+          # watches all pods; `insecure` is a kube-dns compatibility mode), and
+          # autopath needs it.
           - name: kubernetes
             parameters: cluster.local in-addr.arpa ip6.arpa
             configBlock: |-
-              pods insecure
+              pods verified
               fallthrough in-addr.arpa ip6.arpa
+          # Pods resolve with ndots:5, so an external name (ghcr.io,
+          # api.cloudflare.com) first walks every search domain, A and AAAA each.
+          # autopath answers the first, namespace-suffixed query with a CNAME to
+          # the final answer: one round trip instead of up to five.
+          - name: autopath
+            parameters: "@kubernetes"
           - name: prometheus
             parameters: 0.0.0.0:9153
+          # No TTL cap: answers live for their own TTL (CoreDNS caps at 3600s, 1800s
+          # for denials). prefetch refreshes names asked 20+ times before they
+          # expire, serve_stale answers from cache while the upstream is down, and
+          # servfail 0 stops caching upstream failures.
           - name: cache
-            parameters: 30
+            configBlock: |-
+              prefetch 20
+              serve_stale
+              servfail 0
+          - name: log
+            configBlock: |-
+              class error
           - name: loop
           - name: reload
           - name: loadbalance

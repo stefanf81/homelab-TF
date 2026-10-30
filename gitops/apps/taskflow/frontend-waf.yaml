@@ -129,6 +129,12 @@ data:
             import /etc/caddy/rate-limit.conf
 
             reverse_proxy http://frontend.taskflow.svc.cluster.local:8080 {
+                transport http {
+                    # Retire idle connections before nginx closes them
+                    # (keepalive_timeout 65s in the stock nginx.conf); Caddy's
+                    # 2m default would race the upstream close.
+                    keepalive 50s
+                }
                 header_up Host {http.request.host}
                 header_up X-Real-IP {client_ip}
                 header_up X-Forwarded-Proto https

@@ -46,6 +46,12 @@ and CoreDNS defaults.** None of them limits throughput. They cause occasional
 Earlier network recommendations that are still open are listed in §3. The
 suggested order is in §4.
 
+**Status (2026-10-30, later the same day):** items 1, 2 and 4 are applied in Git.
+They were validated with `caddy validate` and `tests/run-tests.sh` on a Caddy
+2.11.7 build with the image's two plugins, a CoreDNS 1.15.0 start-up on the
+rendered chart 1.49.0 Corefile, and `scripts/validate-gitops.sh`. Items 3 and 5
+are still open.
+
 ## 1. The request path and every timer on it
 
 ```

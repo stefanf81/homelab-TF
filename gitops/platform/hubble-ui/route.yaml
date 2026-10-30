@@ -15,6 +15,14 @@ spec:
         - path:
             type: PathPrefix
             value: /
+      # No route timeout: the UI streams flows over long-lived responses, and
+      # Envoy's implicit 15s default (applied by Cilium when a route sets none)
+      # ends any response that runs longer. oauth2-proxy's upstream-timeout
+      # covers response headers only; Envoy's 300s stream idle timeout still
+      # applies.
+      # docs/reports/NETWORK_REVIEW_2026-10.md §2.2
+      timeouts:
+        request: "0s"
       backendRefs:
         - name: hubble-ui-oauth2-proxy
           port: 80

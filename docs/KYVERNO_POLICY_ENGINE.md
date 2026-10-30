@@ -301,14 +301,16 @@ alongside `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`.
 > 'http://kyverno.jokelab.dev/.well-known/acme-challenge/...':
 > context deadline exceeded (Client.Timeout exceeded while awaiting headers)
 > ```
-> **Fix a — CoreDNS override (permanent, recommended):** Override cluster-internal DNS to
-> resolve the domain directly to the Gateway's internal IP by patching CoreDNS:
-> ```bash
-> kubectl -n kube-system patch configmap coredns --type merge -p '{"data":{"Corefile":".:53 {\n    errors\n    health\n    hosts {\n        192.168.50.201 kyverno.jokelab.dev\n        fallthrough\n    }\n    ready\n    kubernetes cluster.local in-addr.arpa ip6.arpa {\n        pods insecure\n        fallthrough in-addr.arpa ip6.arpa\n    }\n    prometheus :9153\n    forward . /etc/resolv.conf\n    cache 30\n    loop\n    reload\n    loadbalance\n}\n"}}'
-> kubectl -n kube-system rollout restart deploy/coredns
-> ```
-> After ~10s cert-manager retries the challenge, resolves to `192.168.50.201` over LAN, and
-> the challenge completes. Reverts cleanly by removing the `hosts` block from the Corefile.
+> **Fix a — CoreDNS override (permanent, in place):** Cluster-internal DNS resolves the
+> public hostnames directly to the Gateway's internal IP. CoreDNS is managed by Flux, and the
+> `hosts` block in `gitops/infrastructure/controllers/coredns/release.yaml` already maps the
+> apex, `www.`, `grafana.`, `kyverno.` and `hubble.` to `${GATEWAY_IP}`. For a new hostname,
+> add it to that line and let Flux apply it. Do not `kubectl patch` the `coredns` ConfigMap:
+> the next Helm upgrade overwrites the patch, and until then it replaces the whole Corefile
+> (the other hostnames, autopath and the cache settings).
+>
+> Once the name resolves to `192.168.50.201`, cert-manager's next retry of the challenge
+> goes over the LAN and completes.
 >
 > **Fix b — DNS-01 challenge (alternative):** Switch the ClusterIssuer to use DNS-01 with a
 > Cloudflare API token. This avoids HTTP-01 entirely and works through any NAT setup, but

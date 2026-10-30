@@ -17,6 +17,12 @@ spec:
         - path:
             type: PathPrefix
             value: /
+      # No route timeout. Without one, Cilium leaves Envoy's implicit 15s default
+      # in place, which answers panel queries slower than 15s with a 504 (Grafana's
+      # own data proxy allows 30s). Envoy's 300s stream idle timeout still bounds
+      # idle requests. docs/reports/NETWORK_REVIEW_2026-10.md §2.2
+      timeouts:
+        request: "0s"
       backendRefs:
         - name: victoria-metrics-k8s-stack-grafana
           port: 80
