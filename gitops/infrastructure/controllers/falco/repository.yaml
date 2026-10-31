@@ -13,5 +13,5 @@ spec:
     # kernel 7.0, where Falco 0.44.1 (chart 9.1.0) crashes with
     # "could not parse param ... type 223 (clone)" (falcosecurity/falco#3955).
     # The fix landed in 0.45.0; do not go back below chart 9.2.0.
-    tag: 9.2.1
+    tag: 9.2.2
   url: oci://ghcr.io/falcosecurity/charts/falco

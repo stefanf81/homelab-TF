@@ -11,7 +11,7 @@
 # logs (use a fresh one after changing the pipeline: stored records are checked too).
 #
 # ALLOY_IMAGE is pinned to the app version of the Alloy Helm chart in
-# gitops/monitoring/logging/alloy-release.yaml (chart 1.14.3 -> Alloy v1.21.2);
+# gitops/monitoring/logging/alloy-release.yaml (chart 1.15.0 -> Alloy v1.21.3);
 # bump both together. The release sets `alloy.stabilityLevel: experimental` (the
 # loki.write WAL needs it since v1.21), so the test passes the same flag.
 set -euo pipefail
@@ -19,7 +19,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "$HERE/../../.." && pwd)}"
 RELEASE="${ALLOY_RELEASE:-$REPO_ROOT/gitops/monitoring/logging/alloy-release.yaml}"
-ALLOY_IMAGE="${ALLOY_IMAGE:-grafana/alloy:v1.21.2}"
+ALLOY_IMAGE="${ALLOY_IMAGE:-grafana/alloy:v1.21.3}"
 ALLOY_PORT="${ALLOY_PORT:-12367}"
 : "${LOKI_URL:?LOKI_URL must point at a reachable Loki}"
 

@@ -74,7 +74,7 @@ spec:
     mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     operation: copy
   ref:
-    tag: 9.2.1
+    tag: 9.2.2
   url: oci://ghcr.io/falcosecurity/charts/falco
 ```
 
@@ -286,7 +286,7 @@ The dashboard defines five template variables that become dropdown filters at th
 
 ## 5. Complete Metrics Reference
 
-These are the **actual** metrics that Falco 0.45.1 (chart 9.2.1, modern eBPF driver) exposes on the `/metrics` endpoint. Use these names in PromQL queries, alerting rules (`VMRules`), or custom Grafana panels.
+These are the **actual** metrics that Falco 0.45.2 (chart 9.2.2, modern eBPF driver) exposes on the `/metrics` endpoint. Use these names in PromQL queries, alerting rules (`VMRules`), or custom Grafana panels.
 
 ### Alert & Rule Metrics
 

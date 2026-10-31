@@ -23,7 +23,7 @@ gitops/
 │   ├── trivy-operator/               # Trivy Operator (own cluster Kustomization)
 │   │   ├── namespace.yaml            # trivy-system ns
 │   │   ├── repository.yaml           # HelmRepository aqua @ https://aquasecurity.github.io/helm-charts
-│   │   ├── release.yaml             # HelmRelease trivy-operator v0.37.0, scanners + compliance (own kustomization)
+│   │   ├── release.yaml             # HelmRelease trivy-operator v0.38.1, scanners + compliance (own kustomization)
 │   │   └── kustomization.yaml
 │   └── policy-reporter/              # Policy Reporter + adapter (see docs/KYVERNO_POLICY_ENGINE.md)
 │       ├── trivy-adapter-repository.yaml  # OCIRepository trivy-operator-polr-adapter
@@ -45,7 +45,7 @@ gitops/
 ## 2. Chart & version
 
 - Chart: `aqua/trivy-operator` from `https://aquasecurity.github.io/helm-charts`
-- Pinned: **0.37.0**
+- Pinned: **0.38.1**
 - `install.crds: CreateReplace` / `upgrade.crds: CreateReplace` — the chart **owns** the
   Trivy CRDs (they are not provided by Kyverno).
 

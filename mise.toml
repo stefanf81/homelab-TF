@@ -6,7 +6,7 @@
 # scripts/check-tool-versions.sh enforces both, and Renovate only proposes patches for them.
 [tools]
 opentofu    = "1.13.2"
-kubectl     = "1.37.1"
+kubectl     = "1.37.2"
 kustomize   = "5.8.3"
 helm        = "4.3.1"
 kubeconform = "0.8.0"
