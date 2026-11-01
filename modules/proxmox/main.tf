@@ -31,6 +31,7 @@ users:
 package_update: true
 package_upgrade: true
 packages:
+  - apparmor
   - qemu-guest-agent
   - curl
   - nfs-common
@@ -38,6 +39,22 @@ packages:
   - jq
 
 write_files:
+  # Ubuntu's packaged runc profile only matches /usr/bin and /usr/sbin.
+  # K3s bundles runc under its versioned data directory. Without this attachment,
+  # Ubuntu 26.04 stacks "unconfined" onto the container profile and denies signals
+  # within containers (Postgres authentication and VictoriaMetrics reloads).
+  # Keep the standard profile name: containerd permits signals from peer=runc.
+  - path: /etc/apparmor.d/runc
+    content: |
+      abi <abi/5.0>,
+      include <tunables/global>
+
+      profile runc /{usr/{bin,sbin},var/lib/rancher/k3s/data/*/bin}/runc flags=(unconfined) {
+        userns,
+        @{exec_path} mr,
+        include if exists <local/runc>
+      }
+
   - path: /etc/sysctl.d/99-kubernetes.conf
     content: |
       net.ipv4.ip_forward = 1
@@ -64,6 +81,8 @@ write_files:
       }
 
 runcmd:
+  # Load the runtime attachment before K3s starts; container profiles stay enforced.
+  - apparmor_parser -r /etc/apparmor.d/runc
   - swapoff -a
   - sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
   - sysctl --system
