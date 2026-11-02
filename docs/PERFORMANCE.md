@@ -184,3 +184,71 @@ resources:
 
 This removes the rigid heap, fixes the silent direct-memory override, and bounds native memory
 so `ExitOnOutOfMemoryError` only triggers on a real leak, not a benign spike.
+
+---
+
+## 6. Node OS and Proxmox host tuning (November 2026)
+
+### 6.1 Ubuntu node: what the Terraform now sets
+
+`modules/proxmox/main.tf` (new nodes get it through the cloud-init snippet):
+
+| Change | Why |
+|---|---|
+| `network_device.queues = var.cpu_cores` | Multiqueue virtio-net: RX/TX softirq spread over all vCPUs instead of one; the Cilium bandwidth manager gets one `fq` leaf per queue |
+| `net.ipv4.tcp_mtu_probing = 1` | PMTU black-hole recovery for Envoy → Cloudflare (`reports/NETWORK_REVIEW_2026-10.md` §2.5) |
+| `kernel.panic = 10`, `kernel.panic_on_oops = 1` | The node reboots instead of hanging |
+| udev rule `60-io-scheduler.rules` → scheduler `none` on `sd*` | The Proxmox host already schedules I/O for virtio-scsi disks |
+| Removed `nfs-common`, `open-iscsi`, `/etc/multipath.conf`, iscsid; disabled multipathd, snapd, apport, motd-news | Longhorn is gone and Proxmox CSI attaches plain virtio disks; fewer background daemons and udev scans |
+| Removed `net.bridge.bridge-nf-call-*` | No Linux bridge on the Cilium pod path |
+
+BBR, `fq`, `tcp_slow_start_after_idle=0` and the 4096 listen backlogs are set by the
+Cilium bandwidth manager and are deliberately not duplicated in sysctl.
+
+**Running node.** The snippet is in `ignore_changes` (REL-00), so apply it by hand:
+
+```bash
+sudo tee /etc/sysctl.d/90-tuning.conf <<'CONF'
+net.ipv4.tcp_mtu_probing = 1
+kernel.panic = 10
+kernel.panic_on_oops = 1
+CONF
+sudo sed -i '/bridge-nf-call/d' /etc/sysctl.d/99-kubernetes.conf
+sudo sysctl --system
+echo 'ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd[a-z]*", ATTR{queue/scheduler}="none"' | sudo tee /etc/udev/rules.d/60-io-scheduler.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=block --action=change
+sudo systemctl disable --now iscsid.service iscsid.socket multipathd.service multipathd.socket snapd.service snapd.socket snapd.seeded.service apport.service motd-news.timer || true
+```
+
+`tofu apply` then changes the NIC in place (Proxmox hot-replugs it: a short network
+outage on this single node, so do it in a maintenance window). Verify:
+
+```bash
+ethtool -l eth0                          # Combined: 6 (else: sudo ethtool -L eth0 combined 6)
+tc qdisc show dev eth0                   # mq with one fq per queue
+cat /sys/block/sd*/queue/scheduler       # [none]
+sysctl net.ipv4.tcp_mtu_probing kernel.panic
+```
+
+### 6.2 Optional node changes (not applied)
+
+| Change | Benefit | Cost |
+|---|---|---|
+| kubelet `cpu-manager-policy=static` + `reserved-cpus=0` | Guaranteed pods with integer CPUs (backend, 2000m) get exclusive cores: less JVM jitter | kubelet restart after deleting `/var/lib/kubelet/cpu_manager_state` |
+| `machine = "q35"` | Modern PCIe chipset for virtio devices | VM reboot; the NIC name may change (Cilium uses `devices: eth0`) |
+| `vm.dirty_background_bytes=64M`, `vm.dirty_bytes=256M` | Smoother writeback on the writethrough storage class | Measure first |
+
+Not worth it here: large `rmem`/`wmem`, `somaxconn` 65535, `tcp_fastopen` (see
+NETWORK_REVIEW §2.5), `mitigations=off` (internet-facing), the `linux-kvm` kernel
+(may lack modules Cilium needs).
+
+### 6.3 Proxmox host checklist (manual, not managed by this repo)
+
+1. **Stay current.** Proxmox VE 8 reached end of life in 2026; upgrade to 9.x (`pve8to9 --full` first) and keep the latest `proxmox-kernel`.
+2. **CPU.** Install `intel-microcode` or `amd64-microcode` (non-free-firmware repo). Governor: `performance` for the lowest latency, or keep `powersave` + EPP `balance_performance` on `intel_pstate`/`amd-pstate` to save idle power. Use `cpupower frequency-set -g performance` in a systemd oneshot.
+3. **KSM off.** A single large VM gains almost nothing from KSM and pays the scan CPU: `systemctl disable --now ksmtuned && echo 2 > /sys/kernel/mm/ksm/run`.
+4. **HA services off on a standalone node.** `systemctl disable --now pve-ha-lrm pve-ha-crm` (plus `corosync` if the host is not in a cluster). This cuts constant small writes to the boot SSD.
+5. **Memory.** Host `vm.swappiness=10`. If the host uses ZFS, cap the ARC (`options zfs zfs_arc_max=<bytes>` in `/etc/modprobe.d/zfs.conf`, then `update-initramfs -u`) so it does not compete with the 14 GiB VM. Ballooning stays effectively off (`floating = dedicated`), which is right for Kubernetes. Optional: 1 GiB hugepages for the VM (`hugepagesz=1G hugepages=14` on the kernel cmdline + `memory.hugepages = "1024"` in Terraform): a small TLB gain, but the memory is reserved.
+6. **Storage (`local-lvm` thin).** Watch `lvs` Data%/Meta% (thin pools over-provision), keep `fstrim.timer` enabled, leave NVMe on scheduler `none`. Optionally compare `aio=native` with the default `io_uring` on the PV disks using fio.
+7. **Physical NIC.** `ethtool -G <nic> rx <max> tx <max>` (persist via `post-up` in `/etc/network/interfaces`). On Intel e1000e/igb that log "Detected Hardware Unit Hang", run `ethtool -K <nic> tso off gso off`. Keep MTU 1500 unless the whole path supports jumbo frames. The PVE firewall stays off for this VM (no extra `fwbr` bridge).
+8. **Check.** `qm config 900 | grep -E 'net0|scsi'`, `cat /sys/kernel/mm/ksm/run` (2), `cpupower frequency-info`.

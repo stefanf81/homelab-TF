@@ -34,8 +34,6 @@ packages:
   - apparmor
   - qemu-guest-agent
   - curl
-  - nfs-common
-  - open-iscsi
   - jq
 
 write_files:
@@ -58,27 +56,24 @@ write_files:
   - path: /etc/sysctl.d/99-kubernetes.conf
     content: |
       net.ipv4.ip_forward = 1
-      net.bridge.bridge-nf-call-iptables = 1
-      net.bridge.bridge-nf-call-ip6tables = 1
       fs.inotify.max_user_instances = 8192
       fs.inotify.max_user_watches = 524288
       vm.max_map_count = 262144
       fs.file-max = 2097152
       fs.aio-max-nr = 1048576
       vm.swappiness = 1
+      # PMTU black-hole recovery for host-namespace sockets (Envoy -> Cloudflare).
+      # BBR, fq and the listen backlogs are set by the Cilium bandwidth manager.
+      net.ipv4.tcp_mtu_probing = 1
+      # Reboot on a kernel panic or oops instead of hanging (the VM has on_boot).
+      kernel.panic = 10
+      kernel.panic_on_oops = 1
 
-  - path: /etc/multipath.conf
+  # The Proxmox host already schedules I/O for the virtio-scsi disks (root and
+  # Proxmox CSI volumes), so a second scheduler in the guest only adds latency.
+  - path: /etc/udev/rules.d/60-io-scheduler.rules
     content: |
-      defaults {
-          user_friendly_names yes
-      }
-      blacklist {
-          devnode "^(ram|raw|loop|fd|md|dm-|sr|scd|st)[0-9]*"
-          devnode "^hd[a-z]"
-          devnode "^sda[0-9]*"
-          devnode "^longhorn"
-          devnode "^sd[a-z]"
-      }
+      ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd[a-z]*", ATTR{queue/scheduler}="none"
 
 runcmd:
   # Load the runtime attachment before K3s starts; container profiles stay enforced.
@@ -88,9 +83,11 @@ runcmd:
   - sysctl --system
   - sed -i 's/^#SystemMaxUse=.*/SystemMaxUse=100M/' /etc/systemd/journald.conf
   - systemctl restart systemd-journald
-  - systemctl enable iscsid
-  - systemctl start iscsid
-  - systemctl restart multipathd || true
+  - udevadm control --reload-rules
+  - udevadm trigger --subsystem-match=block --action=change
+  # Not needed on a k3s node: storage is Proxmox CSI (virtio disks, no iSCSI or
+  # multipath), and snapd/apport/motd-news only add background wakeups.
+  - systemctl disable --now multipathd.service multipathd.socket snapd.service snapd.socket snapd.seeded.service apport.service motd-news.timer || true
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
   - |
@@ -167,6 +164,9 @@ resource "proxmox_virtual_environment_vm" "k3s_node" {
 
   network_device {
     bridge = var.network_bridge
+    # One virtio-net queue pair per vCPU spreads RX/TX softirq work across all
+    # cores. Proxmox applies a change on a running VM as a NIC hot-replug.
+    queues = var.cpu_cores
   }
 
   operating_system {

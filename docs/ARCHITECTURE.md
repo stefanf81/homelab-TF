@@ -27,9 +27,10 @@ TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE,
 ### 2.3 Cloud-Init Hardening (`modules/proxmox/main.tf`)
 | Category | Configuration |
 |----------|--------------|
-| Kernel params | `fs.inotify.max_user_instances=8192`, `vm.max_map_count=262144`, `fs.file-max=2097152`, `vm.swappiness=1` |
-| Multipath | Blacklists loop, md, dm, sr, scd, sda partitions; enables user-friendly names |
-| System services | iscsid (enabled/started), qemu-guest-agent (enabled/started), journald capped at 100 MB |
+| Kernel params | `fs.inotify.max_user_instances=8192`, `vm.max_map_count=262144`, `fs.file-max=2097152`, `vm.swappiness=1`, `net.ipv4.tcp_mtu_probing=1`, `kernel.panic=10`, `kernel.panic_on_oops=1` |
+| Disk I/O | udev rule sets the `none` scheduler on the virtio-scsi disks (the host schedules I/O) |
+| System services | qemu-guest-agent (enabled/started); multipathd, snapd, apport and motd-news disabled; journald capped at 100 MB |
+| VM NIC | virtio-net multiqueue, one queue pair per vCPU (`queues = var.cpu_cores`) |
 | k3s flags | `--flannel-backend=none --disable-network-policy --disable servicelb --disable traefik --disable coredns --disable metrics-server` |
 
 ### 2.4 Module Dependency Graph
@@ -469,7 +470,7 @@ This is the path that actually matters day-to-day:
 The single most important design decision here is: **no SSH provisioners for k3s**. Instead:
 
 - `proxmox_download_file` pulls the Ubuntu 26.04 cloud image into the `local` datastore.
-- `proxmox_virtual_environment_file.cloud_config` builds a **cloud-init snippet** (heredoc from column 0 to avoid YAML-whitespace parsing bugs) that, at first boot, installs kernel tweaks, multipath/iscsi storage packages, and **runs the k3s install script** with our exact flags:
+- `proxmox_virtual_environment_file.cloud_config` builds a **cloud-init snippet** (heredoc from column 0 to avoid YAML-whitespace parsing bugs) that, at first boot, installs kernel and I/O tweaks, disables unneeded services, and **runs the k3s install script** with our exact flags:
   ```
   --flannel-backend=none --disable-network-policy --disable-kube-proxy --disable servicelb --disable traefik --disable coredns --disable metrics-server --disable local-storage
   ```
