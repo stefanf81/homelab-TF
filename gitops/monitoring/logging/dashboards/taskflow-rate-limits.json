@@ -3,7 +3,7 @@
   "title": "Taskflow Rate Limits",
   "description": "Caddy HTTP rate-limit activity (HTTP 429) for the Taskflow WAFs. The overview cards, fixed-window cards and the rejection and request-rate charts come from Alloy metrics (all clients, Application filter only); breakdown bars, tables and log samples scan the Caddy access logs in Loki and also honor the Client IP filter. Rankings and log samples are limited subsets, not complete inventories. Individual client IPs and URIs are parsed at query time and are not Loki labels.",
   "schemaVersion": 39,
-  "version": 7,
+  "version": 8,
   "refresh": "5m",
   "tags": [
     "taskflow",
@@ -861,7 +861,7 @@
       "gridPos": {
         "x": 0,
         "y": 21,
-        "w": 12,
+        "w": 8,
         "h": 8
       },
       "datasource": {
@@ -946,9 +946,9 @@
       "title": "Caddy request rate",
       "description": "Request rate per application from Alloy metrics (all clients, probes excluded), averaged over the rate window. Uses the zero-origin counter increase divided by the rate window in seconds, including the initial burst of a new series.",
       "gridPos": {
-        "x": 12,
+        "x": 8,
         "y": 21,
-        "w": 12,
+        "w": 8,
         "h": 8
       },
       "datasource": {
@@ -1019,6 +1019,66 @@
             ]
           }
         ]
+      }
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Container restarts",
+      "description": "Container restarts per displayed interval (minimum 5 minutes) in the taskflow namespace, by workload (the Deployment name parsed from the pod name), from kube-state-metrics. Only intervals with restarts are drawn, so an empty panel means no restarts. A sustained crash loop is also shaded on the time-series panels by the \"Crash loops (taskflow)\" annotation.",
+      "gridPos": {
+        "x": 16,
+        "y": 21,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (workload) (label_replace(max by (namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=\"taskflow\"}[$__interval])), \"workload\", \"$1\", \"pod\", \"(.+)-[a-z0-9]{6,10}-[a-z0-9]{5}\")) > 0",
+          "legendFormat": "{{workload}}"
+        }
+      ],
+      "interval": "5m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "noValue": "No restarts",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisSoftMax": 1,
+            "drawStyle": "bars",
+            "fillOpacity": 65,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
       }
     },
     {
@@ -2259,11 +2319,11 @@
         },
         "enable": true,
         "step": "1m",
-        "name": "Container restarts (taskflow)",
+        "name": "Crash loops (taskflow)",
         "iconColor": "rgba(255, 96, 96, 1)",
-        "expr": "increase(max by (namespace, pod, container) (kube_pod_container_status_restarts_total{namespace=\"taskflow\"})[$__interval:30s]) > 0",
-        "titleFormat": "Restart: {{pod}}",
-        "textFormat": "Container {{container}} restarted",
+        "expr": "max by (namespace, pod, container) (max_over_time(kube_pod_container_status_waiting_reason{namespace=\"taskflow\", reason=\"CrashLoopBackOff\"}[5m])) > 0",
+        "titleFormat": "CrashLoopBackOff: {{pod}}",
+        "textFormat": "Container {{container}} was crash-looping (back-off between restarts). Per-workload restart counts: Container restarts panel on Taskflow Rate Limits.",
         "tagKeys": "pod,container"
       }
     ]

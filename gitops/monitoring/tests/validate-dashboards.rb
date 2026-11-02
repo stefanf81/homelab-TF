@@ -65,6 +65,10 @@ module DashboardValidation
     supported = names + BUILTIN_VALUES.keys + locals
     supported += PROMETHEUS_BUILTINS if datasource == "prometheus"
     reference_names(expression).filter_map do |name|
+      # label_replace()'s replacement refers to regex captures as $1, $2, ...;
+      # Grafana leaves those untouched because no variable name is all digits.
+      next if datasource == "prometheus" && name.match?(/\A\d+\z/)
+
       "undefined dashboard variable $#{name}" unless supported.include?(name)
     end
   end

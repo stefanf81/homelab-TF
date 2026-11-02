@@ -3,7 +3,7 @@
   "title": "TaskFlow Performance",
   "description": "Backend JVM, HTTP, Hikari, PostgreSQL, Redis, pod, node, and disk performance metrics. Use the dashboard links for request-level investigation in Loki-backed dashboards.",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": {
     "from": "now-6h",
@@ -761,11 +761,11 @@
         },
         "enable": true,
         "step": "1m",
-        "name": "Container restarts (taskflow)",
+        "name": "Crash loops (taskflow)",
         "iconColor": "rgba(255, 96, 96, 1)",
-        "expr": "increase(max by (namespace, pod, container) (kube_pod_container_status_restarts_total{namespace=\"taskflow\"})[$__interval:30s]) > 0",
-        "titleFormat": "Restart: {{pod}}",
-        "textFormat": "Container {{container}} restarted",
+        "expr": "max by (namespace, pod, container) (max_over_time(kube_pod_container_status_waiting_reason{namespace=\"taskflow\", reason=\"CrashLoopBackOff\"}[5m])) > 0",
+        "titleFormat": "CrashLoopBackOff: {{pod}}",
+        "textFormat": "Container {{container}} was crash-looping (back-off between restarts). Per-workload restart counts: Container restarts panel on Taskflow Rate Limits.",
         "tagKeys": "pod,container"
       }
     ]

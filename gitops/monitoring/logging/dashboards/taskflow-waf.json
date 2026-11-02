@@ -3,7 +3,7 @@
   "title": "Taskflow WAF",
   "description": "Coraza and Caddy telemetry for the Taskflow frontend and backend WAFs. The overview cards and activity chart come from Alloy metrics (all clients, Application filter only; their Client IP filtered versions are in a collapsed row). Rule breakdowns, top IPs and recent detections scan Loki and honor the Application and Client IP filters; pod and infrastructure metrics are service-level. RelevantOnly auditing emits no records for normal successful traffic.",
   "schemaVersion": 39,
-  "version": 12,
+  "version": 13,
   "refresh": "5m",
   "tags": [
     "taskflow",
@@ -2153,11 +2153,11 @@
         },
         "enable": true,
         "step": "1m",
-        "name": "Container restarts (taskflow)",
+        "name": "Crash loops (taskflow)",
         "iconColor": "rgba(255, 96, 96, 1)",
-        "expr": "increase(max by (namespace, pod, container) (kube_pod_container_status_restarts_total{namespace=\"taskflow\"})[$__interval:30s]) > 0",
-        "titleFormat": "Restart: {{pod}}",
-        "textFormat": "Container {{container}} restarted",
+        "expr": "max by (namespace, pod, container) (max_over_time(kube_pod_container_status_waiting_reason{namespace=\"taskflow\", reason=\"CrashLoopBackOff\"}[5m])) > 0",
+        "titleFormat": "CrashLoopBackOff: {{pod}}",
+        "textFormat": "Container {{container}} was crash-looping (back-off between restarts). Per-workload restart counts: Container restarts panel on Taskflow Rate Limits.",
         "tagKeys": "pod,container"
       }
     ]

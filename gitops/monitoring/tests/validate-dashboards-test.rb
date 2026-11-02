@@ -124,6 +124,8 @@ class DashboardValidationTest < Minitest::Test
     expression = '{{ $suffix := .application }}{{ range $index, $item := .items }}{{ printf "%s" $suffix }}{{ $index }}{{ $item }}{{ end }}'
     assert_empty DashboardValidation.reference_errors(expression, [], "loki")
     assert_empty DashboardValidation.reference_errors('$__rate_interval', [], "prometheus")
+    assert_empty DashboardValidation.reference_errors('label_replace(up, "w", "$1", "pod", "(.+)-x")', [], "prometheus")
+    assert_equal ["undefined dashboard variable $1"], DashboardValidation.reference_errors('$1', [], "loki")
     assert_equal ["undefined dashboard variable $__intrval"], DashboardValidation.reference_errors('$__intrval', [], "loki")
   end
 
