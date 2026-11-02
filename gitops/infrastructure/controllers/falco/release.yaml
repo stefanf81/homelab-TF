@@ -53,3 +53,8 @@ spec:
         policyreport:
           enabled: true
           minimumpriority: "notice"
+          # One PolicyReport is a single etcd object (limit ~2 MiB). At ~2.9 KB per event
+          # the default of 1000 exceeds it, so updates fail and sidekick gets OOM-killed.
+          # Prune lowest-severity events first so real findings outlive routine noise.
+          maxevents: 300
+          prunebypriority: true
