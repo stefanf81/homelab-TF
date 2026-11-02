@@ -1,8 +1,32 @@
+# The image's default upstream is the short name `backend`, written for Docker Compose.
+# nginx's resolver ignores the resolv.conf search list, so on Kubernetes the short name
+# never resolves and nginx logs "backend could not be resolved" every 30 seconds. This
+# file is mounted over /etc/nginx/upstream-server.conf (the image's documented per-deployment
+# override) with the fully qualified Service name. `resolve` keeps the runtime lookup, so
+# nginx follows the Service if its address changes. The image takes its DNS server from
+# /etc/resolv.conf at start (taskflow-enterprise frontend/docker-entrypoint.sh); an image
+# without that change still uses Docker's 127.0.0.11 and keeps logging resolver errors.
+# NetworkPolicy only admits backend-waf to the backend, so nginx resolves this name but
+# its /api proxy cannot connect; the Gateway routes /api to backend-waf.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskflow-frontend-upstream
+  namespace: taskflow
+  labels:
+    app.kubernetes.io/name: taskflow-frontend
+    app.kubernetes.io/part-of: taskflow
+data:
+  upstream-server.conf: |
+    server backend.taskflow.svc.cluster.local:8080 resolve;
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: taskflow-frontend
   namespace: taskflow
+  annotations:
+    configmap.reloader.stakater.com/reload: taskflow-frontend-upstream
   labels:
     app.kubernetes.io/name: taskflow-frontend
     app.kubernetes.io/part-of: taskflow
@@ -54,6 +78,10 @@ spec:
               mountPath: /var/cache/nginx
             - name: var-run-volume
               mountPath: /var/run
+            - name: upstream-config
+              mountPath: /etc/nginx/upstream-server.conf
+              subPath: upstream-server.conf
+              readOnly: true
           ports:
             - containerPort: 8080
               name: http
@@ -99,6 +127,9 @@ spec:
           emptyDir: {}
         - name: var-run-volume
           emptyDir: {}
+        - name: upstream-config
+          configMap:
+            name: taskflow-frontend-upstream
 ---
 apiVersion: v1
 kind: Service
