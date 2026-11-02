@@ -101,19 +101,18 @@ spec:
               reload 15s
               fallthrough
           # `pods verified` answers pod A records only for pods that exist (CoreDNS
-          # watches all pods; `insecure` is a kube-dns compatibility mode), and
-          # autopath needs it.
+          # watches all pods; `insecure` is a kube-dns compatibility mode).
           - name: kubernetes
             parameters: cluster.local in-addr.arpa ip6.arpa
             configBlock: |-
               pods verified
               fallthrough in-addr.arpa ip6.arpa
-          # Pods resolve with ndots:5, so an external name (ghcr.io,
-          # api.cloudflare.com) first walks every search domain, A and AAAA each.
-          # autopath answers the first, namespace-suffixed query with a CNAME to
-          # the final answer: one round trip instead of up to five.
-          - name: autopath
-            parameters: "@kubernetes"
+          # No autopath: it answers the namespace-suffixed query
+          # (api.cloudflare.com.abuseipdb.svc.cluster.local) with a CNAME to the
+          # real name, and Cilium's DNS proxy maps the answer IPs to that
+          # suffixed query name. toFQDNs matchName rules (abuseipdb-sync) then
+          # never match, and every HTTPS call to api.cloudflare.com /
+          # api.abuseipdb.com is dropped and times out.
           - name: prometheus
             parameters: 0.0.0.0:9153
           # No TTL cap: answers live for their own TTL (CoreDNS caps at 3600s, 1800s

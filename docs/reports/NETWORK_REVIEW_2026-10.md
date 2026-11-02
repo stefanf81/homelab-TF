@@ -303,6 +303,9 @@ nothing local becomes stickier. The surge rollout (`maxSurge: 1`,
   DNS proxy should associate the IPs with `api.abuseipdb.com`, but test it: the
   next sync must succeed and
   `hubble observe -n abuseipdb --verdict DROPPED` must stay empty.
+  **Outcome (2026-11-02): it did not.** After rollout every Cloudflare and
+  AbuseIPDB call from `abuseipdb-sync` timed out (577 `timeout` collector errors
+  in two days, Blocked Sources dashboard empty). autopath was removed again.
 - **Namespace guess.** The docs warn autopath "can derive the wrong namespace"
   when a pod IP is reused before the watch updates. The result is a normal
   search walk, not a wrong answer.
