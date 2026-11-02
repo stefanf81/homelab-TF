@@ -307,7 +307,7 @@ alongside `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`.
 > apex, `www.`, `grafana.`, `kyverno.` and `hubble.` to `${GATEWAY_IP}`. For a new hostname,
 > add it to that line and let Flux apply it. Do not `kubectl patch` the `coredns` ConfigMap:
 > the next Helm upgrade overwrites the patch, and until then it replaces the whole Corefile
-> (the other hostnames, autopath and the cache settings).
+> (the other hostnames and the cache settings).
 >
 > Once the name resolves to `192.168.50.201`, cert-manager's next retry of the challenge
 > goes over the LAN and completes.
