@@ -96,7 +96,8 @@ taskflow-app                     monitoring (VictoriaMetrics + Grafana + CRDs;
     │                                  │
     │                                  ├──▶ monitoring-app (VMServiceScrapes + Grafana dashboards)
     │                                  └──▶ monitoring-logging (Alloy + Loki: WAF audit logs,
-    │                                       abuseipdb-sync logs, Hubble flow export)
+    │                                       abuseipdb-sync logs, Hubble flow export,
+    │                                       cluster platform pod logs)
     ▼
 (image automation commits new digests)
 ```
@@ -373,7 +374,7 @@ TF/
 │   │   │   └── kustomization.yaml
 │   │   │
 │   └── logging/                     # Alloy + Loki for WAF audit + flow log collection
-│       ├── alloy-release.yaml       # Grafana Alloy Deployment (WAF logs, abuseipdb logs, Hubble flow file)
+│       ├── alloy-release.yaml       # Grafana Alloy Deployment (WAF logs, abuseipdb logs, platform pod logs, Hubble flow file)
 │       ├── loki-release.yaml        # Grafana Loki (log storage, 30-day retention)
 │       ├── loki-datasource.yaml     # Loki datasource auto-provisioned in Grafana
 │       ├── dashboards/              # Falco, Trivy, WAF, access-log, rate-limit, Logging pipeline dashboards
@@ -574,7 +575,16 @@ the app because its Grafana route targets the TaskFlow Gateway:
 - **`monitoring-logging`** Kustomization (`gitops/monitoring/logging`) runs
   Loki + Alloy, which ships the WAF audit logs, the `abuseipdb-sync` logs and
   the Cilium Hubble flow export into Loki for Grafana Explore and the
-  `Blocked Sources` dashboard. Alloy also derives bounded WAF counters
+  `Blocked Sources` dashboard. It also ships the pod logs of the cluster's own
+  components (`job="cluster-platform"`): the namespaces `monitoring`, `falco`,
+  `flux-system`, `kube-system`, `cert-manager`, `kyverno` and `csi-proxmox`, so a
+  crash loop stays queryable after the pod is gone
+  (`{job="cluster-platform", namespace="monitoring"}`; the `loki-gateway` pods are
+  skipped because their access log would record every push of Alloy itself).
+  The other platform namespaces (`policy-reporter`, `trivy-system`, `reloader`,
+  `renovate`, `hubble-ui`) are not shipped: their Kustomizations do not gate
+  `monitoring-logging`, so a Role there could not be created on a cold bootstrap.
+  Alloy also derives bounded WAF counters
   (`loki_process_custom_taskflow_waf_*`) that VictoriaMetrics scrapes for the WAF
   and Rate Limits overviews. Its dashboards are `Taskflow WAF`, `Taskflow Access
   Logs`, `Taskflow Rate Limits`, `Falco`, `Trivy Operator` and `Logging pipeline`.

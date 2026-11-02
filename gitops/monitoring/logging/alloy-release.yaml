@@ -52,9 +52,20 @@ spec:
       name: grafana-alloy
     rbac:
       create: true
+      # One Role per namespace instead of a ClusterRole. Keep this list in sync with the
+      # namespaces of discovery.kubernetes "platform" below. Only namespaces that exist
+      # before this release installs (they come from the monitoring and infra-controllers
+      # dependencies) can be listed: Helm fails on a Role in a missing namespace.
       namespaces:
         - taskflow
         - abuseipdb
+        - monitoring
+        - falco
+        - flux-system
+        - kube-system
+        - cert-manager
+        - kyverno
+        - csi-proxmox
       rules:
         - apiGroups: [""]
           resources: ["pods", "pods/log"]
@@ -296,6 +307,97 @@ spec:
             // and individual addresses stay in the log body to avoid cardinality.
             stage.static_labels {
               values = { source = "abuseipdb-sync" }
+            }
+          }
+
+          // ---- Cluster platform logs ----------------------------------------------
+          // The components that run the cluster itself: the monitoring stack, Falco,
+          // Flux, Cilium/CoreDNS (kube-system), cert-manager, Kyverno and the Proxmox
+          // CSI driver. Without them a crash loop in, say, vmagent was visible only to
+          // `kubectl logs`, and its logs vanished with the pod. Keep the namespaces in
+          // sync with `rbac.namespaces` above (a namespace without a Role is skipped
+          // with a forbidden error).
+          discovery.kubernetes "platform" {
+            role = "pod"
+            namespaces {
+              names = ["monitoring", "falco", "flux-system", "kube-system", "cert-manager", "kyverno", "csi-proxmox"]
+            }
+          }
+
+          discovery.relabel "platform" {
+            targets = discovery.kubernetes.platform.targets
+
+            // The Loki gateway writes an access-log line for every push, including
+            // Alloy's own: shipping it would make each push generate the next one.
+            rule {
+              source_labels = ["__meta_kubernetes_pod_name"]
+              regex = "loki-gateway-.+"
+              action = "drop"
+            }
+
+            // Name the workload from the first label the pod has, lowest priority first:
+            // `app` (Flux controllers), `k8s-app` (CoreDNS, Cilium), then the standard
+            // app.kubernetes.io/name. The regex must be (.+): the default (.*) also
+            // matches an empty value, so a pod without the later label would have the
+            // application set by an earlier rule overwritten with an empty string.
+            rule {
+              source_labels = ["__meta_kubernetes_pod_label_app"]
+              regex = "(.+)"
+              target_label = "application"
+              action = "replace"
+            }
+
+            rule {
+              source_labels = ["__meta_kubernetes_pod_label_k8s_app"]
+              regex = "(.+)"
+              target_label = "application"
+              action = "replace"
+            }
+
+            rule {
+              source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+              regex = "(.+)"
+              target_label = "application"
+              action = "replace"
+            }
+
+            rule {
+              source_labels = ["__meta_kubernetes_namespace"]
+              target_label = "namespace"
+              action = "replace"
+            }
+
+            rule {
+              source_labels = ["__meta_kubernetes_pod_name"]
+              target_label = "pod"
+              action = "replace"
+            }
+
+            rule {
+              source_labels = ["__meta_kubernetes_pod_container_name"]
+              target_label = "container"
+              action = "replace"
+            }
+
+            rule {
+              target_label = "job"
+              replacement = "cluster-platform"
+              action = "replace"
+            }
+          }
+
+          loki.source.kubernetes "platform" {
+            targets = discovery.relabel.platform.output
+            forward_to = [loki.process.platform.receiver]
+          }
+
+          loki.process "platform" {
+            forward_to = [loki.write.local.receiver]
+
+            // Bounded labels only (namespace, pod, container, application): log bodies
+            // stay unparsed, so no level or message becomes a label.
+            stage.static_labels {
+              values = { source = "platform" }
             }
           }
 

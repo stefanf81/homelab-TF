@@ -9,7 +9,7 @@
 - Per-client HTTP rate limiting (enabled 2026-09-26): frontend `general` 180/min, backend `api` 300/min, key `{client_ip}`, IPv6 grouped per `/64` (429 + `Retry-After` when exceeded).
 - Coraza audit JSON goes straight to stdout; Alloy redacts credential headers, sensitive query values and the matched data of credential variables at ingest (what is and is not covered: `docs/TASKFLOW_WAF_ARCHITECTURE.md`, "Redaction and line size").
 - Loki runs as one monolithic replica in `monitoring` with 30-day retention.
-- Alloy collects WAF logs plus all other Taskflow workload logs and sends them to Loki.
+- Alloy collects WAF logs plus all other Taskflow workload logs and the pod logs of the cluster's own components (`job="cluster-platform"`, see `docs/ARCHITECTURE.md`) and sends them to Loki.
 - Grafana dashboards at `https://grafana.jokelab.dev/d/taskflow-waf` and `https://grafana.jokelab.dev/d/taskflow-rate-limits`.
 
 ## Build the WAF image
