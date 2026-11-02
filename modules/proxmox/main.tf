@@ -65,9 +65,6 @@ write_files:
       # PMTU black-hole recovery for host-namespace sockets (Envoy -> Cloudflare).
       # BBR, fq and the listen backlogs are set by the Cilium bandwidth manager.
       net.ipv4.tcp_mtu_probing = 1
-      # Reboot on a kernel panic or oops instead of hanging (the VM has on_boot).
-      kernel.panic = 10
-      kernel.panic_on_oops = 1
 
   # The Proxmox host already schedules I/O for the virtio-scsi disks (root and
   # Proxmox CSI volumes), so a second scheduler in the guest only adds latency.
@@ -86,8 +83,10 @@ runcmd:
   - udevadm control --reload-rules
   - udevadm trigger --subsystem-match=block --action=change
   # Not needed on a k3s node: storage is Proxmox CSI (virtio disks, no iSCSI or
-  # multipath), and snapd/apport/motd-news only add background wakeups.
-  - systemctl disable --now multipathd.service multipathd.socket snapd.service snapd.socket snapd.seeded.service apport.service motd-news.timer || true
+  # multipath), and snapd/motd-news only add background wakeups. apport stays:
+  # it owns kernel.core_pattern, and k3s runs with LimitCORE=infinity, so without
+  # it a crashing container (JVM, Postgres) would write full core files to disk.
+  - systemctl disable --now multipathd.service multipathd.socket snapd.service snapd.socket snapd.seeded.service motd-news.timer || true
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
   - |
