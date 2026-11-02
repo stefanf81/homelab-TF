@@ -1,13 +1,13 @@
-# The image's default upstream is the short name `backend`, written for Docker Compose.
-# nginx's resolver ignores the resolv.conf search list, so on Kubernetes the short name
-# never resolves and nginx logs "backend could not be resolved" every 30 seconds. This
-# file is mounted over /etc/nginx/upstream-server.conf (the image's documented per-deployment
-# override) with the fully qualified Service name. `resolve` keeps the runtime lookup, so
-# nginx follows the Service if its address changes. The image takes its DNS server from
-# /etc/resolv.conf at start (taskflow-enterprise frontend/docker-entrypoint.sh); an image
-# without that change still uses Docker's 127.0.0.11 and keeps logging resolver errors.
-# NetworkPolicy only admits backend-waf to the backend, so nginx resolves this name but
-# its /api proxy cannot connect; the Gateway routes /api to backend-waf.
+# The image's default upstream is `backend` with Docker's embedded DNS (127.0.0.11) as
+# runtime resolver, written for Docker Compose. Neither exists in a pod, so nginx logged
+# "backend could not be resolved" every 30 seconds. This file is mounted over
+# /etc/nginx/upstream-server.conf, the image's per-deployment override (docs/deployment/README.md
+# in taskflow-enterprise, option A): a plain server line, with neither `resolve` nor
+# `resolver`. nginx resolves the name once at startup through the pod's /etc/resolv.conf,
+# and the ClusterIP stays fixed for the Service's lifetime. Do NOT add `resolve` without an
+# upstream-level `resolver`: images from 2026-11-01 on fail to start without one.
+# This works with the old and the new image. NetworkPolicy only admits backend-waf to the
+# backend and the Gateway routes /api to backend-waf, so this proxy path is not used.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -18,7 +18,7 @@ metadata:
     app.kubernetes.io/part-of: taskflow
 data:
   upstream-server.conf: |
-    server backend.taskflow.svc.cluster.local:8080 resolve;
+    server backend.taskflow.svc.cluster.local:8080;
 ---
 apiVersion: apps/v1
 kind: Deployment
