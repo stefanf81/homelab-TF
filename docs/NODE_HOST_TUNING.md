@@ -32,7 +32,7 @@ Measure before and after (§5) rather than assuming a gain.
 | 1 | CPU governor `performance` | Host | The only change that touches every request: no frequency ramp-up latency | More idle power and heat; thermal throttling on small fanless hosts can cancel it | Already set on this host (`amd-pstate-epp`, governor and EPP `performance`, 2026-11-03) |
 | 2 | `net.ipv4.tcp_mtu_probing = 1` | Node | Prevents stalls of Cloudflare → Envoy connections when PMTU ICMP is dropped (PPPoE/DS-Lite uplinks) | None known; only activates after a black hole is detected | Do it (in Terraform) |
 | 3 | Proxmox VE 8 → 9 | Host | Security support (PVE 8 is past end of life), newer kernel/KVM | **Highest risk on the list**: major Debian upgrade, NIC renames, provider/CSI compatibility | Done: host runs PVE 9.2 (kernel 7.0), checked 2026-11-03 |
-| 4 | virtio-net multiqueue (`queues = cpu_cores`) | VM | RX/TX softirq over all vCPUs; one `fq` leaf per queue. Only matters when one vCPU saturates on network work | NIC hot-replug on apply (short outage); slightly more CPU per packet | Do it (in Terraform), in a window |
+| 4 | virtio-net multiqueue (`queues = cpu_cores`) | VM | RX/TX softirq over all vCPUs; one `fq` leaf per queue. Only matters when one vCPU saturates on network work | NIC hot-replug on apply (short outage); slightly more CPU per packet | Done 2026-11-03 (`Combined: 10`, `mq` + per-queue `fq`) |
 | 5 | KSM off | Host | Frees host CPU — only if `ksmtuned` is actually scanning (it starts below ~20 % free RAM) | If host RAM is tight, memory use rises and the host may swap | **Keep KSM on here**: on the 15 GiB host it merged ~370 MiB with a 14 GiB VM (2026-11-03) |
 | 6 | Microcode | Host | Stability and security, not speed | Rare regressions; mitigations can cost a little speed | Already installed (`amd64-microcode`) |
 | 7 | HA services off (standalone) | Host | Fewer small writes to the boot SSD | Must be re-enabled before clustering | Optional |
@@ -41,7 +41,7 @@ Measure before and after (§5) rather than assuming a gain.
 | 10 | Remove `net.bridge.bridge-nf-call-*` | Node | Cleanup; Cilium has no bridge on the pod path | None | Done (in Terraform) |
 | 11 | `kernel.core_pattern = \|/bin/false` | Node | Prevents disk fill: the node had the relative pattern `core` (systemd `10-coredump-debian.conf`) and k3s runs with `LimitCORE=infinity`, so a crashing container writes a full core file (JVM ~2 GiB into its writable layer, PostgreSQL into its PVC) | No core dumps for debugging; set a path temporarily when needed | Done (in Terraform) |
 | 12 | Drop `vm.max_map_count = 262144` | Node | Keeps Ubuntu's higher default (1048576) instead of lowering it | None | Done (in Terraform) |
-| 13 | Graceful node shutdown (kubelet drop-in, 90s / 20s) | Node | Reliability: on a Proxmox shutdown or reboot, pods stop within their grace periods (Postgres checkpoints instead of crash recovery, backend drains) | Shutdown/reboot takes up to 90s longer; unattended-upgrades' 30s logind cap must be masked | Done (in Terraform; live node 2026-11-03) |
+| 13 | Graceful node shutdown (kubelet drop-in, 90s / 20s) | Node | Reliability: on a Proxmox shutdown or reboot, pods stop within their grace periods (Postgres checkpoints instead of crash recovery, backend drains) | Shutdown/reboot takes up to 90s longer; unattended-upgrades' 30s logind cap must be masked | Done (in Terraform; live node 2026-11-03), verified on the 2026-11-03 reboot |
 | 14 | Kubelet image GC: `imageMaximumGCAge: 168h`, thresholds 75 % / 65 % | Node | Prevents root-disk exhaustion: with the defaults (85 %/80 %, no age limit) GC never ran and containerd reached 68 GB of 96 GB (269 images, 2026-11-03). At ~90 % the kubelet evicts pods, a full outage on one node | Images of idle CronJobs/Jobs are re-pulled after a week | Done (in Terraform) |
 
 ### Host memory (finding 2026-11-03)
@@ -52,8 +52,8 @@ memory the host has swapped out stalls the VM on disk I/O, which outweighs every
 this document. In order of effect:
 
 1. **More RAM in the host** (the Ryzen 5 7430U board takes DDR4 SO-DIMMs). Removes the problem.
-2. **Smaller VM: 12 GiB** (`memory_size` default 12288 since 2026-11-03). Applied with the next
-   `make provision` (§3.3); the provider reboots the VM to apply it (`reboot_after_update`).
+2. **Smaller VM: 12 GiB** (`memory_size` default 12288). Applied 2026-11-03: the guest has
+   11 GiB, with the NIC multiqueue change in the same reboot.
 3. **Host `vm.swappiness = 10`** (§4.2): done 2026-11-03.
 4. **Keep KSM on**; HA services stopped (§4.2): done 2026-11-03.
 
@@ -262,18 +262,26 @@ Verify: a `delay` lock from the kubelet, and `t 90000000` (90 s in µs).
 systemd-inhibit --list | grep -i kubelet; busctl get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager InhibitDelayMaxUSec
 ```
 
-Prove it on the next planned reboot. Pods stopped by a graceful shutdown end as `Failed`
-("Pod was terminated in response to imminent node shutdown") and their Deployments create new
-ones, so check the old pods and the new Postgres log. The old Postgres pod's log should end with
-`database system is shut down`, and the grep on the new pod should print nothing (no
-`automatic recovery`).
+After every reboot, check and clean up. Pods stopped by a graceful shutdown end as `Failed`
+(reason `Terminated`, "Pod was terminated in response to imminent node shutdown") and their
+Deployments create new ones. Expect a second group too: ~190 `cilium-operator` pods with reason
+`NodeShutdown` ("Pod was rejected as the node is shutting down"). The operator tolerates every
+taint (it must run while the node is NotReady at boot), so during the last ~20 s of the shutdown
+(the critical-pod phase) its ReplicaSet keeps creating replacements that the kubelet rejects.
+Harmless; only the pod objects remain. Verified 2026-11-03.
+
+Failure reasons, one line per workload:
 
 ```bash
-kubectl get pods -A --field-selector=status.phase=Failed
+kubectl get pods -A --field-selector=status.phase=Failed -o custom-columns=NAME:.metadata.name,REASON:.status.reason,MESSAGE:.status.message --no-headers | sed -E 's/-[a-z0-9]+-[a-z0-9]{5} / /' | sort | uniq -c | sort -rn | head
 ```
 
+Postgres shut down cleanly if the running pod's log has `ready to accept connections` and no
+`automatic recovery`/`not properly shut down`. Select the Running pod explicitly:
+`deploy/postgres-db` may pick the old, stopped pod.
+
 ```bash
-kubectl -n taskflow logs deploy/postgres-db | grep -iE 'recovery|not properly shut down'
+kubectl -n taskflow logs $(kubectl -n taskflow get pods -l app=postgres-db --field-selector=status.phase=Running -o name) | grep -iE 'recovery|not properly|ready to accept'
 ```
 
 Then remove the old pod objects:
