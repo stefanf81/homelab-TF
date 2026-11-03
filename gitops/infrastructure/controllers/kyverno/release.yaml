@@ -30,9 +30,17 @@ spec:
     # webhook adds latency to every apply). The admission controller's container
     # resources live under `container:` in chart 3.x; a top-level `resources` here is
     # silently ignored (it was, until this change).
+    # Leader election: renew every 15s instead of 2s (Kyverno derives the lease
+    # as 6x and the renew deadline as 5x the retry period: 90s / 75s). Each of the
+    # four controllers renewed its Lease every 2s, ~1.7 of the ~7 writes/s to k3s's
+    # SQLite datastore, which wrote ~59 GB/day to the only NVMe (2026-11-03,
+    # docs/NODE_HOST_TUNING.md §4.5). Single replicas: a takeover after a crash
+    # waits up to 90s instead of 12s; no effect in normal operation.
     admissionController:
       replicas: 1
       container:
+        extraArgs:
+          leaderElectionRetryPeriod: 15s
         resources:
           requests:
             memory: "256Mi"
@@ -41,6 +49,8 @@ spec:
             memory: "512Mi"
     backgroundController:
       replicas: 1
+      extraArgs:
+        leaderElectionRetryPeriod: 15s
       resources:
         requests:
           memory: "128Mi"
@@ -49,6 +59,8 @@ spec:
           memory: "256Mi"
     cleanupController:
       replicas: 1
+      extraArgs:
+        leaderElectionRetryPeriod: 15s
       resources:
         requests:
           memory: "128Mi"
@@ -57,6 +69,8 @@ spec:
           memory: "256Mi"
     reportsController:
       replicas: 1
+      extraArgs:
+        leaderElectionRetryPeriod: 15s
       resources:
         requests:
           memory: "128Mi"
