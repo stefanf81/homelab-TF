@@ -167,6 +167,12 @@ spec:
           search.maxMemoryPerQuery: "64MiB"
           # Refuse ingestion/writes when the PVC is nearly full instead of filling the disk
           storage.minFreeDiskSpaceBytes: "2GB"
+          # Flush in-memory parts to disk every minute instead of every 5s (default).
+          # Fewer, larger parts mean fewer merges and SSD writes: this PVC wrote
+          # ~11.6 GB/day on the host's only NVMe (2026-11-03). Unflushed data stays
+          # queryable; an unclean shutdown (OOM kill, power loss) loses up to 1m.
+          # docs/NODE_HOST_TUNING.md §4.5
+          inmemoryDataFlushInterval: "1m"
           # Serve VMSingle UI from a sub-path so we can route it via Gateway API
           http.pathPrefix: "/vmsingle"
         # Persist TSDB on Proxmox CSI

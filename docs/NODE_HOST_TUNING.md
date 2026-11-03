@@ -606,6 +606,17 @@ Measure per volume on the host (exclude `pve-data-tpool`/`pve-data_tdata`, the p
 s(){ for d in /sys/block/dm-*; do echo "$(cat $d/dm/name) $(awk '{print $7}' $d/stat)"; done; }; s >/tmp/w1; sleep 300; s >/tmp/w2; join <(sort /tmp/w1) <(sort /tmp/w2) | awk '{printf "%8.1f GB/day  %s\n", ($3-$2)*512*288/1e9, $1}' | sort -rn | head -15
 ```
 
+Per-volume result (5-minute sample, 2026-11-03): VM root disk 94.9 GB/day, VictoriaMetrics PVC
+11.6, thin-pool metadata (`pve-data_tmeta`) 11.6, Alloy PVC 2.6, everything else ≤ 1.1; host swap
+0. Changes from it:
+
+- VictoriaMetrics: `inmemoryDataFlushInterval: "1m"` (default 5s) in
+  `gitops/monitoring/platform/release.yaml`. The VictoriaMetrics docs recommend bigger intervals
+  for flash storage with limited write cycles; unflushed data stays queryable, an unclean shutdown
+  loses up to 1m. Re-measure the `4299b1b3` volume a day after Flux applies it.
+- VM root disk: find the writing process first (per-process `write_bytes` sample in the guest).
+  The thin-metadata churn points at the root mount's online `discard` (§3.6).
+
 and over 24 h from the drive's counter (one unit = 512,000 bytes):
 
 ```bash
