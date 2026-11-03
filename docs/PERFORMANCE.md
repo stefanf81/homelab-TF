@@ -105,6 +105,40 @@ this memory change. Schema validation also cannot establish runtime memory safet
 - **Dashboards:** the WAF and Rate Limits overviews read Alloy-derived counters instead of scanning Loki: log data read per dashboard open at 6h fell from 949 to 89 MB (WAF) and 2,108 to 516 MB (Rate Limits).
 - **Open:** drop unused high-cardinality series (API server histograms, unused cAdvisor metrics) after checking the VMUI cardinality explorer.
 
+#### Grafana manifest warnings and Flux throttling review (2026-11-03)
+
+**Grafana 13.3.0:** the recurring `search-manifest-watcher` warning is from its
+in-process discovery of optional app/plugin manifests, not dashboard ConfigMap
+provisioning. At inspection the watcher reported 42 **empty** polls, zero reloads,
+zero manifests and a current successful-poll timestamp. Grafana health reported the
+database OK, and Bleve logs showed indexes being built/cached successfully.
+
+The pinned source starts `NewLocalManifestWatcher` for in-process search and retries
+an empty discovery list, logging two warnings per cycle. Built-in manifests are
+compiled into the binary separately; an empty live set does not mean zero dashboards.
+The optional `appplugins.loadAppManifest` toggle is experimental and defaults to
+false. Do **not** enable it or change storage/search modes merely to silence this
+warning. No Grafana settings or logger filters are changed by this investigation.
+Recheck if watcher **error** counters appear, indexes fail, or dashboard search fails.
+
+Source inspected at tag v13.3.0:
+[`client.go`](https://github.com/grafana/grafana/blob/v13.3.0/pkg/storage/unified/client.go),
+[`manifest_watcher.go`](https://github.com/grafana/grafana/blob/v13.3.0/pkg/storage/unified/resource/manifest_watcher.go),
+[`app_manifests.go`](https://github.com/grafana/grafana/blob/v13.3.0/pkg/storage/unified/resource/app_manifests.go).
+
+**Flux:** retain the current 1-CPU controller limits. Around 11:58 UTC, the latest
+five-minute throttled-time increases were ~0.106s for helm-controller and 0s for
+kustomize-controller; the preceding 30-minute increases were ~1.12s and ~3.53s.
+Another five-minute check around 12:04 showed 0s and ~0.10s respectively. Five-minute
+average CPU use was ~3m and ~0.7m. Throttled-period percentages exaggerate the impact
+of these short bursts and are not a percentage of total wall time lost.
+
+All Kustomizations were Ready; latest non-rollout reconciliation durations were
+typically ~0.2–1.8s. `monitoring-logging` took ~25.3s including the gateway rollout.
+No sustained backlog/latency symptom justifies relaxing CPU limits here. Flux-specific
+`gotk_*` duration metrics were not present in VictoriaMetrics, so these duration
+observations come from Kustomization status history, not a measured latency p99.
+
 ### 1.3 ~~PostgreSQL runs on Longhorn (network storage)~~ (RESOLVED)
 **File:** `gitops/apps/taskflow/postgres-pvc.yaml` (`storageClassName: proxmox-csi`)
 

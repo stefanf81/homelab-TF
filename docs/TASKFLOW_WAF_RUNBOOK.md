@@ -711,6 +711,21 @@ kubectl get secret sops-age -n flux-system
 
 **Cause**: Alloy not collecting, or Loki not receiving.
 
+**Discovery/RBAC incident (2026-11-03):** WAF/platform logs were present, but backend,
+frontend and other TaskFlow application logs were absent. Alloy was healthy: its
+backend and generic-app relabel components exported **empty target lists** because
+they required standard pod labels present only on the parent Deployments. The pod
+templates have legacy `app` labels. Trivy was missing from discovery and the Alloy
+service account could not `get pods/log` in `trivy-system`.
+
+The config now normalizes a non-empty `app.kubernetes.io/name` over the legacy `app`
+label, preserving backend multiline routing and WAF isolation. Trivy has matching
+namespace-scoped discovery and RBAC, with an explicit Kustomization dependency to
+create the namespace first. Scanner/collector result payloads are not collected.
+Check actual discovered targets and permissions, not just Alloy readiness. A health
+endpoint can be green while a selector silently drops every intended pod. These
+changes do not backfill logs from deleted pods.
+
 **Fix**:
 ```bash
 # Check Alloy is running

@@ -7,6 +7,8 @@ spec:
   dependsOn:
     - name: monitoring
     - name: taskflow-app
+    # Alloy renders namespace-scoped Roles in trivy-system; create it first.
+    - name: trivy-operator
   interval: 30m
   retryInterval: 5m
   path: ./gitops/monitoring/logging

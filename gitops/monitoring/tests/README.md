@@ -27,3 +27,11 @@ This checks startup resilience, not runtime DNS recovery or upstream access. The
 render checks also ensure both literal resolver IPs match the CoreDNS Service IP.
 Docker needs read access to the pinned private frontend image in GHCR; CI logs in
 with its existing package-read credential. No Kubernetes resources are created.
+
+`python3 gitops/monitoring/tests/validate-alloy-discovery.py` evaluates the shipped
+discovery/relabel rules in the real Alloy image with synthetic Kubernetes metadata
+(no cluster access). It checks legacy `app` and standard label routing, standard-name
+precedence, backend multiline isolation, and that WAF logs cannot bypass their own
+pipeline. Trivy operator/server diagnostics are kept, but scanner/collector job
+report payloads and Loki gateway access logs are dropped. It also renders the pinned
+Alloy chart to check namespace-scoped pod-log RBAC and the Trivy bootstrap dependency.
