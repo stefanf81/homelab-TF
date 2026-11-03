@@ -11,6 +11,18 @@ Measure before and after (§5) rather than assuming a gain.
 
 ---
 
+## Status (2026-11-03)
+
+**Done and verified:** everything in §2 marked Done; host swappiness 10, HA services off,
+`rpcbind` masked, Wi-Fi driver blacklisted, `discard=on` on every CSI disk (§4.2, §4.5); the
+SSD write reduction (thin pool 122 → 28.6 GB/day): VictoriaMetrics 1m flush, Flux in-memory
+builds, leader-election leases at 15s (§4.5); falcosidekick memory limit 128 → 256 Mi (both
+replicas were OOM-killed at 128 Mi right after the reboot, `falco/release.yaml`).
+
+**Open:** 24 h SSD write measurement (`Data Units Written` delta), SMART self-tests,
+notification target, SSH key-only, web UI 2FA, `lm-sensors`, backups (REL-02); details at the
+end of §4.5.
+
 ## 1. What is already tuned (no action)
 
 | Layer | Setting | Where |
@@ -599,11 +611,33 @@ Applied on the host:
 - Unused Wi-Fi driver blacklisted in `/etc/modprobe.d/blacklist-wifi.conf` (`rtw89_8852be`,
   `rtw89_8852b`, `rtw89_8852b_common`) and unloaded.
 
-Open: SSH key-only (`PermitRootLogin prohibit-password`, `PasswordAuthentication no` in
-`/etc/ssh/sshd_config.d/10-hardening.conf`; test `ssh -o PreferredAuthentications=publickey root@<host>`
-first: the OpenTofu provider logs in as root with the SSH agent key, so key-only is compatible),
-a notification target (Datacenter → Notifications; smartd warnings otherwise stay in root's local
-mailbox), `lm-sensors`, and backups to a target off this SSD (REL-02).
+Open on the host (see the status list at the top of this document):
+
+- **SMART self-tests.** smartd runs but schedules none. Short test daily at 02:00, long test on
+  Saturdays at 03:00 (check the `DEVICESCAN` line first; this assumes the Debian default):
+
+  ```bash
+  grep -n '^DEVICESCAN' /etc/smartd.conf
+  ```
+
+  ```bash
+  sed -i.bak 's#^DEVICESCAN -d removable -n standby #DEVICESCAN -d removable -n standby -s (S/../.././02|L/../../6/03) #' /etc/smartd.conf && systemctl restart smartd && journalctl -u smartd -n 8 --no-pager
+  ```
+
+- **Notification target.** smartd mails root only; Proxmox forwards it once a target exists:
+  set root@pam's email (Datacenter → Permissions → Users), add an SMTP/Gotify/Webhook target
+  (Datacenter → Notifications), attach it to `default-matcher`, press Test.
+- **SSH key-only.** `PermitRootLogin prohibit-password`, `PasswordAuthentication no`,
+  `KbdInteractiveAuthentication no` in `/etc/ssh/sshd_config.d/10-hardening.conf` (Debian reads
+  it before the main file; sshd keeps the first value). Test
+  `ssh -o PasswordAuthentication=no -o PreferredAuthentications=publickey root@<host> true` first;
+  the OpenTofu provider logs in as root with the SSH agent key, so key-only is compatible.
+- **Web UI 2FA** (TOTP, Datacenter → Permissions → Two Factor).
+- **`lm-sensors`**: check CPU temperature (`k10temp`) under load now that the governor and EPP
+  are on `performance`.
+- **Backups (REL-02)** to a target off this SSD. CSI volumes are attached with `backup=0`, so a
+  VM backup holds only the root disk; the target (USB disk, NAS, Proxmox Backup Server, S3)
+  decides the setup.
 
 **SSD wear.** The only disk is a 512 GB OEM NVMe (`WPBSNM8-512GMP`): 10 % used after 10.8 TB written in
 1,050 power-on hours (~250 GB/day on average), which puts the vendor's 100 % mark (~108 TB) about
@@ -644,6 +678,7 @@ Per-volume result (5-minute sample, 2026-11-03): VM root disk 94.9 GB/day, Victo
   | Flux x6 | FluxInstance kustomize patch (args appended to every controller Deployment) | `--leader-election-*` |
   | Flux Operator | `flux-operator/release.yaml`, `extraArgs` | `--leader-election-*` |
   | Proxmox CSI attacher/provisioner/resizer | `proxmox-csi/release.yaml`, `controller.<sidecar>.args` | `--leader-election-*` |
+  | Cilium L2 announcement (added later the same day) | `cilium/release.yaml`, `l2announcements` | `leaseDuration: 60s`, `leaseRenewDeadline: 40s`, `leaseRetryPeriod: 15s`. Renewals follow `leaseRetryPeriod` (measured), not the renew deadline the chart's description suggests |
 
   Expected: ~3.9 fewer writes/s (~7.3 → ~3.4). Compare leases with the per-lease count over the
   last 3,000 IDs. kine compacts every 5 minutes and deletes superseded revisions, so part of that

@@ -13,7 +13,7 @@ TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE,
 |-----------|---------------|---------|
 | IaC Engine | OpenTofu (minimum ≥ 1.8.0) | VM provisioning & kubeconfig fetch |
 | Provider | `bpg/proxmox` v0.118.0 | Proxmox VE API integration |
-| Cloud Image | Ubuntu 26.04 (Resolute), release-20260823, SHA-256 pinned | k3s host OS |
+| Cloud Image | Ubuntu 26.04 (Resolute), release-20260927, SHA-256 pinned (the VM ignores later re-pins: `disk[0].file_id` is in `ignore_changes`) | k3s host OS |
 | k3s | v1.37.1+k3s1 | Kubernetes distribution |
 | Orchestration | Makefile (`make init`, `make apply`) | Enforces correct provisioning sequence |
 
@@ -29,9 +29,9 @@ TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE,
 |----------|--------------|
 | Kernel params | `fs.inotify.max_user_instances=8192`, `fs.file-max=2097152`, `vm.swappiness=1`, `net.ipv4.tcp_mtu_probing=1`, `kernel.core_pattern=\|/bin/false` (Ubuntu sets `vm.max_map_count=1048576`; kubelet sets `kernel.panic=10`, `kernel.panic_on_oops=1`) |
 | Disk I/O | udev rule sets the `none` scheduler on the virtio-scsi disks (the host schedules I/O) |
-| System services | qemu-guest-agent (enabled/started); multipathd, snapd and motd-news disabled; journald capped at 100 MB |
+| System services | qemu-guest-agent (enabled/started); multipathd, snapd and motd-news disabled; `serial-getty@ttyS0` masked (no serial port: it restarted every 10s); journald capped at 100 MB |
 | VM NIC | virtio-net multiqueue, one queue pair per vCPU (`queues = var.cpu_cores`) |
-| Kubelet | Graceful node shutdown (`shutdownGracePeriod: 90s`, `shutdownGracePeriodCriticalPods: 20s`) via `/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-graceful-shutdown.conf`; unattended-upgrades' 30s logind cap masked |
+| Kubelet | Graceful node shutdown (`shutdownGracePeriod: 90s`, `shutdownGracePeriodCriticalPods: 20s`) via `/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-graceful-shutdown.conf`; unattended-upgrades' 30s logind cap masked. Image GC (`50-image-gc.conf`): unused images removed after 7 days (`imageMaximumGCAge: 168h`), threshold GC at 75 %/65 % |
 | k3s flags | `--flannel-backend=none --disable-network-policy --disable servicelb --disable traefik --disable coredns --disable metrics-server` |
 
 ### 2.4 Module Dependency Graph
@@ -58,7 +58,8 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 | IPAM | `kubernetes` mode |
 | BPF masquerade | Enabled (offloads SNAT to eBPF) |
 | Gateway API | Built-in controller enabled |
-| L2 announcements | Enabled (for external IP exposure); lease 30s / renew deadline 20s / retry 5s, so the lease holder writes to the k3s datastore every 5s instead of every 2s |
+| L2 announcements | Enabled (for external IP exposure); lease 60s / renew deadline 40s / retry 15s, so the lease holder writes to the k3s datastore every 15s instead of every 2s (chart default) |
+| Operator leader election | lease 60s / renew 40s / retry 15s via `operator.extraArgs` (default retry 2s); fewer k3s SQLite writes, and short API restarts no longer drop leadership |
 | Metrics | Agent, operator, Hubble (`dns`, `drop`, `tcp`, `flow`, `icmp`, `httpV2`) and Envoy scraped by VictoriaMetrics; Grafana dashboards `Cilium Agent` and `Hubble Flows` (Platform folder) |
 | Operator replicas | 1 (single-node optimized) |
 | Hubble flow export | `hubble.export.static` — DROPPED/ERROR flows written to `/var/run/cilium/hubble/events.log` for Loki/Grafana (`Blocked Sources`) |
