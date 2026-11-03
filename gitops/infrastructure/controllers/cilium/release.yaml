@@ -113,9 +113,12 @@ spec:
       # lease at once, so longer timers cost nothing today. Once a second node
       # joins, leaseDuration is the worst-case ARP failover time.
       # docs/reports/CILIUM_REVIEW_2026-10.md §4.1
-      leaseDuration: 30s
-      leaseRenewDeadline: 20s
-      leaseRetryPeriod: 5s
+      # 2026-11-03: 60s/40s/15s like the other Leases (docs/NODE_HOST_TUNING.md §4.5).
+      # Renewals follow leaseRetryPeriod (client-go leader election): at 5s this was
+      # the busiest Lease left, 110 writes per window against the 10s node lease's 54.
+      leaseDuration: 60s
+      leaseRenewDeadline: 40s
+      leaseRetryPeriod: 15s
     hubble:
       enabled: true
       relay:
