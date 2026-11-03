@@ -447,6 +447,12 @@ systemctl disable --now pve-ha-lrm pve-ha-crm
 
 **SSD trim and thin-pool health** (thin pools over-provision; watch Data%/Meta%):
 
+`lvs` Data% on a Proxmox CSI volume counts every block written since the last trim, so it can
+far exceed real use: on 2026-11-03 the Trivy server cache (`data-trivy-server-0`, 5 Gi) showed
+93 % in `lvs` but 33 % inside the pod, because each DB update rewrites ~1 GB and the node's
+`fstrim.timer` runs weekly. Check real use inside the pod (`df`) before resizing anything;
+`sudo fstrim -av` on the node returns the blocks at once.
+
 ```bash
 systemctl enable --now fstrim.timer && lvs -o lv_name,data_percent,metadata_percent pve
 ```
