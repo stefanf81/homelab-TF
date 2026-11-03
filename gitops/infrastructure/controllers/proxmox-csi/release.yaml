@@ -30,6 +30,26 @@ spec:
             memory: 64Mi
           limits:
             memory: 256Mi
+      # Leader election on the three sidecars: renew every 15s instead of 5s
+      # (lease 60s, renew 40s; kubernetes-csi defaults 15s/10s/5s), ~0.4 writes/s
+      # less to k3s's SQLite datastore (kine breakdown 2026-11-03,
+      # docs/NODE_HOST_TUNING.md §4.5). Chart 0.5.13 appends controller.<sidecar>.args
+      # after its own --leader-election flag.
+      attacher:
+        args:
+          - --leader-election-lease-duration=60s
+          - --leader-election-renew-deadline=40s
+          - --leader-election-retry-period=15s
+      provisioner:
+        args:
+          - --leader-election-lease-duration=60s
+          - --leader-election-renew-deadline=40s
+          - --leader-election-retry-period=15s
+      resizer:
+        args:
+          - --leader-election-lease-duration=60s
+          - --leader-election-renew-deadline=40s
+          - --leader-election-retry-period=15s
     # Chart ships no requests/limits for the node plugin; cap it on the shared node.
     node:
       plugin:
