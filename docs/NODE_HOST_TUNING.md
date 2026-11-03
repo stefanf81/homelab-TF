@@ -291,6 +291,13 @@ Then remove the old pod objects:
 kubectl delete pods -A --field-selector=status.phase=Failed
 ```
 
+Pods whose containers exit 0 on SIGTERM (most Go controllers, e.g. Flux) end as `Succeeded`
+(`Completed`) instead. Remove those owned by a ReplicaSet; finished Job pods keep their logs:
+
+```bash
+kubectl get pods -A --field-selector=status.phase=Succeeded -o jsonpath='{range .items[?(@.metadata.ownerReferences[0].kind=="ReplicaSet")]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' | while read ns n; do kubectl -n "$ns" delete pod "$n"; done
+```
+
 Rollback: delete the drop-in, remove the `/dev/null` symlink, restart k3s.
 
 ### 3.5 Root disk: image cleanup (k3s restart for the GC settings)
