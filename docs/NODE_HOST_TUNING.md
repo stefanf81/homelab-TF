@@ -33,7 +33,7 @@ Measure before and after (§5) rather than assuming a gain.
 | 2 | `net.ipv4.tcp_mtu_probing = 1` | Node | Prevents stalls of Cloudflare → Envoy connections when PMTU ICMP is dropped (PPPoE/DS-Lite uplinks) | None known; only activates after a black hole is detected | Do it (in Terraform) |
 | 3 | Proxmox VE 8 → 9 | Host | Security support (PVE 8 is past end of life), newer kernel/KVM | **Highest risk on the list**: major Debian upgrade, NIC renames, provider/CSI compatibility | Done: host runs PVE 9.2 (kernel 7.0), checked 2026-11-03 |
 | 4 | virtio-net multiqueue (`queues = cpu_cores`) | VM | RX/TX softirq over all vCPUs; one `fq` leaf per queue. Only matters when one vCPU saturates on network work | NIC hot-replug on apply (short outage); slightly more CPU per packet | Do it (in Terraform), in a window |
-| 5 | KSM off | Host | Frees host CPU — only if `ksmtuned` is actually scanning (it starts below ~20 % free RAM) | If host RAM is tight, memory use rises and the host may swap | **Keep KSM on here**: the host has 15 GiB for a 14 GiB VM, and KSM merges ~370 MiB (2026-11-03) |
+| 5 | KSM off | Host | Frees host CPU — only if `ksmtuned` is actually scanning (it starts below ~20 % free RAM) | If host RAM is tight, memory use rises and the host may swap | **Keep KSM on here**: on the 15 GiB host it merged ~370 MiB with a 14 GiB VM (2026-11-03) |
 | 6 | Microcode | Host | Stability and security, not speed | Rare regressions; mitigations can cost a little speed | Already installed (`amd64-microcode`) |
 | 7 | HA services off (standalone) | Host | Fewer small writes to the boot SSD | Must be re-enabled before clustering | Optional |
 | 8 | Drop `nfs-common`/`open-iscsi`/multipath; disable snapd, motd-news | Node | Tiny: fewer daemons, tens of MB RAM | Reinstall if NFS/iSCSI storage is added; snaps (e.g. Livepatch) stop working | Done (in Terraform) |
@@ -46,17 +46,32 @@ Measure before and after (§5) rather than assuming a gain.
 
 ### Host memory (finding 2026-11-03)
 
-The host has 15 GiB of RAM and VM 900 is given 14 GiB (`memory = balloon = 14336`). The host had
+The host has 15 GiB of RAM and VM 900 was given 14 GiB (`memory = balloon = 14336`). The host had
 241 MiB available, 2.2 GiB in swap at `vm.swappiness = 60`, and KSM merging ~370 MiB. Guest
 memory the host has swapped out stalls the VM on disk I/O, which outweighs every other tweak in
 this document. In order of effect:
 
 1. **More RAM in the host** (the Ryzen 5 7430U board takes DDR4 SO-DIMMs). Removes the problem.
-2. **Smaller VM** (`memory_size` in `terraform.tfvars`, e.g. 12288), sized from the guest's real
-   use and the pods' memory requests; needs a VM reboot.
-3. **Host `vm.swappiness = 10`** (§4.2) so page cache goes before QEMU memory. It cannot create
-   memory, but it reduces swapping of guest pages.
-4. **Keep KSM on**, and stop the unused HA services (§4.2) for a little more headroom.
+2. **Smaller VM: 12 GiB** (`memory_size` default 12288 since 2026-11-03). Applied with the next
+   `make provision` (§3.3); the provider reboots the VM to apply it (`reboot_after_update`).
+3. **Host `vm.swappiness = 10`** (§4.2): done 2026-11-03.
+4. **Keep KSM on**; HA services stopped (§4.2): done 2026-11-03.
+
+Sizing data (2026-11-03, at 14 GiB):
+
+| Measure | Value |
+|---|---|
+| Host swap by process | `kvm` 661 MiB; the rest is idle Proxmox Perl daemons (harmless) |
+| Guest `free` | 7.7 GiB used, 5.0 GiB page cache, 6.0 GiB available |
+| Pod working set (`kubectl top node`) | 7935 Mi |
+| Pod memory requests / limits | 8650 Mi / 27978 Mi (66 % / 215 % of allocatable) |
+
+At 12 GiB, allocatable is ~11 GiB (minus the 1000 Mi system/kube reserve and 100 Mi
+eviction), so requests use ~78 % and a 2 Gi backend surge pod still fits. The guest loses
+~2 GiB of page cache; the host gains ~2 GiB and should stop swapping guest memory.
+
+Do not run `swapoff -a` on the host to pull swapped pages back: it needs as much free RAM as
+swap in use, and the OOM killer may pick the VM.
 
 Ballooning is not the answer for Kubernetes: shrinking the guest under the kubelet's feet
 invalidates its allocatable memory and leads to OOM kills.
@@ -166,6 +181,10 @@ make plan
 
 Expected: `proxmox_virtual_environment_file.cloud_config` **replaced** and
 `proxmox_virtual_environment_vm.k3s_node` **updated in place** (`~ queues = <cpu_cores>`; 10 on this host).
+With the 12 GiB default, the plan also shows `~ dedicated`/`~ floating` 14336 → 12288 (check
+`memory_size` in your `terraform.tfvars` too). The provider reboots the VM for the memory change
+(`reboot_after_update`, default true), which also applies the NIC change; if it only prints a
+warning, reboot manually as below.
 **If the VM shows `-/+` (replace), stop** — that would rebuild the node.
 
 ```bash

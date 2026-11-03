@@ -19,7 +19,7 @@ TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE,
 
 ### 2.2 VM Specifications (defaults in `variables.tf`)
 - **CPU**: 6 cores (host CPU type)
-- **Memory**: 14 GiB (dedicated + floating)
+- **Memory**: 12 GiB (dedicated + floating; was 14 GiB until 2026-11, which made the 15 GiB host swap)
 - **Disk**: 100 GB SCSI (virtio-scsi-single, SSD + discard enabled)
 - **Network**: `vmbr0` bridge, static IP via cloud-init
 - **Tags**: `kubernetes`, `k3s`
@@ -613,10 +613,10 @@ The monitoring UIs are now exposed through the main Cilium Gateway API using zer
 (VMSingle 1 Gi cap / 256 Mi req, vmagent 256 Mi, Grafana 256 Mi,
 operator 128 Mi, exporters + node-exporter ~0.4 GiB; kube-state-metrics is enabled). VictoriaMetrics runs **14d
 retention** and scrapes app metrics at **30–60s** (per VMServiceScrape) for higher-resolution dashboards.
-On the 14 GiB node this still leaves the bulk for backend (2 GiB guaranteed) +
+On the 12 GiB node this still leaves the bulk for backend (2 GiB guaranteed) +
 Postgres (1 GiB limit) + Redis + Jaeger; if it's still tight, the biggest single
 lever is the backend JVM (already trimmed to 1 GiB heap / 2 GiB QoS) or disabling
-monitoring entirely. As a last resort, bump `vm_memory` in `variables.tf`
-(ISSUES.md #16) before disabling monitoring.
+monitoring entirely. Raising `memory_size` needs host RAM first: the host has 15 GiB and needs ~3 GiB itself
+(`docs/NODE_HOST_TUNING.md`, host memory).
 
 **Footgun:** the `monitoring` Kustomization has SOPS decryption enabled (reuses `sops-age`). The Grafana secret (`grafana-secrets.yaml`) **must stay encrypted** — editing it in plaintext will make Flux fail to decrypt. Rotate with `sops edit gitops/monitoring/platform/grafana-secrets.yaml`.

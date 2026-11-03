@@ -73,7 +73,9 @@ variable "cpu_cores" {
 variable "memory_size" {
   type        = number
   description = "Amount of memory in Megabytes to allocate to the VM"
-  default     = 14336
+  # 12 GiB on the 15 GiB host: at 14 GiB the host swapped ~2.2 GiB, 661 MiB of it guest
+  # memory (docs/NODE_HOST_TUNING.md, host memory). Pod requests are ~8.5 GiB.
+  default = 12288
 }
 
 variable "disk_size" {

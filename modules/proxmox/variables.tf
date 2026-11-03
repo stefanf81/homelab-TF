@@ -41,7 +41,7 @@ variable "cpu_cores" {
 
 variable "memory_size" {
   type    = number
-  default = 14336
+  default = 12288
 }
 
 variable "disk_size" {
