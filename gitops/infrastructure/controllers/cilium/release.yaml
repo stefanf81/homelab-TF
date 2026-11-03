@@ -52,6 +52,16 @@ spec:
     operator:
       replicas: 1 # Optimized for single-node cluster
       rollOutPods: true
+      # Leader election: renew every 15s instead of 2s. The operator's Lease was
+      # rewritten every 2s, ~0.45 writes/s to k3s's SQLite datastore (~59 GB/day on
+      # the only NVMe, 2026-11-03, docs/NODE_HOST_TUNING.md §4.5). The longer renew
+      # deadline also rides out short k3s API restarts instead of losing the lease
+      # (and restarting the operator) after 10s. client-go requires
+      # renew-deadline > 1.2 x retry-period and lease-duration > renew-deadline.
+      extraArgs:
+        - --leader-election-lease-duration=60s
+        - --leader-election-renew-deadline=40s
+        - --leader-election-retry-period=15s
       resources:
         requests:
           cpu: 50m
