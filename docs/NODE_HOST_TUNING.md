@@ -451,7 +451,17 @@ systemctl disable --now pve-ha-lrm pve-ha-crm
 far exceed real use: on 2026-11-03 the Trivy server cache (`data-trivy-server-0`, 5 Gi) showed
 93 % in `lvs` but 33 % inside the pod, because each DB update rewrites ~1 GB and the node's
 `fstrim.timer` runs weekly. Check real use inside the pod (`df`) before resizing anything;
-`sudo fstrim -av` on the node returns the blocks at once.
+`sudo fstrim -av` on the node returns the blocks at once (2026-11-03: Trivy volume 92.75 % → 35 %,
+thin pool 10.66 % → 9.50 %).
+
+A trim only reaches the thin pool if the Proxmox disk has `discard=on`. One CSI volume (`scsi2`,
+`vm-9999-pvc-4299…`, 8 Gi) was attached without it by an older plugin version and stayed at
+61.62 % after the trim. Add it with the full existing line (keep the `wwn`, which the CSI driver
+uses to find the disk); Proxmox applies it at the next VM reboot:
+
+```bash
+qm set 900 --scsi2 local-lvm:vm-9999-pvc-4299b1b3-248e-416e-ab15-28d71c74098a,backup=0,cache=writethrough,discard=on,iothread=1,replicate=0,size=8G,ssd=1,wwn=0x5056432d49443032
+```
 
 ```bash
 systemctl enable --now fstrim.timer && lvs -o lv_name,data_percent,metadata_percent pve
