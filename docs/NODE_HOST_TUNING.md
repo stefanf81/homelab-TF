@@ -620,7 +620,31 @@ Per-volume result (5-minute sample, 2026-11-03): VM root disk 94.9 GB/day, Victo
   `medium: Memory`, a `spec.kustomize.patches` entry in
   `gitops/infrastructure/flux-instance/flux-instance.yaml`). The artifact is ~3.3 MB unpacked, so
   16.6 GB/day means ~5,000 builds a day: check for a Kustomization stuck retrying.
-- k3s: break the SQLite writes down by object type before tuning (leases, events, reports):
+- k3s SQLite (kine), 5-minute breakdown 2026-11-03: ~7.7 writes/s, 73 % of them Lease renewals
+  (~2.2 MiB of object data per 5 min). Each write rewrites several 4 KiB pages (table + six
+  indexes) in the WAL and again at checkpoint, so the write count, not the object size, drives
+  the ~59 GB/day. Lease holders: Kyverno x4, VictoriaMetrics operator and cilium-operator every
+  2s; Flux x6, Flux Operator, Proxmox CSI x3 and the Cilium L2 lease every 5s. k3s's own
+  controller manager and scheduler hold no Lease on this single server.
+- Leases now renewed every 15s (lease 60s, renew 40s unless noted), one commit per component:
+
+  | Component | Where | Setting |
+|---|---|---|
+  | Kyverno x4 | `kyverno/release.yaml`, per-controller `extraArgs` | `leaderElectionRetryPeriod: 15s` (Kyverno derives lease 6x = 90s, renew 5x = 75s) |
+  | cilium-operator | `cilium/release.yaml`, `operator.extraArgs` | `--leader-election-*` |
+  | VictoriaMetrics operator | `monitoring/platform/release.yaml` | `leader-elect: "false"` + `strategy: Recreate` (no retry-period flag exists) |
+  | Flux x6 | FluxInstance kustomize patch (args appended to every controller Deployment) | `--leader-election-*` |
+  | Flux Operator | `flux-operator/release.yaml`, `extraArgs` | `--leader-election-*` |
+  | Proxmox CSI attacher/provisioner/resizer | `proxmox-csi/release.yaml`, `controller.<sidecar>.args` | `--leader-election-*` |
+
+  Expected: ~3.9 fewer writes/s (~7.3 → ~3.4). Verify with the per-lease count over the last
+  3,000 rows (the node lease renews every 10s, so its count gives the window length):
+
+  ```bash
+  sqlite3 -readonly -column /var/lib/rancher/k3s/server/db/state.db "SELECT COUNT(*) AS writes, name FROM kine WHERE id > (SELECT MAX(id)-3000 FROM kine) AND name LIKE '/registry/leases/%' GROUP BY name ORDER BY writes DESC LIMIT 25"
+  ```
+
+- k3s: the breakdown by object type used above:
 
   ```bash
   DB=/var/lib/rancher/k3s/server/db/state.db; A=$(sqlite3 -readonly $DB 'SELECT MAX(id) FROM kine'); sleep 300; sqlite3 -readonly -column $DB "SELECT COUNT(*) AS writes, SUM(LENGTH(value)+IFNULL(LENGTH(old_value),0))/1024 AS kib, substr(name,1,instr(substr(name,11),'/')+9) AS kind FROM kine WHERE id > $A GROUP BY kind ORDER BY kib DESC LIMIT 15"
