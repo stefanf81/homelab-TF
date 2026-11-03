@@ -58,13 +58,18 @@ write_files:
       net.ipv4.ip_forward = 1
       fs.inotify.max_user_instances = 8192
       fs.inotify.max_user_watches = 524288
-      vm.max_map_count = 262144
       fs.file-max = 2097152
       fs.aio-max-nr = 1048576
       vm.swappiness = 1
       # PMTU black-hole recovery for host-namespace sockets (Envoy -> Cloudflare).
       # BBR, fq and the listen backlogs are set by the Cilium bandwidth manager.
       net.ipv4.tcp_mtu_probing = 1
+      # Discard core dumps. systemd's 10-coredump-debian.conf sets the relative
+      # pattern "core", and k3s runs with LimitCORE=infinity, so a crashing
+      # container would write a full core file into its working directory (JVM
+      # ~2 GiB into its writable layer, PostgreSQL into its PVC). Pipe helpers run
+      # in the host namespaces, so this covers every container.
+      kernel.core_pattern = |/bin/false
 
   # The Proxmox host already schedules I/O for the virtio-scsi disks (root and
   # Proxmox CSI volumes), so a second scheduler in the guest only adds latency.
@@ -83,9 +88,7 @@ runcmd:
   - udevadm control --reload-rules
   - udevadm trigger --subsystem-match=block --action=change
   # Not needed on a k3s node: storage is Proxmox CSI (virtio disks, no iSCSI or
-  # multipath), and snapd/motd-news only add background wakeups. apport stays:
-  # it owns kernel.core_pattern, and k3s runs with LimitCORE=infinity, so without
-  # it a crashing container (JVM, Postgres) would write full core files to disk.
+  # multipath), and snapd/motd-news only add background wakeups.
   - systemctl disable --now multipathd.service multipathd.socket snapd.service snapd.socket snapd.seeded.service motd-news.timer || true
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent

@@ -17,7 +17,8 @@ Measure before and after (§5) rather than assuming a gain.
 |---|---|---|
 | VM | CPU type `host`, `virtio-scsi-single` + IOThread, `ssd`, `discard`, virtio RNG, balloon fixed (`floating = dedicated`) | `modules/proxmox/main.tf` |
 | VM | Proxmox firewall off for the NIC (no extra `fwbr` bridge) | provider default |
-| Node | inotify, `vm.max_map_count`, `fs.file-max`, `fs.aio-max-nr`, swap off, journald capped at 100 MB | cloud-init snippet |
+| Node | inotify, `fs.file-max`, `fs.aio-max-nr`, swap off, journald capped at 100 MB | cloud-init snippet |
+| Node | `vm.max_map_count = 1048576` | Ubuntu (`/usr/lib/sysctl.d/55-map-count.conf`); the snippet no longer lowers it to 262144 |
 | Node | `default_qdisc=fq`, `tcp_congestion_control=bbr`, `tcp_slow_start_after_idle=0`, 4096 backlogs | Cilium bandwidth manager |
 | Node | `kernel.panic=10`, `kernel.panic_on_oops=1`, `vm.overcommit_memory=1` | kubelet (`protectKernelDefaults: false`) |
 | Storage | `proxmox-csi` (writethrough) and `proxmox-csi-db` (`cache: none`, `noatime`) classes | `gitops/infrastructure/controllers/proxmox-csi/release.yaml` |
@@ -38,6 +39,8 @@ Measure before and after (§5) rather than assuming a gain.
 | 8 | Drop `nfs-common`/`open-iscsi`/multipath; disable snapd, motd-news | Node | Tiny: fewer daemons, tens of MB RAM | Reinstall if NFS/iSCSI storage is added; snaps (e.g. Livepatch) stop working | Done (in Terraform) |
 | 9 | Guest I/O scheduler `none` (udev rule) | Node | Probably none: the kernel already picks `none` for multi-queue disks; the rule pins it | On a single-queue disk the guest loses read/write prioritisation (minor) | Done (in Terraform); harmless |
 | 10 | Remove `net.bridge.bridge-nf-call-*` | Node | Cleanup; Cilium has no bridge on the pod path | None | Done (in Terraform) |
+| 11 | `kernel.core_pattern = \|/bin/false` | Node | Prevents disk fill: the node had the relative pattern `core` (systemd `10-coredump-debian.conf`) and k3s runs with `LimitCORE=infinity`, so a crashing container writes a full core file (JVM ~2 GiB into its writable layer, PostgreSQL into its PVC) | No core dumps for debugging; set a path temporarily when needed | Done (in Terraform) |
+| 12 | Drop `vm.max_map_count = 262144` | Node | Keeps Ubuntu's higher default (1048576) instead of lowering it | None | Done (in Terraform) |
 
 ### Conditional host changes (only if a check finds the problem)
 
@@ -52,7 +55,7 @@ Measure before and after (§5) rather than assuming a gain.
 
 | Change | Why not |
 |---|---|
-| Disable apport | apport owns `kernel.core_pattern`. k3s runs with `LimitCORE=infinity`, so without it a crashing container writes a full core file (JVM ~2 GiB into its writable layer, PostgreSQL into its PVC) |
+| Rely on apport for core dumps | On the live node `kernel.core_pattern` was the plain `core` from systemd's `10-coredump-debian.conf`, and `sysctl --system` re-applies it over any pipe apport sets. Item 11 sets the pattern explicitly instead |
 | Duplicate `kernel.panic*` sysctls | The kubelet already sets them |
 | `aio=native` on disks | Blockbridge's benchmark warns it can block on thin LVM; keep the `io_uring` default with an IOThread (§6) |
 | 1 GiB hugepages | Small TLB gain; memory is reserved, KSM cannot merge it, and the VM fails to start if pages are not free |
@@ -69,7 +72,7 @@ Measure before and after (§5) rather than assuming a gain.
 
 ### 3.1 In Terraform (new nodes)
 
-`modules/proxmox/main.tf` carries items 2, 4, 8, 9 and 10. The cloud-init snippet
+`modules/proxmox/main.tf` carries items 2, 4 and 8–12. The cloud-init snippet
 is in `ignore_changes` (`reports/REMEDIATION_PLAN_2026-10.md` REL-00), so it only
 reaches newly built nodes. The running node needs §3.2, and the NIC change needs §3.3.
 
@@ -89,8 +92,15 @@ ethtool -l eth0; cat /sys/block/sd*/queue/scheduler; sysctl net.ipv4.tcp_mtu_pro
 MTU probing, and remove the leftover bridge sysctls:
 
 ```bash
-echo 'net.ipv4.tcp_mtu_probing = 1' | sudo tee /etc/sysctl.d/90-tuning.conf && sudo sed -i '/bridge-nf-call/d' /etc/sysctl.d/99-kubernetes.conf && sudo sysctl --system
+printf 'net.ipv4.tcp_mtu_probing = 1\nkernel.core_pattern = |/bin/false\n' | sudo tee /etc/sysctl.d/90-tuning.conf && sudo sed -i '/bridge-nf-call/d; /vm.max_map_count/d' /etc/sysctl.d/99-kubernetes.conf && sudo sysctl -p /etc/sysctl.d/90-tuning.conf && sudo sysctl -w vm.max_map_count=1048576
 ```
+
+Use `sysctl -p <file>`, not `sysctl --system`, on a running node. `--system` re-applies every
+file: Ubuntu's `55-bufferbloat.conf` sets `net.core.default_qdisc` back to `fq_codel` over
+Cilium's runtime `fq`, and `10-coredump-debian.conf` resets `kernel.core_pattern`. The
+existing `eth0` qdisc keeps `fq`, and Cilium re-applies its value on the next agent restart, but
+a NIC re-plug in between would get `fq_codel`. The rp_filter values survive because Cilium
+keeps them in `99-zzz-override_cilium.conf`.
 
 I/O scheduler rule:
 
@@ -102,7 +112,7 @@ echo 'ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="s
 sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=block --action=change
 ```
 
-Disable unneeded services (leave apport enabled):
+Disable unneeded services:
 
 ```bash
 sudo systemctl disable --now iscsid.socket iscsid.service open-iscsi.service multipathd.socket multipathd.service snapd.socket snapd.service snapd.seeded.service motd-news.timer || true
@@ -112,10 +122,17 @@ sudo systemctl disable --now iscsid.socket iscsid.service open-iscsi.service mul
 sudo rm -f /etc/multipath.conf
 ```
 
-Verify: `1`, `[none]`, and `inactive` for each service.
+Verify: `1`, `|/bin/false`, `1048576`, `fq` with `bbr`, `[none]`, and `inactive` for each unit.
 
 ```bash
-sysctl net.ipv4.tcp_mtu_probing; cat /sys/block/sd*/queue/scheduler; systemctl is-active iscsid multipathd snapd motd-news.timer
+sysctl net.ipv4.tcp_mtu_probing kernel.core_pattern vm.max_map_count net.core.default_qdisc net.ipv4.tcp_congestion_control; cat /sys/block/sd*/queue/scheduler; systemctl is-active iscsid.socket iscsid multipathd snapd.socket snapd motd-news.timer
+```
+
+If `default_qdisc` shows `fq_codel` (for example after a `sysctl --system`), restart the Cilium
+agent so it re-applies `fq`:
+
+```bash
+kubectl -n kube-system rollout restart ds/cilium && kubectl -n kube-system rollout status ds/cilium
 ```
 
 ### 3.3 NIC multiqueue — maintenance window (workstation)
@@ -148,7 +165,7 @@ Verify: `Combined: 6`, and `mq` with one `fq` per queue.
 ssh ubuntu@192.168.50.55 'ethtool -l eth0; tc qdisc show dev eth0 | head'
 ```
 
-If Combined is below 6:
+`Combined: 1` before this change is expected (pre-set maximum 1: Proxmox exposes a single queue pair, so `ethtool -L` cannot raise it from inside the guest). If Combined is below 6 afterwards:
 
 ```bash
 ssh ubuntu@192.168.50.55 'sudo ethtool -L eth0 combined 6'
@@ -258,7 +275,7 @@ systemctl enable --now fstrim.timer && lvs -o lv_name,data_percent,metadata_perc
 **Swappiness** — only if `swapon --show` lists swap:
 
 ```bash
-echo 'vm.swappiness = 10' > /etc/sysctl.d/90-swappiness.conf && sysctl --system
+echo 'vm.swappiness = 10' > /etc/sysctl.d/90-swappiness.conf && sysctl -p /etc/sysctl.d/90-swappiness.conf
 ```
 
 ### 4.3 Conditional changes

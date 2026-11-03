@@ -27,7 +27,7 @@ TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE,
 ### 2.3 Cloud-Init Hardening (`modules/proxmox/main.tf`)
 | Category | Configuration |
 |----------|--------------|
-| Kernel params | `fs.inotify.max_user_instances=8192`, `vm.max_map_count=262144`, `fs.file-max=2097152`, `vm.swappiness=1`, `net.ipv4.tcp_mtu_probing=1` (kubelet sets `kernel.panic=10`, `kernel.panic_on_oops=1`) |
+| Kernel params | `fs.inotify.max_user_instances=8192`, `fs.file-max=2097152`, `vm.swappiness=1`, `net.ipv4.tcp_mtu_probing=1`, `kernel.core_pattern=\|/bin/false` (Ubuntu sets `vm.max_map_count=1048576`; kubelet sets `kernel.panic=10`, `kernel.panic_on_oops=1`) |
 | Disk I/O | udev rule sets the `none` scheduler on the virtio-scsi disks (the host schedules I/O) |
 | System services | qemu-guest-agent (enabled/started); multipathd, snapd and motd-news disabled; journald capped at 100 MB |
 | VM NIC | virtio-net multiqueue, one queue pair per vCPU (`queues = var.cpu_cores`) |
