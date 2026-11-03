@@ -95,7 +95,7 @@ spec:
             # (no throttling jitter during traffic spikes), memory capped at 256Mi.
             requests:
               cpu: 25m
-              memory: 128Mi
+              memory: 32Mi # Sampled 14d working-set peak ~11Mi (2026-11-03).
             limits:
               memory: 256Mi
           startupProbe:

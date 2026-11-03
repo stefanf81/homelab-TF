@@ -8,7 +8,7 @@
 
 ### 1.1 JVM off-heap memory is unbounded → OOM-restart risk (HIGH) — ✅ RESOLVED
 
-> **Resolved:** The JVM sizing has been fixed. The backend uses deployment-supplied `JAVA_TOOL_OPTIONS` with `MaxRAMPercentage=50.0` for a 1 GiB heap at the 2 GiB limit, plus `MaxDirectMemorySize=256m` and `MaxMetaspaceSize=256m`, with Guaranteed QoS (`requests == limits == 2Gi/2000m`). See `BACKEND_INTEGRATION_CONTEXT.md` for the full contract.
+> **Resolved:** The backend uses deployment-supplied `JAVA_TOOL_OPTIONS` with `MaxRAMPercentage=50.0` for a 1 GiB heap at the unchanged 2 GiB limit, plus `MaxDirectMemorySize=256m` and `MaxMetaspaceSize=256m`. The configured memory request is 1536Mi. QoS is **Burstable**, not Guaranteed: CPU has a 500m request and no limit. See `BACKEND_INTEGRATION_CONTEXT.md` for the full contract.
 
 **Previous config (for reference):**
 ```
@@ -20,21 +20,66 @@ resources:
 
 **Current config** (`backend.yaml` + image Dockerfile):
 ```yaml
-# backend.yaml — JAVA_TOOL_OPTIONS (only GC/logging, no heap override)
+# backend.yaml — sizing and GC/logging owned by the deployment (excerpt)
 env:
   - name: JAVA_TOOL_OPTIONS
     value: >-
+      -XX:ActiveProcessorCount=2 -XX:MaxRAMPercentage=50.0
       -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError
       -XX:+UseStringDeduplication -XX:+AlwaysPreTouch
       -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC
-      -XX:MaxMetaspaceSize=256m
-      -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags:filecount=5,filesize=10m
+      -XX:MaxDirectMemorySize=256m -XX:MaxMetaspaceSize=256m
+      -Xlog:gc*:file=/var/log/taskflow/gc.log:time,uptime,level,tags:filecount=5,filesize=10m
 resources:
-  requests: { cpu: "2000m", memory: "2Gi" }   # Guaranteed QoS
-  limits:   { cpu: "2000m", memory: "2Gi" }
+  requests: { cpu: "500m", memory: "1536Mi" }
+  limits:   { memory: "2Gi" }   # Burstable; deliberately no CPU limit
 ```
 The deployment owns heap sizing via `JAVA_TOOL_OPTIONS` and
 `-XX:MaxRAMPercentage=50.0` → 1 GiB heap at the 2 GiB limit.
+
+#### Memory request review (2026-11-03)
+
+This change adjusts scheduling reservations only; it does not lower actual memory use.
+All container memory limits and JVM/Go memory budgets remain unchanged.
+
+| Workload | Memory request before → configured | Evidence from available samples |
+|---|---|---|
+| Backend | 2048Mi → 1536Mi | Working-set peak ~588Mi; summed JVM heap peak ~221Mi; current container cgroup peak ~938Mi |
+| Grafana | 256Mi → 384Mi | Current 13.3.0 image working-set peak ~489Mi; ~1000Mi peak belongs to 13.2.4 |
+| VMSingle | 512Mi → 768Mi | Recent p95 ~791Mi; working-set peak ~897Mi |
+| Cilium agent | 256Mi → 384Mi | Recent p95 ~428Mi; working-set peak ~548Mi |
+| Trivy operator | 256Mi → 320Mi | Recent p95 ~270Mi; working-set peak ~350Mi |
+| Kyverno admission | 256Mi → 192Mi | Working-set peak ~163Mi |
+| Frontend | 128Mi → 32Mi | Working-set peak ~11Mi |
+
+Net for the current replica counts: **96Mi less requested memory**, no change to limits.
+The backend retains its 2Gi limit/1Gi heap, and Grafana retains its 1Gi limit and
+`goMemLimit.factor: 0.8` (~819MiB soft budget).
+
+**Method and limits of the evidence:** query `max(max_over_time(container_memory_working_set_bytes{namespace="taskflow",container="backend"}[14d])) / 1048576`
+(substitute namespace/container for other workloads). Aggregate across every matching
+series rather than overwriting series with duplicate pod/container keys. For JVM heap,
+sum the pools per pod before taking the time maximum:
+
+```promql
+max(max_over_time((sum by (pod) (
+  max by (pod, id) (jvm_memory_used_bytes{namespace="taskflow",area="heap"})
+))[14d:30s])) / 1048576
+```
+
+The earlier 148Mi figure was the largest individual heap pool, not total heap.
+The 14-day window has substantial telemetry gaps around October 30–November 1;
+available non-actuator traffic peaked at only ~0.15 requests/second over five minutes.
+These observations do not establish safety for smaller limits under load. Working set
+is not total cgroup memory; the ~938Mi backend cgroup peak is since container start,
+not a 14-day measurement. Sampled metrics can miss short spikes.
+
+Direct backend startup/GC logs showed normal operation. The frontend's previous
+failure was DNS resolution (`host not found in upstream`), not memory. No OOM
+indicators were found for these seven workloads in the available telemetry, but
+absence is not proof: backend/frontend logs were missing from Loki because Alloy's
+label selectors did not match their pod labels. That logging issue is not fixed by
+this memory change. Schema validation also cannot establish runtime memory safety.
 
 ### 1.2 ~~No observability → you are tuning blind~~ (RESOLVED)
 **Files:** `gitops/monitoring/platform/release.yaml` (VictoriaMetrics stack), `gitops/monitoring/app/vmservicescrapes.yaml` (app scrapes)
@@ -89,9 +134,9 @@ effective_cache_size=256MB    # matches realistic cache inside the 512Mi cap
 
 The value was corrected because the container is capped at 1024 MiB; Postgres RSS is ~384 (shared_buffers) + ~300 (30 backends × ~10 MiB) ≈ 800–900 MiB, leaving only ~300 MiB of real OS page cache. The original 1152 MiB hint (~2×+ reality) made index scans look artificially cheap and could cause suboptimal plans under load.
 
-### 2.2 Backend is "Burstable" QoS → CPU throttling under load (MEDIUM) — ✅ RESOLVED
+### 2.2 Backend CPU quota throttling — ✅ RESOLVED
 
-> **Resolved:** The backend now uses Guaranteed QoS (`requests == limits == 2000m` CPU).
+> **Resolved:** The backend deliberately has no CPU limit, so it can burst without a CFS quota. Its CPU request is 500m and QoS is Burstable. Burstable QoS itself does not cause CPU quota throttling; setting a CPU limit does. Memory usage above the request can increase eviction exposure under node memory pressure, and `taskflow-critical` priority does not guarantee immunity.
 
 **Previous config:**
 ```yaml
@@ -101,8 +146,8 @@ limits:   { cpu: "4000m" }    # Burstable QoS
 
 **Current config** (`backend.yaml`):
 ```yaml
-requests: { cpu: "2000m", memory: "2Gi" }
-limits:   { cpu: "2000m", memory: "2Gi" }   # Guaranteed QoS
+requests: { cpu: "500m", memory: "1536Mi" }
+limits:   { memory: "2Gi" }   # Burstable; no CPU quota
 ```
 
 ### 2.3 Redis is ephemeral → cold-cache stampede on restart (MEDIUM)
@@ -140,7 +185,7 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10, while `postgres-db.yaml`
 |---|--------|--------|
 | 1 | **Monitoring stack** (VictoriaMetrics + Grafana + kube-state-metrics + node-exporter) | ✅ Deployed and collecting metrics |
 | 2 | **Backend `/actuator/prometheus`** — Micrometer registry, exposure, SecurityConfig permit, and named VMServiceScrape port | ✅ Configured — the normal application and Flux deployment activates backend JVM, HTTP, and Hikari scrapes alongside existing PostgreSQL, Redis, node, and disk telemetry. |
-| 3 | **JVM sizing** — single source of truth via `MaxRAMPercentage=50.0` (deployment), Guaranteed QoS `2Gi` | ✅ Applied — `backend.yaml` `JAVA_TOOL_OPTIONS` owns heap/direct/metaspace sizing |
+| 3 | **JVM sizing** — single source of truth via `MaxRAMPercentage=50.0` (deployment), 2Gi limit / 1Gi heap, Burstable QoS | ✅ Configured — `backend.yaml` owns JVM sizing; memory request 1536Mi, with no CPU limit |
 | 4 | **`effective_cache_size`** corrected to 700MB, then 256MB | ✅ Applied in `postgres-db.yaml` |
 | 5 | **Postgres PVC** migrated from Longhorn to Proxmox CSI | ✅ Applied in `postgres-pvc.yaml` |
 | 6 | **Harden Redis** — add persistence PVC or document stampede risk | ✅ Resolved (intentionally ephemeral) — RDB/AOF are now explicitly disabled (`--save ""`, `--appendonly no`) so no stray bgsave/fork memory spikes occur; stampede risk on restart is accepted (see §2.3) |
@@ -166,24 +211,26 @@ competing sizing flags. See `BACKEND_INTEGRATION_CONTEXT.md` §0/§4 for the cor
 ## 5. Quick "before/after" for the highest-impact change (§1.1 / §item 3)
 
 ```yaml
-# backend.yaml — JAVA_TOOL_OPTIONS (deployment only adds GC/logging; heap owned by image)
+# backend.yaml — JAVA_TOOL_OPTIONS (deployment owns sizing and GC/logging; excerpt)
 env:
   - name: JAVA_TOOL_OPTIONS
     value: >-
+      -XX:ActiveProcessorCount=2 -XX:MaxRAMPercentage=50.0
       -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError
       -XX:+UseStringDeduplication -XX:+AlwaysPreTouch
       -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC
-      -XX:MaxMetaspaceSize=256m
-      -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags:filecount=5,filesize=10m
-      -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/dump.hprof
+      -XX:MaxDirectMemorySize=256m -XX:MaxMetaspaceSize=256m
+      -Xlog:gc*:file=/var/log/taskflow/gc.log:time,uptime,level,tags:filecount=5,filesize=10m
+      -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/taskflow
 # Deployment owns heap: -XX:MaxRAMPercentage=50.0  → 1GiB heap at the 2Gi limit
 resources:
-  requests: { cpu: "2000m", memory: "2Gi" }   # Guaranteed QoS
-  limits:   { cpu: "2000m", memory: "2Gi" }
+  requests: { cpu: "500m", memory: "1536Mi" }
+  limits:   { memory: "2Gi" }   # Burstable; no CPU quota
 ```
 
-This removes the rigid heap, fixes the silent direct-memory override, and bounds native memory
-so `ExitOnOutOfMemoryError` only triggers on a real leak, not a benign spike.
+This removes the rigid heap, fixes the silent direct-memory override, and caps direct memory
+and metaspace. Those caps do not bound all native allocations; OOM can still result from
+legitimate load as well as a leak.
 
 ---
 

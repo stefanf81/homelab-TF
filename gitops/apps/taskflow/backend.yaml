@@ -140,11 +140,14 @@ spec:
             # direct buffers + thread stacks + GC + native). 50% (not 75%) is deliberate:
             # this workload uses Lettuce + OpenTelemetry direct buffers plus ~200 Tomcat
             # thread stacks, and 75% historically OOMKilled the 2 Gi pod under load.
+            # Keep this limit/heap unchanged: the 2026-11-03 review found a summed heap
+            # peak of ~221MiB, but light observed traffic and gaps in the 14d telemetry
+            # do not establish safety under load. Only the scheduling request is reduced.
             #
             # Off-heap caps: MaxDirectMemorySize=256m caps Netty/Lettuce/OTLP direct
-            # buffers. MaxMetaspaceSize=256m caps class-metadata growth. With
-            # ExitOnOutOfMemoryError, capping native usage keeps a benign off-heap spike
-            # from killing the JVM and triggering a needless pod restart.
+            # buffers. MaxMetaspaceSize=256m caps class-metadata growth. These do not
+            # bound all native allocations or prevent OOM under legitimate load;
+            # ExitOnOutOfMemoryError exits if an allocation hits a JVM memory cap.
             #
             # CPU count: -XX:ActiveProcessorCount=2. The container has no CPU limit
             # (docs/reports/PERF_DEEP_DIVE_2026-10.md §3), and without one the JVM would size GC
@@ -153,8 +156,8 @@ spec:
             #
             # Behavioral tuning:
             #  - UseG1GC + MaxGCPauseMillis=100: latency-bounded GC for request/response.
-            #  - AlwaysPreTouch: commits the heap at startup (steady-state trade-off —
-            #    eliminates first-touch page faults at the cost of slower pod boot).
+            #  - AlwaysPreTouch: touches committed heap pages (including the initial
+            #    heap at startup), not the entire maximum heap reservation.
             #  - UseStringDeduplication: modest heap reduction for string-heavy workloads.
             #  - ParallelRefProcEnabled: speeds GC reference processing.
             #  - DisableExplicitGC: blocks Full GCs triggered by System.gc() calls.
@@ -205,16 +208,17 @@ spec:
             # throttles the JVM's bursts (JIT, GC, start-up) even on an idle node; the old
             # 2-CPU request reserved a third of the node and left no room for the rolling
             # update's surge pod. Under contention the request guarantees this share.
-            # Memory: request == limit, so usage never exceeds the request and the pod is
-            # the last eviction candidate (with taskflow-critical priority). 2Gi total − 1Gi
-            # heap (MaxRAMPercentage=50.0 in JAVA_TOOL_OPTIONS — see env block above) −
-            # 256Mi metaspace − 256Mi direct ≈ 1GiB for thread stacks/GC/native libs. The
-            # app must not need >1 GiB heap under load or this will OOM. MALLOC_ARENA_MAX=2
-            # (env above) additionally caps glibc arena padding with no throughput cost
+            # Memory: reserve 1536Mi against a ~588Mi sampled 14d working-set peak and
+            # ~938Mi cgroup peak since this container started (reviewed 2026-11-03).
+            # Retain the 2Gi limit and 1Gi heap pending a representative load test.
+            # This frees scheduling headroom, not actual RAM. With no CPU limit the pod
+            # remains Burstable (not Guaranteed); usage can exceed its memory request,
+            # and taskflow-critical priority does not guarantee immunity from eviction.
+            # MALLOC_ARENA_MAX=2 (env above) additionally caps glibc arena padding
             # (BENCHMARKS.md §51).
             requests:
               cpu: 500m
-              memory: 2Gi
+              memory: 1536Mi
             limits:
               memory: 2Gi
           startupProbe:
