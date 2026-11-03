@@ -651,6 +651,24 @@ Per-volume result (5-minute sample, 2026-11-03): VM root disk 94.9 GB/day, Victo
   sqlite3 -readonly -column /var/lib/rancher/k3s/server/db/state.db "SELECT COUNT(*) AS writes, name FROM kine WHERE id > (SELECT MAX(id)-3000 FROM kine) AND name LIKE '/registry/leases/%' GROUP BY name ORDER BY writes DESC LIMIT 25"
   ```
 
+- **Result, 30 min after the Flux, VictoriaMetrics and lease changes (2026-11-03):**
+
+  | Measure | Before | After |
+|---|---|---|
+  | VM root disk (host `dm-*`) | 94.9 GB/day | 17.4 GB/day |
+  | Thin-pool metadata (`pve-data_tmeta`) | 11.6 | 0.6 |
+  | VictoriaMetrics PVC (host) | 11.6 | 4.8 |
+  | Thin pool total (`pve-data_tdata`) | 122 | 28.6 |
+  | `k3s-server` (guest `write_bytes`) | 59.5 | 24.1 |
+  | `kustomize-controller` (guest) | 16.6 | ~0 |
+
+  The metadata churn came from Flux's `/tmp` file churn, not from the root mount's online
+  `discard`, so the root mount stays as it is. Leases now renew every ~15s (37 writes per 540 s
+  window against the node lease's 54); the busiest is the Cilium L2 announcement lease (5s).
+  At ~30 GB/day the NVMe reaches the vendor's 100 % estimate in roughly 8-9 years instead of ~13
+  months; confirm with the 24 h `Data Units Written` delta. journald rose to 4.1 GB/day right
+  after the restarts: check the noisiest unit before acting.
+
 - k3s: the breakdown by object type used above:
 
   ```bash
