@@ -43,12 +43,16 @@ spec:
       image:
         # renovate: datasource=docker depName=falcosecurity/falcosidekick
         tag: 2.35.1
+      # 256Mi limit: both replicas were OOM-killed at the 128Mi limit (anon-rss
+      # ~128-130 MB) two minutes after the 2026-11-03 reboot, when every pod starts
+      # at once, Falco emits a burst of events and sidekick reloads its PolicyReport.
+      # Steady use is far lower; the request (scheduling) stays 64Mi.
       resources:
         requests:
           cpu: 10m
           memory: 64Mi
         limits:
-          memory: 128Mi
+          memory: 256Mi
       config:
         policyreport:
           enabled: true
