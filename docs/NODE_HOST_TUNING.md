@@ -252,13 +252,19 @@ Proxmox CSI disks and do not count here.
 sudo du -xh --max-depth=4 /var/lib /var/log 2>/dev/null | sort -rh | head -20
 ```
 
-One-off cleanup of images no container uses (Jobs/CronJobs re-pull on their next run):
+One-off cleanup of images no container uses (Jobs/CronJobs re-pull on their next run).
+`crictl`'s default 2 s timeout is too short for hundreds of images (`DeadlineExceeded`);
+containerd then frees the layers asynchronously, so `df` drops a minute or so later:
 
 ```bash
-sudo k3s crictl rmi --prune && df -h /
+sudo k3s crictl --timeout=2m rmi --prune; sudo k3s crictl images -q | wc -l
 ```
 
-Keep it from growing back:
+```bash
+df -h /; sudo du -sh /var/lib/rancher/k3s/agent/containerd/*
+```
+
+Keep it from growing back (the restart is what loads the drop-in):
 
 ```bash
 sudo tee /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-image-gc.conf <<'EOF'
@@ -276,10 +282,17 @@ sudo systemctl restart k3s
 
 Leftovers worth removing once confirmed unused:
 
-- `/var/lib/longhorn` (Longhorn replica data). Confirm no PV still references it first:
-  `kubectl get pv -o wide | grep -i longhorn` must print nothing.
+- `/var/lib/longhorn` (Longhorn replica data, 277 MB; removed 2026-11-03). Confirm no PV
+  still references it first. On the node the kubeconfig is root-only, so use `sudo k3s kubectl`:
+  `sudo k3s kubectl get pv -o wide | grep -i longhorn` must print nothing.
 - Old k3s binary directories in `/var/lib/rancher/k3s/data` (~250 MB each, one per k3s
-  upgrade). Keep the ones `current` and `previous` point to.
+  upgrade). Keep the ones `current` and `previous` point to, and any a running process
+  still uses: container shims started under an older k3s keep running from its directory
+  (k3s restarts with `KillMode=process`), and deleting it breaks exec/stop for those pods.
+
+```bash
+sudo ls -la /var/lib/rancher/k3s/data/; sudo ls -l /proc/[0-9]*/exe 2>/dev/null | grep -oE 'k3s/data/[0-9a-f]{12}' | sort | uniq -c
+```
 
 ### 3.6 Further node checks
 
