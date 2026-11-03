@@ -153,6 +153,7 @@ spec:
         resources:
           requests:
             cpu: 100m
+            # Review 2026-11-03: recent p95 ~791Mi, sampled 14d peak ~897Mi.
             memory: 768Mi
           limits:
             # Memory (not CPU) protects the node. No CPU limit: a cap throttled
@@ -383,17 +384,16 @@ spec:
       admin:
         existingSecret: grafana-admin
       resources:
-        # Grafana idles ~350-400Mi and spikes past 500Mi (Go heap/GC + Bleve search
-        # index). The old 512Mi limit sat below that peak and OOMKilled the
-        # container repeatedly. The 14d peak reached 995Mi (2026-11-03), within 3% of
-        # the previous 1Gi limit, so the limit is 1280Mi; the request reflects steady use.
+        # Review 2026-11-03: Grafana 13.3.0 sampled working-set peak ~489Mi, current
+        # use ~400Mi. Raise the request, not the 1Gi limit. The ~1000Mi historical
+        # peak belongs to 13.2.4 and does not demonstrate pressure on this version.
         requests:
           cpu: 50m
           memory: 384Mi
         limits:
-          memory: 1280Mi
+          memory: 1Gi
       # The chart sets GOMEMLIMIT for the grafana-server process only, but the
-      # backend plugin processes share the container limit. 0.8 (1024MiB of 1280Mi) keeps
-      # ~256Mi for the remaining plugins instead of the default 0.9 (1152MiB).
+      # backend plugin processes share the container limit. 0.8 (819MiB) keeps
+      # ~200Mi for the remaining plugins instead of the default 0.9 (921MiB).
       goMemLimit:
         factor: 0.8

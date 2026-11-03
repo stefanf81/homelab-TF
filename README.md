@@ -221,7 +221,7 @@ To ensure production-grade security, resiliency, and performance on a single-nod
 * **Proxmox CSI Storage:** PostgreSQL PVC (`postgres-pvc.yaml`) uses **10Gi** storage on the `proxmox-csi` StorageClass, enabling dynamic disk attachments and hypervisor-level backups.
 * **PostgreSQL RAM Tuning:** `shared_buffers = 128MB`, `effective_cache_size = 256MB`, `work_mem = 8MB`, `maintenance_work_mem = 64MB`, `max_connections = 50` within a 512MiB container budget (sized to actual ~17MB data size).
 * **Redis Cache Protection:** Ephemeral L2 cache running with `--maxmemory 64mb` and `--maxmemory-policy allkeys-lru` within a 128MiB container budget.
-* **JVM Heap & Off-Heap Guard:** Spring Boot backend uses `MaxRAMPercentage=50.0` (768 MiB heap at 1.5 GiB limit) with bounded off-heap (`MaxMetaspaceSize=256m`) and Guaranteed QoS (`requests == limits = 1536Mi`).
+* **JVM Heap & Off-Heap Guard:** Spring Boot backend uses `MaxRAMPercentage=50.0` (1 GiB heap at a 2 GiB limit) with bounded off-heap (`MaxMetaspaceSize=256m`, `MaxDirectMemorySize=256m`). Its memory request is 1536Mi; QoS is Burstable because CPU has no limit.
 
 ### 4. Provider Plugin Cache
 OpenTofu is configured via `Makefile` to use project-local plugin caching (`.terraform/providers-cache`), avoiding re-downloading large provider binaries (`bpg/proxmox`) on every run.
