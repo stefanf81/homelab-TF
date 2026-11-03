@@ -98,8 +98,8 @@ printf 'net.ipv4.tcp_mtu_probing = 1\nkernel.core_pattern = |/bin/false\n' | sud
 Use `sysctl -p <file>`, not `sysctl --system`, on a running node. `--system` re-applies every
 file: Ubuntu's `55-bufferbloat.conf` sets `net.core.default_qdisc` back to `fq_codel` over
 Cilium's runtime `fq`, and `10-coredump-debian.conf` resets `kernel.core_pattern`. The
-existing `eth0` qdisc keeps `fq`, and Cilium re-applies its value on the next agent restart, but
-a NIC re-plug in between would get `fq_codel`. The rp_filter values survive because Cilium
+existing `eth0` qdisc keeps `fq`, and Cilium's sysctl reconciler puts `fq` back on its own
+(observed on the live node within minutes, no restart). The rp_filter values survive because Cilium
 keeps them in `99-zzz-override_cilium.conf`.
 
 I/O scheduler rule:
@@ -128,8 +128,8 @@ Verify: `1`, `|/bin/false`, `1048576`, `fq` with `bbr`, `[none]`, and `inactive`
 sysctl net.ipv4.tcp_mtu_probing kernel.core_pattern vm.max_map_count net.core.default_qdisc net.ipv4.tcp_congestion_control; cat /sys/block/sd*/queue/scheduler; systemctl is-active iscsid.socket iscsid multipathd snapd.socket snapd motd-news.timer
 ```
 
-If `default_qdisc` shows `fq_codel` (for example after a `sysctl --system`), restart the Cilium
-agent so it re-applies `fq`:
+If `default_qdisc` still shows `fq_codel` a few minutes after a `sysctl --system`, restart the
+Cilium agent so it re-applies `fq`:
 
 ```bash
 kubectl -n kube-system rollout restart ds/cilium && kubectl -n kube-system rollout status ds/cilium
