@@ -53,7 +53,8 @@ this document. In order of effect:
 
 1. **More RAM in the host** (the Ryzen 5 7430U board takes DDR4 SO-DIMMs). Removes the problem.
 2. **Smaller VM: 12 GiB** (`memory_size` default 12288). Applied 2026-11-03: the guest has
-   11 GiB, with the NIC multiqueue change in the same reboot.
+   11 GiB, with the NIC multiqueue change in the same reboot. Host afterwards: 2.1 GiB available (was 241 MiB),
+   swap in use 887 MiB (was 2.2 GiB).
 3. **Host `vm.swappiness = 10`** (§4.2): done 2026-11-03.
 4. **Keep KSM on**; HA services stopped (§4.2): done 2026-11-03.
 
@@ -476,6 +477,9 @@ uses to find the disk); Proxmox applies it at the next VM reboot:
 ```bash
 qm set 900 --scsi2 local-lvm:vm-9999-pvc-4299b1b3-248e-416e-ab15-28d71c74098a,backup=0,cache=writethrough,discard=on,iothread=1,replicate=0,size=8G,ssd=1,wwn=0x5056432d49443032
 ```
+
+Applied at the 2026-11-03 reboot: after `fstrim -av` the volume went from 61.62 % to 24.21 % and
+the thin pool to 8.72 %. Check with `qm pending 900` that no `new` lines remain.
 
 ```bash
 systemctl enable --now fstrim.timer && lvs -o lv_name,data_percent,metadata_percent pve
