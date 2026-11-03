@@ -6,6 +6,7 @@
 |---|---|
 | `ARCHITECTURE.md` | System overview, known limitations |
 | `PERFORMANCE.md` | Resource sizing, RPO/RTO notes |
+| `NODE_HOST_TUNING.md` | Ubuntu node and Proxmox host tuning runbook (commands, risks, evidence) |
 | `GATEWAY_ACCESS_GUIDE.md`, `HUBBLE_SETUP.md` | Access and networking |
 | `KYVERNO_POLICY_ENGINE.md`, `FALCO_RUNTIME_SECURITY.md`, `TRIVY_SECURITY_SCANNING.md` | Security tooling |
 | `ABUSEIPDB_CILIUM_BLOCKLIST.md`, `CORAZA_CONFIGURATION.md`, `TASKFLOW_WAF_ARCHITECTURE.md`, `TASKFLOW_WAF_RUNBOOK.md` | Edge protection |

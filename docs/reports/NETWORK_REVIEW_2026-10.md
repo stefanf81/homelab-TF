@@ -422,8 +422,8 @@ says so correctly).
 | ECDSA, DNS-01, wildcard certificate | REL-05, PERF-09 | ❌ Open (HTTP-01 issuers, RSA key) |
 | Cloudflare Tunnel; then `enableAlpn` | SEC-01 | ❌ Open (router port-forward) |
 | Native routing + `bpfClockProbe` | Cilium review 1a | ❌ Open (planned window) |
-| virtio-net multiqueue | Cilium review #2 | ✅ `queues = var.cpu_cores` in Terraform (applies as a NIC hot-replug; see `PERFORMANCE.md` §6) |
-| `tcp_mtu_probing` | §2.5 | ✅ In the cloud-init snippet; running node needs the manual `sysctl` step (`PERFORMANCE.md` §6) |
+| virtio-net multiqueue | Cilium review #2 | ✅ `queues = var.cpu_cores` in Terraform (applies as a NIC hot-replug; see `NODE_HOST_TUNING.md` §3.3) |
+| `tcp_mtu_probing` | §2.5 | ✅ In the cloud-init snippet; running node needs the manual `sysctl` step (`NODE_HOST_TUNING.md` §3.2) |
 | Cilium agent/operator dashboards | Cilium review #3 | ❌ Open (none in `monitoring/app/dashboards/`) |
 | Longer L2-announcement lease timers | Cilium review #4 | ❌ Open |
 | L2 interface regex `eno*`/`ens*`; Gateway IP in its own pool | Backlog #10 | ❌ Open (`^eth`/`^enp`; `.201` inside the shared `.200–.250` pool) |
