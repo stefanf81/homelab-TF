@@ -29,12 +29,12 @@ Measure before and after (§5) rather than assuming a gain.
 
 | # | Change | Layer | Benefit | Risk | Verdict |
 |---|---|---|---|---|---|
-| 1 | CPU governor `performance` | Host | The only change that touches every request: no frequency ramp-up latency | More idle power and heat; thermal throttling on small fanless hosts can cancel it | Do it, check temperatures |
+| 1 | CPU governor `performance` | Host | The only change that touches every request: no frequency ramp-up latency | More idle power and heat; thermal throttling on small fanless hosts can cancel it | Already set on this host (`amd-pstate-epp`, governor and EPP `performance`, 2026-11-03) |
 | 2 | `net.ipv4.tcp_mtu_probing = 1` | Node | Prevents stalls of Cloudflare → Envoy connections when PMTU ICMP is dropped (PPPoE/DS-Lite uplinks) | None known; only activates after a black hole is detected | Do it (in Terraform) |
-| 3 | Proxmox VE 8 → 9 | Host | Security support (PVE 8 is past end of life), newer kernel/KVM | **Highest risk on the list**: major Debian upgrade, NIC renames, provider/CSI compatibility | Do it in its own window, after a backup |
+| 3 | Proxmox VE 8 → 9 | Host | Security support (PVE 8 is past end of life), newer kernel/KVM | **Highest risk on the list**: major Debian upgrade, NIC renames, provider/CSI compatibility | Done: host runs PVE 9.2 (kernel 7.0), checked 2026-11-03 |
 | 4 | virtio-net multiqueue (`queues = cpu_cores`) | VM | RX/TX softirq over all vCPUs; one `fq` leaf per queue. Only matters when one vCPU saturates on network work | NIC hot-replug on apply (short outage); slightly more CPU per packet | Do it (in Terraform), in a window |
-| 5 | KSM off | Host | Frees host CPU — only if `ksmtuned` is actually scanning (it starts below ~20 % free RAM) | If host RAM is tight, memory use rises and the host may swap | Only with RAM headroom |
-| 6 | Microcode | Host | Stability and security, not speed | Rare regressions; mitigations can cost a little speed | Do it |
+| 5 | KSM off | Host | Frees host CPU — only if `ksmtuned` is actually scanning (it starts below ~20 % free RAM) | If host RAM is tight, memory use rises and the host may swap | **Keep KSM on here**: the host has 15 GiB for a 14 GiB VM, and KSM merges ~370 MiB (2026-11-03) |
+| 6 | Microcode | Host | Stability and security, not speed | Rare regressions; mitigations can cost a little speed | Already installed (`amd64-microcode`) |
 | 7 | HA services off (standalone) | Host | Fewer small writes to the boot SSD | Must be re-enabled before clustering | Optional |
 | 8 | Drop `nfs-common`/`open-iscsi`/multipath; disable snapd, motd-news | Node | Tiny: fewer daemons, tens of MB RAM | Reinstall if NFS/iSCSI storage is added; snaps (e.g. Livepatch) stop working | Done (in Terraform) |
 | 9 | Guest I/O scheduler `none` (udev rule) | Node | Probably none: the kernel already picks `none` for multi-queue disks; the rule pins it | On a single-queue disk the guest loses read/write prioritisation (minor) | Done (in Terraform); harmless |
@@ -43,6 +43,23 @@ Measure before and after (§5) rather than assuming a gain.
 | 12 | Drop `vm.max_map_count = 262144` | Node | Keeps Ubuntu's higher default (1048576) instead of lowering it | None | Done (in Terraform) |
 | 13 | Graceful node shutdown (kubelet drop-in, 90s / 20s) | Node | Reliability: on a Proxmox shutdown or reboot, pods stop within their grace periods (Postgres checkpoints instead of crash recovery, backend drains) | Shutdown/reboot takes up to 90s longer; unattended-upgrades' 30s logind cap must be masked | Done (in Terraform; live node 2026-11-03) |
 | 14 | Kubelet image GC: `imageMaximumGCAge: 168h`, thresholds 75 % / 65 % | Node | Prevents root-disk exhaustion: with the defaults (85 %/80 %, no age limit) GC never ran and containerd reached 68 GB of 96 GB (269 images, 2026-11-03). At ~90 % the kubelet evicts pods, a full outage on one node | Images of idle CronJobs/Jobs are re-pulled after a week | Done (in Terraform) |
+
+### Host memory (finding 2026-11-03)
+
+The host has 15 GiB of RAM and VM 900 is given 14 GiB (`memory = balloon = 14336`). The host had
+241 MiB available, 2.2 GiB in swap at `vm.swappiness = 60`, and KSM merging ~370 MiB. Guest
+memory the host has swapped out stalls the VM on disk I/O, which outweighs every other tweak in
+this document. In order of effect:
+
+1. **More RAM in the host** (the Ryzen 5 7430U board takes DDR4 SO-DIMMs). Removes the problem.
+2. **Smaller VM** (`memory_size` in `terraform.tfvars`, e.g. 12288), sized from the guest's real
+   use and the pods' memory requests; needs a VM reboot.
+3. **Host `vm.swappiness = 10`** (§4.2) so page cache goes before QEMU memory. It cannot create
+   memory, but it reduces swapping of guest pages.
+4. **Keep KSM on**, and stop the unused HA services (§4.2) for a little more headroom.
+
+Ballooning is not the answer for Kubernetes: shrinking the guest under the kubelet's feet
+invalidates its allocatable memory and leads to OOM kills.
 
 ### Conditional host changes (only if a check finds the problem)
 
@@ -148,7 +165,7 @@ make plan
 ```
 
 Expected: `proxmox_virtual_environment_file.cloud_config` **replaced** and
-`proxmox_virtual_environment_vm.k3s_node` **updated in place** (`~ queues = 6`).
+`proxmox_virtual_environment_vm.k3s_node` **updated in place** (`~ queues = <cpu_cores>`; 10 on this host).
 **If the VM shows `-/+` (replace), stop** — that would rebuild the node.
 
 ```bash
@@ -161,7 +178,7 @@ Proxmox hot-replugs the NIC (short outage). Reboot the node so Cilium attaches c
 ssh ubuntu@192.168.50.55 'sudo reboot'
 ```
 
-Verify: `Combined: 6`, and `mq` with one `fq` per queue.
+Verify: `Combined:` equal to `cpu_cores` (10 on this host), and `mq` with one `fq` per queue.
 
 ```bash
 ssh ubuntu@192.168.50.55 'ethtool -l eth0; tc qdisc show dev eth0 | head'
@@ -451,6 +468,8 @@ ethtool -K eno1 tso off gso off
 Persist with `post-up /usr/sbin/ethtool -K eno1 tso off gso off` in the same stanza.
 
 ### 4.4 Proxmox VE 8 → 9 upgrade (own window, backup first)
+
+Done on this host (PVE 9.2, kernel 7.0, checked 2026-11-03); kept for reference.
 
 From the [official guide](https://pve.proxmox.com/wiki/Upgrade_from_8_to_9) for a
 standalone node on the no-subscription repository; read its known-issues list first.

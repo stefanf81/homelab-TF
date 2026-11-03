@@ -15,7 +15,7 @@ Before starting bring-up from scratch, ensure the following CLI tools are instal
 
 `mise install` (see `mise.toml`) installs pinned versions of OpenTofu, kubectl, Kustomize, Helm, kubeconform, tflint, Flux, SOPS and age; `make lint` and `make validate-gitops` run the same checks as CI.
 
-You also need access to a **Proxmox VE 8.x** host with an API token (with VM creation, Datastore, and Network privileges).
+You also need access to a **Proxmox VE 9.x** host (8.x is end of life) with an API token (with VM creation, Datastore, and Network privileges).
 
 ---
 
