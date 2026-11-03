@@ -53,9 +53,13 @@ gitops/
 
 ## 3. Enabled scanners
 
-All scanners run as short-lived Kubernetes Jobs triggered by the operator watching
-workloads (and on a schedule for compliance). The `targetNamespaces` is empty = **all
-namespaces**.
+Workload scans run as short-lived Kubernetes Jobs triggered by the operator watching
+the explicit application namespace allowlist: **`taskflow,abuseipdb`**. Scan jobs still
+run in `trivy-system`. New application namespaces must be added to `targetNamespaces`
+explicitly; `default` and platform namespaces are not workload scan targets.
+Cluster-scoped RBAC, infra assessment and scheduled compliance remain enabled, but
+namespaced report coverage follows the scoped cache; this is not an all-namespace
+workload assessment.
 
 | Scanner                        | Value in `operator.*`                | Report CR(s) produced |
 |--------------------------------|--------------------------------------|------------------------|
@@ -76,6 +80,33 @@ Additional operator values:
 - Scan concurrency is deliberately capped for the single‑node homelab:
   `scanJobsConcurrentLimit: 1`, `concurrentScanJobsLimit: 1`, `scanNodeCollectorLimit: 1`,
   `scanJobTimeout: 5m`.
+
+### Why an allowlist instead of namespace exclusions (2026-11-03)
+
+Chart 0.38.1 runs operator 0.36.1. Its workload controller attaches
+`InstallModePredicate` only to `For(...)`, not the `Owns(VulnerabilityReport)`,
+`Owns(ExposedSecretReport)` and `Owns(SbomReport)` watches. Owned-report events can
+therefore enqueue an excluded workload, and reconciliation does not recheck namespace
+scope. This is also described in [upstream issue #2817](https://github.com/aquasecurity/trivy-operator/issues/2817).
+
+The live operator had the correct exclusion environment variable, but old Cilium reports
+from August/September still existed in `kube-system`. A rescan created seven scanner
+containers for the same Cilium image (including its init containers): 7 × 512Mi = 3584Mi
+of scheduling requests, above the single node's ~2.34Gi headroom. The job could not
+schedule and subsequently expired; the five-minute timeout prevents it remaining
+Pending indefinitely. `scanJobsConcurrentLimit: 1` limits jobs, not containers inside
+one job.
+
+The allowlist selects MultiNamespace install mode, which scopes the manager cache to
+the application namespaces plus `trivy-system`. Old system reports no longer enter
+the owned-report watches. Scanner requests (512Mi), limits (2Gi), init-container
+coverage and concurrency are unchanged. Existing reports are not deleted by this
+change and can remain visible to other consumers. An already queued scan may persist
+until its normal timeout; no imperative cleanup is required.
+
+Source inspected: [`workload.go`](https://github.com/aquasecurity/trivy-operator/blob/v0.36.1/pkg/vulnerabilityreport/controller/workload.go),
+[`predicate.go`](https://github.com/aquasecurity/trivy-operator/blob/v0.36.1/pkg/operator/predicate/predicate.go),
+[`operator.go`](https://github.com/aquasecurity/trivy-operator/blob/v0.36.1/pkg/operator/operator.go).
 
 ---
 

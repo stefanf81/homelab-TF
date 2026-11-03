@@ -611,6 +611,36 @@ echo $GITHUB_TOKEN | docker login ghcr.io -u stefanf81 --password-stdin
 
 ### Container Runtime Errors
 
+#### nginx exits after a reboot: `host not found in upstream` / `host not found in resolver`
+
+The November 3, 2026 reboot exposed two startup DNS dependencies:
+
+- The frontend's plain upstream server name was resolved while nginx loaded its
+  configuration. CoreDNS being temporarily unavailable made nginx exit, even though
+  serving static files does not need the backend.
+- Loki gateway's chart-default `resolver kube-dns.kube-system.svc.cluster.local.;`
+  requires DNS to find the DNS server itself. This also fails during config loading.
+
+The frontend override in `gitops/apps/taskflow/frontend.yaml` now supplies an
+upstream-level literal resolver IP and `server ... resolve;`. The pinned frontend
+image (nginx 1.30.6) already provides `zone backend_upstream 64k`, required for runtime
+resolution. Do not remove the zone or deploy an older nginx image without re-running
+the smoke test. Loki's `gateway.nginxConfig.resolver` similarly uses a literal IP;
+its upstream proxy already resolves at runtime.
+
+Both use **10.43.0.10**, matching the `kube-dns` ClusterIP pinned in
+`gitops/infrastructure/controllers/coredns/release.yaml`. The regression test checks
+that all three agree. If changing the cluster DNS IP, update all three files.
+
+This allows nginx to start and serve local static/health endpoints before DNS is
+available; upstream requests can still fail until DNS and their backends recover.
+It does not change NetworkPolicy or bypass the WAF routes. In particular, the
+frontend's direct backend proxy is not the production API path. Increasing a startup
+probe's allowance alone would not fix an nginx configuration-time exit.
+
+Run `python3 gitops/monitoring/tests/validate-nginx-dns-startup.py` to reproduce the
+old failures and test the revised configs in disposable network-disabled containers.
+
 #### `exec /usr/bin/caddy: operation not permitted`
 
 **Cause**: The Caddy binary has file capabilities (`cap_net_bind_service`) set by `xcaddy build`. With `allowPrivilegeEscalation: false`, the kernel blocks execution of capability-enhanced binaries for non-root users.

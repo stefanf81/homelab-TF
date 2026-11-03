@@ -2,11 +2,12 @@
 # runtime resolver, written for Docker Compose. Neither exists in a pod, so nginx logged
 # "backend could not be resolved" every 30 seconds. This file is mounted over
 # /etc/nginx/upstream-server.conf, the image's per-deployment override (docs/deployment/README.md
-# in taskflow-enterprise, option A): a plain server line, with neither `resolve` nor
-# `resolver`. nginx resolves the name once at startup through the pod's /etc/resolv.conf,
-# and the ClusterIP stays fixed for the Service's lifetime. Do NOT add `resolve` without an
-# upstream-level `resolver`: images from 2026-11-01 on fail to start without one.
-# This works with the old and the new image. NetworkPolicy only admits backend-waf to the
+# in taskflow-enterprise, option A). The pinned nginx 1.30.6 image provides the upstream's
+# shared-memory zone. `resolve` defers backend DNS lookup until runtime, so temporary
+# CoreDNS unavailability cannot prevent nginx serving static files after a node reboot.
+# The resolver must be a literal IP (not a hostname that itself needs DNS at startup),
+# matching the kube-dns Service IP pinned in controllers/coredns/release.yaml.
+# NetworkPolicy only admits backend-waf to the
 # backend and the Gateway routes /api to backend-waf, so this proxy path is not used.
 apiVersion: v1
 kind: ConfigMap
@@ -18,7 +19,9 @@ metadata:
     app.kubernetes.io/part-of: taskflow
 data:
   upstream-server.conf: |
-    server backend.taskflow.svc.cluster.local:8080;
+    resolver 10.43.0.10 valid=30s ipv6=off;
+    resolver_timeout 2s;
+    server backend.taskflow.svc.cluster.local:8080 resolve;
 ---
 apiVersion: apps/v1
 kind: Deployment

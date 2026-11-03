@@ -10,6 +10,9 @@ on:
       - main
     paths:
       - 'gitops/apps/taskflow/*-waf.yaml'
+      - 'gitops/apps/taskflow/frontend.yaml'
+      - 'gitops/infrastructure/controllers/coredns/release.yaml'
+      - 'gitops/infrastructure/controllers/trivy-operator/**'
       - 'gitops/monitoring/logging/loki-datasource.yaml'
       - 'gitops/monitoring/logging/kustomization.yaml'
       - 'gitops/monitoring/logging/dashboards/**'
@@ -27,6 +30,9 @@ on:
       - main
     paths:
       - 'gitops/apps/taskflow/*-waf.yaml'
+      - 'gitops/apps/taskflow/frontend.yaml'
+      - 'gitops/infrastructure/controllers/coredns/release.yaml'
+      - 'gitops/infrastructure/controllers/trivy-operator/**'
       - 'gitops/monitoring/logging/loki-datasource.yaml'
       - 'gitops/monitoring/logging/kustomization.yaml'
       - 'gitops/monitoring/logging/dashboards/**'
