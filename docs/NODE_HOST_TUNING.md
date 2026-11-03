@@ -185,7 +185,13 @@ With the 12 GiB default, the plan also shows `~ dedicated`/`~ floating` 14336 �
 `memory_size` in your `terraform.tfvars` too). The provider reboots the VM for the memory change
 (`reboot_after_update`, default true), which also applies the NIC change; if it only prints a
 warning, reboot manually as below.
-**If the VM shows `-/+` (replace), stop** — that would rebuild the node.
+**If the VM shows `-/+` (replace), stop** — that would rebuild the node. The usual cause is a
+`# forces replacement` on `disk.file_id` (the cloud image download was re-pinned or replaced);
+`disk[0].file_id` is in `ignore_changes` since 2026-11-03 for that reason. Replacing the
+`proxmox_download_file` itself (a re-download of the image) and the `cloud_config` snippet is
+harmless: the VM's disk is an independent copy, and the snippet is ignored on the running node.
+Also check `memory_size` in `terraform.tfvars`: an explicit `14336` there overrides the new
+12 GiB default.
 
 ```bash
 make provision

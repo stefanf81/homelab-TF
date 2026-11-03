@@ -207,7 +207,10 @@ resource "proxmox_virtual_environment_vm" "k3s_node" {
     # user_data_file_id is ForceNew: never replace the node because the cloud-init
     # snippet changed. Snippet edits apply to new nodes; the running node is changed
     # by hand (docs/reports/REMEDIATION_PLAN_2026-10.md REL-00).
-    ignore_changes = [tags, initialization[0].user_account, network_device[0].mac_address, initialization[0].user_data_file_id]
+    # disk[0].file_id is ForceNew too: the root disk is a one-time copy of the cloud
+    # image, so re-pinning or re-downloading the image must not rebuild the node
+    # (the release-20260927 pin replaced the download and planned a VM replacement).
+    ignore_changes = [tags, initialization[0].user_account, network_device[0].mac_address, initialization[0].user_data_file_id, disk[0].file_id]
   }
 }
 
