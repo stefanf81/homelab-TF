@@ -25,6 +25,13 @@ spec:
     # No Web UI: Flux state is already visible through the flux CLI and Grafana.
     web:
       enabled: false
+    # Leader election: renew every 15s instead of 5s (lease 60s, renew 40s), ~0.2
+    # writes/s less to k3s's SQLite datastore (2026-11-03, docs/NODE_HOST_TUNING.md
+    # §4.5). Chart 0.62.1 renders extraArgs verbatim and sets no such flags.
+    extraArgs:
+      - --leader-election-lease-duration=60s
+      - --leader-election-renew-deadline=40s
+      - --leader-election-retry-period=15s
     resources:
       requests:
         cpu: 50m
