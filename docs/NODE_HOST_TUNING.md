@@ -614,7 +614,17 @@ Per-volume result (5-minute sample, 2026-11-03): VM root disk 94.9 GB/day, Victo
   `gitops/monitoring/platform/release.yaml`. The VictoriaMetrics docs recommend bigger intervals
   for flash storage with limited write cycles; unflushed data stays queryable, an unclean shutdown
   loses up to 1m. Re-measure the `4299b1b3` volume a day after Flux applies it.
-- VM root disk: find the writing process first (per-process `write_bytes` sample in the guest).
+- VM root disk, per-process sample in the guest (2026-11-03): `k3s-server` 59.5 GB/day (kine/SQLite),
+  `kustomize-controller` 16.6, VictoriaMetrics 7.1, journald 1.8, everything else < 1.
+- Flux: `kustomize-controller` and `helm-controller` build in memory (`temp` emptyDir with
+  `medium: Memory`, a `spec.kustomize.patches` entry in
+  `gitops/infrastructure/flux-instance/flux-instance.yaml`). The artifact is ~3.3 MB unpacked, so
+  16.6 GB/day means ~5,000 builds a day: check for a Kustomization stuck retrying.
+- k3s: break the SQLite writes down by object type before tuning (leases, events, reports):
+
+  ```bash
+  DB=/var/lib/rancher/k3s/server/db/state.db; A=$(sqlite3 -readonly $DB 'SELECT MAX(id) FROM kine'); sleep 300; sqlite3 -readonly -column $DB "SELECT COUNT(*) AS writes, SUM(LENGTH(value)+IFNULL(LENGTH(old_value),0))/1024 AS kib, substr(name,1,instr(substr(name,11),'/')+9) AS kind FROM kine WHERE id > $A GROUP BY kind ORDER BY kib DESC LIMIT 15"
+  ```
   The thin-metadata churn points at the root mount's online `discard` (§3.6).
 
 and over 24 h from the drive's counter (one unit = 512,000 bytes):

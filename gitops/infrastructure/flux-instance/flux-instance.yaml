@@ -43,3 +43,21 @@ spec:
     path: ./gitops/clusters/taskflow
     pullSecret: flux-system
     interval: 1m
+  # In-memory builds: kustomize-controller unpacks and builds the source artifact
+  # in its `temp` emptyDir on every reconcile. On the node's root disk that was
+  # ~16.6 GB/day of writes to the host's only NVMe (2026-11-03, per-process
+  # sample, docs/NODE_HOST_TUNING.md §4.5). tmpfs counts against each controller's
+  # memory limit; the artifact is ~3.3 MB unpacked, so builds need a few tens of MB.
+  # Patch as documented for FluxInstance (`temp` is volume 0 in both controllers).
+  kustomize:
+    patches:
+      - target:
+          kind: Deployment
+          name: "(kustomize-controller|helm-controller)"
+        patch: |
+          - op: replace
+            path: /spec/template/spec/volumes/0
+            value:
+              name: temp
+              emptyDir:
+                medium: Memory
