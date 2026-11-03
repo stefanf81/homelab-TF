@@ -322,7 +322,7 @@ TF/
 │   │   ├── controllers/             # HelmRelease + Repository for platform add-ons
 │   │   │   ├── cilium/release.yaml  # Cilium v1.20.4 (eBPF, Gateway API, L2 announcements)
 │   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.3) with Let's Encrypt certificate automation
-│   │   │   ├── coredns/             # CoreDNS HelmRelease (v1.49.0) — replaces K3s packaged addon
+│   │   │   ├── coredns/             # CoreDNS HelmRelease (v1.50.0) — replaces K3s packaged addon
 │   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
 │   │   │   ├── gateway-api/         # Standard Gateway API CRDs + TLSRoute CRD
 │   │   │   ├── kyverno/             # Kyverno policy engine (v3.9.2 / Kyverno v1.19.2)
@@ -496,7 +496,7 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
 - **`infra-controllers`** (`gitops/infrastructure/controllers/`) installs the platform via HelmRelease objects:
   - `cilium/release.yaml` — Cilium 1.20.4 with `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, `l2announcements.enabled: true`. This is what makes the Gateway API and external IPs work.
   - `cert-manager/release.yaml` — cert-manager 1.21.3 (fully active, managing TLS certificates).
-  - `coredns/release.yaml` — CoreDNS 1.49.0 (replaces K3s packaged addon, manages DNS with custom LAN hairpin-NAT overrides).
+  - `coredns/release.yaml` — CoreDNS 1.50.0 (replaces K3s packaged addon, manages DNS with custom LAN hairpin-NAT overrides).
   - `proxmox-csi/` — Proxmox CSI driver (dynamic storage provisioning of virtual disks with native hypervisor backup integration).
   - `gateway-api/` — the standard Gateway API CRDs.
   - `kyverno/release.yaml` — Kyverno 3.9.2 (Kubernetes-native policy engine, mutating + validating admission webhook).
