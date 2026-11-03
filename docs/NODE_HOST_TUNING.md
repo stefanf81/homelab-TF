@@ -582,6 +582,36 @@ Afterwards:
 
 ---
 
+### 4.5 Host housekeeping and SSD wear (2026-11-03)
+
+Applied on the host:
+
+- `rpcbind` stopped and masked (only needed for NFS storage; listened on `0.0.0.0:111`).
+  Undo: `systemctl unmask rpcbind.service rpcbind.socket && systemctl enable --now rpcbind.socket`.
+- Unused Wi-Fi driver blacklisted in `/etc/modprobe.d/blacklist-wifi.conf` (`rtw89_8852be`,
+  `rtw89_8852b`, `rtw89_8852b_common`) and unloaded.
+
+Open: SSH key-only (`PermitRootLogin prohibit-password`, `PasswordAuthentication no` in
+`/etc/ssh/sshd_config.d/10-hardening.conf`; test `ssh -o PreferredAuthentications=publickey root@<host>`
+first: the OpenTofu provider logs in as root with the SSH agent key, so key-only is compatible),
+a notification target (Datacenter → Notifications; smartd warnings otherwise stay in root's local
+mailbox), `lm-sensors`, and backups to a target off this SSD (REL-02).
+
+**SSD wear.** The only disk is a 512 GB OEM NVMe (`WPBSNM8-512GMP`): 10 % used after 10.8 TB written in
+1,050 power-on hours (~250 GB/day on average), which puts the vendor's 100 % mark (~108 TB) about
+13 months out. After the memory and image fixes a 10-minute sample showed ~99 GB/day (~2.7 years).
+Measure per volume on the host (exclude `pve-data-tpool`/`pve-data_tdata`, the pool totals):
+
+```bash
+s(){ for d in /sys/block/dm-*; do echo "$(cat $d/dm/name) $(awk '{print $7}' $d/stat)"; done; }; s >/tmp/w1; sleep 300; s >/tmp/w2; join <(sort /tmp/w1) <(sort /tmp/w2) | awk '{printf "%8.1f GB/day  %s\n", ($3-$2)*512*288/1e9, $1}' | sort -rn | head -15
+```
+
+and over 24 h from the drive's counter (one unit = 512,000 bytes):
+
+```bash
+smartctl -A /dev/nvme0n1 | grep 'Data Units Written'; date
+```
+
 ## 5. Measuring
 
 Change one thing at a time; compare a week of baseline with the period after.
