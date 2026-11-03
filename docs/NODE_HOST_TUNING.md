@@ -645,8 +645,11 @@ Per-volume result (5-minute sample, 2026-11-03): VM root disk 94.9 GB/day, Victo
   | Flux Operator | `flux-operator/release.yaml`, `extraArgs` | `--leader-election-*` |
   | Proxmox CSI attacher/provisioner/resizer | `proxmox-csi/release.yaml`, `controller.<sidecar>.args` | `--leader-election-*` |
 
-  Expected: ~3.9 fewer writes/s (~7.3 → ~3.4). Verify with the per-lease count over the last
-  3,000 rows (the node lease renews every 10s, so its count gives the window length):
+  Expected: ~3.9 fewer writes/s (~7.3 → ~3.4). Compare leases with the per-lease count over the
+  last 3,000 IDs. kine compacts every 5 minutes and deletes superseded revisions, so part of that
+  ID range is gone (on 2026-11-03 only ~1,560 of 3,000 IDs remained): use the counts for ratios
+  between leases only. For absolute rates use the `id > A` sample over 5 minutes, which counts
+  rows before compaction removes them:
 
   ```bash
   sqlite3 -readonly -column /var/lib/rancher/k3s/server/db/state.db "SELECT COUNT(*) AS writes, name FROM kine WHERE id > (SELECT MAX(id)-3000 FROM kine) AND name LIKE '/registry/leases/%' GROUP BY name ORDER BY writes DESC LIMIT 25"
