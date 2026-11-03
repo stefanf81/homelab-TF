@@ -66,6 +66,7 @@ spec:
         - cert-manager
         - kyverno
         - csi-proxmox
+        - trivy-system
       rules:
         - apiGroups: [""]
           resources: ["pods", "pods/log"]
@@ -146,13 +147,46 @@ spec:
           }
 
           // ---- Spring Boot backend: dedicated pipeline for multiline handling ---
-          discovery.relabel "taskflow_backend" {
+          // Most TaskFlow pod templates still use only `app`, not the standard
+          // name/part-of labels on their parent Deployment. Normalize pod identity
+          // once: prefer a non-empty standard name, otherwise use the legacy app.
+          discovery.relabel "taskflow_identity" {
             targets = discovery.kubernetes.pods.targets
 
             rule {
+              source_labels = ["__meta_kubernetes_pod_label_app"]
+              regex = "(.+)"
+              target_label = "__tmp_taskflow_application"
+              action = "replace"
+            }
+
+            rule {
               source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+              regex = "(.+)"
+              target_label = "__tmp_taskflow_application"
+              action = "replace"
+            }
+          }
+
+          discovery.relabel "taskflow_backend" {
+            targets = discovery.relabel.taskflow_identity.output
+
+            rule {
+              source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_component"]
+              regex = "waf"
+              action = "drop"
+            }
+
+            rule {
+              source_labels = ["__tmp_taskflow_application"]
               regex = "taskflow-backend"
               action = "keep"
+            }
+
+            rule {
+              source_labels = ["__tmp_taskflow_application"]
+              target_label = "application"
+              action = "replace"
             }
 
             rule {
@@ -182,11 +216,13 @@ spec:
 
           // ---- All other TaskFlow workloads (frontend, PostgreSQL, Redis, ...) --
           discovery.relabel "taskflow_apps" {
-            targets = discovery.kubernetes.pods.targets
+            targets = discovery.relabel.taskflow_identity.output
 
+            // Discovery already scopes this stream to taskflow. Require a known
+            // pod identity, not a part-of label many pod templates do not carry.
             rule {
-              source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_part_of"]
-              regex = "taskflow"
+              source_labels = ["__tmp_taskflow_application"]
+              regex = ".+"
               action = "keep"
             }
 
@@ -197,13 +233,15 @@ spec:
             }
 
             rule {
-              source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
-              regex = "taskflow-backend"
+              // Also fail closed on WAF names if a component label is missing:
+              // raw WAF logs must never bypass their redaction/metrics pipeline.
+              source_labels = ["__tmp_taskflow_application"]
+              regex = "taskflow-backend|taskflow-(frontend|backend)-waf"
               action = "drop"
             }
 
             rule {
-              source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+              source_labels = ["__tmp_taskflow_application"]
               target_label = "application"
               action = "replace"
             }
@@ -320,12 +358,21 @@ spec:
           discovery.kubernetes "platform" {
             role = "pod"
             namespaces {
-              names = ["monitoring", "falco", "flux-system", "kube-system", "cert-manager", "kyverno", "csi-proxmox"]
+              names = ["monitoring", "falco", "flux-system", "kube-system", "cert-manager", "kyverno", "csi-proxmox", "trivy-system"]
             }
           }
 
           discovery.relabel "platform" {
             targets = discovery.kubernetes.platform.targets
+
+            // Trivy operator/server logs are useful; scanner/collector job stdout
+            // contains machine-generated reports (including secret findings), not
+            // controller diagnostics. Do not ship those result payloads to Loki.
+            rule {
+              source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_label_app_kubernetes_io_managed_by"]
+              regex = "trivy-system;trivy-operator"
+              action = "drop"
+            }
 
             // The Loki gateway writes an access-log line for every push, including
             // Alloy's own: shipping it would make each push generate the next one.
