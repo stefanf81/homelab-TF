@@ -43,6 +43,7 @@ Measure before and after (§5) rather than assuming a gain.
 | 12 | Drop `vm.max_map_count = 262144` | Node | Keeps Ubuntu's higher default (1048576) instead of lowering it | None | Done (in Terraform) |
 | 13 | Graceful node shutdown (kubelet drop-in, 90s / 20s) | Node | Reliability: on a Proxmox shutdown or reboot, pods stop within their grace periods (Postgres checkpoints instead of crash recovery, backend drains) | Shutdown/reboot takes up to 90s longer; unattended-upgrades' 30s logind cap must be masked | Done (in Terraform; live node 2026-11-03), verified on the 2026-11-03 reboot |
 | 14 | Kubelet image GC: `imageMaximumGCAge: 168h`, thresholds 75 % / 65 % | Node | Prevents root-disk exhaustion: with the defaults (85 %/80 %, no age limit) GC never ran and containerd reached 68 GB of 96 GB (269 images, 2026-11-03). At ~90 % the kubelet evicts pods, a full outage on one node | Images of idle CronJobs/Jobs are re-pulled after a week | Done (in Terraform) |
+| 15 | Mask `serial-getty@ttyS0` | Node | The cloud image's serial getty fails without a serial port and restarted every ~10s (623 times in ~1h45m), five journal entries each: most of journald's ~4 GB/day of writes | No serial login (there is no serial port; add `serial0` to the VM if a `qm terminal` console is wanted) | Done (in Terraform; live node 2026-11-03) |
 
 ### Host memory (finding 2026-11-03)
 
@@ -107,7 +108,7 @@ invalidates its allocatable memory and leads to OOM kills.
 
 ### 3.1 In Terraform (new nodes)
 
-`modules/proxmox/main.tf` carries items 2, 4 and 8–14. The cloud-init snippet
+`modules/proxmox/main.tf` carries items 2, 4 and 8–15. The cloud-init snippet
 is in `ignore_changes` (`reports/REMEDIATION_PLAN_2026-10.md` REL-00), so it only
 reaches newly built nodes. The running node needs §3.2, and the NIC change needs §3.3.
 

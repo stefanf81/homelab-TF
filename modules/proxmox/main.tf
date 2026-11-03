@@ -113,6 +113,10 @@ runcmd:
   # Not needed on a k3s node: storage is Proxmox CSI (virtio disks, no iSCSI or
   # multipath), and snapd/motd-news only add background wakeups.
   - systemctl disable --now multipathd.service multipathd.socket snapd.service snapd.socket snapd.seeded.service motd-news.timer || true
+  # The Ubuntu cloud image enables a getty on ttyS0, but the VM has no serial port:
+  # agetty fails ("Input/output error") and systemd restarts it every ~10s, five
+  # journal entries per restart (most of journald's ~4 GB/day of writes, 2026-11-03).
+  - systemctl mask --now serial-getty@ttyS0.service
   # unattended-upgrades caps logind's InhibitDelayMaxSec at 30s, which sorts after
   # the kubelet's own override and would cut graceful shutdown short. Mask it
   # before k3s starts (workaround from the Kubernetes node-shutdown docs).
