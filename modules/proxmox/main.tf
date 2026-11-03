@@ -88,6 +88,18 @@ write_files:
       shutdownGracePeriod: 90s
       shutdownGracePeriodCriticalPods: 20s
 
+  # Image GC: the kubelet default (85 % high / 80 % low, no age limit) never ran
+  # on the 96 GB root disk, and Flux image automation's old TaskFlow images grew
+  # containerd to 68 GB (269 images, 2026-11-03). Unused images are now removed
+  # after a week, and threshold GC starts earlier.
+  - path: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-image-gc.conf
+    content: |
+      apiVersion: kubelet.config.k8s.io/v1beta1
+      kind: KubeletConfiguration
+      imageMaximumGCAge: 168h
+      imageGCHighThresholdPercent: 75
+      imageGCLowThresholdPercent: 65
+
 runcmd:
   # Load the runtime attachment before K3s starts; container profiles stay enforced.
   - apparmor_parser -r /etc/apparmor.d/runc

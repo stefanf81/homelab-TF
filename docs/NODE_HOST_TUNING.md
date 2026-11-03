@@ -42,6 +42,7 @@ Measure before and after (§5) rather than assuming a gain.
 | 11 | `kernel.core_pattern = \|/bin/false` | Node | Prevents disk fill: the node had the relative pattern `core` (systemd `10-coredump-debian.conf`) and k3s runs with `LimitCORE=infinity`, so a crashing container writes a full core file (JVM ~2 GiB into its writable layer, PostgreSQL into its PVC) | No core dumps for debugging; set a path temporarily when needed | Done (in Terraform) |
 | 12 | Drop `vm.max_map_count = 262144` | Node | Keeps Ubuntu's higher default (1048576) instead of lowering it | None | Done (in Terraform) |
 | 13 | Graceful node shutdown (kubelet drop-in, 90s / 20s) | Node | Reliability: on a Proxmox shutdown or reboot, pods stop within their grace periods (Postgres checkpoints instead of crash recovery, backend drains) | Shutdown/reboot takes up to 90s longer; unattended-upgrades' 30s logind cap must be masked | Done (in Terraform; live node 2026-11-03) |
+| 14 | Kubelet image GC: `imageMaximumGCAge: 168h`, thresholds 75 % / 65 % | Node | Prevents root-disk exhaustion: with the defaults (85 %/80 %, no age limit) GC never ran and containerd reached 68 GB of 96 GB (269 images, 2026-11-03). At ~90 % the kubelet evicts pods, a full outage on one node | Images of idle CronJobs/Jobs are re-pulled after a week | Done (in Terraform) |
 
 ### Conditional host changes (only if a check finds the problem)
 
@@ -73,7 +74,7 @@ Measure before and after (§5) rather than assuming a gain.
 
 ### 3.1 In Terraform (new nodes)
 
-`modules/proxmox/main.tf` carries items 2, 4 and 8–13. The cloud-init snippet
+`modules/proxmox/main.tf` carries items 2, 4 and 8–14. The cloud-init snippet
 is in `ignore_changes` (`reports/REMEDIATION_PLAN_2026-10.md` REL-00), so it only
 reaches newly built nodes. The running node needs §3.2, and the NIC change needs §3.3.
 
@@ -241,7 +242,46 @@ kubectl delete pods -A --field-selector=status.phase=Failed
 
 Rollback: delete the drop-in, remove the `/dev/null` symlink, restart k3s.
 
-### 3.5 Further node checks
+### 3.5 Root disk: image cleanup (k3s restart for the GC settings)
+
+On 2026-11-03 the root disk was 79 % full: `/var/lib/rancher/k3s/agent/containerd` held
+68 GB in 269 images. Data volumes (Postgres, VictoriaMetrics, Loki, Alloy) are separate
+Proxmox CSI disks and do not count here.
+
+```bash
+sudo du -xh --max-depth=4 /var/lib /var/log 2>/dev/null | sort -rh | head -20
+```
+
+One-off cleanup of images no container uses (Jobs/CronJobs re-pull on their next run):
+
+```bash
+sudo k3s crictl rmi --prune && df -h /
+```
+
+Keep it from growing back:
+
+```bash
+sudo tee /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-image-gc.conf <<'EOF'
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+imageMaximumGCAge: 168h
+imageGCHighThresholdPercent: 75
+imageGCLowThresholdPercent: 65
+EOF
+```
+
+```bash
+sudo systemctl restart k3s
+```
+
+Leftovers worth removing once confirmed unused:
+
+- `/var/lib/longhorn` (Longhorn replica data). Confirm no PV still references it first:
+  `kubectl get pv -o wide | grep -i longhorn` must print nothing.
+- Old k3s binary directories in `/var/lib/rancher/k3s/data` (~250 MB each, one per k3s
+  upgrade). Keep the ones `current` and `previous` point to.
+
+### 3.6 Further node checks
 
 ```bash
 findmnt -no OPTIONS /; cat /sys/kernel/mm/transparent_hugepage/enabled; ls -lh /var/lib/rancher/k3s/server/db/; df -h /; dpkg -l needrestart unattended-upgrades 2>/dev/null | grep ^ii
