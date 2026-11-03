@@ -61,3 +61,20 @@ spec:
               name: temp
               emptyDir:
                 medium: Memory
+      # Leader election: renew every 15s instead of 5s (lease 60s, renew deadline
+      # 40s; defaults 35s/30s/5s). The six controllers' Leases were ~0.9 of the ~7
+      # writes/s to k3s's SQLite datastore (kine breakdown 2026-11-03,
+      # docs/NODE_HOST_TUNING.md §4.5). Single replicas: a takeover after a crash
+      # waits up to 60s. client-go requires renew > 1.2 x retry and lease > renew.
+      - target:
+          kind: Deployment
+        patch: |
+          - op: add
+            path: /spec/template/spec/containers/0/args/-
+            value: --leader-election-lease-duration=60s
+          - op: add
+            path: /spec/template/spec/containers/0/args/-
+            value: --leader-election-renew-deadline=40s
+          - op: add
+            path: /spec/template/spec/containers/0/args/-
+            value: --leader-election-retry-period=15s
