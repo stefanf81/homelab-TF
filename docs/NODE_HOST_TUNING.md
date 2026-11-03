@@ -41,6 +41,7 @@ Measure before and after (§5) rather than assuming a gain.
 | 10 | Remove `net.bridge.bridge-nf-call-*` | Node | Cleanup; Cilium has no bridge on the pod path | None | Done (in Terraform) |
 | 11 | `kernel.core_pattern = \|/bin/false` | Node | Prevents disk fill: the node had the relative pattern `core` (systemd `10-coredump-debian.conf`) and k3s runs with `LimitCORE=infinity`, so a crashing container writes a full core file (JVM ~2 GiB into its writable layer, PostgreSQL into its PVC) | No core dumps for debugging; set a path temporarily when needed | Done (in Terraform) |
 | 12 | Drop `vm.max_map_count = 262144` | Node | Keeps Ubuntu's higher default (1048576) instead of lowering it | None | Done (in Terraform) |
+| 13 | Graceful node shutdown (kubelet drop-in, 90s / 20s) | Node | Reliability: on a Proxmox shutdown or reboot, pods stop within their grace periods (Postgres checkpoints instead of crash recovery, backend drains) | Shutdown/reboot takes up to 90s longer; unattended-upgrades' 30s logind cap must be masked | Done (in Terraform; live node 2026-11-03) |
 
 ### Conditional host changes (only if a check finds the problem)
 
@@ -72,7 +73,7 @@ Measure before and after (§5) rather than assuming a gain.
 
 ### 3.1 In Terraform (new nodes)
 
-`modules/proxmox/main.tf` carries items 2, 4 and 8–12. The cloud-init snippet
+`modules/proxmox/main.tf` carries items 2, 4 and 8–13. The cloud-init snippet
 is in `ignore_changes` (`reports/REMEDIATION_PLAN_2026-10.md` REL-00), so it only
 reaches newly built nodes. The running node needs §3.2, and the NIC change needs §3.3.
 
@@ -178,6 +179,84 @@ kubectl -n kube-system exec ds/cilium -- cilium-dbg status | grep -iE 'Bandwidth
 ```
 
 Rollback: remove the `queues` line from `modules/proxmox/main.tf` and run `make provision`.
+
+### 3.4 Graceful node shutdown (k3s restart: ~30–90 s without the API, pods keep running)
+
+The kubelet default (`0s`) is off, so a Proxmox shutdown lets systemd kill the pods.
+k3s reads kubelet drop-ins from `/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/`
+([k3s docs](https://docs.k3s.io/installation/configuration)). These fields are not
+command-line flags, so the REL-00 flag-override problem does not apply.
+
+Check for unattended-upgrades' logind cap (`unattended-upgrades-logind-maxdelay.conf`
+limits the delay to 30s; see the [Kubernetes docs](https://kubernetes.io/docs/concepts/cluster-administration/node-shutdown/)):
+
+```bash
+ls /usr/lib/systemd/logind.conf.d/ /etc/systemd/logind.conf.d/ 2>/dev/null
+```
+
+```bash
+sudo tee /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-graceful-shutdown.conf <<'EOF'
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+shutdownGracePeriod: 90s
+shutdownGracePeriodCriticalPods: 20s
+EOF
+```
+
+If the check listed the unattended-upgrades file, mask it:
+
+```bash
+sudo mkdir -p /etc/systemd/logind.conf.d && sudo ln -sf /dev/null /etc/systemd/logind.conf.d/unattended-upgrades-logind-maxdelay.conf
+```
+
+```bash
+sudo systemctl restart k3s
+```
+
+Verify: a `delay` lock from the kubelet, and `t 90000000` (90 s in µs).
+
+```bash
+systemd-inhibit --list | grep -i kubelet; busctl get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager InhibitDelayMaxUSec
+```
+
+Prove it on the next planned reboot. Pods stopped by a graceful shutdown end as `Failed`
+("Pod was terminated in response to imminent node shutdown") and their Deployments create new
+ones, so check the old pods and the new Postgres log. The old Postgres pod's log should end with
+`database system is shut down`, and the grep on the new pod should print nothing (no
+`automatic recovery`).
+
+```bash
+kubectl get pods -A --field-selector=status.phase=Failed
+```
+
+```bash
+kubectl -n taskflow logs deploy/postgres-db | grep -iE 'recovery|not properly shut down'
+```
+
+Then remove the old pod objects:
+
+```bash
+kubectl delete pods -A --field-selector=status.phase=Failed
+```
+
+Rollback: delete the drop-in, remove the `/dev/null` symlink, restart k3s.
+
+### 3.5 Further node checks
+
+```bash
+findmnt -no OPTIONS /; cat /sys/kernel/mm/transparent_hugepage/enabled; ls -lh /var/lib/rancher/k3s/server/db/; df -h /; dpkg -l needrestart unattended-upgrades 2>/dev/null | grep ^ii
+```
+
+| Finding | Meaning |
+|---|---|
+| `discard` in the root mount options | Online TRIM on every delete; with container churn on thin LVM the weekly `fstrim.timer` alone is usually cheaper. Measure before changing |
+| THP `[always]` | Hurts Redis/Postgres latency; set `madvise`. `[madvise]` (Ubuntu default) is fine |
+| `state.db` hundreds of MB | kine only VACUUMs when k3s starts; a restart reclaims the space. Tens of MB is fine |
+| needrestart / unattended-upgrades installed | Services restart and kernels install on their own schedule; belongs with REL-08 (planned reboots) |
+
+Optional, same drop-in: `serializeImagePulls: false` and `maxParallelImagePulls: 3` for faster
+recovery when many images must be pulled. `--disable-helm-controller` (unused: Flux manages Helm)
+is an install flag and waits for REL-00.
 
 ---
 

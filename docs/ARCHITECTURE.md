@@ -31,6 +31,7 @@ TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE,
 | Disk I/O | udev rule sets the `none` scheduler on the virtio-scsi disks (the host schedules I/O) |
 | System services | qemu-guest-agent (enabled/started); multipathd, snapd and motd-news disabled; journald capped at 100 MB |
 | VM NIC | virtio-net multiqueue, one queue pair per vCPU (`queues = var.cpu_cores`) |
+| Kubelet | Graceful node shutdown (`shutdownGracePeriod: 90s`, `shutdownGracePeriodCriticalPods: 20s`) via `/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-graceful-shutdown.conf`; unattended-upgrades' 30s logind cap masked |
 | k3s flags | `--flannel-backend=none --disable-network-policy --disable servicelb --disable traefik --disable coredns --disable metrics-server` |
 
 ### 2.4 Module Dependency Graph

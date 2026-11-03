@@ -77,6 +77,17 @@ write_files:
     content: |
       ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd[a-z]*", ATTR{queue/scheduler}="none"
 
+  # Graceful node shutdown: on a Proxmox shutdown/reboot the kubelet holds a
+  # logind delay lock and stops pods within their grace periods (Postgres 60s,
+  # backend 45s) instead of letting systemd kill them. 90s fits Proxmox's
+  # default 180s VM shutdown timeout. k3s reads drop-ins from this directory.
+  - path: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-graceful-shutdown.conf
+    content: |
+      apiVersion: kubelet.config.k8s.io/v1beta1
+      kind: KubeletConfiguration
+      shutdownGracePeriod: 90s
+      shutdownGracePeriodCriticalPods: 20s
+
 runcmd:
   # Load the runtime attachment before K3s starts; container profiles stay enforced.
   - apparmor_parser -r /etc/apparmor.d/runc
@@ -90,6 +101,11 @@ runcmd:
   # Not needed on a k3s node: storage is Proxmox CSI (virtio disks, no iSCSI or
   # multipath), and snapd/motd-news only add background wakeups.
   - systemctl disable --now multipathd.service multipathd.socket snapd.service snapd.socket snapd.seeded.service motd-news.timer || true
+  # unattended-upgrades caps logind's InhibitDelayMaxSec at 30s, which sorts after
+  # the kubelet's own override and would cut graceful shutdown short. Mask it
+  # before k3s starts (workaround from the Kubernetes node-shutdown docs).
+  - mkdir -p /etc/systemd/logind.conf.d
+  - ln -sf /dev/null /etc/systemd/logind.conf.d/unattended-upgrades-logind-maxdelay.conf
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
   - |
