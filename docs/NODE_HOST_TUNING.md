@@ -261,8 +261,10 @@ sudo k3s crictl --timeout=2m rmi --prune; sudo k3s crictl images -q | wc -l
 ```
 
 ```bash
-df -h /; sudo du -sh /var/lib/rancher/k3s/agent/containerd/*
+df -h /; sudo sh -c 'du -sh /var/lib/rancher/k3s/agent/containerd/*'
 ```
+
+Result on 2026-11-03: 269 → 73 images, root disk 78 % → 23 % (75 → 22 GB).
 
 Keep it from growing back (the restart is what loads the drop-in):
 
@@ -279,6 +281,15 @@ EOF
 ```bash
 sudo systemctl restart k3s
 ```
+
+Confirm the kubelet loaded both drop-ins (§3.4 and this one):
+
+```bash
+sudo k3s kubectl get --raw "/api/v1/nodes/$(sudo k3s kubectl get nodes -o jsonpath='{.items[0].metadata.name}')/proxy/configz" | jq '.kubeletconfig | {shutdownGracePeriod, shutdownGracePeriodCriticalPods, imageMaximumGCAge, imageGCHighThresholdPercent, imageGCLowThresholdPercent}'
+```
+
+The other large root-disk user is the policy-reporter Trivy plugin's emptyDir (~1.6 GB): its
+local copy of the vulnerability database, re-downloaded on restart and not growing with images.
 
 Leftovers worth removing once confirmed unused:
 
