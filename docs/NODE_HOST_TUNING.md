@@ -16,8 +16,11 @@ Measure before and after (§5) rather than assuming a gain.
 **Done and verified:** everything in §2 marked Done; host swappiness 10, HA services off,
 `rpcbind` masked, Wi-Fi driver blacklisted, `discard=on` on every CSI disk (§4.2, §4.5); the
 SSD write reduction (thin pool 122 → 28.6 GB/day): VictoriaMetrics 1m flush, Flux in-memory
-builds, leader-election leases at 15s (§4.5); falcosidekick memory limit 128 → 256 Mi (both
-replicas were OOM-killed at 128 Mi right after the reboot, `falco/release.yaml`).
+builds, leader-election leases at 15s (§4.5).
+
+**Merged, not yet verified on the cluster:** falcosidekick memory limit 128 → 256 Mi (both
+replicas were OOM-killed at 128 Mi right after the reboot, `falco/release.yaml`) and the Cilium
+L2 lease at 15s (check `renewTime` steps of ~15 s on the `cilium-l2announce-…` Lease).
 
 **Open:** 24 h SSD write measurement (`Data Units Written` delta), SMART self-tests,
 notification target, SSH key-only, web UI 2FA, `lm-sensors`, backups (REL-02); details at the
