@@ -107,6 +107,12 @@ spec:
     gateway:
       enabled: true
       replicas: 1
+      nginxConfig:
+        # Match the kube-dns Service IP in controllers/coredns/release.yaml.
+        # The chart default names the DNS Service by hostname: nginx tries to
+        # resolve that hostname while loading config and exits if DNS is down.
+        # A literal resolver IP allows startup and later runtime DNS recovery.
+        resolver: "10.43.0.10 valid=30s ipv6=off"
       # Disable chart default hard anti-affinity which blocks pods on single-node homelab clusters
       affinity: ~
       service:

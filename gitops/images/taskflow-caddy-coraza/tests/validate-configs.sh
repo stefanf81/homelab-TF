@@ -47,6 +47,9 @@ ruby "$MON_TESTS/validate-dashboard-provisioning.rb" "$REPO_ROOT"
 echo "== validating pinned Helm renders and monitoring safety guards"
 ruby "$MON_TESTS/validate-monitoring-configs.rb"
 
+echo "== validating scan scope and nginx startup with DNS unavailable"
+python3 "$MON_TESTS/validate-nginx-dns-startup.py"
+
 echo "== testing WAF dashboard MetricsQL against disposable VictoriaMetrics"
 python3 "$MON_TESTS/validate-waf-dashboard-metrics.py"
 

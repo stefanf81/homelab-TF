@@ -26,10 +26,13 @@ spec:
       retries: 3
       remediateLastFailure: true
   values:
-    # Scan workload namespaces only: skip platform/system namespaces to save CPU
-    # on the single node, cut report noise, and avoid scanning infra images.
-    # (`security-scanning` is a leftover empty namespace, excluded defensively.)
-    excludeNamespaces: "kube-system,kube-public,kube-node-lease,flux-system,cert-manager,kyverno,monitoring,policy-reporter,trivy-system,csi-proxmox,falco,hubble-ui,renovate,security-scanning"
+    # Scope the manager cache to application namespaces, not just workload events.
+    # In operator 0.36.1, unfiltered Owns(report) watches bypass excludeNamespaces
+    # and re-enqueue excluded workloads with old reports (upstream issue #2817).
+    # MultiNamespace mode watches these namespaces plus trivy-system for scan jobs;
+    # existing system reports cannot trigger new image scans. Opt new app namespaces
+    # in here explicitly. Cluster-scoped scanners/compliance remain enabled below.
+    targetNamespaces: "taskflow,abuseipdb"
     trivy:
       ignoreUnfixed: false
       storageClassEnabled: true
@@ -87,7 +90,6 @@ spec:
         - k8s-pss-restricted-0.1
     trivyOperator:
       reportRecordFailedChecksOnly: true
-    targetNamespaces: ""
     resources:
       requests:
         cpu: 50m
