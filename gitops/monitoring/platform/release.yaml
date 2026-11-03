@@ -231,6 +231,19 @@ spec:
           memory: 64Mi
         limits:
           memory: 128Mi
+      # Leader election off: the operator renewed its Lease every 2s (~0.45 writes/s
+      # to k3s's SQLite datastore, which wrote ~59 GB/day to the only NVMe,
+      # 2026-11-03, docs/NODE_HOST_TUNING.md §4.5), and it has no retry-period flag
+      # to slow that down. The chart hard-codes --leader-elect; extraArgs render
+      # after it and Go's flag parsing keeps the last value. With one replica,
+      # Recreate guarantees two operators never reconcile at the same time (the
+      # chart default RollingUpdate would surge a second pod). rollingUpdate must be
+      # nulled: Helm merges it in from the chart default otherwise.
+      extraArgs:
+        leader-elect: "false"
+      strategy:
+        type: Recreate
+        rollingUpdate: null
 
     # Datasources provisioned by the stack. The list replaces the chart default, so
     # both default entries are repeated; only `jsonData.timeInterval` is new. Most
