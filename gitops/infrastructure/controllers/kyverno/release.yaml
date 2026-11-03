@@ -43,7 +43,8 @@ spec:
           leaderElectionRetryPeriod: 15s
         resources:
           requests:
-            memory: "256Mi"
+            # 14d peak 133Mi (2026-11-03).
+            memory: "192Mi"
             cpu: "50m"
           limits:
             memory: "512Mi"

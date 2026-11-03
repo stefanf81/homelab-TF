@@ -36,7 +36,7 @@ Defined in `gitops/apps/taskflow/backend.yaml`:
 | Liveness/readiness | `GET /actuator/health/liveness` and `/actuator/health/readiness` on 8080 | Probes already use these. Actuator health must stay enabled. |
 | Security context | `runAsNonRoot: true`, `UID/GID 10001`, `readOnlyRootFilesystem: true`, `capabilities.drop: [ALL]` | The image **must** run as 10001 with no writes to the image layer. Mount only `/tmp` (already provided). Log to **stdout/stderr**, not a file. |
 | Env (config) | `SPRING_PROFILES_ACTIVE=prod`, `APP_CORS_ALLOWED_ORIGINS`, secrets via `SPRING_SECURITY_PASSWORD` / `SPRING_DATASOURCE_PASSWORD` / `SPRING_DATA_REDIS_PASSWORD` (and `SPRING_REDIS_PASSWORD`) | Don't hard-code these; they come from ConfigMap/Secret. |
-| JVM heap | Owned by the deployment's `JAVA_TOOL_OPTIONS`: `-XX:MaxRAMPercentage=50.0` → 1GiB heap at the 2Gi limit | Preserve `MaxRAMPercentage=50.0`, `MaxDirectMemorySize=256m`, and `MaxMetaspaceSize=256m`; do not add competing heap flags in the image. The deployment is the single source of truth for JVM sizing. |
+| JVM heap | Owned by the deployment's `JAVA_TOOL_OPTIONS`: `-XX:MaxRAMPercentage=50.0` → 768MiB heap at the 1536Mi limit | Preserve `MaxRAMPercentage=50.0`, `MaxDirectMemorySize=256m`, and `MaxMetaspaceSize=256m`; do not add competing heap flags in the image. The deployment is the single source of truth for JVM sizing. |
 | Graceful shutdown | 45s termination grace | Configure `server.shutdown=graceful` so in-flight requests drain on rollout. |
 
 The backend **already** sends traces to Jaeger (OTLP `jaeger:4317`/`4318`) — that

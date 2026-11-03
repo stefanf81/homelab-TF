@@ -135,11 +135,13 @@ spec:
             # Never add -Xshare:* here: the JVM refuses to start when it is combined with
             # the image's -XX:AOTCache, regardless of argument order.
             #
-            # Heap: -XX:MaxRAMPercentage=50.0 sizes the heap to 50% of the 2Gi cgroup
-            # limit = 1 GiB, leaving ~1 GiB for off-heap (metaspace + Netty/Lettuce
+            # Heap: -XX:MaxRAMPercentage=50.0 sizes the heap to 50% of the 1.5Gi cgroup
+            # limit = 768 MiB, leaving ~768 MiB for off-heap (metaspace + Netty/Lettuce
             # direct buffers + thread stacks + GC + native). 50% (not 75%) is deliberate:
             # this workload uses Lettuce + OpenTelemetry direct buffers plus ~200 Tomcat
             # thread stacks, and 75% historically OOMKilled the 2 Gi pod under load.
+            # 14d observed (2026-11-03): heap used peak 148 MiB, container working set peak
+            # 588 MiB, so 768 MiB of heap is >5x real use.
             #
             # Off-heap caps: MaxDirectMemorySize=256m caps Netty/Lettuce/OTLP direct
             # buffers. MaxMetaspaceSize=256m caps class-metadata growth. With
@@ -206,17 +208,19 @@ spec:
             # 2-CPU request reserved a third of the node and left no room for the rolling
             # update's surge pod. Under contention the request guarantees this share.
             # Memory: request == limit, so usage never exceeds the request and the pod is
-            # the last eviction candidate (with taskflow-critical priority). 2Gi total − 1Gi
-            # heap (MaxRAMPercentage=50.0 in JAVA_TOOL_OPTIONS — see env block above) −
-            # 256Mi metaspace − 256Mi direct ≈ 1GiB for thread stacks/GC/native libs. The
-            # app must not need >1 GiB heap under load or this will OOM. MALLOC_ARENA_MAX=2
+            # the last eviction candidate (with taskflow-critical priority). 1.5Gi total −
+            # 768Mi heap (MaxRAMPercentage=50.0 in JAVA_TOOL_OPTIONS — see env block above) −
+            # 256Mi metaspace − 256Mi direct ≈ 256MiB for thread stacks/GC/native libs, which
+            # covers ~200 Tomcat stacks only because the caps are rarely all reached (real
+            # non-heap use is ~45 MiB). Was 2Gi against a 588 MiB 14d working-set peak. The
+            # app must not need >768 MiB heap under load or this will OOM. MALLOC_ARENA_MAX=2
             # (env above) additionally caps glibc arena padding with no throughput cost
             # (BENCHMARKS.md §51).
             requests:
               cpu: 500m
-              memory: 2Gi
+              memory: 1536Mi
             limits:
-              memory: 2Gi
+              memory: 1536Mi
           startupProbe:
             httpGet:
               path: /actuator/health/liveness

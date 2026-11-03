@@ -91,6 +91,7 @@ spec:
     resources:
       requests:
         cpu: 50m
-        memory: 256Mi
+        # Steady 290-350Mi, 14d peak 350Mi (2026-11-03).
+        memory: 320Mi
       limits:
         memory: 1Gi

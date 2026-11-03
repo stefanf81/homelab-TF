@@ -8,7 +8,7 @@
 
 ### 1.1 JVM off-heap memory is unbounded → OOM-restart risk (HIGH) — ✅ RESOLVED
 
-> **Resolved:** The JVM sizing has been fixed. The backend uses deployment-supplied `JAVA_TOOL_OPTIONS` with `MaxRAMPercentage=50.0` for a 1 GiB heap at the 2 GiB limit, plus `MaxDirectMemorySize=256m` and `MaxMetaspaceSize=256m`, with Guaranteed QoS (`requests == limits == 2Gi/2000m`). See `BACKEND_INTEGRATION_CONTEXT.md` for the full contract.
+> **Resolved:** The JVM sizing has been fixed. The backend uses deployment-supplied `JAVA_TOOL_OPTIONS` with `MaxRAMPercentage=50.0` for a 768 MiB heap at the 1.5 GiB limit (reduced from 1 GiB / 2 GiB on 2026-11-03: 14d heap peak 148 MiB, working-set peak 588 MiB), plus `MaxDirectMemorySize=256m` and `MaxMetaspaceSize=256m`, with Guaranteed QoS (`requests == limits`; memory 1536Mi, CPU originally 2000m). See `BACKEND_INTEGRATION_CONTEXT.md` for the full contract.
 
 **Previous config (for reference):**
 ```
@@ -140,7 +140,7 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10, while `postgres-db.yaml`
 |---|--------|--------|
 | 1 | **Monitoring stack** (VictoriaMetrics + Grafana + kube-state-metrics + node-exporter) | ✅ Deployed and collecting metrics |
 | 2 | **Backend `/actuator/prometheus`** — Micrometer registry, exposure, SecurityConfig permit, and named VMServiceScrape port | ✅ Configured — the normal application and Flux deployment activates backend JVM, HTTP, and Hikari scrapes alongside existing PostgreSQL, Redis, node, and disk telemetry. |
-| 3 | **JVM sizing** — single source of truth via `MaxRAMPercentage=50.0` (deployment), Guaranteed QoS `2Gi` | ✅ Applied — `backend.yaml` `JAVA_TOOL_OPTIONS` owns heap/direct/metaspace sizing |
+| 3 | **JVM sizing** — single source of truth via `MaxRAMPercentage=50.0` (deployment), Guaranteed QoS `1536Mi` | ✅ Applied — `backend.yaml` `JAVA_TOOL_OPTIONS` owns heap/direct/metaspace sizing |
 | 4 | **`effective_cache_size`** corrected to 700MB, then 256MB | ✅ Applied in `postgres-db.yaml` |
 | 5 | **Postgres PVC** migrated from Longhorn to Proxmox CSI | ✅ Applied in `postgres-pvc.yaml` |
 | 6 | **Harden Redis** — add persistence PVC or document stampede risk | ✅ Resolved (intentionally ephemeral) — RDB/AOF are now explicitly disabled (`--save ""`, `--appendonly no`) so no stray bgsave/fork memory spikes occur; stampede risk on restart is accepted (see §2.3) |
