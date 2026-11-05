@@ -5,7 +5,7 @@
 # (gitops/infrastructure/flux-instance/flux-instance.yaml) and kubectl on the k3s minor;
 # scripts/check-tool-versions.sh enforces both, and Renovate only proposes patches for them.
 [tools]
-opentofu    = "1.13.2"
+opentofu    = "1.13.8"
 kubectl     = "1.37.2"
 kustomize   = "5.8.3"
 helm        = "4.3.1"

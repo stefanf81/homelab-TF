@@ -53,6 +53,15 @@ spec:
     operator:
       replicas: 1 # Optimized for single-node cluster
       rollOutPods: true
+      # cilium-operator runs with hostNetwork: true and binds host ports (:9234, :9963).
+      # With the chart default (maxSurge: 25%, maxUnavailable: 50%) Kubernetes tries to
+      # schedule a surge pod before terminating the old one; on a single-node cluster
+      # the new pod fails hostPort/anti-affinity scheduling and churns ReplicaSet pods.
+      updateStrategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 0
+          maxUnavailable: 1
       # Leader election: renew every 15s instead of 2s. The operator's Lease was
       # rewritten every 2s, ~0.45 writes/s to k3s's SQLite datastore (~59 GB/day on
       # the only NVMe, 2026-11-03, docs/NODE_HOST_TUNING.md §4.5). The longer renew
