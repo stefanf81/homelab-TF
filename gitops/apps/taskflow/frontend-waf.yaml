@@ -206,7 +206,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: waf
-          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.7-coraza2.6.2-r6@sha256:d5f7c6c0a3e606186aee64fef6977e8f459dc4cee74ec30b7b4c46ae78ccd03b
+          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.8-coraza2.6.2-r7@sha256:04ef2bfbe2ed5af7991f4892e2b4692df222cffdff1189262ba5a9d835d225ac
           imagePullPolicy: IfNotPresent
           env:
             # No CPU limit (below), so Go would size GOMAXPROCS for every node CPU.
