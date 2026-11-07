@@ -196,9 +196,17 @@ Design choices:
 3. Commit & push, wait for the first background scan (up to 1 h), then check the reports
    (§7) before switching to `Deny` (§8).
 
-Exceptions use `policies.kyverno.io/v1` `PolicyException` objects in the `kyverno` namespace
-(`features.policyExceptions.namespace`), referencing the policy in `spec.policyRefs` and selecting
-resources with CEL `matchConditions`.
+Exception support is disabled (`features.policyExceptions.enabled: false`): no exceptions
+are deployed. If needed, explicitly enable it, keep `features.policyExceptions.namespace`
+scoped to `kyverno`, and use `policies.kyverno.io/v1` `PolicyException` objects referencing
+the policy in `spec.policyRefs` and selecting resources with CEL `matchConditions`.
+Do not introduce legacy `kyverno.io/v2` exceptions.
+
+Kyverno 1.19's compatibility controllers still watch legacy APIs (including
+`kyverno.io/v2 PolicyException`) even with exception support off. Their deprecation
+warnings are an upstream compatibility issue, not evidence of a policy left to migrate.
+Keep background scanning and admission checks enabled; do not remove CRDs or hide
+warnings to work around them.
 
 ---
 

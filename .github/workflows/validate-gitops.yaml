@@ -12,6 +12,7 @@ on:
       - 'gitops/**'
       - 'scripts/validate-gitops.sh'
       - 'scripts/check-tool-versions.sh'
+      - 'scripts/check-observability-config.rb'
       - 'scripts/tool-versions.sh'
       - 'scripts/flux-postbuild.rb'
       - 'mise.toml'
@@ -59,6 +60,9 @@ jobs:
 
       - name: Build and validate
         run: scripts/validate-gitops.sh
+
+      - name: Check telemetry and security filter boundaries
+        run: ruby scripts/check-observability-config.rb
 
       - name: Check toolchain pins against the cluster
         run: scripts/check-tool-versions.sh

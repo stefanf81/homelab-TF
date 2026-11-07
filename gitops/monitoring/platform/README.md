@@ -60,6 +60,17 @@ stored in Loki or raw Kubernetes stdout; assess old credential-bearing evidence
 and rotate affected credentials if necessary. No historical logs are deleted by
 these changes.
 
+## k3s metric ownership
+
+k3s exposes kubelet metrics on both its API server endpoint and the node scrape.
+The API server scrape drops `kubelet_.+` so kubelet/volume metrics come only from
+`job="kubelet"`. In particular, `kubelet_volume_stats_*` from `job="apiserver"`
+would otherwise have `namespace="default"` and the real namespace in
+`exported_namespace`, duplicating every PVC in dashboards and alerts.
+API server metrics and the existing histogram filters are unchanged. Historical
+duplicate series remain in the TSDB until retention expires; range queries over
+older data should select `job="kubelet"` for kubelet metrics.
+
 ## Validation
 
 `gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh` requires Docker,

@@ -84,7 +84,7 @@ spec:
     # Prometheus exporter adds `_total`), so those defaults never applied and
     # every label was exported. Null the dead keys and set the matching ones:
     # drop resource_namespace (and policy_namespace) from the per-result counters
-    # to bound series cardinality. All policies here are ClusterPolicies and no
+    # to bound series cardinality. All policies here are CEL ValidatingPolicies and no
     # dashboard groups by these labels. Kyverno reads this at start-up, so the four
     # controller Deployments need a restart after a change; the old series then
     # expire on their own.
@@ -123,8 +123,11 @@ spec:
         - flux-system
         - cert-manager
     features:
+      # No PolicyExceptions exist. Disable unused exception support; both active
+      # policies already use CEL. Kyverno 1.19's compatibility controllers may
+      # still watch the deprecated API even with this feature disabled.
       policyExceptions:
-        enabled: true
+        enabled: false
         namespace: kyverno
       autoUpdateWebhooks:
         enabled: true

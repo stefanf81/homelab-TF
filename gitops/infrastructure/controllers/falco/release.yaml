@@ -37,6 +37,51 @@ spec:
     metrics:
       enabled: true
 
+    # Only suppress normal controller clients observed in this homelab. Match
+    # namespace + image repository + executable, not whole namespaces/images:
+    # shells or unexpected binaries in the same containers must still alert.
+    # This appends exceptions to ONE rule; every other Falco rule stays active.
+    customRules:
+      homelab-api-clients.yaml: |-
+        - rule: Contact K8S API Server From Container
+          override:
+            exceptions: append
+          exceptions:
+            - name: homelab_controller_api_access
+              fields: [k8s.ns.name, container.image.repository, proc.exepath]
+              comps: [=, =, =]
+              values:
+                - [abuseipdb, ghcr.io/stefanf81/abuseipdb-sync, /usr/local/bin/abuseipdb-sync]
+                - [cert-manager, quay.io/jetstack/cert-manager-controller, /app/cmd/controller/controller]
+                - [cert-manager, quay.io/jetstack/cert-manager-webhook, /app/cmd/webhook/webhook]
+                - [csi-proxmox, registry.k8s.io/sig-storage/csi-attacher, /csi-attacher]
+                - [csi-proxmox, registry.k8s.io/sig-storage/csi-provisioner, /csi-provisioner]
+                - [csi-proxmox, registry.k8s.io/sig-storage/csi-resizer, /csi-resizer]
+                - [csi-proxmox, ghcr.io/sergelogvinov/proxmox-csi-node, /usr/bin/proxmox-csi-node]
+                - [falco, docker.io/falcosecurity/falcosidekick, /app/falcosidekick]
+                - [flux-system, ghcr.io/controlplaneio-fluxcd/flux-operator, /flux-operator]
+                - [flux-system, ghcr.io/fluxcd/helm-controller, /usr/local/bin/helm-controller]
+                - [flux-system, ghcr.io/fluxcd/image-automation-controller, /usr/local/bin/image-automation-controller]
+                - [flux-system, ghcr.io/fluxcd/image-reflector-controller, /usr/local/bin/image-reflector-controller]
+                - [flux-system, ghcr.io/fluxcd/kustomize-controller, /usr/local/bin/kustomize-controller]
+                - [flux-system, ghcr.io/fluxcd/notification-controller, /usr/local/bin/notification-controller]
+                - [flux-system, ghcr.io/fluxcd/source-controller, /usr/local/bin/source-controller]
+                - [kyverno, reg.kyverno.io/kyverno/background-controller, /ko-app/background-controller]
+                - [kyverno, reg.kyverno.io/kyverno/cleanup-controller, /ko-app/cleanup-controller]
+                - [kyverno, reg.kyverno.io/kyverno/kyverno, /ko-app/kyverno]
+                - [kyverno, reg.kyverno.io/kyverno/reports-controller, /ko-app/reports-controller]
+                - [monitoring, docker.io/grafana/alloy, /usr/bin/alloy]
+                - [monitoring, docker.io/victoriametrics/operator, /app]
+                - [monitoring, docker.io/victoriametrics/vmagent, /vmagent-prod]
+                - [monitoring, registry.k8s.io/kube-state-metrics/kube-state-metrics, /kube-state-metrics]
+                - [monitoring, registry.k8s.io/metrics-server/metrics-server, /metrics-server]
+                - [policy-reporter, ghcr.io/fjogeleit/trivy-operator-polr-adapter, /ko-app/trivy-operator-polr-adapter]
+                - [policy-reporter, ghcr.io/kyverno/policy-reporter, /app/policyreporter]
+                - [policy-reporter, ghcr.io/kyverno/policy-reporter/kyverno-plugin, /ko-app/kyverno-plugin]
+                - [reloader, ghcr.io/stakater/reloader, /manager]
+                - [renovate, ghcr.io/mogenius/renovate-operator, /app/renovate-operator]
+                - [trivy-system, mirror.gcr.io/aquasec/trivy-operator, /usr/local/bin/trivy-operator]
+
     # Enable Falcosidekick to write native Kubernetes PolicyReports
     falcosidekick:
       enabled: true

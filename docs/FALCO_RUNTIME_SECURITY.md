@@ -123,6 +123,19 @@ spec:
           minimumpriority: "notice"
 ```
 
+### API-client noise tuning
+
+`customRules.homelab-api-clients.yaml` in the HelmRelease appends an exception to
+**Contact K8S API Server From Container** for known controller clients. Each entry
+matches the exact namespace, image repository and executable observed in Falco
+events. This avoids thousands of routine API-contact notices crowding the bounded
+PolicyReports without exempting whole namespaces or disabling the rule.
+
+Unexpected images, namespaces and executables (including shells inside an allowed
+controller image) remain subject to the rule. All other Falco detections are unchanged.
+When a controller changes its registry or executable, review the new events before
+updating the allowlist; do not replace it with a namespace-wide exclusion.
+
 ### VMServiceScrape (`gitops/monitoring/app/vmservicescrapes.yaml`)
 
 VictoriaMetrics operator automatically discovers `VMServiceScrape` resources. The Falco scrape config is:

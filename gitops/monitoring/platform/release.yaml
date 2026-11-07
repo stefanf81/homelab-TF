@@ -122,6 +122,12 @@ spec:
                 caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
                 serverName: kubernetes
               metricRelabelConfigs:
+                # k3s exposes kubelet metrics on this endpoint too. Keep the
+                # node scrape as their single source; here volume series get
+                # namespace=default and exported_namespace=<actual namespace>.
+                - action: drop
+                  source_labels: [__name__]
+                  regex: kubelet_.+
                 - action: drop
                   source_labels: [__name__]
                   regex: (etcd_request_duration_seconds|apiserver_request_duration_seconds|apiserver_watch_events_dispatch_duration_seconds|apiserver_watch_list_duration_seconds|apiserver_request_body_size_bytes|apiserver_storage_list_duration_seconds|apiserver_watch_cache_read_wait_seconds|apiserver_watch_cache_initialization_duration_seconds|apiserver_response_sizes|apiserver_watch_events_sizes)_bucket
