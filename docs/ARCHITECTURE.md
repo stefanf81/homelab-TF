@@ -13,8 +13,8 @@ TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE,
 |-----------|---------------|---------|
 | IaC Engine | OpenTofu (minimum ≥ 1.8.0) | VM provisioning & kubeconfig fetch |
 | Provider | `bpg/proxmox` v0.118.0 | Proxmox VE API integration |
-| Cloud Image | Ubuntu 26.04 (Resolute), release-20260927, SHA-256 pinned (the VM ignores later re-pins: `disk[0].file_id` is in `ignore_changes`) | k3s host OS |
-| k3s | v1.37.1+k3s1 | Kubernetes distribution |
+| Cloud Image | Ubuntu 26.04 (Resolute), release-20261016, SHA-256 pinned (the VM ignores later re-pins: `disk[0].file_id` is in `ignore_changes`) | k3s host OS |
+| k3s | v1.37.2+k3s1 | Kubernetes distribution |
 | Orchestration | Makefile (`make init`, `make apply`) | Enforces correct provisioning sequence |
 
 ### 2.2 VM Specifications (defaults in `variables.tf`)

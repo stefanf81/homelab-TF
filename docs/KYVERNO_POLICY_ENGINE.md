@@ -116,7 +116,7 @@ Gateway exists first, so the route programs immediately and `wait` succeeds.
 ### Chart & version
 - Chart: `kyverno` from `oci://ghcr.io/kyverno/charts/kyverno` (OCIRepository + HelmRelease `chartRef`)
 - Pinned: **3.9.2** (ships Kyverno **v1.19.2**). Requires k8s ≥ ~1.25 (the
-  provisioned cluster is configured for k3s `v1.37.1+k3s1`).
+  provisioned cluster is configured for k3s `v1.37.2+k3s1`).
 
 ### CRD handling — important gotcha
 Chart **v3** ships its CRDs as **templated resources** controlled by the `crds.install: true`

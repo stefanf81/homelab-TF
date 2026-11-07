@@ -56,12 +56,12 @@ Audit logs, access logs (including rate-limit 429s), and Coraza records from the
 
 | Component | Namespace | Version | Purpose |
 |-----------|-----------|---------|---------|
-| Caddy | `taskflow` | 2.11.8 | HTTP server + reverse proxy |
+| Caddy | `taskflow` | 2.11.9 | HTTP server + reverse proxy |
 | Coraza | `taskflow` | v2.6.2 | WAF engine (OWASP ModSecurity compatible) |
 | OWASP CRS | `taskflow` | v4.25.0 | Core Rule Set for attack detection |
 | caddy-ratelimit | `taskflow` | commit `5625512f24` | Sliding-window per-client HTTP rate limiting (429) |
 | Alloy | `monitoring` | 1.15.0 (chart) | Log collection agent |
-| Loki | `monitoring` | 20.4.1 (chart) | Log aggregation and storage |
+| Loki | `monitoring` | 21.0.0 (chart) | Log aggregation and storage |
 | Grafana | `monitoring` | via victoria-metrics-k8s-stack | Dashboard visualization |
 
 ## Traffic Flow
@@ -99,8 +99,8 @@ to GHCR. Builds are automated by
 as a fallback:
 
 - **Repository**: `ghcr.io/stefanf81/taskflow-caddy-coraza`
-- **Tag**: `2.11.8-coraza2.6.2-r7`
-- **Digest**: `sha256:04ef2bfbe2ed5af7991f4892e2b4692df222cffdff1189262ba5a9d835d225ac` (pinned in both WAF Deployments)
+- **Tag**: `2.11.9-coraza2.6.2-r8`
+- **Digest**: `sha256:5fe8b6059f2219d9ffd28e510be10647a28b26403123d9a8e574dfd8251678bc` (pinned in both WAF Deployments)
 - **Dockerfile**: `gitops/images/taskflow-caddy-coraza/Dockerfile`
 - **Platform**: `linux/amd64` (k3s node architecture)
 - **Modules**: `github.com/corazawaf/coraza-caddy/v2@v2.6.2`, `github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db`
@@ -124,7 +124,7 @@ Manual local build if needed:
 
 ```bash
 docker buildx build --platform linux/amd64 --load \
-  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.8-coraza2.6.2-r7 \
+  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8 \
   gitops/images/taskflow-caddy-coraza/
 
 # Authenticate to GHCR (requires write:packages scope)
@@ -132,21 +132,21 @@ read -r -s GITHUB_TOKEN
 echo "$GITHUB_TOKEN" | docker login ghcr.io -u stefanf81 --password-stdin
 unset GITHUB_TOKEN
 
-docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.8-coraza2.6.2-r7
+docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8
 
 # Verify both modules and get the digest for pinning
-docker run --rm ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.8-coraza2.6.2-r7 list-modules \
+docker run --rm ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8 list-modules \
   | grep -E 'http.handlers.waf|http.handlers.rate_limit'
 docker inspect --format='{{index .RepoDigests 0}}' \
-  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.8-coraza2.6.2-r7
+  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8
 ```
 
 ### Image Build Details
 
 The Dockerfile uses a multi-stage build:
 
-1. **Builder stage**: Uses `caddy:2.11.8-builder-alpine` to compile Caddy with the Coraza WAF plugin and the rate-limit plugin via `xcaddy` (`http.handlers.waf`, `http.handlers.rate_limit`)
-2. **Runtime stage**: Based on `caddy:2.11.8-alpine`, copies the compiled binary
+1. **Builder stage**: Uses `caddy:2.11.9-builder-alpine` to compile Caddy with the Coraza WAF plugin and the rate-limit plugin via `xcaddy` (`http.handlers.waf`, `http.handlers.rate_limit`)
+2. **Runtime stage**: Based on `caddy:2.11.9-alpine`, copies the compiled binary
 3. **Key steps**:
     - `setcap -r /usr/bin/caddy` — strips file capabilities (required for `allowPrivilegeEscalation: false`)
     - Creates `caddy` user (UID 100) for non-root execution

@@ -21,7 +21,7 @@ You also need access to a **Proxmox VE 9.x** host (8.x is end of life) with an A
 
 ## 📁 Repository Layout
 
-- `modules/proxmox` – Provisions the pinned Ubuntu 26.04 VM; cloud-init installs k3s `v1.37.1+k3s1` at boot (no SSH provisioning; the only SSH use is the one-shot kubeconfig fetch in `modules/k3s-kubeconfig`).
+- `modules/proxmox` – Provisions the pinned Ubuntu 26.04 VM; cloud-init installs k3s `v1.37.2+k3s1` at boot (no SSH provisioning; the only SSH use is the one-shot kubeconfig fetch in `modules/k3s-kubeconfig`).
 - `modules/k3s-kubeconfig` – SSHs into the node once cloud-init finishes, fetches `/etc/rancher/k3s/k3s.yaml`, and writes a local `kubeconfig.yaml`.
 - `gitops/` – Declarative Flux v2 manifests:
   - `gitops/infrastructure/controllers` – Cilium v1.20.4, cert-manager, CoreDNS, Proxmox CSI, Kyverno, Falco, Policy Reporter, Trivy Operator, Hubble UI oauth2-proxy, AbuseIPDB synchronizer, Reloader.
@@ -56,7 +56,7 @@ ssh_public_key    = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."
 ip_address        = "192.168.50.55/24"
 gateway           = "192.168.50.1"
 k3s_token         = "a-secure-cluster-token-here"
-k3s_version       = "v1.37.1+k3s1"
+k3s_version       = "v1.37.2+k3s1"
 ```
 
 ### 2️⃣ Provision the Proxmox VM & Fetch `kubeconfig`
