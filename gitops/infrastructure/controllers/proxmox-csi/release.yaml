@@ -23,7 +23,7 @@ spec:
       plugin:
         image:
           # renovate: datasource=docker depName=ghcr.io/sergelogvinov/proxmox-csi-controller
-          tag: v0.21.0
+          tag: v0.22.0
         resources:
           requests:
             cpu: 20m
