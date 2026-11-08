@@ -441,8 +441,44 @@ spec:
           loki.process "platform" {
             forward_to = [loki.write.local.receiver]
 
+            // Kyverno 1.19 itself reads three deprecated legacy APIs, even with
+            // no legacy policies/exceptions. Drop only their exact client-go
+            // INFO warning messages, not other deprecations, warnings or errors.
+            // Normalize ANSI in an extracted COPY: retained log bodies stay intact.
+            stage.match {
+              selector = "{namespace=\"kyverno\", application=~\"kyverno-(admission|background|cleanup|reports)-controller\", container=~\"kyverno|controller\"}"
+
+              stage.regex {
+                expression = `^(?P<kyverno_klog_line>.*)$`
+              }
+              stage.replace {
+                source     = "kyverno_klog_line"
+                expression = `(\x1b\[[0-9;]*m)`
+                replace    = ""
+              }
+              stage.regex {
+                source     = "kyverno_klog_line"
+                expression = `^\S+ INF k8s\.io/client-go@[^ ]+/rest/warnings\.go:[0-9]+ > (?P<kyverno_api_warning>Warning: .+) logger=klog v=[0-9]+$`
+              }
+              stage.drop {
+                source              = "kyverno_api_warning"
+                value               = "Warning: kyverno.io/v1 ClusterPolicy is deprecated and will be removed in a future release; migrate to ValidatingPolicy, MutatingPolicy, GeneratingPolicy or ImageValidatingPolicy (policies.kyverno.io), see https://kyverno.io/docs/guides/migration-to-cel/"
+                drop_counter_reason = "kyverno_legacy_api_deprecation"
+              }
+              stage.drop {
+                source              = "kyverno_api_warning"
+                value               = "Warning: kyverno.io/v1 Policy is deprecated and will be removed in a future release; migrate to NamespacedValidatingPolicy and the other namespaced policy types (policies.kyverno.io), see https://kyverno.io/docs/guides/migration-to-cel/"
+                drop_counter_reason = "kyverno_legacy_api_deprecation"
+              }
+              stage.drop {
+                source              = "kyverno_api_warning"
+                value               = "Warning: kyverno.io/v2 PolicyException is deprecated and will be removed in a future release; migrate to PolicyException (policies.kyverno.io), see https://kyverno.io/docs/guides/migration-to-cel/"
+                drop_counter_reason = "kyverno_legacy_api_deprecation"
+              }
+            }
+
             // Bounded labels only (namespace, pod, container, application): log bodies
-            // stay unparsed, so no level or message becomes a label.
+            // remain unchanged, and no level or message becomes a label.
             stage.static_labels {
               values = { source = "platform" }
             }

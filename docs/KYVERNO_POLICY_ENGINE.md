@@ -205,8 +205,15 @@ Do not introduce legacy `kyverno.io/v2` exceptions.
 Kyverno 1.19's compatibility controllers still watch legacy APIs (including
 `kyverno.io/v2 PolicyException`) even with exception support off. Their deprecation
 warnings are an upstream compatibility issue, not evidence of a policy left to migrate.
-Keep background scanning and admission checks enabled; do not remove CRDs or hide
-warnings to work around them.
+Keep background scanning and admission checks enabled; do not remove CRDs to work
+around them. Alloy's platform pipeline filters only the three exact client-go INFO
+deprecation messages for `ClusterPolicy`, `Policy` and legacy `PolicyException` from
+Kyverno controller containers in the `kyverno` namespace. Other warnings, errors and
+deprecations are retained unchanged, including their ANSI formatting. Drops are counted
+under `loki_process_dropped_lines_total` with reason `kyverno_legacy_api_deprecation`.
+This is log-noise suppression, not a fix to the API reads: raw `kubectl logs` and
+historical Loki records still show these messages. Remove the filter once the upstream
+compatibility reads no longer occur.
 
 ---
 

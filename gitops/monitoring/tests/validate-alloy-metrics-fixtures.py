@@ -292,9 +292,59 @@ for app, filename in APPS.items():
     with open(f"{out_dir}/{filename}", "w") as handle:
         handle.write("\n".join(lines) + "\n")
 
+# Platform fixtures exercise the shipped Kyverno noise filter, including ANSI
+# output and negative controls. Keep exact retained bodies in truth, not a second
+# implementation of Alloy's regex. These records contain no production data.
+legacy_warnings = [
+    "Warning: kyverno.io/v1 ClusterPolicy is deprecated and will be removed in a future release; migrate to ValidatingPolicy, MutatingPolicy, GeneratingPolicy or ImageValidatingPolicy (policies.kyverno.io), see https://kyverno.io/docs/guides/migration-to-cel/",
+    "Warning: kyverno.io/v1 Policy is deprecated and will be removed in a future release; migrate to NamespacedValidatingPolicy and the other namespaced policy types (policies.kyverno.io), see https://kyverno.io/docs/guides/migration-to-cel/",
+    "Warning: kyverno.io/v2 PolicyException is deprecated and will be removed in a future release; migrate to PolicyException (policies.kyverno.io), see https://kyverno.io/docs/guides/migration-to-cel/",
+]
+
+
+def klog(message, level="INF", color=False, caller="k8s.io/client-go@v0.36.3/rest/warnings.go:107"):
+    parts = ["2026-11-08T12:00:00Z", level, caller, ">", message, "logger=klog", "v=0"]
+    if color:
+        parts = [f"\x1b[1;32m{part}\x1b[0m" for part in parts]
+    return " ".join(parts)
+
+
+noise = [klog(warning, color=color) for warning in legacy_warnings for color in (False, True)]
+retained = [
+    klog("Warning: unrelated API is deprecated"),
+    klog(legacy_warnings[0].replace("v1 ClusterPolicy", "v2 CleanupPolicy")),
+    klog(legacy_warnings[0] + " unexpected additional diagnostic"),
+    klog(legacy_warnings[0], level="ERR", color=True),
+    klog(legacy_warnings[1], level="WRN"),
+    klog(legacy_warnings[2], caller="other.go:107"),
+    klog("Warning: failed to reconcile policy: forbidden", color=True),
+    "ERROR unable to connect to the API server",
+    json.dumps({"level": "error", "msg": legacy_warnings[2]}),
+]
+platform = []
+for controller in ("admission", "background", "cleanup", "reports"):
+    name = "kyverno-" + controller
+    platform.append({"name": name, "filename": name + ".log", "drop": True,
+                     "labels": {"job": "cluster-platform", "namespace": "kyverno",
+                                "application": f"kyverno-{controller}-controller",
+                                "container": "kyverno" if controller == "admission" else "controller"}})
+base_labels = platform[0]["labels"]
+for name, changed_labels in (
+    ("other-namespace", {"namespace": "taskflow"}),
+    ("other-application", {"application": "unrelated-controller"}),
+    ("other-container", {"container": "kyverno-pre"}),
+):
+    platform.append({"name": name, "filename": name + ".log", "drop": False,
+                     "labels": {**base_labels, **changed_labels}})
+for fixture in platform:
+    fixture["kept"] = retained if fixture.pop("drop") else noise + retained
+    fixture["dropped"] = len(noise) + len(retained) - len(fixture["kept"])
+    with open(f"{out_dir}/{fixture['filename']}", "w") as handle:
+        handle.write("\n".join(noise + retained) + "\n")
+
 as_rows = lambda counter: [[*key, value] for key, value in counter.items()]
 with open(truth_path, "w") as handle:
     json.dump({"requests": as_rows(requests), "limited": as_rows(limited), "audit": as_rows(audit),
                "detections": as_rows(detections), "rules": as_rows(rules), "histogram": hist, "buckets": BUCKETS,
-               "security": security, "spoofs": spoofs, "rule_ids": RULE_IDS}, handle)
+               "security": security, "spoofs": spoofs, "rule_ids": RULE_IDS, "platform": platform}, handle)
 print(f"fixtures: {sum(requests.values())} requests, {sum(limited.values())} rate-limited, {sum(audit.values())} audit, {sum(detections.values())} detections")

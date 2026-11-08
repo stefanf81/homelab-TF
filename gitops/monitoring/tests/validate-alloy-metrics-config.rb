@@ -2,11 +2,12 @@
 # Build a test Alloy config from the shipped alloy-release.yaml: keep every
 # processing block and the WAF source's real forward_to fan-out, and replace
 # Kubernetes discovery with file tails over fixture logs.
-# usage: validate-alloy-metrics-config.rb <alloy-release.yaml> <out.alloy> <loki push url>
+# usage: validate-alloy-metrics-config.rb <alloy-release.yaml> <out.alloy> <loki push url> <truth.json>
 require "yaml"
+require "json"
 
-release, out, loki_url = ARGV
-abort "usage: #{File.basename(__FILE__)} <alloy-release.yaml> <out.alloy> <loki push url>" unless loki_url
+release, out, loki_url, truth_path = ARGV
+abort "usage: #{File.basename(__FILE__)} <alloy-release.yaml> <out.alloy> <loki push url> <truth.json>" unless truth_path
 
 release_doc = YAML.load_stream(File.read(release)).compact.find { |d| d["kind"] == "HelmRelease" && d.dig("metadata", "name") == "alloy" }
 abort "Alloy HelmRelease not found in #{release}" unless release_doc
@@ -63,6 +64,20 @@ text << <<~ALLOY
   loki.source.file "waf" {
     targets    = local.file_match.waf.targets
     forward_to = #{waf_forward}
+  }
+ALLOY
+targets = JSON.parse(File.read(truth_path)).fetch("platform").map do |fixture|
+  labels = fixture.fetch("labels").merge("__path__" => "/logs/#{fixture.fetch('filename')}", "fixture_stream" => fixture.fetch("name"))
+  "{ " + labels.map { |key, value| "#{key} = #{value.to_json}" }.join(", ") + " }"
+end
+text << <<~ALLOY
+
+  local.file_match "platform_fixtures" {
+    path_targets = [#{targets.join(",\n")},]
+  }
+  loki.source.file "platform_fixtures" {
+    targets    = local.file_match.platform_fixtures.targets
+    forward_to = [loki.process.platform.receiver]
   }
 ALLOY
 File.write(out, text)

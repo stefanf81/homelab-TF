@@ -18,6 +18,11 @@ ruby gitops/monitoring/tests/validate-dashboards-test.rb
 The `validate-waf-dashboard-metrics.py`, `validate-alloy-metrics.sh` and Loki query checks start
 disposable containers and need Docker. `verify-dashboards-live.py` queries a running cluster.
 
+`validate-alloy-metrics.sh` also feeds synthetic platform logs through the shipped
+Alloy pipeline. Only the exact legacy Kyverno client-go INFO warnings are dropped
+in the four controller streams; unrelated warnings/errors, changed messages,
+other namespaces/applications/containers and retained ANSI bodies must survive.
+
 `python3 gitops/monitoring/tests/validate-nginx-dns-startup.py` renders the pinned Trivy
 and Loki charts, checks the application namespace allowlist and unchanged scanner
 budgets, and starts the pinned frontend and chart-selected nginx gateway images with

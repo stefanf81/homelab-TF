@@ -35,8 +35,8 @@ trap cleanup EXIT
 mkdir -p "$tmp/logs"
 
 echo "== testing Alloy logs-to-metrics with $ALLOY_IMAGE"
-ruby "$HERE/validate-alloy-metrics-config.rb" "$RELEASE" "$tmp/config.alloy" "$LOKI_URL/loki/api/v1/push"
 python3 "$HERE/validate-alloy-metrics-fixtures.py" "$tmp/logs" "$tmp/truth.json"
+ruby "$HERE/validate-alloy-metrics-config.rb" "$RELEASE" "$tmp/config.alloy" "$LOKI_URL/loki/api/v1/push" "$tmp/truth.json"
 chmod -R a+rX "$tmp"
 
 alloy_container="$(docker run -d --network host \

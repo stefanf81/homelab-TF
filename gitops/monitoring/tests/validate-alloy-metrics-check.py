@@ -103,4 +103,19 @@ if unexpected:
 else:
     print("  ok   only application, status, method, zone, interrupted and rule_id are metric labels")
 
+drop_pattern = re.compile(r'^loki_process_dropped_lines_total\{([^}]*)\}\s+([0-9.eE+-]+)$')
+dropped = 0
+for line in opener.open(url, timeout=20).read().decode().splitlines():
+    match = drop_pattern.match(line)
+    if match:
+        labels = dict(re.findall(r'(\w+)="([^"]*)"', match.group(1)))
+        if labels.get("reason") == "kyverno_legacy_api_deprecation":
+            dropped += float(match.group(2))
+expected_drops = sum(fixture["dropped"] for fixture in truth["platform"])
+if dropped == expected_drops:
+    print(f"  ok   Kyverno deprecation drop counter: {dropped:.0f}")
+else:
+    failures.append("Kyverno drop counter")
+    print(f"  FAIL Kyverno deprecation drop counter: got {dropped}, expected {expected_drops}")
+
 sys.exit(1 if failures else 0)
