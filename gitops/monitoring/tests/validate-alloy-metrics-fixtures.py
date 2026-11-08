@@ -309,7 +309,8 @@ def klog(message, level="INF", color=False, caller="k8s.io/client-go@v0.36.3/res
     return " ".join(parts)
 
 
-noise = [klog(warning, color=color) for warning in legacy_warnings for color in (False, True)]
+noise = [klog(warning, color=color) + suffix for warning in legacy_warnings
+         for color in (False, True) for suffix in ("", "\n", "\r\n")]
 retained = [
     klog("Warning: unrelated API is deprecated"),
     klog(legacy_warnings[0].replace("v1 ClusterPolicy", "v2 CleanupPolicy")),
@@ -320,7 +321,9 @@ retained = [
     klog("Warning: failed to reconcile policy: forbidden", color=True),
     "ERROR unable to connect to the API server",
     json.dumps({"level": "error", "msg": legacy_warnings[2]}),
+    klog(legacy_warnings[0]) + "\nERROR extra diagnostic on the same record",
 ]
+retained = [line + suffix for line in retained for suffix in ("", "\n", "\r\n")]
 platform = []
 for controller in ("admission", "background", "cleanup", "reports"):
     name = "kyverno-" + controller
@@ -340,7 +343,7 @@ for fixture in platform:
     fixture["kept"] = retained if fixture.pop("drop") else noise + retained
     fixture["dropped"] = len(noise) + len(retained) - len(fixture["kept"])
     with open(f"{out_dir}/{fixture['filename']}", "w") as handle:
-        handle.write("\n".join(noise + retained) + "\n")
+        handle.write("\n".join(json.dumps({"line": line}) for line in noise + retained) + "\n")
 
 as_rows = lambda counter: [[*key, value] for key, value in counter.items()]
 with open(truth_path, "w") as handle:

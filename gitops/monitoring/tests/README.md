@@ -22,6 +22,8 @@ disposable containers and need Docker. `verify-dashboards-live.py` queries a run
 Alloy pipeline. Only the exact legacy Kyverno client-go INFO warnings are dropped
 in the four controller streams; unrelated warnings/errors, changed messages,
 other namespaces/applications/containers and retained ANSI bodies must survive.
+Fixtures preserve Kubernetes-style LF/CRLF terminators through a JSON decoding
+wrapper; testing only file tails would miss their newline-handling difference.
 
 `python3 gitops/monitoring/tests/validate-nginx-dns-startup.py` renders the pinned Trivy
 and Loki charts, checks the application namespace allowlist and unchanged scanner

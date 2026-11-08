@@ -77,6 +77,17 @@ text << <<~ALLOY
   }
   loki.source.file "platform_fixtures" {
     targets    = local.file_match.platform_fixtures.targets
+    forward_to = [loki.process.platform_fixture_source.receiver]
+  }
+  // Decode fixture bodies so LF/CRLF from the Kubernetes log API survive the
+  // file tail and reach the real platform pipeline unchanged.
+  loki.process "platform_fixture_source" {
+    stage.json {
+      expressions = { line = "line" }
+    }
+    stage.output {
+      source = "line"
+    }
     forward_to = [loki.process.platform.receiver]
   }
 ALLOY

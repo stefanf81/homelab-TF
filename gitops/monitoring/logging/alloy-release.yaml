@@ -449,7 +449,9 @@ spec:
               selector = "{namespace=\"kyverno\", application=~\"kyverno-(admission|background|cleanup|reports)-controller\", container=~\"kyverno|controller\"}"
 
               stage.regex {
-                expression = `^(?P<kyverno_klog_line>.*)$`
+                // Kubernetes log tails retain LF (or CRLF); file tails do not.
+                // Strip the terminator only from the extracted copy, not the body.
+                expression = `^(?P<kyverno_klog_line>[^\r\n]*)\r?\n?$`
               }
               stage.replace {
                 source     = "kyverno_klog_line"
