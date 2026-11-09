@@ -32,7 +32,7 @@ fi
 
 # CRD schemas from the community catalog, pinned to a commit so upstream changes
 # cannot change results without a change here. Bump deliberately.
-CRD_CATALOG_REF=3eb90d47aba8d61919d4419dd38301536e32a94b
+CRD_CATALOG_REF=49729e49e8f062933e3716a26540d41b0cd0856c
 
 # Flux applies a path without kustomization.yaml by generating one over every
 # manifest below it; approximate that by concatenating them.
