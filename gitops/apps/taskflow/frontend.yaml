@@ -62,7 +62,7 @@ spec:
           # digestReflectionPolicy: Always). The marker below makes Flux rewrite this
           # line to repo:latest@sha256:<digest> whenever a new :latest is pushed,
           # committing the exact digest to Git -> auditable, automatic rollout.
-          image: ghcr.io/stefanf81/taskflow-frontend:latest@sha256:65931f1d96fd9be1e17f1c53dc0d69c2c4a9fbbab95225a13533dd364cf86c61 # {"$imagepolicy": "flux-system:taskflow-frontend"}
+          image: ghcr.io/stefanf81/taskflow-frontend:latest@sha256:7c9b6500921f43c2d79ffafaa6ff1d0a5253263447c0b5362636671af93c5b62 # {"$imagepolicy": "flux-system:taskflow-frontend"}
           imagePullPolicy: IfNotPresent
           securityContext:
             # The image creates and runs as its dedicated nginx-runtime UID/GID 10001.
