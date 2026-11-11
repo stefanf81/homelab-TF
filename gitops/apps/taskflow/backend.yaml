@@ -156,8 +156,14 @@ spec:
             #
             # Behavioral tuning:
             #  - UseG1GC + MaxGCPauseMillis=100: latency-bounded GC for request/response.
-            #  - AlwaysPreTouch: touches committed heap pages (including the initial
-            #    heap at startup), not the entire maximum heap reservation.
+            #  - AlwaysPreTouch + InitialRAMPercentage=50.0: pre-touch only covers the
+            #    committed heap, and without an initial size that was 1/64 of the limit
+            #    (32 MiB), so the rest was committed during GC pauses under load. With the
+            #    initial heap equal to the maximum, the whole 1 GiB heap is committed and
+            #    touched at startup, so the pod is resident at ~1.15 GiB from the start
+            #    (estimate: heap plus the off-heap seen at the compose limit), inside the
+            #    1536Mi request. taskflow-enterprise BENCHMARKS.md §65 measured it at a 2560M
+            #    limit: boot +0.6 s, peak RSS 624 -> 1418 MiB, GC pauses while booting 54 -> 33.
             #  - UseStringDeduplication: modest heap reduction for string-heavy workloads.
             #  - ParallelRefProcEnabled: speeds GC reference processing.
             #  - DisableExplicitGC: blocks Full GCs triggered by System.gc() calls.
@@ -166,7 +172,7 @@ spec:
             #    directory. It survives a container restart, NOT pod deletion. An existing
             #    dump is never overwritten: remove it after analysis so the next OOM can dump.
             - name: JAVA_TOOL_OPTIONS
-              value: "-XX:ActiveProcessorCount=2 -XX:+UseG1GC -XX:MaxRAMPercentage=50.0 -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxDirectMemorySize=256m -XX:MaxMetaspaceSize=256m -Xlog:gc*:file=/var/log/taskflow/gc.log:time,uptime,level,tags:filecount=5,filesize=10m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/taskflow"
+              value: "-XX:ActiveProcessorCount=2 -XX:+UseG1GC -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=50.0 -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:MaxDirectMemorySize=256m -XX:MaxMetaspaceSize=256m -Xlog:gc*:file=/var/log/taskflow/gc.log:time,uptime,level,tags:filecount=5,filesize=10m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/taskflow"
             # glibc-only allocator cap (Ubuntu 26.04 base since the Alpine->resolute
             # migration): arenas default to 8 x cores and the JVM's worker/carrier
             # threads spread native allocations across them, padding RSS. Measured
