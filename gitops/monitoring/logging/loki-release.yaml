@@ -104,34 +104,16 @@ spec:
           # CPU cap serialised.
           memory: 512Mi
 
+    # No nginx gateway. In monolithic mode it only forwarded every path to the
+    # one Loki Service, so Alloy, Grafana and abuseipdb-sync now use
+    # http://loki.monitoring.svc.cluster.local:3100 directly: one pod (nginx plus
+    # its metrics exporter) and one proxy hop less per push and query, and no
+    # nginx that can fail to start while DNS is down (it did after the
+    # 2026-11-03 reboot). Clients that reach Loki from another namespace need
+    # port 3100 on the single-binary pod in both network policies
+    # (monitoring/platform/network-policies.yaml and the client's egress policy).
     gateway:
-      enabled: true
-      replicas: 1
-      nginxConfig:
-        # Match the kube-dns Service IP in controllers/coredns/release.yaml.
-        # The chart default names the DNS Service by hostname: nginx tries to
-        # resolve that hostname while loading config and exits if DNS is down.
-        # A literal resolver IP allows startup and later runtime DNS recovery.
-        resolver: "10.43.0.10 valid=30s ipv6=off"
-      # Disable chart default hard anti-affinity which blocks pods on single-node homelab clusters
-      affinity: ~
-      service:
-        type: ClusterIP
-      # Without requests the gateway pod was BestEffort (first eviction
-      # candidate). 14d peaks (2026-10-22): nginx 16Mi, exporter 14Mi, ~1m CPU.
-      resources:
-        requests:
-          cpu: 10m
-          memory: 32Mi
-        limits:
-          memory: 64Mi
-      metrics:
-        resources:
-          requests:
-            cpu: 5m
-            memory: 16Mi
-          limits:
-            memory: 64Mi
+      enabled: false
 
     # No loki-sc-rules sidecar. It only copies ruler rules out of ConfigMaps and
     # Secrets labelled `loki_rule`, and none exist: it held ~97Mi (128Mi

@@ -55,7 +55,10 @@ data:
   CLOUDFLARE_FIREWALL_LOOKBACK: "5m"
   CLOUDFLARE_FIREWALL_MAX_WINDOW: "24h"
   CLOUDFLARE_FIREWALL_LIMIT: "5000"
-  LOKI_PUSH_URL: "http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push"
+  # The Loki Service itself (port 3100); the chart's nginx gateway is disabled.
+  # Keep this key set: the default compiled into the image (config.go) still
+  # names the removed loki-gateway Service.
+  LOKI_PUSH_URL: "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
 ---
 # Git-managed filter lists mounted into the synchronizer. They are re-read on
 # every synchronization, so edits take effect without a pod restart.

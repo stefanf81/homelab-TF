@@ -582,8 +582,8 @@ the app because its Grafana route targets the TaskFlow Gateway:
   components (`job="cluster-platform"`): the namespaces `monitoring`, `falco`,
    `flux-system`, `kube-system`, `cert-manager`, `kyverno`, `csi-proxmox` and `trivy-system`, so a
   crash loop stays queryable after the pod is gone
-  (`{job="cluster-platform", namespace="monitoring"}`; the `loki-gateway` pods are
-   skipped because their access log would record every push of Alloy itself).
+  (`{job="cluster-platform", namespace="monitoring"}`). Alloy pushes to the Loki
+   Service on port 3100 directly; the chart's nginx gateway is disabled.
    Trivy scanner/collector job payloads are excluded: these are generated report
    data, potentially containing secret findings, not operator diagnostics.
    Application discovery prefers `app.kubernetes.io/name` and falls back to the

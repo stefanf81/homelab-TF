@@ -121,7 +121,9 @@ def main():
             metadata("trivy-operator", {"app.kubernetes.io/name": "trivy-operator"}, "trivy-system"),
             metadata("trivy-server", {"app.kubernetes.io/name": "trivy-server"}, "trivy-system"),
             metadata("scan-results", {"app.kubernetes.io/managed-by": "trivy-operator"}, "trivy-system"),
-            metadata("gateway", {"app.kubernetes.io/name": "loki"}, "monitoring", pod="loki-gateway-abcd"),
+            # Loki's own pod. Alloy pushes straight to it (no nginx gateway whose
+            # access log had to be dropped), and its logs are kept.
+            metadata("loki", {"app.kubernetes.io/name": "loki"}, "monitoring", pod="loki-0"),
         ]
         selected = []
         for name in ("taskflow_identity", "taskflow_backend", "taskflow_apps", "taskflow_wafs", "platform"):
@@ -156,14 +158,16 @@ def main():
             assert ids["taskflow_backend"] == {"legacy-backend", "standard-backend", "standard-wins"}, ids
             assert ids["taskflow_apps"] == {"frontend", "postgres", "standard-app"}, ids
             assert ids["taskflow_wafs"] == {"waf"}, ids
-            assert ids["platform"] == {"trivy-operator", "trivy-server"}, ids
+            assert ids["platform"] == {"trivy-operator", "trivy-server", "loki"}, ids
             for name in ("taskflow_backend", "taskflow_apps"):
                 assert f"targets = discovery.relabel.{name}.output" in source[f'loki.source.kubernetes "{name}"']
                 for target in outputs[name]:
                     assert target["job"] == "taskflow-app" and target["namespace"] == "taskflow"
                     assert target["application"] and target["pod"] and target["container"]
-            assert all(t["job"] == "cluster-platform" and t["namespace"] == "trivy-system" for t in outputs["platform"])
-            print("OK real Alloy: legacy/standard routing, backend isolation, WAF guards, Trivy diagnostics (not scan payloads)")
+            assert all(t["job"] == "cluster-platform" for t in outputs["platform"])
+            assert {t["fixture_id"]: t["namespace"] for t in outputs["platform"]} == {
+                "trivy-operator": "trivy-system", "trivy-server": "trivy-system", "loki": "monitoring"}
+            print("OK real Alloy: legacy/standard routing, backend isolation, WAF guards, Trivy diagnostics (not scan payloads), Loki's own logs")
             print("OK Helm: namespace-scoped Trivy log RBAC and namespace creation dependency")
         except Exception:
             if container:

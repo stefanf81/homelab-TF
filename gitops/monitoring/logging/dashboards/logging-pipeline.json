@@ -252,7 +252,7 @@
       "id": 4,
       "type": "stat",
       "title": "Alloy dropped bytes",
-      "description": "Bytes in batches Alloy gave up on in the selected range. Alloy retries 429, 5xx, timeouts and connection errors (10 retries, about 8.5 minutes) and drops any other 4xx at once. Treat this as an upper bound: when Loki answers 400 because some entries are invalid (too old, too long), it still stores the valid ones, but Alloy counts the whole batch as dropped (ingester_error); the entries Loki really refused are in Rejected entries (lost). ingester_error after 5xx or connection errors (a Loki or gateway outage) is real loss and does not appear in Rejected entries.",
+      "description": "Bytes in batches Alloy gave up on in the selected range. Alloy retries 429, 5xx, timeouts and connection errors (10 retries, about 8.5 minutes) and drops any other 4xx at once. Treat this as an upper bound: when Loki answers 400 because some entries are invalid (too old, too long), it still stores the valid ones, but Alloy counts the whole batch as dropped (ingester_error); the entries Loki really refused are in Rejected entries (lost). ingester_error after 5xx or connection errors (a Loki outage) is real loss and does not appear in Rejected entries.",
       "gridPos": {
         "h": 5,
         "w": 4,

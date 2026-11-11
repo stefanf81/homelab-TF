@@ -374,14 +374,6 @@ spec:
               action = "drop"
             }
 
-            // The Loki gateway writes an access-log line for every push, including
-            // Alloy's own: shipping it would make each push generate the next one.
-            rule {
-              source_labels = ["__meta_kubernetes_pod_name"]
-              regex = "loki-gateway-.+"
-              action = "drop"
-            }
-
             // Name the workload from the first label the pod has, lowest priority first:
             // `app` (Flux controllers), `k8s-app` (CoreDNS, Cilium), then the standard
             // app.kubernetes.io/name. The regex must be (.+): the default (.*) also
@@ -860,8 +852,12 @@ spec:
           }
 
           loki.write "local" {
+            // Straight to the Loki Service (the chart's nginx gateway is disabled,
+            // loki-release.yaml). Loki logs successful requests at debug level
+            // only, so shipping Loki's own pod logs does not make each push
+            // produce the next one (the gateway's access log would have).
             endpoint {
-              url = "http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push"
+              url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
             }
 
             // Entries go to a write-ahead log on the alloy-data PVC first, so a slow or

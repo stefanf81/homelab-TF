@@ -79,11 +79,13 @@ spec:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: monitoring
             k8s:app.kubernetes.io/name: loki
+            k8s:app.kubernetes.io/component: single-binary
       toPorts:
         - ports:
-            # Loki gateway pod port (the Service exposes it as 80, but Cilium
-            # policy matches the backend pod port after service translation).
-            - port: "8080"
+            # Loki's own HTTP port (Service and pod port are both 3100). The
+            # ingress side is allow-abuseipdb-sync-to-loki in
+            # gitops/monitoring/platform/network-policies.yaml.
+            - port: "3100"
               protocol: TCP
     - toEntities:
         - kube-apiserver

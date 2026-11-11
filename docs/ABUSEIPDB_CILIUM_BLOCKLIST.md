@@ -208,7 +208,7 @@ Cloudflare actually blocked:
 | `CLOUDFLARE_FIREWALL_LOOKBACK` | `5m` | First window size on startup (raise temporarily to backfill) |
 | `CLOUDFLARE_FIREWALL_MAX_WINDOW` | `24h` | Cap on a recovery window after failed polls |
 | `CLOUDFLARE_FIREWALL_LIMIT` | `5000` | Max events fetched per window (1–10000) |
-| `LOKI_PUSH_URL` | `http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push` | Loki endpoint for collected blocks |
+| `LOKI_PUSH_URL` | `http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push` | Loki endpoint for collected blocks. Keep it set: the default compiled into the image still names the removed `loki-gateway` Service |
 
 The exception and protected-range lists live in `abuseipdb-sync-files` and are
 re-read on every cycle, so Git edits apply without a restart.
@@ -335,11 +335,11 @@ more so future restarts use the normal lookback.
   IP filtering and TTL unset (dynamic WAN IP; no expiry). Editing the token's
   permissions keeps the token value, so no secret change is needed.
 * Egress is allow-listed: DNS, `api.abuseipdb.com:443` and
-  `api.cloudflare.com:443` (Cilium FQDN policy), the Loki gateway pod in
-  namespace `monitoring` on port **8080** (Cilium matches the backend pod port,
-  not the Service port 80), and the `kube-apiserver` entity only. The
+  `api.cloudflare.com:443` (Cilium FQDN policy), the Loki pod in
+  namespace `monitoring` on port **3100** (there is no nginx gateway in front
+  of Loki), and the `kube-apiserver` entity only. The
   monitoring namespace's default-deny explicitly admits the `abuseipdb`
-  namespace to the Loki gateway
+  namespace to the Loki pod on that port
   (`gitops/monitoring/platform/network-policies.yaml`).
 * Ingress: Prometheus scrape from namespace `monitoring` only. The pod runs
   non-root, read-only rootfs, all capabilities dropped, `RuntimeDefault`
@@ -531,7 +531,7 @@ entry, then delete the leftover runtime objects manually:
 | Group owned by something else | Synchronizer refuses to overwrite a group without `app.kubernetes.io/managed-by=abuseipdb-sync` |
 | Cloudflare rule does not block | Rule disabled, expression drifted, or another zone rule skips/challenges first; check the entry point ruleset order |
 | `cloudflare_firewall_collector_errors_total{reason="authz"}` | Token lacks `Zone Analytics: Read` (edit the token; value unchanged) |
-| `...{reason="loki"}` / push timeout | Loki gateway pod port is **8080** (not the Service port 80), and the monitoring namespace default-deny must admit `abuseipdb`; check `kubectl -n monitoring get cnp allow-abuseipdb-sync-to-loki` |
+| `...{reason="loki"}` / push timeout | The push goes to the Loki pod on port **3100**; both the `abuseipdb-sync-egress` policy and the monitoring namespace's `allow-abuseipdb-sync-to-loki` must name that pod and port; check `kubectl -n monitoring get cnp allow-abuseipdb-sync-to-loki -o yaml` and `LOKI_PUSH_URL` |
 | `...{reason="http"}` on the collector | GraphQL response shape changed (all fields are strings); check the error text — it now includes the JSON decode error |
 | Cloudflare list append fails with "maximum number of items" | Account is at the 10,000-item free-plan cap; the sink never exceeds `CLOUDFLARE_MAX_ENTRIES`, so this only happens during manual testing |
 | "Proxied" curl returns `server: envoy` | Workstation `/etc/hosts` maps the hostnames to the Cilium LB; use `curl --resolve www.jokelab.dev:443:<cloudflare-ip>` to test the edge |

@@ -620,17 +620,18 @@ The November 3, 2026 reboot exposed two startup DNS dependencies:
   serving static files does not need the backend.
 - Loki gateway's chart-default `resolver kube-dns.kube-system.svc.cluster.local.;`
   requires DNS to find the DNS server itself. This also fails during config loading.
+  (The gateway has since been removed, 2026-11-11: clients use the Loki Service on
+  port 3100 directly, so there is no nginx left to start.)
 
 The frontend override in `gitops/apps/taskflow/frontend.yaml` now supplies an
 upstream-level literal resolver IP and `server ... resolve;`. The pinned frontend
 image (nginx 1.30.6) already provides `zone backend_upstream 64k`, required for runtime
 resolution. Do not remove the zone or deploy an older nginx image without re-running
-the smoke test. Loki's `gateway.nginxConfig.resolver` similarly uses a literal IP;
-its upstream proxy already resolves at runtime.
+the smoke test.
 
-Both use **10.43.0.10**, matching the `kube-dns` ClusterIP pinned in
+The resolver is **10.43.0.10**, matching the `kube-dns` ClusterIP pinned in
 `gitops/infrastructure/controllers/coredns/release.yaml`. The regression test checks
-that all three agree. If changing the cluster DNS IP, update all three files.
+that the two agree. If changing the cluster DNS IP, update both files.
 
 This allows nginx to start and serve local static/health endpoints before DNS is
 available; upstream requests can still fail until DNS and their backends recover.
@@ -739,7 +740,7 @@ kubectl logs -n monitoring deploy/alloy -c alloy | tail -20
 
 # Test Loki connectivity
 kubectl run loki-query --image=curlimages/curl --rm -i --restart=Never -n monitoring -- \
-  curl -s 'http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/labels'
+  curl -s 'http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/labels'
 ```
 
 #### Grafana dashboard shows no data

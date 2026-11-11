@@ -51,7 +51,11 @@ writer = blocks.find { |block| block.first.start_with?('loki.write "local"') }&.
 abort 'loki.write "local" must keep `wal { enabled = true }` (see alloy-release.yaml)' unless writer =~ /wal\s*\{[^}]*enabled\s*=\s*true/m
 
 text = kept.map { |block| block.join("\n") }.join("\n\n")
-text = text.gsub("http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push", loki_url)
+# Point the shipped loki.write at the disposable Loki. Fail if the shipped URL is
+# no longer this one: an unreplaced URL would leave the test pushing nowhere.
+shipped_url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+abort "loki.write \"local\" no longer pushes to #{shipped_url}; update this test" unless text.include?(shipped_url)
+text = text.gsub(shipped_url, loki_url)
 text << <<~ALLOY
 
   local.file_match "waf" {

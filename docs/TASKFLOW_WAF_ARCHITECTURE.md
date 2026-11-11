@@ -564,7 +564,7 @@ loki.process "coraza_audit" {
 
 loki.write "local" {
   endpoint {
-    url = "http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push"
+    url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
   }
 
   external_labels = {
@@ -679,7 +679,7 @@ datasources:
     uid: loki
     type: loki
     access: proxy
-    url: http://loki-gateway.monitoring.svc.cluster.local
+    url: http://loki.monitoring.svc.cluster.local:3100
     isDefault: false
     editable: false
 ```
@@ -970,11 +970,11 @@ kubectl exec -n monitoring loki-0 -- wget -qO- http://localhost:3100/ready
 
 # Query Loki labels
 kubectl run loki-query --image=curlimages/curl --rm -i --restart=Never -n monitoring -- \
-  curl -s 'http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/labels'
+  curl -s 'http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/labels'
 
 # Query WAF logs
 kubectl run loki-query --image=curlimages/curl --rm -i --restart=Never -n monitoring -- \
-  curl -s -G 'http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/query_range' \
+  curl -s -G 'http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/query_range' \
   --data-urlencode 'query={job="coraza-waf"}' \
   --data-urlencode 'limit=5' \
   --data-urlencode "start=$(date -v-1H +%s)000000000" \

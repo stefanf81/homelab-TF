@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
-# Render the pinned charts and verify application-only scans and DNS-independent
-# nginx configuration. --fixtures DIR also writes inputs for the offline smoke test.
+# Render the pinned charts and verify application-only scans, DNS-independent
+# frontend nginx configuration and that Loki is reached directly (no gateway).
+# --fixtures DIR also writes inputs for the offline smoke test.
 require "yaml"
 require "json"
 require "ipaddr"
@@ -73,19 +74,51 @@ begin
   frontend_image = resource(frontend, "Deployment", "taskflow-frontend").dig("spec", "template", "spec", "containers", 0, "image")
   assert(frontend_image.include?("@sha256:"), "smoke test must use the pinned frontend image (including its upstream zone)")
 
+  puts "OK nginx: frontend uses the literal CoreDNS IP and runtime resolution"
+
+  # Loki has no nginx gateway in front of it (the chart's gateway could not start
+  # while DNS was down). Every client must name the Loki Service itself, and the two
+  # network policies between abuseipdb-sync and Loki must match the rendered pod.
   _, loki = render("gitops/monitoring/logging/loki-release.yaml", "gitops/monitoring/logging/repositories.yaml")
-  nginx = resource(loki, "ConfigMap", "loki-gateway").fetch("data").fetch("nginx.conf")
-  resolvers = nginx.lines.grep(/^\s*resolver /).map(&:strip)
-  assert(resolvers == ["resolver #{dns_ip} valid=30s ipv6=off;"], "rendered Loki must not resolve the DNS server hostname at startup")
-  assert(nginx.include?("proxy_pass       $backend$request_uri;"), "retain Loki runtime upstream resolution")
-  gateway_image = resource(loki, "Deployment", "loki-gateway").dig("spec", "template", "spec", "containers").find { |c| c["name"] == "nginx" }.fetch("image")
-  puts "OK nginx: frontend and rendered Loki use the same literal CoreDNS IP and runtime resolution"
+  gateway = loki.select { |d| d.dig("metadata", "name").to_s.start_with?("loki-gateway") }
+  assert(gateway.empty?, "the Loki gateway must stay disabled, rendered: #{gateway.map { |d| "#{d["kind"]}/#{d.dig("metadata", "name")}" }.join(", ")}")
+  service = resource(loki, "Service", "loki")
+  port = service.dig("spec", "ports").find { |p| p["name"] == "http-metrics" }&.fetch("port")
+  assert(port == 3100, "rendered Loki Service must expose HTTP on 3100")
+  namespace = service.dig("metadata", "namespace")
+  loki_url = "http://loki.#{namespace}.svc.cluster.local:#{port}"
+  pod_labels = resource(loki, "StatefulSet", "loki").dig("spec", "template", "metadata", "labels")
+  assert(service.dig("spec", "selector").all? { |k, v| pod_labels[k] == v }, "Loki Service must select the single-binary pod")
+
+  alloy = documents("gitops/monitoring/logging/alloy-release.yaml").first.dig("spec", "values", "alloy", "configMap", "content")
+  assert(alloy.scan(/^\s*url\s*=\s*"([^"]+)"/).flatten == ["#{loki_url}/loki/api/v1/push"], "Alloy must push to the Loki Service directly")
+  datasource = YAML.safe_load(resource(documents("gitops/monitoring/logging/loki-datasource.yaml"), "ConfigMap", "taskflow-waf-loki-datasource")
+    .fetch("data").fetch("loki-datasource.yaml")).fetch("datasources").find { |d| d["uid"] == "loki" }
+  assert(datasource.fetch("url") == loki_url, "the Grafana Loki datasource must query the Loki Service directly")
+  abuseipdb = resource(documents("gitops/platform/abuseipdb/config.yaml"), "ConfigMap", "abuseipdb-sync-config").fetch("data")
+  assert(abuseipdb.fetch("LOKI_PUSH_URL") == "#{loki_url}/loki/api/v1/push", "abuseipdb-sync must push to the Loki Service directly")
+
+  # Cilium matches the pod's labels and port (after Service translation), so both
+  # sides of the cross-namespace path are compared with the rendered pod.
+  selects_loki = ->(labels) { labels.all? { |k, v| pod_labels[k.delete_prefix("k8s:")] == v } }
+  has_port = ->(rule) { rule.fetch("toPorts").flat_map { |t| t.fetch("ports") }.include?({"port" => port.to_s, "protocol" => "TCP"}) }
+  ingress = resource(documents("gitops/monitoring/platform/network-policies.yaml"), "CiliumNetworkPolicy", "allow-abuseipdb-sync-to-loki").fetch("spec")
+  assert(selects_loki.call(ingress.dig("endpointSelector", "matchLabels")), "allow-abuseipdb-sync-to-loki must select the Loki pod")
+  assert(ingress.fetch("ingress").any? { |rule| has_port.call(rule) }, "allow-abuseipdb-sync-to-loki must admit the Loki HTTP port")
+  egress = resource(documents("gitops/platform/abuseipdb/network-policy.yaml"), "CiliumNetworkPolicy", "abuseipdb-sync-egress").dig("spec", "egress")
+  to_loki = egress.select do |rule|
+    rule.fetch("toEndpoints", []).any? do |endpoint|
+      labels = endpoint.fetch("matchLabels").dup
+      labels.delete("k8s:io.kubernetes.pod.namespace") == namespace && selects_loki.call(labels)
+    end
+  end
+  assert(to_loki.any? { |rule| has_port.call(rule) }, "abuseipdb-sync-egress must allow the Loki pod on its HTTP port")
+  puts "OK Loki: no gateway; Alloy, Grafana and abuseipdb-sync use #{loki_url}; both network policies match the rendered pod and port"
 
   if fixtures
     FileUtils.mkdir_p(fixtures)
     File.write(File.join(fixtures, "frontend-upstream.conf"), upstream)
-    File.write(File.join(fixtures, "loki-nginx.conf"), nginx)
-    File.write(File.join(fixtures, "images.json"), JSON.generate({frontend: frontend_image, gateway: gateway_image}))
+    File.write(File.join(fixtures, "images.json"), JSON.generate({frontend: frontend_image}))
   end
 rescue StandardError => error
   warn error.message

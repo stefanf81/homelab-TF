@@ -13,7 +13,7 @@ metadata:
 spec:
   endpointSelector: {}
   ingress:
-    # Same-namespace traffic: Grafana -> VMSingle/Loki, Alloy -> loki-gateway,
+    # Same-namespace traffic: Grafana -> VMSingle/Loki, Alloy -> Loki,
     # vmagent -> kube-state-metrics, Loki internal memberlist.
     - fromEndpoints:
         - matchLabels:
@@ -28,8 +28,9 @@ spec:
             - key: reserved:ingress
               operator: Exists
 ---
-# The AbuseIPDB synchronizer ships Cloudflare Security Events to Loki directly.
-# Cilium matches the backend pod port (8080), not the gateway Service port (80).
+# The AbuseIPDB synchronizer ships Cloudflare Security Events to Loki directly:
+# the Loki pod's HTTP port 3100 (there is no nginx gateway in front of it). Its
+# egress side is abuseipdb-sync-egress in gitops/platform/abuseipdb/network-policy.yaml.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -39,12 +40,12 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: loki
-      app.kubernetes.io/component: gateway
+      app.kubernetes.io/component: single-binary
   ingress:
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: abuseipdb
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "3100"
               protocol: TCP

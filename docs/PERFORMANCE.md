@@ -151,8 +151,21 @@ Static review: the pinned charts were rendered with this repository's values
 | Kyverno background and cleanup controllers off | `infrastructure/controllers/kyverno/release.yaml` | Only `ValidatingPolicy` objects exist; the reports controller does the background scans (PERF-11). Two pods, 256Mi of requests and two Leases less |
 | `GOMEMLIMIT` on both WAFs (690MiB / 460MiB) | `apps/taskflow/*-waf.yaml` | Go's GC does not see the cgroup limit (PERF-06) |
 | Redis and Jaeger probe timeouts 1s → 3s | `apps/taskflow/redis.yaml`, `jaeger.yaml` | The only probes still on the 1s default; a liveness restart of Redis empties the cache (§2.3, PERF-05) |
+| Loki nginx gateway removed | `monitoring/logging/loki-release.yaml`, the three clients and two network policies below | In monolithic mode it forwarded every path to the one Loki Service (PERF-10). One pod (nginx + exporter) and one proxy hop per push and query less; no nginx that fails to start while DNS is down |
 
-Requests freed: 384Mi memory and 60m CPU.
+Requests freed: 432Mi memory and 75m CPU.
+
+The gateway removal moves three clients and two policies to
+`http://loki.monitoring.svc.cluster.local:3100` in one commit: Alloy's `loki.write`
+(`alloy-release.yaml`), the Grafana datasource (`loki-datasource.yaml`), `abuseipdb-sync`'s
+`LOKI_PUSH_URL` (`platform/abuseipdb/config.yaml`), and port 3100 on the single-binary pod in
+`allow-abuseipdb-sync-to-loki` (`monitoring/platform/network-policies.yaml`) and
+`abuseipdb-sync-egress` (`platform/abuseipdb/network-policy.yaml`).
+`tests/validate-startup-scope.rb` compares all five with the rendered chart, and the Alloy
+pipeline tests ran against a disposable Loki without a gateway. The Cilium policies themselves
+can only be confirmed on the cluster (checks below). The default URL compiled into the
+`abuseipdb-sync` image still names the gateway: keep `LOKI_PUSH_URL` set until the next image
+revision changes `config.go`.
 
 Check after Flux applies it:
 
@@ -173,11 +186,28 @@ third should print nothing; delete any configuration it still lists
 (`KYVERNO_POLICY_ENGINE.md` §4). In Grafana Explore,
 `count_over_time(up{job="kube-state-metrics"}[5m])` drops from ~15 to ~10.
 
+For the gateway removal:
+
+```bash
+kubectl -n monitoring get pods -l app.kubernetes.io/name=loki
+```
+
+```bash
+kubectl -n abuseipdb logs deploy/abuseipdb-sync --since=15m | grep -i loki
+```
+
+The first lists `loki-0` only. The second should show no push errors after the pod's
+restart. The collector polls every 5 minutes and pushes only when Cloudflare blocked
+something in that window; a failed push is retried by the next poll with the same
+window (up to 24h back), so a short gap during the rollout loses nothing. In Grafana Explore
+`increase(cloudflare_firewall_collector_errors_total{reason="loki"}[30m])` stays 0, any
+Loki dashboard shows lines newer than the rollout, and
+`rate(loki_write_sent_bytes_total[5m])` (Alloy) is above 0. If the `abuseipdb-sync` push
+times out, the two policies and the pod labels do not agree: compare
+`kubectl -n monitoring get pod loki-0 --show-labels` with both policies.
+
 Not changed, still open:
 
-- **`loki-gateway` hop (PERF-10).** Removing it changes the Alloy push URL, the Grafana
-  datasource, `abuseipdb-sync`'s `LOKI_PUSH_URL`, two network policies and
-  `tests/validate-startup-scope.rb` together; verify log ingestion on the cluster.
 - **PostgreSQL volume.** Still on the `proxmox-csi` class (`cache: writethrough`); it moves to
   `proxmox-csi-db` only when the data moves to a new PVC (`reports/PERF_DEEP_DIVE_2026-10.md` §5.3).
 

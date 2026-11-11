@@ -27,11 +27,14 @@ wrapper; testing only file tails would miss their newline-handling difference.
 
 `python3 gitops/monitoring/tests/validate-nginx-dns-startup.py` renders the pinned Trivy
 and Loki charts, checks the application namespace allowlist and unchanged scanner
-budgets, and starts the pinned frontend and chart-selected nginx gateway images with
-`--network none`. Negative controls check that the old configs fail on DNS lookup;
-the revised configs must serve `/index.html` and `/livez` without DNS or a backend.
-This checks startup resilience, not runtime DNS recovery or upstream access. The
-render checks also ensure both literal resolver IPs match the CoreDNS Service IP.
+budgets, and starts the pinned frontend image with `--network none`. A negative
+control checks that the old config fails on DNS lookup; the revised config must serve
+`/index.html` without DNS or a backend. This checks startup resilience, not runtime
+DNS recovery or upstream access. The render checks (`validate-startup-scope.rb`) also
+ensure the frontend's literal resolver IP matches the CoreDNS Service IP, that the
+Loki gateway stays disabled, that Alloy, the Grafana datasource and `abuseipdb-sync`
+use the Loki Service URL, and that both network policies between `abuseipdb-sync`
+and Loki match the rendered Loki pod's labels and port.
 Docker needs read access to the pinned private frontend image in GHCR; CI logs in
 with its existing package-read credential. No Kubernetes resources are created.
 
@@ -39,6 +42,6 @@ with its existing package-read credential. No Kubernetes resources are created.
 discovery/relabel rules in the real Alloy image with synthetic Kubernetes metadata
 (no cluster access). It checks legacy `app` and standard label routing, standard-name
 precedence, backend multiline isolation, and that WAF logs cannot bypass their own
-pipeline. Trivy operator/server diagnostics are kept, but scanner/collector job
-report payloads and Loki gateway access logs are dropped. It also renders the pinned
+pipeline. Trivy operator/server diagnostics and Loki's own logs are kept, but
+scanner/collector job report payloads are dropped. It also renders the pinned
 Alloy chart to check namespace-scoped pod-log RBAC and the Trivy bootstrap dependency.

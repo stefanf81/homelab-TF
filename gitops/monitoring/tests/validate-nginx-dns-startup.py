@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Start the pinned frontend and rendered Loki gateway with networking disabled.
+"""Start the pinned frontend with networking disabled.
 
-Static/health endpoints must respond despite an unreachable DNS server and backend.
+Static files must be served despite an unreachable DNS server and backend.
 This tests startup resilience, not runtime DNS recovery or upstream authorization.
 Uses only disposable local containers; never connects to a Kubernetes cluster.
+
+Loki no longer has an nginx gateway to start (clients use the Loki Service
+directly); validate-startup-scope.rb, run first below, checks that it stays so.
 """
 import json
 from pathlib import Path
@@ -84,16 +87,8 @@ def main():
         images = json.loads((fixtures / "images.json").read_text())
         old_frontend = fixtures / "old-frontend.conf"
         old_frontend.write_text("server backend.taskflow.svc.cluster.local:8080;\n")
-        old_gateway = fixtures / "old-gateway.conf"
-        gateway = (fixtures / "loki-nginx.conf").read_text()
-        old_gateway.write_text("\n".join(
-            "  resolver kube-dns.kube-system.svc.cluster.local.;" if line.strip().startswith("resolver ") else line
-            for line in gateway.splitlines()
-        ) + "\n")
         check_old_config_fails(images["frontend"], old_frontend, "/etc/nginx/upstream-server.conf")
-        check_old_config_fails(images["gateway"], old_gateway, "/etc/nginx/nginx.conf")
         check_startup(images["frontend"], fixtures / "frontend-upstream.conf", "/etc/nginx/upstream-server.conf", "/index.html")
-        check_startup(images["gateway"], fixtures / "loki-nginx.conf", "/etc/nginx/nginx.conf", "/livez")
 
 
 if __name__ == "__main__":
