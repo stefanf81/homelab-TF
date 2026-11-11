@@ -230,6 +230,13 @@ spec:
             # No CPU limit (below), so Go would size GOMAXPROCS for every node CPU.
             - name: GOMAXPROCS
               value: "2"
+            # Go's GC does not see the cgroup memory limit: without a soft limit
+            # the heap may keep doubling (GOGC=100) until the kernel OOM-kills the
+            # WAF in the middle of a request burst. ~90% of the 768Mi limit makes
+            # the GC collect harder as the process nears it instead; it changes
+            # nothing while the heap is small. Keep in step with limits.memory.
+            - name: GOMEMLIMIT
+              value: "690MiB"
           ports:
             - name: http
               containerPort: 8080

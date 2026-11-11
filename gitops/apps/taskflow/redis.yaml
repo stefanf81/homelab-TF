@@ -111,10 +111,14 @@ spec:
           volumeMounts:
             - name: redis-storage
               mountPath: /data
+          # Exec probes default to a 1s timeout, and each one forks redis-cli. On a
+          # busy node (everything starting after a reboot) three slow forks would
+          # restart Redis, and a restart empties the cache (no persistence).
           livenessProbe:
             exec:
               command: ["redis-cli", "ping"]
             periodSeconds: 15
+            timeoutSeconds: 3
             failureThreshold: 3
           startupProbe:
             exec:
@@ -127,6 +131,7 @@ spec:
             exec:
               command: ["redis-cli", "ping"]
             periodSeconds: 10
+            timeoutSeconds: 3
             failureThreshold: 2
       volumes:
         - name: redis-storage

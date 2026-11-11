@@ -212,6 +212,10 @@ spec:
             # No CPU limit (below), so Go would size GOMAXPROCS for every node CPU.
             - name: GOMAXPROCS
               value: "2"
+            # Soft memory limit for Go's GC at ~90% of the 512Mi limit; see
+            # backend-waf.yaml. Keep in step with limits.memory.
+            - name: GOMEMLIMIT
+              value: "460MiB"
           ports:
             - name: http
               containerPort: 8080
