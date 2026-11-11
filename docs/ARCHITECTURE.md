@@ -301,7 +301,7 @@ TF/
 │   │   ├── backend.yaml             # Spring Boot deployment + ClusterIP service
 │   │   ├── frontend.yaml            # Angular/nginx deployment + ClusterIP service
 │   │   ├── postgres-db.yaml         # PostgreSQL 18 deployment + ClusterIP service (name: db)
-│   │   ├── postgres-pvc.yaml        # 10Gi Proxmox CSI PVC
+│   │   ├── postgres-pvc.yaml        # 10Gi Proxmox CSI PVC (proxmox-csi-db)
 │   │   ├── redis.yaml               # Redis 8.10 deployment + ClusterIP service + NetworkPolicy
 │   │   ├── jaeger.yaml              # Jaeger all-in-one + OTLP services + UI service + NetworkPolicy
 │   │   ├── gateway.yaml             # Cilium Gateway (port 80/443, restricted namespace routes)

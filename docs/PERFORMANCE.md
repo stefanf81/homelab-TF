@@ -206,13 +206,34 @@ Loki dashboard shows lines newer than the rollout, and
 times out, the two policies and the pod labels do not agree: compare
 `kubectl -n monitoring get pod loki-0 --show-labels` with both policies.
 
-Not changed, still open:
+**PostgreSQL volume → `proxmox-csi-db`** (`cache: none`, `noatime`; was `proxmox-csi`,
+`cache: writethrough`). A PVC's class cannot change, so `postgres-data` is a new PVC and the
+`migrate-pgdata` init container in `postgres-db.yaml` copies the old volume into it once:
+the Deployment is `Recreate`, so the old pod has stopped first; the old volume is mounted
+read-only; the copy is renamed into place only when complete and its entry count matches.
+Rehearsed with the pinned `postgres:18.6-alpine` image in Docker: clean stop, killed pod
+(normal crash recovery on the copy), interrupted copy (redone) and an empty old volume
+(initdb). `postgres-pvc` stays as the rollback copy; it receives no writes after the switch.
 
-- **PostgreSQL volume.** Still on the `proxmox-csi` class (`cache: writethrough`); it moves to
-  `proxmox-csi-db` only when the data moves to a new PVC (`reports/PERF_DEEP_DIVE_2026-10.md` §5.3).
+Before merging, check that the class exists (`kubectl get sc proxmox-csi-db`): if the new
+PVC cannot be provisioned, Postgres stays down until the commit is reverted. Afterwards:
+
+```bash
+kubectl -n taskflow logs deploy/postgres-db -c migrate-pgdata
+```
+
+```bash
+kubectl -n taskflow get pvc postgres-data postgres-pvc
+```
+
+The first prints `copied … entries`, the second shows both `Bound`. Rollback: revert the
+commit (Postgres returns to `postgres-pvc`; writes made since the switch are lost).
+Cleanup after a few days without problems: remove the init container, the
+`postgres-storage-old` volume and the `postgres-pvc` object from Git; the PV is `Retain`, so
+delete its Proxmox disk by hand once no longer wanted.
 
 ### 1.3 ~~PostgreSQL runs on Longhorn (network storage)~~ (RESOLVED)
-**File:** `gitops/apps/taskflow/postgres-pvc.yaml` (`storageClassName: proxmox-csi`)
+**File:** `gitops/apps/taskflow/postgres-pvc.yaml` (`postgres-data`, `storageClassName: proxmox-csi-db` since 2026-11-11)
 
 > **Resolved:** PostgreSQL has been migrated from Longhorn to native **Proxmox CSI** storage. Disk space is scaled to `10Gi` and volumes are dynamically provisioned on your Proxmox VE hypervisor with backing snapshots and backups handled natively at the hypervisor layer. This bypasses in-cluster network storage overhead entirely, providing local-SSD-grade performance.
 

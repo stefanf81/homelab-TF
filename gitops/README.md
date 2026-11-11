@@ -91,7 +91,7 @@ This folder represents your **TaskFlow** application (Angular 22, Spring Boot 4.
 The scaffolded manifests inside this layout include critical performance and networking adjustments:
 
 ### 1. Database & Storage Scaling (`apps/taskflow/`)
-* **Proxmox CSI Storage Association:** `postgres-pvc.yaml` is configured with `storageClassName: proxmox-csi` and scaled to `10Gi` of high-performance virtual disk storage, mapped directly to VM 900 via the node's `instance-id` annotation.
+* **Proxmox CSI Storage Association:** `postgres-pvc.yaml` defines `postgres-data` with `storageClassName: proxmox-csi-db` (`cache: none`, `noatime`) at `10Gi` of high-performance virtual disk storage, mapped directly to VM 900 via the node's `instance-id` annotation.
 * **PostgreSQL Engine Tuning:** `postgres-db.yaml` utilizes container launch variables to tune buffers, cache sizes, and connection limits within its 512Mi RAM limit (e.g. `shared_buffers=128MB`, `effective_cache_size=256MB`, `work_mem=8MB`, `max_connections=50`).
 
 ### 2. Modern Kubernetes Gateway API with Cilium (`apps/taskflow/`)

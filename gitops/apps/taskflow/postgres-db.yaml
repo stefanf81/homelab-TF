@@ -34,6 +34,52 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
+      # One-time move to the proxmox-csi-db volume (postgres-pvc.yaml). Strategy is
+      # Recreate, so the old Postgres pod has stopped before this runs and nothing
+      # writes to either volume. The old volume is mounted read-only; the copy goes
+      # to a temporary directory and is renamed only when complete, so an
+      # interrupted copy is simply redone. A no-op once the new volume holds data
+      # (and on a fresh cluster with no old data, where Postgres runs initdb).
+      initContainers:
+        - name: migrate-pgdata
+          image: postgres:18.6-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -ec
+            - |
+              old=/old/18
+              new=/var/lib/postgresql/18
+              tmp=/var/lib/postgresql/.migrate-18
+              if [ -e "$new" ]; then echo "postgres-data already holds $new; nothing to do"; exit 0; fi
+              if [ ! -f "$old/data/pgdata/PG_VERSION" ]; then echo "no data on the old volume; Postgres will initialise"; exit 0; fi
+              rm -rf "$tmp"
+              cp -a "$old" "$tmp"
+              a=$(cd "$old" && find . | wc -l); b=$(cd "$tmp" && find . | wc -l)
+              if [ "$a" != "$b" ]; then echo "copy incomplete: $a entries on the old volume, $b copied" >&2; exit 1; fi
+              mv "$tmp" "$new"
+              echo "copied $a entries ($(du -sh "$new" | cut -f1)) from postgres-pvc to postgres-data"
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql
+            - name: postgres-storage-old
+              mountPath: /old
+              readOnly: true
       containers:
         - name: postgres
           image: postgres:18.6-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395
@@ -190,7 +236,12 @@ spec:
       volumes:
         - name: postgres-storage
           persistentVolumeClaim:
+            claimName: postgres-data
+        # Previous volume: source of the one-time copy and the rollback copy.
+        - name: postgres-storage-old
+          persistentVolumeClaim:
             claimName: postgres-pvc
+            readOnly: true
         - name: dshm
           emptyDir:
             medium: Memory

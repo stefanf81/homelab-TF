@@ -218,7 +218,7 @@ To ensure production-grade security, resiliency, and performance on a single-nod
 * **IP Reputation Denylist (AbuseIPDB):** A Go synchronizer (`gitops/images/abuseipdb-sync`) maintains a runtime-managed `CiliumCIDRGroup` that a `CiliumClusterwideNetworkPolicy` denies on the direct-to-origin path, and mirrors the same validated list into a Cloudflare account IP list referenced by a zone WAF block rule — the enforcement point that sees real client IPs behind the Cloudflare proxy. Caddy/Coraza are untouched (no list duplication). Per-IP visibility: Grafana `Blocked Sources` (Cloudflare + Cilium); see `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`.
 
 ### 3. Storage Resiliency & Database Performance
-* **Proxmox CSI Storage:** PostgreSQL PVC (`postgres-pvc.yaml`) uses **10Gi** storage on the `proxmox-csi` StorageClass, enabling dynamic disk attachments and hypervisor-level backups.
+* **Proxmox CSI Storage:** PostgreSQL PVC (`postgres-pvc.yaml`, `postgres-data`) uses **10Gi** on the `proxmox-csi-db` StorageClass (`cache: none`, `noatime`), enabling dynamic disk attachments and hypervisor-level backups.
 * **PostgreSQL RAM Tuning:** `shared_buffers = 128MB`, `effective_cache_size = 256MB`, `work_mem = 8MB`, `maintenance_work_mem = 64MB`, `max_connections = 50` within a 512MiB container budget (sized to actual ~17MB data size).
 * **Redis Cache Protection:** Ephemeral L2 cache running with `--maxmemory 64mb` and `--maxmemory-policy allkeys-lru` within a 128MiB container budget.
 * **JVM Heap & Off-Heap Guard:** Spring Boot backend uses `MaxRAMPercentage=50.0` (1 GiB heap at a 2 GiB limit) with bounded off-heap (`MaxMetaspaceSize=256m`, `MaxDirectMemorySize=256m`). Its memory request is 1536Mi; QoS is Burstable because CPU has no limit.
