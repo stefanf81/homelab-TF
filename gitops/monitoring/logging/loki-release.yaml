@@ -133,14 +133,17 @@ spec:
           limits:
             memory: 64Mi
 
-    # loki-sc-rules sidecar. 14d peak 97Mi, CPU bursts to ~32m on resync.
+    # No loki-sc-rules sidecar. It only copies ruler rules out of ConfigMaps and
+    # Secrets labelled `loki_rule`, and none exist: it held ~97Mi (128Mi
+    # requested) to watch for nothing. The chart also grants the Loki
+    # ServiceAccount cluster-wide read on ConfigMaps and Secrets for it; with the
+    # sidecar off that ClusterRole renders without rules. The ruler treats the
+    # then-missing /rules directory as "no tenants" (pkg/ruler/base/mapper.go).
+    # Re-enable in the same change as the first Loki rule ConfigMap, with
+    # sidecar.resources (10m / 128Mi request, 256Mi limit was the old sizing).
     sidecar:
-      resources:
-        requests:
-          cpu: 10m
-          memory: 128Mi
-        limits:
-          memory: 256Mi
+      rules:
+        enabled: false
 
     # The chart enables large Memcached caches by default. They are unnecessary
     # for one local Loki replica and exceed the available node memory.

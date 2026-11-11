@@ -197,6 +197,14 @@ spec:
       spec:
         # Discover VMServiceScrapes (and VMProbes/VMRules) in ALL namespaces
         selectAllByDefault: true
+        # Interval for scrapes that set none. The chart default is 20s, and five
+        # bundled scrapes inherit it (kube-state-metrics, node-exporter,
+        # kube-apiserver, Grafana, the VM operator), while kubelet/cAdvisor and
+        # every custom scrape run at 30s or 60s and the datasource below tells
+        # Grafana 30s. 30s takes a third of the samples off those five jobs
+        # (less vmagent/VMSingle CPU, fewer TSDB writes) and makes the interval
+        # the same everywhere.
+        scrapeInterval: 30s
         # Preserve pending remote-write data when the pod is replaced while
         # VMSingle is unavailable. The operator manages the StatefulSet rollout.
         statefulMode: true
