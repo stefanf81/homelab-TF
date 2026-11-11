@@ -56,9 +56,9 @@ data:
   CLOUDFLARE_FIREWALL_MAX_WINDOW: "24h"
   CLOUDFLARE_FIREWALL_LIMIT: "5000"
   # The Loki Service itself (port 3100); the chart's nginx gateway is disabled.
-  # Keep this key set while deployment.yaml pins an image older than 0.3.3-r1:
-  # those default to the removed loki-gateway Service. From 0.3.3-r1 the
-  # compiled-in default is this same URL.
+  # Same as the default compiled into the image from 0.3.3-r1 (config.go);
+  # kept explicit so a rollback to an older image does not fall back to the
+  # removed loki-gateway Service.
   LOKI_PUSH_URL: "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
 ---
 # Git-managed filter lists mounted into the synchronizer. They are re-read on
