@@ -139,6 +139,48 @@ No sustained backlog/latency symptom justifies relaxing CPU limits here. Flux-sp
 `gotk_*` duration metrics were not present in VictoriaMetrics, so these duration
 observations come from Kustomization status history, not a measured latency p99.
 
+#### Configuration review (2026-11-11)
+
+Static review: the pinned charts were rendered with this repository's values
+(`helm template`) and compared before and after. Nothing was measured on the cluster.
+
+| Change | Where | Why |
+|---|---|---|
+| vmagent default scrape interval 20s → 30s | `monitoring/platform/release.yaml` | Five bundled scrapes (kube-state-metrics, node-exporter, kube-apiserver, Grafana, the VM operator) set no interval and inherited the chart's 20s, while kubelet/cAdvisor, every custom scrape and the Grafana datasource use 30s or 60s. A third fewer samples from those jobs |
+| Loki rules sidecar off | `monitoring/logging/loki-release.yaml` | No `loki_rule` ConfigMap or Secret exists. Removes a Python sidecar (128Mi requested, ~97Mi peak) and the cluster-wide ConfigMap/Secret read it needed |
+| Kyverno background and cleanup controllers off | `infrastructure/controllers/kyverno/release.yaml` | Only `ValidatingPolicy` objects exist; the reports controller does the background scans (PERF-11). Two pods, 256Mi of requests and two Leases less |
+| `GOMEMLIMIT` on both WAFs (690MiB / 460MiB) | `apps/taskflow/*-waf.yaml` | Go's GC does not see the cgroup limit (PERF-06) |
+| Redis and Jaeger probe timeouts 1s → 3s | `apps/taskflow/redis.yaml`, `jaeger.yaml` | The only probes still on the 1s default; a liveness restart of Redis empties the cache (§2.3, PERF-05) |
+
+Requests freed: 384Mi memory and 60m CPU.
+
+Check after Flux applies it:
+
+```bash
+kubectl -n monitoring get pod loki-0 -o jsonpath='{.spec.containers[*].name}{"\n"}'
+```
+
+```bash
+kubectl -n kyverno get pods
+```
+
+```bash
+kubectl get validatingwebhookconfigurations | grep -E 'kyverno-(cleanup|ttl)'
+```
+
+The first prints `loki` only and the second lists the admission and reports controllers. The
+third should print nothing; delete any configuration it still lists
+(`KYVERNO_POLICY_ENGINE.md` §4). In Grafana Explore,
+`count_over_time(up{job="kube-state-metrics"}[5m])` drops from ~15 to ~10.
+
+Not changed, still open:
+
+- **`loki-gateway` hop (PERF-10).** Removing it changes the Alloy push URL, the Grafana
+  datasource, `abuseipdb-sync`'s `LOKI_PUSH_URL`, two network policies and
+  `tests/validate-startup-scope.rb` together; verify log ingestion on the cluster.
+- **PostgreSQL volume.** Still on the `proxmox-csi` class (`cache: writethrough`); it moves to
+  `proxmox-csi-db` only when the data moves to a new PVC (`reports/PERF_DEEP_DIVE_2026-10.md` §5.3).
+
 ### 1.3 ~~PostgreSQL runs on Longhorn (network storage)~~ (RESOLVED)
 **File:** `gitops/apps/taskflow/postgres-pvc.yaml` (`storageClassName: proxmox-csi`)
 
@@ -204,7 +246,7 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10, while `postgres-db.yaml`
 
 | # | Item | Where | Note |
 |---|------|-------|------|
-| 3.1 | `synchronous_commit` tuning | `postgres-db.yaml` | `synchronous_commit=off` trades the last WAL-writer interval of acknowledged writes for lower commit latency; it is suitable only for this explicitly accepted homelab durability profile. |
+| 3.1 | `synchronous_commit` tuning | `postgres-db.yaml` | Set to `on` (REL-04): a commit is acknowledged after its WAL is flushed. `off` would trade up to ~600 ms of acknowledged writes for lower commit latency; measure first (`reports/PERF_DEEP_DIVE_2026-10.md` §5.4). |
 | 3.2 | Compression / `Cache-Control` on nginx | `frontend` repo `nginx.conf` | ✅ Done in the app repo: Brotli and gzip (precompressed `.br`/`.gz` sidecars served statically, level 6 on the fly for the rest), `Cache-Control: public, immutable, max-age=15552000` on the hashed JS/CSS bundles, `no-cache` on the HTML shells. Cloudflare caches the bundles (`cf-cache-status: HIT` after the first request per data center, checked 2026-10-30); Smart Tiered Cache would also remove those first per-location fetches (`reports/NETWORK_REVIEW_2026-10.md` §2.6). |
 | 3.3 | HTTP/2 | `backend.yaml` Service, `backend-waf.yaml` | Backend `server.http2.enabled=true` (app repo) and `appProtocol: kubernetes.io/h2c` on the backend Service, but no hop uses it: the Gateway routes to the WAFs (`gatewayAPI.enableAppProtocol` is off) and the backend WAF pins its upstream to HTTP/1.1. Intentional, see `reports/NETWORK_REVIEW_2026-10.md` §2.7. |
 | 3.4 | JVM GC logging / `-XX:MaxGCPauseMillis` | `backend.yaml` | ✅ Applied: rotated `-Xlog:gc*` + `MaxGCPauseMillis=100`. |
