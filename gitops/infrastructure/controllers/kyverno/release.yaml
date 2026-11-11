@@ -48,7 +48,17 @@ spec:
             cpu: "50m"
           limits:
             memory: "512Mi"
+    # Background and cleanup controllers are off: both are optional and had no
+    # work. The background controller only processes generate and mutate-existing
+    # rules, the cleanup controller only DeletingPolicy/CleanupPolicy and the
+    # `cleanup.kyverno.io/ttl` label; this repo has two ValidatingPolicies and
+    # nothing else. Background *scans* of those policies are done by the reports
+    # controller, which stays. Saves two pods, 2 x 128Mi of requests and two
+    # Leases. Their settings below are kept so that re-enabling one (set
+    # enabled: true together with the first policy that needs it) brings back the
+    # 15s lease renewal instead of the 2s default.
     backgroundController:
+      enabled: false
       replicas: 1
       extraArgs:
         leaderElectionRetryPeriod: 15s
@@ -59,6 +69,7 @@ spec:
         limits:
           memory: "256Mi"
     cleanupController:
+      enabled: false
       replicas: 1
       extraArgs:
         leaderElectionRetryPeriod: 15s

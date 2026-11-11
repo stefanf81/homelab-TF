@@ -156,9 +156,26 @@ Two layers keep the platform out of policy evaluation:
   Cilium runs in `kube-system`; there is no `cilium` namespace.
 
 ### Resources (minimal / single-replica, homelab)
-All four controllers run 1 replica:
-- `admissionController` — requests 256Mi / limits 512Mi
-- `backgroundController`, `cleanupController`, `reportsController` — requests 128Mi / limits 256Mi
+Two controllers run, 1 replica each:
+- `admissionController` — requests 192Mi / limits 512Mi
+- `reportsController` — requests 128Mi / limits 256Mi (also runs the hourly background scans)
+
+`backgroundController` and `cleanupController` are disabled (2026-11-11): both are optional, and
+this cluster has only `ValidatingPolicy` objects. Set `enabled: true` in
+`gitops/infrastructure/controllers/kyverno/release.yaml` in the same change as the first policy
+that needs one:
+
+| Controller | Needed for |
+|---|---|
+| `backgroundController` | `generate` rules and mutation of existing resources (`GeneratingPolicy`, `MutatingPolicy` with `mutateExisting`) |
+| `cleanupController` | `DeletingPolicy` / `CleanupPolicy` and the `cleanup.kyverno.io/ttl` label |
+
+After the change rolls out, check that the cleanup controller took its two webhook
+configurations with it; delete them if they are still listed (their Service no longer exists):
+
+```bash
+kubectl get validatingwebhookconfigurations | grep -E 'kyverno-(cleanup|ttl)'
+```
 
 `features.autoUpdateWebhooks.enabled: true` lets Kyverno manage its webhook configurations per
 policy; each `ValidatingPolicy` gets a webhook with the policy's own `failurePolicy`.
@@ -372,7 +389,7 @@ flux get hr -n kyverno
 flux get hr -n policy-reporter
 
 # Pods
-kubectl -n kyverno get pods            # 4 controllers, 1/1
+kubectl -n kyverno get pods            # admission + reports controller, 1/1
 kubectl -n policy-reporter get pods    # policy-reporter, policy-reporter-ui, policy-reporter-trivy-plugin, trivy-operator-polr-adapter
 
 # CRDs (Kyverno-owned)

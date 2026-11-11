@@ -226,7 +226,7 @@ spec:
       # Controller metrics have no namespace label and keep the target's.
       honorLabels: true
 ---
-# --- Kyverno (all four controller metrics Services share part-of=kyverno) -----
+# --- Kyverno (every controller metrics Service shares part-of=kyverno) --------
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMServiceScrape
 metadata:
