@@ -97,6 +97,8 @@ begin
   assert(datasource.fetch("url") == loki_url, "the Grafana Loki datasource must query the Loki Service directly")
   abuseipdb = resource(documents("gitops/platform/abuseipdb/config.yaml"), "ConfigMap", "abuseipdb-sync-config").fetch("data")
   assert(abuseipdb.fetch("LOKI_PUSH_URL") == "#{loki_url}/loki/api/v1/push", "abuseipdb-sync must push to the Loki Service directly")
+  compiled_default = File.read(File.join(ROOT, "gitops/images/abuseipdb-sync/config.go"))[/^\s*defaultLokiPushURL\s*=\s*"([^"]+)"/, 1]
+  assert(compiled_default == "#{loki_url}/loki/api/v1/push", "abuseipdb-sync's compiled-in LOKI_PUSH_URL default must name the Loki Service too")
 
   # Cilium matches the pod's labels and port (after Service translation), so both
   # sides of the cross-namespace path are compared with the rendered pod.

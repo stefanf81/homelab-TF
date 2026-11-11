@@ -23,7 +23,9 @@ const (
 	defaultCloudflareMaxEntries = 10000
 	defaultCloudflareRuleRef    = "abuseipdb"
 
-	defaultLokiPushURL = "http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push"
+	// The Loki Service itself: the cluster runs Loki without the chart's nginx
+	// gateway (gitops/monitoring/logging/loki-release.yaml).
+	defaultLokiPushURL = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
 )
 
 // defaultProtectedCIDRs are never accepted from external reputation data,

@@ -3,8 +3,8 @@
 # Version inputs are parsed by .github/workflows/build-abuseipdb-sync.yaml to
 # derive the image tag. Keep the ARG format stable.
 ARG GO_VERSION=1.27.3
-ARG APP_VERSION=0.3.2
-ARG IMAGE_REVISION=r2
+ARG APP_VERSION=0.3.3
+ARG IMAGE_REVISION=r1
 
 FROM golang:${GO_VERSION}-alpine AS build
 ENV GOTOOLCHAIN=local

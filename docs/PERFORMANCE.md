@@ -163,9 +163,9 @@ The gateway removal moves three clients and two policies to
 `abuseipdb-sync-egress` (`platform/abuseipdb/network-policy.yaml`).
 `tests/validate-startup-scope.rb` compares all five with the rendered chart, and the Alloy
 pipeline tests ran against a disposable Loki without a gateway. The Cilium policies themselves
-can only be confirmed on the cluster (checks below). The default URL compiled into the
-`abuseipdb-sync` image still names the gateway: keep `LOKI_PUSH_URL` set until the next image
-revision changes `config.go`.
+can only be confirmed on the cluster (checks below). The default URL compiled into
+`abuseipdb-sync` names the Loki Service from image `0.3.3-r1` (`config.go`); images up to
+`0.3.2-r2` default to the removed gateway, so keep `LOKI_PUSH_URL` set while one is pinned.
 
 Check after Flux applies it:
 

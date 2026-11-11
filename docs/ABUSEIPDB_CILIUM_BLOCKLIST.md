@@ -208,7 +208,7 @@ Cloudflare actually blocked:
 | `CLOUDFLARE_FIREWALL_LOOKBACK` | `5m` | First window size on startup (raise temporarily to backfill) |
 | `CLOUDFLARE_FIREWALL_MAX_WINDOW` | `24h` | Cap on a recovery window after failed polls |
 | `CLOUDFLARE_FIREWALL_LIMIT` | `5000` | Max events fetched per window (1–10000) |
-| `LOKI_PUSH_URL` | `http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push` | Loki endpoint for collected blocks. Keep it set: the default compiled into the image still names the removed `loki-gateway` Service |
+| `LOKI_PUSH_URL` | `http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push` | Loki endpoint for collected blocks. This is the compiled-in default from image `0.3.3-r1`; older images default to the removed `loki-gateway` Service, so keep the key set while one is pinned |
 
 The exception and protected-range lists live in `abuseipdb-sync-files` and are
 re-read on every cycle, so Git edits apply without a restart.
