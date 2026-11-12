@@ -10,8 +10,11 @@ metadata:
   name: abuseipdb-sync
   namespace: abuseipdb
   annotations:
-    # Roll the pod when its ConfigMaps or Secret change (Reloader).
-    reloader.stakater.com/auto: "true"
+    # Roll the pod only when its env ConfigMap or Secret changes (Reloader).
+    # abuseipdb-sync-files (exceptions/protected-cidrs) is re-read on each cycle
+    # without restarting so filter edits never burn the 5/day API quota.
+    configmap.reloader.stakater.com/reload: abuseipdb-sync-config
+    secret.reloader.stakater.com/reload: abuseipdb-sync
   labels:
     app.kubernetes.io/name: abuseipdb-sync
     app.kubernetes.io/component: ip-reputation-sync

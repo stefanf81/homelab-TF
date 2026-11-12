@@ -471,7 +471,7 @@ func (c *CloudflareClient) request(ctx context.Context, method, path string, q u
 		return nil, err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, cloudflareMaxResponse))
+	data, err := readBounded(resp.Body, cloudflareMaxResponse)
 	if err != nil {
 		return nil, err
 	}

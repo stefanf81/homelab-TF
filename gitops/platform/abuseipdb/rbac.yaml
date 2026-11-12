@@ -12,13 +12,22 @@ metadata:
     app.kubernetes.io/component: ip-reputation-sync
     app.kubernetes.io/part-of: infrastructure
 rules:
+  # Kubernetes RBAC cannot scope `create` with resourceNames; get/update/patch
+  # are restricted strictly to the single runtime-managed CiliumCIDRGroup.
   - apiGroups:
       - cilium.io
     resources:
       - ciliumcidrgroups
     verbs:
-      - get
       - create
+  - apiGroups:
+      - cilium.io
+    resources:
+      - ciliumcidrgroups
+    resourceNames:
+      - abuseipdb
+    verbs:
+      - get
       - update
       - patch
 ---

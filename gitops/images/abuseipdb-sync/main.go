@@ -64,7 +64,9 @@ func main() {
 	defer stop()
 
 	// Recover the last successful synchronization timestamp from the CIDR
-	// group so feed age reporting survives pod restarts.
+	// group so feed age reporting survives pod restarts and avoids burning the
+	// daily AbuseIPDB blacklist quota on routine rollouts or node reboots.
+	var initialDelay time.Duration
 	if state, err := app.ccg.Get(ctx, cfg.CIDRGroupName); err != nil {
 		logger.Warn("cannot read existing CiliumCIDRGroup at startup", "error", err)
 	} else {
@@ -72,11 +74,13 @@ func main() {
 			logger.Warn("existing CiliumCIDRGroup is not managed by abuseipdb-sync; synchronization will refuse to overwrite it",
 				"name", cfg.CIDRGroupName)
 		}
+		now := time.Now()
 		app.mu.Lock()
 		app.lastSuccess = state.LastSuccess
 		app.cfLastSuccess = state.CloudflareLastSuccess
 		app.mu.Unlock()
-		app.restoreSuccessMetrics(time.Now())
+		app.restoreSuccessMetrics(now)
+		initialDelay = initialSyncDelay(now, state, cfg.SyncInterval, cfg.MinEntries, cfg.CloudflareEnabled)
 		if state.LastSuccess.IsZero() {
 			logger.Info("no previous successful synchronization recorded",
 				"name", cfg.CIDRGroupName, "exists", state.Exists, "entries", len(state.Prefixes))
@@ -87,6 +91,13 @@ func main() {
 		if state.Exists {
 			metricEntries.Set(float64(len(state.Prefixes)))
 		}
+		// If startup will defer the AbuseIPDB fetch, still enforce any newly
+		// added exceptions/protected CIDRs against the existing group right away
+		// (zero API quota spent).
+		if initialDelay > 0 && state.Exists && state.ManagedByUs {
+			app.applyStartupFilters(ctx, state)
+		}
+		app.updateStaleness(ctx)
 	}
 
 	mux := http.NewServeMux()
@@ -118,14 +129,34 @@ func main() {
 		go app.firewall.Run(ctx)
 	}
 
-	logger.Info("starting initial synchronization",
+	logger.Info("synchronizer ready",
 		"interval", cfg.SyncInterval.String(),
+		"initial_delay", initialDelay.Round(time.Second).String(),
 		"group", cfg.CIDRGroupName,
 		"limit", cfg.Limit,
 		"confidence_minimum", cfg.ConfidenceMinimum,
 		"max_stale_age", cfg.MaxStaleAge.String(),
 		"stale_behavior", cfg.StaleBehavior,
 		"cloudflare_enabled", cfg.CloudflareEnabled)
+	if initialDelay > 0 {
+		logger.Info("skipping immediate startup fetch; existing CiliumCIDRGroup is still within sync interval",
+			"next_sync_in", initialDelay.Round(time.Second).String())
+		timer := time.NewTimer(initialDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_ = srv.Shutdown(shutdownCtx)
+			cancel()
+			logger.Info("shutting down")
+			return
+		case err := <-serverErr:
+			timer.Stop()
+			logger.Error("metrics server failed", "error", err)
+			os.Exit(1)
+		case <-timer.C:
+		}
+	}
 	app.syncWithLogging(ctx)
 
 	ticker := time.NewTicker(cfg.SyncInterval)
@@ -160,6 +191,65 @@ type App struct {
 	cfLastSuccess  time.Time
 	staleCleared   bool
 	staleCFCleared bool
+	staleLogged    bool
+	staleCFLogged  bool
+}
+
+// initialSyncDelay returns how long startup should wait before fetching the
+// AbuseIPDB blacklist. When a valid, non-undersized CiliumCIDRGroup already
+// exists within the configured sync interval (and Cloudflare is not newly
+// enabled without a previous push), waiting preserves the 5/day Individual API
+// quota across pod rollouts and node reboots.
+func initialSyncDelay(now time.Time, state *GroupState, syncInterval time.Duration, minEntries int, cfEnabled bool) time.Duration {
+	if state == nil || !state.Exists || state.LastSuccess.IsZero() {
+		return 0
+	}
+	if minEntries > 0 && len(state.Prefixes) < minEntries {
+		return 0
+	}
+	if cfEnabled && state.CloudflareLastSuccess.IsZero() {
+		return 0
+	}
+	age := now.Sub(state.LastSuccess)
+	if age < 0 {
+		return syncInterval
+	}
+	if age >= syncInterval {
+		return 0
+	}
+	return syncInterval - age
+}
+
+// applyStartupFilters subtracts any newly configured Protected/Exceptions CIDRs
+// from the recovered CiliumCIDRGroup (and Cloudflare IP list) immediately on
+// startup without spending an AbuseIPDB blacklist API call.
+func (a *App) applyStartupFilters(ctx context.Context, state *GroupState) {
+	if err := a.reloadFilters(); err != nil {
+		a.log.Warn("startup filter check skipped: cannot reload filter lists", "error", err)
+		return
+	}
+	kept, protectedRemoved := FilterOverlaps(state.Prefixes, a.cfg.Protected)
+	kept, exceptionsRemoved := FilterOverlaps(kept, a.cfg.Exceptions)
+	if protectedRemoved == 0 && exceptionsRemoved == 0 {
+		return
+	}
+	filtered := SortDedup(kept)
+	if _, err := a.ccg.Apply(ctx, a.cfg.CIDRGroupName, filtered, time.Time{}, time.Time{}); err != nil {
+		a.log.Error("startup filter prune failed on CiliumCIDRGroup", "error", err)
+		return
+	}
+	metricEntries.Set(float64(len(filtered)))
+	if a.cf != nil {
+		if entries, _, err := a.cf.Sync(ctx, filtered); err != nil {
+			a.log.Error("startup filter prune failed on Cloudflare IP list", "error", err)
+		} else {
+			metricCloudflareEntries.Set(float64(entries))
+		}
+	}
+	a.log.Info("pruned newly excluded/protected entries from existing denylist at startup",
+		"exceptions_removed", exceptionsRemoved,
+		"protected_removed", protectedRemoved,
+		"remaining", len(filtered))
 }
 
 func (a *App) syncWithLogging(ctx context.Context) {
@@ -181,7 +271,7 @@ func (a *App) syncOnce(ctx context.Context) error {
 	body, status, err := a.feed.Fetch(ctx)
 	metricLastHTTPStatus.Set(float64(status))
 	if err != nil {
-		return a.failSync(ctx, "download", err, fmt.Sprintf("feed download failed (status %d)", status))
+		return a.failSync(ctx, errorReason(err), err, fmt.Sprintf("feed download failed (status %d)", status))
 	}
 
 	prefixes, invalid, err := ParseBlacklist(body)
@@ -224,6 +314,7 @@ func (a *App) syncOnce(ctx context.Context) error {
 		a.mu.Lock()
 		a.lastSuccess = now
 		a.staleCleared = false
+		a.staleLogged = false
 		a.mu.Unlock()
 		metricEntries.Set(float64(len(desired)))
 		metricEntriesAdded.Set(float64(result.Added))
@@ -250,6 +341,7 @@ func (a *App) syncOnce(ctx context.Context) error {
 			a.mu.Lock()
 			a.cfLastSuccess = now
 			a.staleCFCleared = false
+			a.staleCFLogged = false
 			a.mu.Unlock()
 			metricCloudflareEntries.Set(float64(entries))
 			metricCloudflareSyncSuccess.Set(1)
@@ -369,6 +461,7 @@ func (a *App) updateCiliumStaleness(ctx context.Context) {
 	a.mu.Lock()
 	last := a.lastSuccess
 	alreadyCleared := a.staleCleared
+	alreadyLogged := a.staleLogged
 	cfg := a.cfg
 	a.mu.Unlock()
 
@@ -379,14 +472,24 @@ func (a *App) updateCiliumStaleness(ctx context.Context) {
 	metricFeedAge.Set(age.Seconds())
 	if age <= cfg.MaxStaleAge {
 		metricFeedStale.Set(0)
+		if alreadyLogged {
+			a.mu.Lock()
+			a.staleLogged = false
+			a.mu.Unlock()
+		}
 		return
 	}
 	metricFeedStale.Set(1)
-	a.log.Error("reputation feed is stale",
-		"sink", "cilium",
-		"age", age.String(),
-		"max_stale_age", cfg.MaxStaleAge.String(),
-		"behavior", cfg.StaleBehavior)
+	if !alreadyLogged {
+		a.log.Error("reputation feed is stale",
+			"sink", "cilium",
+			"age", age.String(),
+			"max_stale_age", cfg.MaxStaleAge.String(),
+			"behavior", cfg.StaleBehavior)
+		a.mu.Lock()
+		a.staleLogged = true
+		a.mu.Unlock()
+	}
 
 	if cfg.StaleBehavior != staleBehaviorFailOpen || alreadyCleared {
 		return
@@ -411,6 +514,7 @@ func (a *App) updateCloudflareStaleness(ctx context.Context) {
 	a.mu.Lock()
 	last := a.cfLastSuccess
 	alreadyCleared := a.staleCFCleared
+	alreadyLogged := a.staleCFLogged
 	cfg := a.cfg
 	a.mu.Unlock()
 
@@ -421,14 +525,24 @@ func (a *App) updateCloudflareStaleness(ctx context.Context) {
 	metricCloudflareFeedAge.Set(age.Seconds())
 	if age <= cfg.MaxStaleAge {
 		metricCloudflareFeedStale.Set(0)
+		if alreadyLogged {
+			a.mu.Lock()
+			a.staleCFLogged = false
+			a.mu.Unlock()
+		}
 		return
 	}
 	metricCloudflareFeedStale.Set(1)
-	a.log.Error("reputation feed is stale",
-		"sink", "cloudflare",
-		"age", age.String(),
-		"max_stale_age", cfg.MaxStaleAge.String(),
-		"behavior", cfg.StaleBehavior)
+	if !alreadyLogged {
+		a.log.Error("reputation feed is stale",
+			"sink", "cloudflare",
+			"age", age.String(),
+			"max_stale_age", cfg.MaxStaleAge.String(),
+			"behavior", cfg.StaleBehavior)
+		a.mu.Lock()
+		a.staleCFLogged = true
+		a.mu.Unlock()
+	}
 
 	if cfg.StaleBehavior != staleBehaviorFailOpen || alreadyCleared {
 		return
@@ -452,30 +566,9 @@ func (a *App) reportFeedAge(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			a.mu.Lock()
-			last := a.lastSuccess
-			cfLast := a.cfLastSuccess
-			maxStale := a.cfg.MaxStaleAge
-			cfEnabled := a.cf != nil
-			a.mu.Unlock()
-			if !last.IsZero() {
-				age := time.Since(last).Seconds()
-				metricFeedAge.Set(age)
-				if age > maxStale.Seconds() {
-					metricFeedStale.Set(1)
-				} else {
-					metricFeedStale.Set(0)
-				}
-			}
-			if cfEnabled && !cfLast.IsZero() {
-				age := time.Since(cfLast).Seconds()
-				metricCloudflareFeedAge.Set(age)
-				if age > maxStale.Seconds() {
-					metricCloudflareFeedStale.Set(1)
-				} else {
-					metricCloudflareFeedStale.Set(0)
-				}
-			}
+			// Update feed-age gauges AND enforce fail-open clearing within one
+			// minute of crossing MaxStaleAge instead of waiting up to SyncInterval.
+			a.updateStaleness(ctx)
 		}
 	}
 }

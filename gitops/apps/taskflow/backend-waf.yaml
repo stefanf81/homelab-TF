@@ -87,6 +87,11 @@ data:
             }
         }
 
+        # Intentionally logged (no `log_skip`): Loki panels in taskflow-waf.json
+        # and taskflow-access-logs.json use `{job="coraza-waf", container="waf"}[5m]`
+        # as a zero-valued heartbeat baseline during idle periods so "0 detections"
+        # is distinguished from a broken log pipeline. Alloy drops `/waf-healthz`
+        # from request counters and histograms.
         handle /waf-healthz {
             respond "healthy" 200
         }

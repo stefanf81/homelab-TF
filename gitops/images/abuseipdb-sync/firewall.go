@@ -233,7 +233,7 @@ func (c *FirewallCollector) doGraphQL(ctx context.Context, query string, filter 
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, cloudflareMaxResponse))
+	body, err := readBounded(resp.Body, cloudflareMaxResponse)
 	if err != nil {
 		return nil, err
 	}

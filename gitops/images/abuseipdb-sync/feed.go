@@ -124,7 +124,7 @@ func (c *FeedClient) do(ctx context.Context, rawURL string) ([]byte, int, error)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	body, err := readBounded(resp.Body, maxResponseBytes)
 	if err != nil {
 		return nil, resp.StatusCode, err
 	}
@@ -185,6 +185,20 @@ func bodySnippet(body []byte) string {
 		s = s[:200]
 	}
 	return s
+}
+
+// readBounded reads up to maxBytes from r and fails explicitly if the stream
+// exceeds maxBytes instead of silently truncating (which could cut an IP/CIDR
+// mid-line into a different valid address).
+func readBounded(r io.Reader, maxBytes int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("response body exceeds %d-byte limit (truncated)", maxBytes)
+	}
+	return data, nil
 }
 
 // errorReason maps an error to a bounded metric label.

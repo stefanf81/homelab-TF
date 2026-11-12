@@ -1,7 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -197,5 +204,98 @@ func TestErrorReason(t *testing.T) {
 	}
 	if got := errorReason(&httpStatusError{status: 500}); got != "http" {
 		t.Fatalf("want http, got %s", got)
+	}
+}
+
+func TestReadBoundedRejectsTruncation(t *testing.T) {
+	data, err := readBounded(bytes.NewReader([]byte("198.51.100.12")), 13)
+	if err != nil || string(data) != "198.51.100.12" {
+		t.Fatalf("exact-limit read failed: data=%q err=%v", data, err)
+	}
+	if _, err := readBounded(bytes.NewReader([]byte("198.51.100.123")), 13); err == nil {
+		t.Fatal("expected error when stream exceeds maxBytes")
+	}
+}
+
+func TestInitialSyncDelay(t *testing.T) {
+	now := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+	interval := 6 * time.Hour
+	sample := []netip.Prefix{mustPrefix(t, "8.8.8.8/32")}
+
+	if got := initialSyncDelay(now, nil, interval, 1, false); got != 0 {
+		t.Fatalf("nil state: want 0, got %s", got)
+	}
+	if got := initialSyncDelay(now, &GroupState{Exists: false}, interval, 1, false); got != 0 {
+		t.Fatalf("missing group: want 0, got %s", got)
+	}
+	if got := initialSyncDelay(now, &GroupState{Exists: true, Prefixes: sample}, interval, 1, false); got != 0 {
+		t.Fatalf("zero LastSuccess: want 0, got %s", got)
+	}
+	// Empty/cleared group below MinEntries -> sync immediately even if LastSuccess is recent.
+	empty := &GroupState{Exists: true, LastSuccess: now.Add(-1 * time.Hour)}
+	if got := initialSyncDelay(now, empty, interval, 1, false); got != 0 {
+		t.Fatalf("empty group below minEntries: want 0, got %s", got)
+	}
+	// Fresh Cilium sync 2h ago -> wait 4h.
+	state := &GroupState{Exists: true, Prefixes: sample, LastSuccess: now.Add(-2 * time.Hour), CloudflareLastSuccess: now.Add(-2 * time.Hour)}
+	if got := initialSyncDelay(now, state, interval, 1, true); got != 4*time.Hour {
+		t.Fatalf("fresh state: want 4h, got %s", got)
+	}
+	// Cloudflare newly enabled without prior Cloudflare push -> sync immediately.
+	noCF := &GroupState{Exists: true, Prefixes: sample, LastSuccess: now.Add(-2 * time.Hour)}
+	if got := initialSyncDelay(now, noCF, interval, 1, true); got != 0 {
+		t.Fatalf("newly enabled Cloudflare: want 0, got %s", got)
+	}
+	// Expired sync 7h ago -> sync immediately.
+	old := &GroupState{Exists: true, Prefixes: sample, LastSuccess: now.Add(-7 * time.Hour)}
+	if got := initialSyncDelay(now, old, interval, 1, false); got != 0 {
+		t.Fatalf("expired state: want 0, got %s", got)
+	}
+	// Clock skew (future LastSuccess) -> clamp to full interval.
+	future := &GroupState{Exists: true, Prefixes: sample, LastSuccess: now.Add(5 * time.Minute)}
+	if got := initialSyncDelay(now, future, interval, 1, false); got != interval {
+		t.Fatalf("future state: want %s, got %s", interval, got)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestSyncOnceRecordsBoundedDownloadErrorReason(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "60")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			clone := req.Clone(req.Context())
+			u, _ := http.NewRequest(req.Method, srv.URL+req.URL.RequestURI(), nil)
+			clone.URL = u.URL
+			clone.Host = u.Host
+			return srv.Client().Transport.RoundTrip(clone)
+		}),
+	}
+	app := &App{
+		cfg: &Config{
+			ExceptionsFile: filepath.Join(dir, "exceptions.txt"),
+			ProtectedFile:  filepath.Join(dir, "protected.txt"),
+			MaxStaleAge:    24 * time.Hour,
+		},
+		log:  logger,
+		feed: &FeedClient{apiKey: "test", limit: 100, http: client, log: logger},
+	}
+
+	before := counterValue(t, metricSyncErrors.WithLabelValues("rate_limited"))
+	if err := app.syncOnce(context.Background()); err == nil {
+		t.Fatal("expected syncOnce error on HTTP 429")
+	}
+	after := counterValue(t, metricSyncErrors.WithLabelValues("rate_limited"))
+	if after-before != 1 {
+		t.Fatalf("metricSyncErrors{reason=rate_limited} delta = %v, want 1", after-before)
 	}
 }

@@ -162,3 +162,17 @@ func newLazyGauge(opts prometheus.GaugeOpts) lazyGauge {
 func (g lazyGauge) Set(v float64) {
 	g.vec.WithLabelValues().Set(v)
 }
+
+func init() {
+	// Pre-initialize bounded error-reason counters to 0 so the first failure of a
+	// given reason produces a visible 0 -> 1 delta in Prometheus/VictoriaMetrics.
+	for _, r := range []string{"rate_limited", "http", "timeout", "network", "parse", "validation", "kube"} {
+		metricSyncErrors.WithLabelValues(r)
+	}
+	for _, r := range []string{"rate_limited", "http", "bulk", "validation", "timeout", "network"} {
+		metricCloudflareSyncErrors.WithLabelValues(r)
+	}
+	for _, r := range []string{"authz", "graphql", "rate_limited", "http", "loki", "timeout", "network"} {
+		metricFirewallCollectorErrors.WithLabelValues(r)
+	}
+}

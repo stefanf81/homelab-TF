@@ -87,6 +87,8 @@ data:
             }
         }
 
+        # Intentionally logged (no `log_skip`): see backend-waf.yaml (/waf-healthz
+        # serves as the 5m Loki liveness baseline during idle lab periods).
         handle /waf-healthz {
             respond "healthy" 200
         }
