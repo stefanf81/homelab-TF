@@ -284,13 +284,13 @@ limits:   { memory: "2Gi" }   # Burstable; no CPU quota
 `/data` is an `emptyDir` with a clear comment that persistence is intentionally off. That's a legitimate L2-cache choice, **but** on every Redis pod restart (or the node rebooting) the entire cache is lost and the backend falls back to PostgreSQL — a cache stampede that can spike DB latency/CPU until the cache warms. With a single replica there's no warm standby.
 
 **Fix:** Accept it (documented tradeoff) **or** back Redis with a small Proxmox CSI PVC + `appendonly yes` so restartswarm doesn't start fully cold. At minimum, ensure the backend degrades gracefully (it presumably does, since Redis is "L2").
-### 2.4 Default connection pool vs `max_connections=50` (LOW-MEDIUM)
+### 2.4 Connection pool overlap during rolling updates (`max_connections=80`, DONE)
 
-**File:** `gitops/apps/taskflow/postgres-db.yaml` (`max_connections=50`)
+**File:** `gitops/apps/taskflow/postgres-db.yaml` (`max_connections=80`)
 
-Spring Boot's default HikariCP `maximumPoolSize` is 10, while `postgres-db.yaml` budgets for a 25-connection pool. With one backend replica that's fine, but if the backend ever scales, each replica multiplies the pool and can exhaust `max_connections=50` with no headroom for `psql`/migrations/admin.
+The backend fixes HikariCP at `minimum-idle=25, maximum-pool-size=25`. During a `RollingUpdate` (`maxSurge: 1, maxUnavailable: 0`), the surge pod opens its 25 connections while the terminating pod holds its 25 connections through its `preStop` drain (`25 + 25 + 2 postgres-exporter = 52 > 50`), which previously logged `FATAL: sorry, too many clients already`.
 
-**Fix:** Pin `spring.datasource.hikari.maximum-pool-size` explicitly in the app (≤25 total across replicas) and keep `max_connections` sized from that number, or raise `max_connections` to ~50–100 (cheap at this RAM).
+**Status:** ✅ Raised `max_connections` from `50` to `80` so rolling updates, Flyway migrations, `postgres-exporter`, and admin `psql` all fit comfortably without steady-state horizontal backend scaling.
 
 ---
 

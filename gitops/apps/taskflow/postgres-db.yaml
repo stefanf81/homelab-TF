@@ -61,12 +61,13 @@ spec:
             # pooled connections + /dev/shm) inside the 768Mi cap; index builds keep 64MB.
             - "-c"
             - "autovacuum_work_mem=32MB"
-            # Fewer connections → less per-connection memory pressure.
-            # One backend's Hikari pool keeps 25 connections open (minimum == maximum), leaving room for
-            # psql, Flyway migrations, and the postgres-exporter. Backend scaling is
-            # intentionally disabled until connection pooling is redesigned.
+            # One backend's Hikari pool keeps 25 connections open (minimum == maximum), and
+            # a RollingUpdate (maxSurge: 1, maxUnavailable: 0) overlaps the surge pod's 25
+            # connections with the old pod's 25 connections during its preStop drain
+            # (25 + 25 + 2 postgres-exporter = 52 > 50). 80 gives clean headroom for
+            # rolling updates, Flyway migrations, postgres-exporter, and admin psql.
             - "-c"
-            - "max_connections=50"
+            - "max_connections=80"
             # SSD/Proxmox CSI tuning: planner assumes flash + parallel I/O.
             - "-c"
             - "random_page_cost=1.1"

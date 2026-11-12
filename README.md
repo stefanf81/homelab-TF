@@ -210,7 +210,7 @@ To ensure production-grade security, resiliency, and performance on a single-nod
 
 ### 3. Storage Resiliency & Database Performance
 * **Proxmox CSI Storage:** PostgreSQL PVC (`postgres-pvc.yaml`, `postgres-data`) uses **10Gi** on the `proxmox-csi-db` StorageClass (`cache: none`, `noatime`), enabling dynamic virtual disk attachments on the Proxmox VE host (note: Proxmox CSI attaches PV disks with `backup=0` by default, so database backups require an explicit `pg_dump`/CSI backup workflow).
-* **PostgreSQL RAM Tuning:** `shared_buffers = 128MB`, `effective_cache_size = 384MB`, `work_mem = 8MB`, `maintenance_work_mem = 64MB`, `autovacuum_work_mem = 32MB`, `max_connections = 50` within a 768MiB container budget (sized to actual ~17MB data size plus connection/autovacuum/tmpfs headroom).
+* **PostgreSQL RAM Tuning:** `shared_buffers = 128MB`, `effective_cache_size = 384MB`, `work_mem = 8MB`, `maintenance_work_mem = 64MB`, `autovacuum_work_mem = 32MB`, `max_connections = 80` within a 768MiB container budget (sized to actual ~17MB data size plus rolling-update Hikari surge, autovacuum, and tmpfs headroom).
 * **Redis Cache Protection:** Ephemeral L2 cache running with `--maxmemory 64mb` and `--maxmemory-policy allkeys-lru` within a 128MiB container budget.
 * **JVM Heap & Off-Heap Guard:** Spring Boot backend uses `MaxRAMPercentage=50.0` (1 GiB heap at a 2 GiB limit) with bounded off-heap (`MaxMetaspaceSize=256m`, `MaxDirectMemorySize=256m`). Its memory request is 1536Mi; QoS is Burstable because CPU has no limit.
 

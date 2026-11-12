@@ -199,7 +199,7 @@ VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 | Replicas | 1 |
 | Storage | 10 GiB PVC (`postgres-data`), `storageClassName: proxmox-csi-db` (`cache: none`, `noatime`, ReadWriteOnce) |
 | SecurityContext | `readOnlyRootFilesystem: true`, `runAsNonRoot` UID/GID 70 (postgres), drop ALL capabilities, `fsGroup: 70` (`OnRootMismatch`) |
-| Tuning | `shared_buffers=128MB`, `effective_cache_size=384MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `autovacuum_work_mem=32MB`, `max_connections=50`, `jit=off`, `shared_preload_libraries=pg_stat_statements` |
+| Tuning | `shared_buffers=128MB`, `effective_cache_size=384MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `autovacuum_work_mem=32MB`, `max_connections=80`, `jit=off`, `shared_preload_libraries=pg_stat_statements` |
 | SSD / WAL tuning | `random_page_cost=1.1`, `effective_io_concurrency=200`, `checkpoint_timeout=15min`, `wal_buffers=16MB`, `wal_compression=lz4`, `max_wal_size=2GB`, `synchronous_commit=on` |
 | Resources | CPU: 250m request, no limit; Memory: 768 MiB (request = limit) |
 
