@@ -30,9 +30,13 @@ spec:
         redirect_url = "https://hubble.${DOMAIN}/oauth2/callback"
         upstreams = ["http://hubble-ui.kube-system.svc.cluster.local:80"]
         http_address = "0.0.0.0:4180"
+        # Host-only __Host- cookie (no cookie_domains): forces Secure + Path=/ and
+        # omits Domain, so the session cookie is never sent to www.${DOMAIN} or
+        # grafana.${DOMAIN} and never collides with kyverno.${DOMAIN}'s proxy.
+        cookie_name = "__Host-o2p-hubble"
         cookie_secure = true
-        cookie_domains = [".${DOMAIN}"]
-        whitelist_domains = [".${DOMAIN}"]
+        cookie_samesite = "lax"
+        whitelist_domains = ["hubble.${DOMAIN}"]
         reverse_proxy = true
         set_xauthrequest = true
         skip_provider_button = true

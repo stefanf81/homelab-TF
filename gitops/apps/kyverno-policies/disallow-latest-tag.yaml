@@ -8,10 +8,10 @@ metadata:
     policies.kyverno.io/severity: medium
     policies.kyverno.io/subject: Pod
     policies.kyverno.io/description: >-
-      Every container and init container must reference an image by an
-      @sha256 digest or by an explicit tag other than `latest`. Untagged
-      images (which default to latest) are rejected; digest-pinned images,
-      including `:latest@sha256:...`, are allowed because the digest is
+      Every container, init container and ephemeral container must reference an
+      image by an @sha256 digest or by an explicit tag other than `latest`.
+      Untagged images (which default to latest) are rejected; digest-pinned
+      images, including `:latest@sha256:...`, are allowed because the digest is
       immutable.
 spec:
   validationActions: [Deny]
@@ -42,7 +42,10 @@ spec:
         resources: [pods]
   variables:
     - name: containers
-      expression: object.spec.containers + object.spec.?initContainers.orValue([])
+      expression: >-
+        object.spec.containers +
+        object.spec.?initContainers.orValue([]) +
+        object.spec.?ephemeralContainers.orValue([])
     # The tag is read from the last path segment so a registry port
     # (registry:5000/app) is not mistaken for a tag.
     - name: unpinned

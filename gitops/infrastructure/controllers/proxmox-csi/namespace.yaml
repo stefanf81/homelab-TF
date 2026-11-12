@@ -2,3 +2,11 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: csi-proxmox
+  labels:
+    # proxmox-csi-node mounts block devices as root/privileged; warn/audit stay restricted.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest

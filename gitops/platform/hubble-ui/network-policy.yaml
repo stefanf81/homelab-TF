@@ -1,4 +1,18 @@
+# Namespace-wide ingress default-deny for hubble-ui (host probes/port-forward allowed).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: hubble-ui-ingress-default-deny
+  namespace: hubble-ui
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEntities:
+        - host
+---
 # Allow Cilium Gateway to reach the oauth2-proxy service in hubble-ui namespace.
+# The upstream hubble-ui and hubble-relay pods in kube-system are locked down by
+# gitops/infrastructure/configs/cilium/hubble-isolation.yaml.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:

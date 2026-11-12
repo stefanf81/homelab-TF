@@ -3,5 +3,9 @@ kind: Namespace
 metadata:
   name: kyverno
   labels:
-    # Exempt Kyverno's own pods from any present/future Pod Security Admission policies.
-    pod-security.kubernetes.io/enforce: privileged
+    # Kyverno's admission and reports controllers run non-root with RuntimeDefault
+    # seccomp and drop ALL capabilities, meeting the restricted PSA profile.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest

@@ -151,37 +151,76 @@ spec:
             - port: "8080"
               protocol: TCP
 ---
-# 7) Allow the monitoring stack (VictoriaMetrics vmagent, in `monitoring`) to
-#    scrape the metrics endpoints. Without this, backend, Postgres and Redis
-#    metrics go dark.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
+# 7) Allow VictoriaMetrics vmagent (and ONLY vmagent, never other pods in
+#    `monitoring` such as internet-exposed Grafana, Loki or Alloy) to scrape the
+#    metrics endpoints on their exact ports.
+#
+#    SECURITY INVARIANT: backend.yaml / configmap.yaml trusts X-Real-IP from the
+#    Pod CIDR (APP_TRUSTED_PROXY_REGEX) on :8080. Opening :8080 to the whole
+#    `monitoring` namespace would let any compromised pod there (e.g. Grafana)
+#    call /api/** directly — bypassing Coraza WAF + Caddy rate limits — and forge
+#    X-Real-IP headers. Keep pure L4 rules here (no L7 `rules.http` on :8080):
+#    attaching an L7 rule on :8080 would also redirect WAF -> backend traffic
+#    through Cilium's host Envoy proxy.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
 metadata:
-  name: allow-monitoring-scrape
+  name: allow-vmagent-to-backend
   namespace: taskflow
 spec:
-  podSelector:
-    matchExpressions:
-      - key: app
-        operator: In
-        values:
-          - taskflow-backend
-          - postgres-exporter
-          - redis-exporter
-  policyTypes:
-    - Ingress
+  endpointSelector:
+    matchLabels:
+      app: taskflow-backend
   ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-      ports:
-        - protocol: TCP
-          port: 8080 # backend actuator/prometheus
-        - protocol: TCP
-          port: 9187 # postgres-exporter
-        - protocol: TCP
-          port: 9121 # redis-exporter
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            "k8s:app.kubernetes.io/name": vmagent
+            "k8s:app.kubernetes.io/instance": victoria-metrics-k8s-stack
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-vmagent-to-postgres-exporter
+  namespace: taskflow
+spec:
+  endpointSelector:
+    matchLabels:
+      app: postgres-exporter
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            "k8s:app.kubernetes.io/name": vmagent
+            "k8s:app.kubernetes.io/instance": victoria-metrics-k8s-stack
+      toPorts:
+        - ports:
+            - port: "9187"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-vmagent-to-redis-exporter
+  namespace: taskflow
+spec:
+  endpointSelector:
+    matchLabels:
+      app: redis-exporter
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            "k8s:app.kubernetes.io/name": vmagent
+            "k8s:app.kubernetes.io/instance": victoria-metrics-k8s-stack
+      toPorts:
+        - ports:
+            - port: "9121"
+              protocol: TCP
 ---
 # 8) Allow cert-manager HTTP-01 solver pods to receive challenge traffic
 apiVersion: networking.k8s.io/v1

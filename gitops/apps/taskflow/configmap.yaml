@@ -22,9 +22,13 @@ data:
   # startup without it.
   # Chain: client -> Cloudflare (PROXIED=true) -> Cilium Envoy -> backend WAF
   # (Caddy) -> backend. The backend's immediate peer is the taskflow-backend-waf
-  # pod, whose IP is assigned from the Pod CIDR 10.42.0.0/16. Only that WAF may
-  # reach backend:8080 (allow-backend-waf-to-backend in namespace-default-deny.yaml),
-  # so trusting the Pod CIDR here does not let other pods spoof headers.
+  # pod, whose IP is assigned from the Pod CIDR 10.42.0.0/16. Only that WAF and
+  # cluster-internal vmagent (which scrapes /actuator/prometheus and has no public
+  # ingress; Grafana, Loki and Alloy are excluded) may reach backend:8080
+  # (allow-backend-waf-to-backend + allow-vmagent-to-backend in
+  # namespace-default-deny.yaml). Moving Actuator onto a separate management port
+  # to exclude vmagent from :8080 as well requires retraining the backend image's
+  # Java 25 -XX:AOTCache for a dual-context Tomcat setup first.
   # Single quotes: the JVM must receive single backslashes. Never write `\\.`
   # inside single quotes; inside double quotes it would have to be `\\.`.
   APP_TRUSTED_PROXY_REGEX: '^10\.42\.[0-9]{1,3}\.[0-9]{1,3}$'

@@ -4,3 +4,4 @@ resources:
   - ippool.yaml
   - l2announcement-policy.yaml
   - abuseipdb-ingress-deny.yaml
+  - hubble-isolation.yaml

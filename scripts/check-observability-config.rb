@@ -68,4 +68,81 @@ class ObservabilityConfigTest < Minitest::Test
       assert_includes policy.dig('spec', 'validationActions'), 'Deny'
     end
   end
+
+  def documents(path)
+    YAML.load_stream(File.read(File.join(ROOT, path))).compact.select { |d| d.is_a?(Hash) }
+  end
+
+  def test_taskflow_monitoring_scrapes_allow_only_vmagent_per_port
+    docs = documents('gitops/apps/taskflow/namespace-default-deny.yaml')
+    refute docs.any? { |d| d.dig('metadata', 'name') == 'allow-monitoring-scrape' },
+           'legacy namespace-wide allow-monitoring-scrape must not return'
+
+    expected = {
+      'allow-vmagent-to-backend' => ['taskflow-backend', '8080'],
+      'allow-vmagent-to-postgres-exporter' => ['postgres-exporter', '9187'],
+      'allow-vmagent-to-redis-exporter' => ['redis-exporter', '9121']
+    }
+    expected.each do |policy_name, (app, port)|
+      pol = docs.find { |d| d['kind'] == 'CiliumNetworkPolicy' && d.dig('metadata', 'name') == policy_name }
+      refute_nil pol, "missing CiliumNetworkPolicy #{policy_name}"
+      assert_equal({ 'app' => app }, pol.dig('spec', 'endpointSelector', 'matchLabels'))
+      ingress = pol.dig('spec', 'ingress')
+      assert_equal 1, ingress.length
+      from = ingress.first.fetch('fromEndpoints')
+      assert_equal 1, from.length
+      labels = from.first.fetch('matchLabels')
+      assert_equal 'monitoring', labels['k8s:io.kubernetes.pod.namespace']
+      assert_equal 'vmagent', labels['k8s:app.kubernetes.io/name']
+      ports = ingress.first.fetch('toPorts').flat_map { |tp| tp.fetch('ports') }
+      assert_equal [{ 'port' => port, 'protocol' => 'TCP' }], ports
+      # No L7 HTTP rule on backend:8080 so WAF -> backend stays on eBPF fast path.
+      assert ingress.first.fetch('toPorts').none? { |tp| tp.key?('rules') }
+    end
+  end
+
+  def test_oauth2_proxies_use_distinct_host_only_cookies_and_exact_whitelists
+    proxies = {
+      'gitops/platform/hubble-ui/release.yaml' => ['__Host-o2p-hubble', 'hubble.${DOMAIN}'],
+      'gitops/platform/policy-reporter/oauth2-proxy-release.yaml' => ['__Host-o2p-kyverno', 'kyverno.${DOMAIN}']
+    }
+    cookie_names = []
+    proxies.each do |path, (expected_cookie, expected_host)|
+      cfg = values(path).dig('config', 'configFile')
+      refute_nil cfg
+      refute_match(/^\s*cookie_domains\s*=/, cfg, "#{path} must omit cookie_domains for host-only __Host- cookies")
+      assert_match(/^\s*cookie_name\s*=\s*"#{Regexp.escape(expected_cookie)}"\s*$/, cfg)
+      assert_match(/^\s*cookie_secure\s*=\s*true\s*$/, cfg)
+      assert_match(/^\s*cookie_samesite\s*=\s*"lax"\s*$/, cfg)
+      assert_match(/^\s*whitelist_domains\s*=\s*\["#{Regexp.escape(expected_host)}"\]\s*$/, cfg)
+      cookie_names << expected_cookie
+    end
+    assert_equal cookie_names.uniq, cookie_names
+  end
+
+  def test_oauth2_proxy_upstreams_are_isolated_on_pod_network
+    polr_docs = documents('gitops/platform/policy-reporter/oauth2-proxy-network-policy.yaml')
+    polr_deny = polr_docs.find { |d| d['kind'] == 'CiliumNetworkPolicy' && d.dig('metadata', 'name') == 'policy-reporter-ingress-default-deny' }
+    refute_nil polr_deny
+    assert_equal({}, polr_deny.dig('spec', 'endpointSelector'))
+
+    polr_scrape = polr_docs.find { |d| d['kind'] == 'CiliumNetworkPolicy' && d.dig('metadata', 'name') == 'allow-vmagent-to-policy-reporter' }
+    refute_nil polr_scrape
+    assert_equal 'vmagent', polr_scrape.dig('spec', 'ingress', 0, 'fromEndpoints', 0, 'matchLabels', 'k8s:app.kubernetes.io/name')
+
+    hubble_ns_docs = documents('gitops/platform/hubble-ui/network-policy.yaml')
+    assert hubble_ns_docs.any? { |d| d['kind'] == 'CiliumNetworkPolicy' && d.dig('spec', 'endpointSelector') == {} }
+
+    kube_docs = documents('gitops/infrastructure/configs/cilium/hubble-isolation.yaml')
+    ui_pol = kube_docs.find { |d| d.dig('metadata', 'name') == 'restrict-hubble-ui-ingress' }
+    relay_pol = kube_docs.find { |d| d.dig('metadata', 'name') == 'restrict-hubble-relay-ingress' }
+    refute_nil ui_pol
+    refute_nil relay_pol
+    assert_equal 'kube-system', ui_pol.dig('metadata', 'namespace')
+    assert_equal 'kube-system', relay_pol.dig('metadata', 'namespace')
+    assert_equal({ 'k8s-app' => 'hubble-ui' }, ui_pol.dig('spec', 'endpointSelector', 'matchLabels'))
+    assert_equal '8081', ui_pol.dig('spec', 'ingress', 0, 'toPorts', 0, 'ports', 0, 'port')
+    assert_equal({ 'k8s-app' => 'hubble-relay' }, relay_pol.dig('spec', 'endpointSelector', 'matchLabels'))
+    assert_equal '4245', relay_pol.dig('spec', 'ingress', 0, 'toPorts', 0, 'ports', 0, 'port')
+  end
 end

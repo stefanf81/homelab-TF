@@ -1,0 +1,53 @@
+# Pod-network ingress isolation for Hubble UI and Hubble Relay in kube-system.
+#
+# Without these policies, any compromised pod in the cluster can connect directly
+# to http://hubble-ui.kube-system.svc.cluster.local:80 (container port 8081) or
+# hubble-relay.kube-system.svc.cluster.local:80 (gRPC container port 4245),
+# bypassing hubble-ui-oauth2-proxy and streaming every cluster network flow.
+#
+# NOTE: Cilium evaluates toPorts against the post-DNAT container ports (8081 on
+# hubble-ui's frontend container, 4245 on hubble-relay), not Service port 80.
+# Inside the hubble-ui pod, frontend -> backend (:8090) uses pod-local loopback.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: restrict-hubble-ui-ingress
+  namespace: kube-system
+spec:
+  endpointSelector:
+    matchLabels:
+      k8s-app: hubble-ui
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hubble-ui
+            "k8s:app.kubernetes.io/name": oauth2-proxy
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+    # Kubelet probes and admin `kubectl port-forward`.
+    - fromEntities:
+        - host
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: restrict-hubble-relay-ingress
+  namespace: kube-system
+spec:
+  endpointSelector:
+    matchLabels:
+      k8s-app: hubble-relay
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            "k8s:k8s-app": hubble-ui
+      toPorts:
+        - ports:
+            - port: "4245"
+              protocol: TCP
+    # Kubelet gRPC health probes and `cilium hubble port-forward` / `kubectl port-forward`.
+    - fromEntities:
+        - host
