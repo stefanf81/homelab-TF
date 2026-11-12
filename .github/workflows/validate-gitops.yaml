@@ -50,7 +50,7 @@ permissions:
 jobs:
   gitops:
     name: Build and schema-validate Flux paths
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
 
     steps:
@@ -98,7 +98,7 @@ jobs:
 
   opentofu:
     name: OpenTofu fmt, validate and tflint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
 
     steps:
