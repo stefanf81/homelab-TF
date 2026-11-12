@@ -1,5 +1,5 @@
 # Recipes are POSIX sh only; the default shell keeps this portable (no zsh required).
-.PHONY: init plan apply destroy provision kubeconfig all cache cache-clean ensure-cache fmt validate lint validate-gitops
+.PHONY: init plan apply destroy provision kubeconfig bootstrap-foundation all cache cache-clean ensure-cache fmt validate lint validate-gitops
 
 ROOT := .
 
@@ -63,6 +63,11 @@ provision: ensure-cache
 # Waits for cloud-init's k3s install to finish, then downloads kubeconfig.
 kubeconfig: ensure-cache provision
 	tofu -chdir=$(ROOT) apply -target=module.k3s_kubeconfig
+
+# Installs Gateway API CRDs, Cilium, CoreDNS and Flux Operator from the exact
+# GitOps chart versions and cluster-vars-substituted values so Flux adopts them.
+bootstrap-foundation:
+	KUBECONFIG="$${KUBECONFIG:-$(PWD)/kubeconfig.yaml}" scripts/bootstrap-foundation.sh
 
 all: init provision kubeconfig
 

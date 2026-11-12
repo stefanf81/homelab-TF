@@ -24,7 +24,11 @@ if [ "$#" -gt 0 ]; then
   paths=("$@")
 else
   # Cluster root plus every spec.path referenced from it.
-  mapfile -t paths < <(
+  # Avoid Bash 4+ `mapfile` so stock macOS `/bin/bash` (3.2) works too.
+  paths=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && paths+=("$line")
+  done < <(
     { echo "gitops/clusters/taskflow"
       grep -h '^  path:' gitops/clusters/taskflow/*.yaml | sed 's|^  path: *\./||'; } | sort -u
   )

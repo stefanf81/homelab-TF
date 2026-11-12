@@ -1,4 +1,4 @@
-# Ubuntu 26.04 (Resolute) Cloud Image, pinned to the 2026-09-27 release image.
+# Ubuntu 26.04 (Resolute) Cloud Image, pinned to the 2026-10-16 release image.
 resource "proxmox_download_file" "ubuntu_cloud_image" {
   content_type        = "iso"
   datastore_id        = "local"
@@ -100,6 +100,32 @@ write_files:
       imageGCHighThresholdPercent: 75
       imageGCLowThresholdPercent: 65
 
+  # Declarative k3s server config (0600 root-only): keeps K3S_TOKEN out of
+  # /proc/<pid>/cmdline and systemd ExecStart args, and safely JSON-escapes any
+  # special characters in the token.
+  - path: /etc/rancher/k3s/config.yaml
+    owner: root:root
+    permissions: '0600'
+    content: |
+      token: ${jsonencode(var.k3s_token)}
+      tls-san:
+        - ${jsonencode(split("/", var.ip_address)[0])}
+      kubelet-arg:
+        - "system-reserved=cpu=200m,memory=500Mi"
+        - "kube-reserved=cpu=200m,memory=500Mi"
+      node-label:
+        - "topology.kubernetes.io/region=homelab"
+        - ${jsonencode("topology.kubernetes.io/zone=${var.proxmox_node}")}
+      disable:
+        - servicelb
+        - traefik
+        - coredns
+        - metrics-server
+        - local-storage
+      flannel-backend: "none"
+      disable-network-policy: true
+      disable-kube-proxy: true
+
 runcmd:
   # Load the runtime attachment before K3s starts; container profiles stay enforced.
   - apparmor_parser -r /etc/apparmor.d/runc
@@ -134,7 +160,14 @@ runcmd:
             - "${var.docker_hub_mirror}"
     MIRROR_EOF
     fi
-  - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=${var.k3s_version} K3S_TOKEN='${var.k3s_token}' sh -s - server --tls-san=${split("/", var.ip_address)[0]} --kubelet-arg="system-reserved=cpu=200m,memory=500Mi" --kubelet-arg="kube-reserved=cpu=200m,memory=500Mi" --node-label="topology.kubernetes.io/region=homelab" --node-label="topology.kubernetes.io/zone=${var.proxmox_node}" --disable servicelb --disable traefik --disable coredns --disable metrics-server --disable local-storage --flannel-backend=none --disable-network-policy --disable-kube-proxy
+  # Commit-pinned and SHA-256-verified k3s installer (from tag v1.37.2+k3s1);
+  # the installer itself verifies the downloaded k3s binary against GitHub's
+  # published sha256sum-amd64.txt for INSTALL_K3S_VERSION.
+  - |
+    curl -fsSLo /tmp/k3s-install.sh https://raw.githubusercontent.com/k3s-io/k3s/f6973cb850e9b245585363d15bde80904ac862fd/install.sh
+    echo "ed01f89fd977bf20ac1516bbebf8370bf3ddbaa55dac8aba610956a4c78cc00b  /tmp/k3s-install.sh" | sha256sum --check
+    INSTALL_K3S_VERSION=${jsonencode(var.k3s_version)} sh /tmp/k3s-install.sh server
+    rm -f /tmp/k3s-install.sh
   # Cloud-init has done its job once k3s is installed. Without this, a Proxmox-side
   # stop/start after a snippet change gives the VM a new NoCloud instance-id and
   # re-runs this runcmd, re-installing k3s with the old pinned version and flags.
