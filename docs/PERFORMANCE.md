@@ -77,9 +77,10 @@ not a 14-day measurement. Sampled metrics can miss short spikes.
 Direct backend startup/GC logs showed normal operation. The frontend's previous
 failure was DNS resolution (`host not found in upstream`), not memory. No OOM
 indicators were found for these seven workloads in the available telemetry, but
-absence is not proof: backend/frontend logs were missing from Loki because Alloy's
-label selectors did not match their pod labels. That logging issue is not fixed by
-this memory change. Schema validation also cannot establish runtime memory safety.
+absence is not proof: at the time of that sample, backend/frontend logs were missing
+from Loki because Alloy's label selectors did not match their pod labels (subsequently
+fixed via `taskflow_identity` in `alloy-release.yaml`). Schema validation also cannot
+establish runtime memory safety.
 
 ### 1.2 ~~No observability → you are tuning blind~~ (RESOLVED)
 **Files:** `gitops/monitoring/platform/release.yaml` (VictoriaMetrics stack), `gitops/monitoring/app/vmservicescrapes.yaml` (app scrapes)
@@ -99,11 +100,11 @@ this memory change. Schema validation also cannot establish runtime memory safet
 #### Monitoring stack tuning (October 2026)
 
 - **No duplicate scrapes:** the stack's own CoreDNS scrape is disabled (`coreDns.enabled: false`; the custom `coredns` VMServiceScrape selects the same pods), and the `loki` VMServiceScrape skips the chart's headless Service. Both previously ingested every series twice.
-- **CPU limits:** Loki and VMSingle limits raised from 500m to 1 CPU so split Loki queries run in parallel and VMSingle merges are not throttled; memory limits (768Mi / 1Gi) stay the protective limit.
+- **CPU & memory limits:** Loki (`128Mi` req / `512Mi` limit) and VMSingle (`768Mi` req / `1536Mi` limit) now run with **no CPU limit** so split Loki queries run in parallel and VMSingle merges are never CFS-throttled; memory limits protect the node.
 - **Loki:** in-process results cache (100 MB, no memcached pod); a repeated range query went from 4.4 s to 0.009 s in the lab. Tenant ingestion set explicitly to 8 MB/s with a 16 MB burst (the 4/6 MB default made the 15 MB per-stream burst unreachable).
 - **Grafana:** the VictoriaMetrics datasource sets `timeInterval: 30s` to match the scrape interval.
 - **Dashboards:** the WAF and Rate Limits overviews read Alloy-derived counters instead of scanning Loki: log data read per dashboard open at 6h fell from 949 to 89 MB (WAF) and 2,108 to 516 MB (Rate Limits).
-- **Open:** drop unused high-cardinality series (API server histograms, unused cAdvisor metrics) after checking the VMUI cardinality explorer.
+- **Series cardinality drops (Done):** `monitoring/platform/release.yaml` drops ~81k duplicate control-plane/apiserver series from the kubelet scrape, `kubelet_.+` from the apiserver scrape, and ~58k unused API server histogram buckets.
 
 #### Grafana manifest warnings and Flux throttling review (2026-11-03)
 
@@ -235,7 +236,7 @@ delete its Proxmox disk by hand once no longer wanted.
 ### 1.3 ~~PostgreSQL runs on Longhorn (network storage)~~ (RESOLVED)
 **File:** `gitops/apps/taskflow/postgres-pvc.yaml` (`postgres-data`, `storageClassName: proxmox-csi-db` since 2026-11-11)
 
-> **Resolved:** PostgreSQL has been migrated from Longhorn to native **Proxmox CSI** storage. Disk space is scaled to `10Gi` and volumes are dynamically provisioned on your Proxmox VE hypervisor with backing snapshots and backups handled natively at the hypervisor layer. This bypasses in-cluster network storage overhead entirely, providing local-SSD-grade performance.
+> **Resolved:** PostgreSQL has been migrated from Longhorn to native **Proxmox CSI** storage (`proxmox-csi-db`, `cache: none`, `noatime`). Disk space is scaled to `10Gi` and volumes are dynamically provisioned on the Proxmox VE hypervisor, bypassing in-cluster network storage overhead entirely for local-SSD-grade performance. Note: Proxmox CSI attaches PV disks with `backup=0` by default, so Proxmox VM backups exclude PVC data (`NODE_HOST_TUNING.md` §4.5); use `pg_dump`/CSI backups for database state.
 
 ---
 
@@ -243,7 +244,7 @@ delete its Proxmox disk by hand once no longer wanted.
 
 ### 2.1 `effective_cache_size` is overstated (MEDIUM) — ✅ RESOLVED
 
-> **Resolved:** `effective_cache_size` is now `256MB` in `postgres-db.yaml` (lowered from `700MB` on 2026-10-22).
+> **Resolved:** `effective_cache_size` is now `384MB` in `postgres-db.yaml` inside the `768Mi` container memory cap (raised from `512Mi` / `256MB` to cover worst-case `shared_buffers` + `wal_buffers` + 3 autovacuum workers + 25 pooled connections + `/dev/shm`).
 
 **Previous config (for reference):**
 ```yaml
@@ -252,7 +253,7 @@ effective_cache_size=1152MB   # but container memory limit is only 1024Mi
 
 **Current config** (`postgres-db.yaml`):
 ```yaml
-effective_cache_size=256MB    # matches realistic cache inside the 512Mi cap
+effective_cache_size=384MB    # matches realistic cache inside the 768Mi cap
 ```
 
 > **2026-10-22:** container cut to 512 MiB and `shared_buffers` to 128 MB (database
@@ -313,7 +314,7 @@ Spring Boot's default HikariCP `maximumPoolSize` is 10, while `postgres-db.yaml`
 | 1 | **Monitoring stack** (VictoriaMetrics + Grafana + kube-state-metrics + node-exporter) | ✅ Deployed and collecting metrics |
 | 2 | **Backend `/actuator/prometheus`** — Micrometer registry, exposure, SecurityConfig permit, and named VMServiceScrape port | ✅ Configured — the normal application and Flux deployment activates backend JVM, HTTP, and Hikari scrapes alongside existing PostgreSQL, Redis, node, and disk telemetry. |
 | 3 | **JVM sizing** — single source of truth via `MaxRAMPercentage=50.0` (deployment), 2Gi limit / 1Gi heap, Burstable QoS | ✅ Configured — `backend.yaml` owns JVM sizing; memory request 1536Mi, with no CPU limit |
-| 4 | **`effective_cache_size`** corrected to 700MB, then 256MB | ✅ Applied in `postgres-db.yaml` |
+| 4 | **`effective_cache_size`** corrected to 384MB (768Mi cap) | ✅ Applied in `postgres-db.yaml` |
 | 5 | **Postgres PVC** migrated from Longhorn to Proxmox CSI | ✅ Applied in `postgres-pvc.yaml` |
 | 6 | **Harden Redis** — add persistence PVC or document stampede risk | ✅ Resolved (intentionally ephemeral) — RDB/AOF are now explicitly disabled (`--save ""`, `--appendonly no`) so no stray bgsave/fork memory spikes occur; stampede risk on restart is accepted (see §2.3) |
 | 7 | **Re-evaluate pool sizes** when adding replicas | Backend autoscaling is disabled. Local SSE state and the Hikari pool require distributed event fan-out and connection-pool redesign before scaling. |
@@ -342,8 +343,8 @@ competing sizing flags. See `BACKEND_INTEGRATION_CONTEXT.md` §0/§4 for the cor
 env:
   - name: JAVA_TOOL_OPTIONS
     value: >-
-      -XX:ActiveProcessorCount=2 -XX:MaxRAMPercentage=50.0
-      -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError
+      -XX:ActiveProcessorCount=2 -XX:+UseG1GC -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=50.0
+      -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError
       -XX:+UseStringDeduplication -XX:+AlwaysPreTouch
       -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC
       -XX:MaxDirectMemorySize=256m -XX:MaxMetaspaceSize=256m

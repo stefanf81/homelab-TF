@@ -20,11 +20,12 @@ Everything is managed through Git; nothing is applied imperatively.
 ```
 gitops/
 ├── infrastructure/controllers/
-│   ├── trivy-operator/               # Trivy Operator (own cluster Kustomization)
-│   │   ├── namespace.yaml            # trivy-system ns
-│   │   ├── repository.yaml           # HelmRepository aqua @ https://aquasecurity.github.io/helm-charts
-│   │   ├── release.yaml             # HelmRelease trivy-operator v0.38.1, scanners + compliance (own kustomization)
-│   │   └── kustomization.yaml
+│   └── trivy-operator/               # Trivy Operator (own cluster Kustomization)
+│       ├── namespace.yaml            # trivy-system ns + PSA labels
+│       ├── repository.yaml           # HelmRepository aqua @ https://aquasecurity.github.io/helm-charts
+│       ├── release.yaml              # HelmRelease trivy-operator v0.38.1, scanners + compliance (own kustomization)
+│       └── kustomization.yaml
+├── platform/
 │   └── policy-reporter/              # Policy Reporter + adapter (see docs/KYVERNO_POLICY_ENGINE.md)
 │       ├── trivy-adapter-repository.yaml  # OCIRepository trivy-operator-polr-adapter
 │       ├── trivy-adapter-release.yaml     # HelmRelease trivy-operator-polr-adapter v0.11.5
@@ -78,8 +79,7 @@ Additional operator values:
 - `reportRecordFailedChecksOnly: true` — only **failing** checks are written to reports
   (passes are dropped), keeping the report CRs small.
 - Scan concurrency is deliberately capped for the single‑node homelab:
-  `scanJobsConcurrentLimit: 1`, `concurrentScanJobsLimit: 1`, `scanNodeCollectorLimit: 1`,
-  `scanJobTimeout: 5m`.
+  `scanJobsConcurrentLimit: 1`, `scanNodeCollectorLimit: 1`, `scanJobTimeout: 5m`.
 
 ### Why an allowlist instead of namespace exclusions (2026-11-03)
 
@@ -255,7 +255,7 @@ and **Falco** lists and the **Trivy** ones, all under their own source tabs.
 | Symptom | Cause / Fix |
 |---|---|
 | No `VulnerabilityReport` for a workload | Vulnerability scanning is enabled with `vulnerabilityScannerScanOnlyCurrentRevisions: true`; SBOM generation is disabled. Images are scanned when a workload appears or on each `interval`. Check `kubectl get jobs -A` for pending scans, or the `trivy-operator` operator logs. |
-| ScanJobs / cluster-node collector stuck | Single node + scans capped; `scanJobsConcurrentLimit` and `concurrentScanJobsLimit` are both `1`, and `scanNodeCollectorLimit: 1`. Scale down if slow or bump limits, then watch `kubectl -n trivy-system get pods`. |
+| ScanJobs / cluster-node collector stuck | Single node + scans capped (`scanJobsConcurrentLimit: 1`, `scanNodeCollectorLimit: 1`). Scale down if slow or bump limits, then watch `kubectl -n trivy-system get pods`. |
 | Compliance report created but `ClusterComplianceReport` status shows `summary` / no detail | Check `trivy-operator` HelmRelease `compliance.reportType`: must be **`all`** for the adapter to work (see §4). Only reports with `reportType: all` carry per‑check results. |
 | No `trivy_*` metrics in VictoriaMetrics | Verify the `VMServiceScrape` (see `monitoring/app/vmservicescrapes.yaml`) matches the operator's labels, that `jobLabel` is `app.kubernetes.io/name`, and that `job="trivy-operator"` shows healthy in vmsingle/VMAggregator. |
 | Grafana dashboard empty | Check the `$datasource` variable is set to `VictoriaMetrics` and the `$namespace` template variable resolves; the metrics only appear for namespaces with scans (the `trivy_*` metrics are emitted lazily by the operator, not continuously). |
@@ -278,9 +278,10 @@ kubectl get clustercompliancereport
 # Adapter-produced PolicyReports for Trivy sources
 kubectl get clusterpolicyreports --all-namespaces | grep trivy
 
-# Scan jobs (created in the workload's namespace, not trivy-system)
-kubectl get jobs -A
+# Scan jobs (created in trivy-system)
+kubectl get jobs -n trivy-system
 ```
 
-Scaling/limits: requests 100m/256Mi, limits 500m/1Gi for the operator pod; the scan jobs
-run at `250m/512Mi` request / `1/2Gi` limit; the Trivy server StatefulSet also runs limited.
+Scaling/limits: requests `50m/320Mi`, limits `1Gi` memory (no CPU limit) for the operator pod;
+the scan jobs run at `250m/512Mi` request / `1/2Gi` limit; the Trivy server StatefulSet runs at
+`50m/128Mi` request / `1/1Gi` limit.

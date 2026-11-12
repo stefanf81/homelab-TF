@@ -26,10 +26,10 @@ export KUBECONFIG=$PWD/kubeconfig.yaml
 ## Copy the K3s kubeconfig from the server
 
 ``` bash
-ssh -i ~/.ssh/id_rsa ubuntu@192.168.50.55 \
+(umask 077 && ssh ubuntu@192.168.50.55 \
   "sudo cat /etc/rancher/k3s/k3s.yaml" \
 | sed 's#https://127.0.0.1:6443#https://192.168.50.55:6443#' \
-  > ./kubeconfig.yaml
+  > ./kubeconfig.yaml)
 ```
 
 ## Replace your default kubeconfig
@@ -51,7 +51,7 @@ kubectl --kubeconfig ./kubeconfig.yaml get pods -A
 ``` bash
 head -20 ./kubeconfig.yaml
 nl -ba ./kubeconfig.yaml
-cat -A ./kubeconfig.yaml
+cat -etv ./kubeconfig.yaml   # portable across macOS (BSD cat) and Linux
 ```
 
 ## Inspect the kubeconfig on the K3s server
@@ -83,7 +83,7 @@ type kubectl
 which kubectx
 which kubens
 which kubecolor
-compgen -c | grep '^kube'
+whence -wm 'kube*'   # zsh (macOS default); in bash: compgen -c | grep '^kube'
 echo $PATH | tr ':' '\n'
 ```
 

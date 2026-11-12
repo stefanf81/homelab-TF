@@ -44,21 +44,22 @@ controllers at once.
 ```
 gitops/
 ├── infrastructure/controllers/
-│   ├── kyverno/                     # Kyverno controller (reconciled by infra-controllers)
-│   │   ├── namespace.yaml           # kyverno ns + PSA enforce:privileged
-│   │   ├── repository.yaml          # OCIRepository kyverno @ oci://ghcr.io/kyverno/charts/kyverno
-│   │   ├── release.yaml             # HelmRelease kyverno v3.9.2, single-replica, crds: Skip
-│   │   └── kustomization.yaml
+│   └── kyverno/                     # Kyverno controller (reconciled by infra-controllers)
+│       ├── namespace.yaml           # kyverno ns + PSA enforce:restricted
+│       ├── repository.yaml          # OCIRepository kyverno @ oci://ghcr.io/kyverno/charts/kyverno
+│       ├── release.yaml             # HelmRelease kyverno v3.9.2, admission + reports controllers, crds: Skip
+│       └── kustomization.yaml
+├── platform/
 │   └── policy-reporter/             # Policy Reporter + UI (its OWN cluster Kustomization)
-│       ├── namespace.yaml                # policy-reporter ns
+│       ├── namespace.yaml                # policy-reporter ns + PSA enforce:restricted
 │       ├── repository.yaml               # OCIRepository policy-reporter @ oci://ghcr.io/kyverno/charts/policy-reporter
 │       ├── trivy-adapter-repository.yaml # OCIRepository trivy-operator-polr-adapter @ oci://ghcr.io/fjogeleit/charts/trivy-operator-polr-adapter
 │       ├── policy-reporter-secrets.yaml  # (legacy) SOPS OAuth secret, unused after the oauth2-proxy migration
 │       ├── policy-reporter-ui-oauth-secrets.yaml # SOPS OAuth credentials for oauth2-proxy (client-id/client-secret/cookie-secret)
 │       ├── oauth2-proxy-repository.yaml  # OCIRepository oauth2-proxy @ oci://ghcr.io/oauth2-proxy/charts/oauth2-proxy
-│       ├── oauth2-proxy-release.yaml     # HelmRelease oauth2-proxy (github_users allow-list)
-│       ├── oauth2-proxy-network-policy.yaml # Gateway -> oauth2-proxy ingress only
-│       ├── release.yaml                  # HelmRelease policy-reporter v3.11.1, ui + plugins, ui.oauth disabled, metrics on, crds: Skip
+│       ├── oauth2-proxy-release.yaml     # HelmRelease oauth2-proxy (github_users allow-list, __Host-o2p-kyverno cookie)
+│       ├── oauth2-proxy-network-policy.yaml # Namespace default-deny + Gateway -> oauth2-proxy + vmagent scrape
+│       ├── release.yaml                  # HelmRelease policy-reporter v3.11.2, ui + plugins, ui.oauth disabled, metrics on, crds: Skip
 │       ├── trivy-adapter-release.yaml    # HelmRelease trivy-operator-polr-adapter v0.11.5 (Trivy CRDs -> PolicyReports)
 │       ├── route.yaml                    # HTTPRoute -> policy-reporter-ui-oauth2-proxy:80 on taskflow-gateway (:443)
 │       └── kustomization.yaml
@@ -71,13 +72,12 @@ gitops/
     ├── infra-controllers.yaml       # reconciles infrastructure/controllers (incl. kyverno)
     ├── kyverno-policies.yaml        # reconciles apps/kyverno-policies (dependsOn infra-controllers)
     └── policy-reporter.yaml         # reconciles platform/policy-reporter
-                                     #   (dependsOn infra-controllers + taskflow-app)
+                                     #   (dependsOn infra-controllers + taskflow-app + trivy-operator)
 ```
 
-> **Note on placement:** `policy-reporter/` lives physically under `infrastructure/controllers/`
-> but is intentionally **not** listed in `infrastructure/controllers/kustomization.yaml`. It is
-> reconciled by its own `policy-reporter` Kustomization so it can `dependsOn: taskflow-app`
-> (the Gateway owner) — see §3.
+> **Note on placement:** `policy-reporter/` lives under `gitops/platform/policy-reporter/`
+> and is reconciled by its own `policy-reporter` Kustomization so it can
+> `dependsOn: [infra-controllers, taskflow-app, trivy-operator]` — see §3.
 
 ---
 
@@ -94,8 +94,9 @@ GitRepository (flux-system)
 
 - `kyverno-policies` `dependsOn: infra-controllers` so the `ValidatingPolicy` CRD exists before
   policies are applied (avoids `no matches for kind "ValidatingPolicy"`).
-- `policy-reporter` `dependsOn: [infra-controllers, taskflow-app]` so Kyverno's PolicyReport
-  CRDs and the Gateway both exist before the dashboard + route are reconciled.
+- `policy-reporter` `dependsOn: [infra-controllers, taskflow-app, trivy-operator]` so Kyverno's
+  PolicyReport CRDs, Trivy's report CRDs, and the Gateway all exist before the dashboard,
+  adapter, and route are reconciled.
 
 ---
 
@@ -238,11 +239,12 @@ compatibility reads no longer occur.
 
 ### Install
 - Chart: `policy-reporter` from `oci://ghcr.io/kyverno/charts/policy-reporter`
-- Pinned: **3.11.1** (ships Policy Reporter + UI app **3.11.1**)
+- Pinned: **3.11.2** (ships Policy Reporter + UI app **3.11.2**)
 - Values: `ui.enabled: true` (UI subchart, service `policy-reporter-ui:8080`),
   `plugin.kyverno.enabled: true` + `plugin.trivy.enabled: true` (enrich the UI with
-  policy descriptions/YAML and Trivy vulnerability details), `ui.oauth` (GitHub OAuth,
-  see below), `ui.sources` (six Trivy sources, see below), `install.crds: Skip`.
+  policy descriptions/YAML and Trivy vulnerability details), `ui.oauth.enabled: false`
+  (fronted by `oauth2-proxy`, see below), `ui.sources` (six Trivy sources, see below),
+  `install.crds: Skip`.
 
 ### Trivy Plugin & Adapter
 Two components surface Trivy results in the UI:
@@ -292,13 +294,13 @@ spec:
       namespace: taskflow
       sectionName: https          # :443 only; plaintext :80 is redirected by http-to-https-redirect
   hostnames:
-    - "kyverno.jokelab.dev"
+    - "kyverno.${DOMAIN}"
   rules:
     - matches:
         - path: { type: PathPrefix, value: / }
       backendRefs:
-        - name: policy-reporter-ui
-          port: 8080
+        - name: policy-reporter-ui-oauth2-proxy
+          port: 80
 ```
 
 The Gateway's `allowedRoutes` selector (`gitops/apps/taskflow/gateway.yaml`) was extended to
@@ -310,11 +312,12 @@ TLS is terminated by the Gateway using `taskflow-tls-secret`, which is issued fr
 
 ### DNS & certificate
 The UI is served with TLS using the **shared** `taskflow-jokelab-cert`
-(`gitops/apps/taskflow/certificate.yaml`), which must carry the `kyverno.jokelab.dev` SAN
-alongside `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`.
+(`gitops/apps/taskflow/certificate.yaml`), which carries the `kyverno.jokelab.dev` SAN
+alongside `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`, and `hubble.jokelab.dev`.
 
-> **Ordering is critical.** A DNS A/CNAME record for `kyverno.jokelab.dev` → Gateway IP
-> (`192.168.50.201`, same as `grafana.jokelab.dev`) **must exist before** the SAN is added.
+> **Ordering is critical.** A public DNS A/CNAME record for `kyverno.jokelab.dev` → WAN IP
+> (Cloudflare-proxied via `cloudflare-ddns`, port-forwarded to Gateway IP `192.168.50.201`,
+> with CoreDNS mapping internal lookups to `192.168.50.201`) **must exist before** the SAN is added.
 > cert-manager solves the Let's Encrypt HTTP-01 challenge by reaching
 > `http://kyverno.jokelab.dev/.well-known/acme-challenge/...` through the Gateway, which
 > requires the hostname to resolve. If the SAN is added while the DNS record is missing, the
@@ -364,8 +367,15 @@ The Policy Reporter UI's built-in GitHub OAuth has **no user/org allow-list**, s
 (`gitops/platform/policy-reporter/oauth2-proxy-release.yaml`):
 
 - `provider = "github"` with `redirect_url = https://kyverno.jokelab.dev/oauth2/callback`
+- Host-only `__Host-o2p-kyverno` cookie (`cookie_secure = true`, `cookie_samesite = "lax"`,
+  no `cookie_domains`, `whitelist_domains = ["kyverno.jokelab.dev"]`) so the session cookie
+  is never sent to `www.jokelab.dev` and never collides with `hubble.jokelab.dev`.
 - Login is restricted with `github_users = ["stefanf81"]`; with no org/repo
   configured, every other GitHub account is rejected by oauth2-proxy.
+- Pod-network isolation (`gitops/platform/policy-reporter/oauth2-proxy-network-policy.yaml`)
+  default-denies cross-namespace ingress to `policy-reporter-ui:8080`, `policy-reporter:8080`
+  (REST API), and the plugins, opening only `reserved:ingress` → `oauth2-proxy:4180` and
+  `monitoring/vmagent` → `policy-reporter:8080` (`/metrics`).
 - Credentials (`client-id` / `client-secret` / `cookie-secret`) live in the
   SOPS-encrypted `policy-reporter-ui-github-oauth` Secret
   (`policy-reporter-ui-oauth-secrets.yaml`). Create a GitHub OAuth App with the
@@ -390,7 +400,7 @@ flux get hr -n policy-reporter
 
 # Pods
 kubectl -n kyverno get pods            # admission + reports controller, 1/1
-kubectl -n policy-reporter get pods    # policy-reporter, policy-reporter-ui, policy-reporter-trivy-plugin, trivy-operator-polr-adapter
+kubectl -n policy-reporter get pods    # policy-reporter, policy-reporter-ui, kyverno-plugin, trivy-plugin, trivy-operator-polr-adapter, policy-reporter-ui-oauth2-proxy
 
 # CRDs (Kyverno-owned)
 kubectl get crds | grep kyverno

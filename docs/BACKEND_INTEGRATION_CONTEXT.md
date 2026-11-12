@@ -15,10 +15,11 @@ backend-specific slice.
 1. **Keep `micrometer-registry-prometheus` and Actuator** in the backend build.
 2. **Keep `/actuator/prometheus` exposed** (`management.endpoints.web.exposure.include`).
 3. **Let VictoriaMetrics scrape it unauthenticated** — Spring Security permits only
-   `GET /actuator/prometheus`; Cilium NetworkPolicy limits access to `monitoring`.
+   `GET /actuator/prometheus`; Cilium NetworkPolicy (`allow-vmagent-to-backend`) limits
+   access strictly to the `vmagent` pod in `monitoring` (never Grafana/Loki/Alloy).
 4. **Do not fight the container contract** — run as non-root UID `10001`, read-only
-   root FS (only `/tmp` writable), and preserve the JVM flags supplied by the
-   deployment's `JAVA_TOOL_OPTIONS`.
+   root FS (only `/tmp` and `/var/log/taskflow` for GC logs/heap dumps writable), and
+   preserve the JVM flags supplied by the deployment's `JAVA_TOOL_OPTIONS`.
 
 VictoriaMetrics, Grafana, the VMServiceScrape, exporters, and the performance dashboard are
 already wired in the infra repo.
@@ -34,9 +35,9 @@ Defined in `gitops/apps/taskflow/backend.yaml`:
 | Image | `ghcr.io/stefanf81/taskflow-backend:latest`, digest-pinned by Flux | Push `:latest`; Flux rewrites to `@sha256:`. No manifest change needed for a deploy. |
 | Listening port | **8080** (ContainerPort `http`) | The backend WAF routes `/api` → `backend:8080`, and the VMServiceScrape targets the same Service. Don't change. |
 | Liveness/readiness | `GET /actuator/health/liveness` and `/actuator/health/readiness` on 8080 | Probes already use these. Actuator health must stay enabled. |
-| Security context | `runAsNonRoot: true`, `UID/GID 10001`, `readOnlyRootFilesystem: true`, `capabilities.drop: [ALL]` | The image **must** run as 10001 with no writes to the image layer. Mount only `/tmp` (already provided). Log to **stdout/stderr**, not a file. |
-| Env (config) | `SPRING_PROFILES_ACTIVE=prod`, `APP_CORS_ALLOWED_ORIGINS`, secrets via `SPRING_SECURITY_PASSWORD` / `SPRING_DATASOURCE_PASSWORD` / `SPRING_DATA_REDIS_PASSWORD` (and `SPRING_REDIS_PASSWORD`) | Don't hard-code these; they come from ConfigMap/Secret. |
-| JVM heap | Owned by the deployment's `JAVA_TOOL_OPTIONS`: `-XX:MaxRAMPercentage=50.0` → 1GiB heap at the 2Gi limit; memory request 1536Mi, Burstable QoS (no CPU limit) | Preserve `MaxRAMPercentage=50.0`, `MaxDirectMemorySize=256m`, and `MaxMetaspaceSize=256m`; do not add competing heap flags in the image. The deployment is the single source of truth for JVM sizing. |
+| Security context | `runAsNonRoot: true`, `UID/GID 10001`, `readOnlyRootFilesystem: true`, `capabilities.drop: [ALL]` | The image **must** run as 10001 with no writes to the image layer. Only `/tmp` and `/var/log/taskflow` (2Gi `emptyDir` for GC logs and OOM heap dumps) are writable. Log application output to **stdout/stderr**. |
+| Env (config & secrets) | `backend-config` ConfigMap (`SPRING_PROFILES_ACTIVE=prod`, `APP_CORS_ALLOWED_ORIGINS`, `APP_TRUSTED_PROXY_REGEX`, `SERVER_TOMCAT_REMOTEIP_REMOTEIPHEADER=x-real-ip`, `APP_SHOP_TIME_ZONE`) + Secrets (`SPRING_SECURITY_PASSWORD`, `SPRING_DATASOURCE_PASSWORD`, `SPRING_DATA_REDIS_PASSWORD`, `APP_RSA_PRIVATE_KEY`, `APP_RSA_PUBLIC_KEY`) | Don't hard-code these; `APP_TRUSTED_PROXY_REGEX` is mandatory in `prod` (startup aborts without it). |
+| JVM heap & runtime | Owned by the deployment's `JAVA_TOOL_OPTIONS`: `-XX:ActiveProcessorCount=2 -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=50.0` → 1GiB pre-touched heap at the 2Gi limit, `MALLOC_ARENA_MAX=2`, memory request 1536Mi, Burstable QoS (no CPU limit) | Preserve `MaxRAMPercentage=50.0`, `InitialRAMPercentage=50.0`, `MaxDirectMemorySize=256m`, and `MaxMetaspaceSize=256m`; never add `-Xshare:*` (conflicts with the image's `-XX:AOTCache`). |
 | Graceful shutdown | 45s termination grace | Configure `server.shutdown=graceful` so in-flight requests drain on rollout. |
 
 The backend **already** sends traces to Jaeger (OTLP `jaeger:4317`/`4318`) — that
@@ -123,9 +124,12 @@ The VMServiceScrape is **already defined** in the infra repo at
 selector: { matchLabels: { app: taskflow-backend } }   # matches the backend Service
 ```
 
-The backend Service exposes the matching named `http` port. The `allow-monitoring-scrape`
-NetworkPolicy permits port 8080 from the `monitoring` namespace while the public Gateway has
-no route to the backend's Actuator paths.
+The backend Service exposes the matching named `http` port. The `allow-vmagent-to-backend`
+CiliumNetworkPolicy permits port 8080 strictly from the `vmagent` pod in `monitoring` (excluding
+Grafana, Loki, Alloy, and other monitoring pods) while the public Gateway has no route to the
+backend's Actuator paths. (If a future backend release moves Actuator onto a dedicated
+`management.server.port`, retrain the image's Java 25 `-XX:AOTCache` and verify `SecurityFilterChain`
+on that child management context first.)
 
 ---
 
@@ -147,14 +151,14 @@ If that curl returns metrics, verify the output includes `jvm_memory_used_bytes`
 
 - **Don't change the listening port from 8080** — the Gateway `HTTPRoute` and the
   VMServiceScrape both assume 8080.
-- **Don't connect to Redis without password authentication** — Redis authentication is now enabled on the cluster. The deployment injects the password from the SOPS secret into your container under `SPRING_DATA_REDIS_PASSWORD` and `SPRING_REDIS_PASSWORD`. Ensure your application reads and uses these properties.
+- **Don't connect to Redis without password authentication** — Redis authentication is enabled on the cluster. The deployment injects the password from the SOPS secret into your container under `SPRING_DATA_REDIS_PASSWORD`.
 - **Don't add a `/metrics` path** — Spring Boot Actuator's Prometheus endpoint is
   `/actuator/prometheus` by default; the VMServiceScrape targets exactly that.
 - **Don't require auth on `/actuator/prometheus`** (see 2.3).
-- **Don't write to the filesystem** outside `/tmp` — the container root FS is read-only.
+- **Don't write to the filesystem** outside `/tmp` (application temp files; `/var/log/taskflow` is reserved for JVM GC logs and OOM heap dumps) — the container root FS is read-only.
 - **Don't remove or override the deployment's JVM sizing flags** — the deployment
-  owns `MaxRAMPercentage=50.0`, `MaxDirectMemorySize=256m`, and
-  `MaxMetaspaceSize=256m` in `JAVA_TOOL_OPTIONS`.
+  owns `MaxRAMPercentage=50.0`, `InitialRAMPercentage=50.0`, `ActiveProcessorCount=2`,
+  `MaxDirectMemorySize=256m`, and `MaxMetaspaceSize=256m` in `JAVA_TOOL_OPTIONS` (plus `MALLOC_ARENA_MAX=2`).
 
 ---
 
@@ -163,7 +167,7 @@ If that curl returns metrics, verify the output includes `jvm_memory_used_bytes`
 | File | What |
 |------|------|
 | `gitops/apps/taskflow/backend.yaml` | Deployment + Service (port 8080, probes, securityContext, JVM env) |
-| `gitops/apps/taskflow/configmap.yaml` | `SPRING_PROFILES_ACTIVE=prod`, CORS origins |
-| `gitops/monitoring/app/vmservicescrapes.yaml` | The `taskflow-backend` VMServiceScrape (waits on you) |
+| `gitops/apps/taskflow/configmap.yaml` | `SPRING_PROFILES_ACTIVE=prod`, CORS origins, `APP_TRUSTED_PROXY_REGEX`, `SERVER_TOMCAT_REMOTEIP_REMOTEIPHEADER` |
+| `gitops/monitoring/app/vmservicescrapes.yaml` | The `taskflow-backend` VMServiceScrape |
 | `gitops/monitoring/platform/release.yaml` | victoria-metrics-k8s-stack (VictoriaMetrics + Grafana) |
-| `docs/ARCHITECTURE.md` §10.9 | How to reach Grafana/VictoriaMetrics (via the public Gateway) |
+| `docs/ARCHITECTURE.md` §10.9 | How to reach Grafana (via the public Gateway) and VictoriaMetrics (via `kubectl port-forward`) |

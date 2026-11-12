@@ -5,7 +5,8 @@ with the commands to apply each change, the evidence behind it, and its risks.
 
 **Expectation.** At this site's traffic none of these is a large win. The big ones are
 already in place: kube-proxy replacement, Cilium eBPF host routing with BBR/fq,
-Guaranteed QoS for the backend, PostgreSQL on Proxmox CSI and the JVM sizing fixes
+uncapped-CPU Burstable QoS with `taskflow-critical` priority for the backend,
+PostgreSQL on Proxmox CSI (`proxmox-csi-db`) and the JVM sizing fixes
 (`PERFORMANCE.md`). What remains is mostly latency, reliability and edge cases.
 Measure before and after (§5) rather than assuming a gain.
 
@@ -224,10 +225,10 @@ Verify: `Combined:` equal to `cpu_cores` (10 on this host), and `mq` with one `f
 ssh ubuntu@192.168.50.55 'ethtool -l eth0; tc qdisc show dev eth0 | head'
 ```
 
-`Combined: 1` before this change is expected (pre-set maximum 1: Proxmox exposes a single queue pair, so `ethtool -L` cannot raise it from inside the guest). If Combined is below 6 afterwards:
+`Combined: 1` before this change is expected (pre-set maximum 1: Proxmox exposes a single queue pair, so `ethtool -L` cannot raise it from inside the guest). If `Combined` is below `<cpu_cores>` (`6` by default in `variables.tf`, `10` with the host's `terraform.tfvars` override) afterwards:
 
 ```bash
-ssh ubuntu@192.168.50.55 'sudo ethtool -L eth0 combined 6'
+ssh ubuntu@192.168.50.55 'sudo ethtool -L eth0 combined <cpu_cores>'
 ```
 
 Cilium should report `EDT with BPF [BBR] [eth0]`:
@@ -703,8 +704,8 @@ Per-volume result (5-minute sample, 2026-11-03): VM root disk 94.9 GB/day, Victo
   | `kustomize-controller` (guest) | 16.6 | ~0 |
 
   The metadata churn came from Flux's `/tmp` file churn, not from the root mount's online
-  `discard`, so the root mount stays as it is. Leases now renew every ~15s (37 writes per 540 s
-  window against the node lease's 54); the busiest is the Cilium L2 announcement lease (5s).
+  `discard`, so the root mount stays as it is. All controller Leases (including the Cilium L2
+  announcement lease) now renew every ~15s instead of 2–5s.
   At ~30 GB/day the NVMe reaches the vendor's 100 % estimate in roughly 8-9 years instead of ~13
   months; confirm with the 24 h `Data Units Written` delta. journald rose to 4.1 GB/day right
   after the restarts: check the noisiest unit before acting.
@@ -714,7 +715,6 @@ Per-volume result (5-minute sample, 2026-11-03): VM root disk 94.9 GB/day, Victo
   ```bash
   DB=/var/lib/rancher/k3s/server/db/state.db; A=$(sqlite3 -readonly $DB 'SELECT MAX(id) FROM kine'); sleep 300; sqlite3 -readonly -column $DB "SELECT COUNT(*) AS writes, SUM(LENGTH(value)+IFNULL(LENGTH(old_value),0))/1024 AS kib, substr(name,1,instr(substr(name,11),'/')+9) AS kind FROM kine WHERE id > $A GROUP BY kind ORDER BY kib DESC LIMIT 15"
   ```
-  The thin-metadata churn points at the root mount's online `discard` (§3.6).
 
 and over 24 h from the drive's counter (one unit = 512,000 bytes):
 

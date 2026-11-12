@@ -37,7 +37,7 @@ You can access the services through the Cilium Gateway using the following hostn
 | **TaskFlow API Backend** | `https://www.jokelab.dev/api/...` | The Spring Boot 4.1.1 REST API (same origin as frontend) |
 | **Grafana Metrics UI** | `https://grafana.jokelab.dev/` | Real-time performance dashboards |
 | **Hubble UI** | `https://hubble.jokelab.dev/` | Network flow visibility (oauth2-proxy) |
-| **Policy Reporter UI** | `https://kyverno.jokelab.dev/` | Kyverno/Trivy policy reports (oauth2-proxy) |
+| **Policy Reporter UI** | `https://kyverno.jokelab.dev/` | Kyverno, Trivy & Falco policy reports (oauth2-proxy) |
 | **VictoriaMetrics TSDB** | *(Private)* | Scraped time-series metrics. Accessed securely via `kubectl port-forward -n monitoring svc/vmsingle-victoria-metrics-k8s-stack 8428:8428` at `http://localhost:8428/vmsingle/` |
 
 ### 🔒 The Same-Origin CORS Advantage
@@ -51,6 +51,6 @@ Because we use **Cilium Unified Gateway Routing**, both `/` (frontend) and `/api
 
 ## 3. Network Considerations
 
-Since the domain `jokelab.dev` maps to the external IP of your Cilium load balancer, ensure that:
-1. The domain's DNS resolution points to the gateway IP you receive in your cluster.
-2. If testing locally, your router resolves the public domain to the LAN IP natively (NAT reflection/hairpinning), or you configure your local DNS settings accordingly.
+Public DNS records for `jokelab.dev` and its subdomains are Cloudflare-proxied (`PROXIED=true` in `cloudflare-ddns.yaml`) to the router's public WAN IP, which port-forwards 80/443 to the Cilium Gateway LoadBalancer IP (`192.168.50.201`). Inside the cluster, CoreDNS maps those hostnames directly to `192.168.50.201`. Ensure that:
+1. WAN ports 80 and 443 forward to the Gateway IP (`192.168.50.201`).
+2. If testing from the LAN without going through Cloudflare's edge, your router supports NAT reflection/hairpinning or your local DNS resolves the domain to `192.168.50.201`.

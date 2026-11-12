@@ -16,7 +16,7 @@ Local CLI → kubectl port-forward → Hubble Relay (kube-system) ────�
 |-----------|-----------|---------|------|---------|
 | Hubble UI | `kube-system` | `hubble-ui` | 80 | Web interface for network flow visualization |
 | Hubble Relay | `kube-system` | `hubble-relay` | 80 → 4245 | gRPC relay for CLI access |
-| oauth2-proxy | `hubble-ui` | `hubble-ui-oauth2-proxy` | 4180 | GitHub OAuth authentication proxy |
+| oauth2-proxy | `hubble-ui` | `hubble-ui-oauth2-proxy` | 80 → 4180 | GitHub OAuth authentication proxy |
 | Cilium Agent | `kube-system` | — | — | eBPF dataplane + Hubble exporter |
 
 ### Traffic Flow (Public)
@@ -52,11 +52,11 @@ kubectl port-forward -n kube-system svc/hubble-relay 4244:80
 | File | Resource |
 |------|----------|
 | `namespace.yaml` | `hubble-ui` namespace |
-| `repository.yaml` | OCIRepository `oauth2-proxy` (`oci://ghcr.io/oauth2-proxy/charts/oauth2-proxy`, tag 10.7.1) |
-| `release.yaml` | HelmRelease `hubble-ui-oauth2-proxy` (oauth2-proxy chart 10.7.1) |
+| `repository.yaml` | OCIRepository `oauth2-proxy` (`oci://ghcr.io/oauth2-proxy/charts/oauth2-proxy`, tag 10.7.2) |
+| `release.yaml` | HelmRelease `hubble-ui-oauth2-proxy` (oauth2-proxy chart 10.7.2, host-only `__Host-o2p-hubble` cookie) |
 | `route.yaml` | HTTPRoute `hubble-ui` → `hubble-ui-oauth2-proxy:80` (container port 4180) |
 | `hubble-ui-secrets.yaml` | SOPS-encrypted Secret (GitHub OAuth credentials) |
-| `network-policy.yaml` | CiliumNetworkPolicy `allow-gateway-to-hubble-ui` |
+| `network-policy.yaml` | CiliumNetworkPolicies `hubble-ui-ingress-default-deny` + `allow-gateway-to-hubble-ui` (paired with `gitops/infrastructure/configs/cilium/hubble-isolation.yaml` in `kube-system`) |
 | `kustomization.yaml` | Kustomization listing all resources |
 
 ### App Layer Updates
@@ -86,12 +86,15 @@ kubectl port-forward -n kube-system svc/hubble-relay 4244:80
 - **Client ID and client secret**: stored in the SOPS-encrypted `hubble-ui-github-oauth` Secret
 - **Access restriction**: `github_users = ["stefanf81"]` in the oauth2-proxy `configFile` — every other GitHub account is rejected
 
-### Authentication Comparison
+### Authentication & Session Isolation
 
-Kyverno Policy Reporter and Hubble UI both use GitHub OAuth Apps, but their OAuth
-servers differ. Policy Reporter implements OAuth itself and uses `/callback`.
-Hubble UI is protected by oauth2-proxy, which owns the `/oauth2/callback` endpoint.
-Each needs its own GitHub OAuth App and exact callback URL.
+Kyverno Policy Reporter (`kyverno.jokelab.dev`) and Hubble UI (`hubble.jokelab.dev`) are
+both fronted by dedicated `oauth2-proxy` deployments (`/oauth2/callback` on each host), each
+with its own GitHub OAuth App, SOPS-encrypted Secret, and host-only `__Host-` cookie
+(`__Host-o2p-hubble` and `__Host-o2p-kyverno`, `cookie_samesite = "lax"`, no `cookie_domains`,
+and single-host `whitelist_domains`). Omitting `cookie_domains` ensures neither admin session
+cookie is sent to `www.jokelab.dev` or `grafana.jokelab.dev` and signing into one UI never
+overwrites the other's session.
 
 The oauth2-proxy Helm chart reads credentials from `config.existingSecret`. The
 Secret must use its required keys: `client-id`, `client-secret`, and `cookie-secret`.
@@ -199,33 +202,14 @@ Alloy mounts `/var/run/cilium/hubble` read-only and tails `events.log`
 (`{job="hubble-flows"}`). Grafana dashboard **Blocked Sources** parses source
 IPs, ports and drop reasons at query time. Envoy-enforced L7 denials at
 `reserved:ingress` (e.g. the AbuseIPDB CIDR deny) carry no `drop_reason_desc`
-and are shown as `L7/policy deny (no reason)`. See
+and are shown as `No reason recorded (Envoy denials, incl. AbuseIPDB)`. See
 `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md` for the full pipeline.
 
 ## Network Policy
 
-`allow-gateway-to-hubble-ui` allows only the Cilium Gateway (identified by `reserved:ingress` label) to reach the oauth2-proxy on port 4180:
-
-```yaml
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: allow-gateway-to-hubble-ui
-  namespace: hubble-ui
-spec:
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: oauth2-proxy
-  ingress:
-    - fromEndpoints:
-        - matchExpressions:
-            - key: reserved:ingress
-              operator: Exists
-      toPorts:
-        - ports:
-            - port: "4180"
-              protocol: TCP
-```
+Pod-network isolation covers both namespaces so no compromised in-cluster pod can bypass `oauth2-proxy`:
+- **In `hubble-ui` (`gitops/platform/hubble-ui/network-policy.yaml`):** `hubble-ui-ingress-default-deny` denies cross-namespace pod ingress (preserving `host` probes), and `allow-gateway-to-hubble-ui` allows only the Cilium Gateway (`reserved:ingress`) to reach `oauth2-proxy` on TCP `4180`.
+- **In `kube-system` (`gitops/infrastructure/configs/cilium/hubble-isolation.yaml`):** `restrict-hubble-ui-ingress` restricts `hubble-ui` (`k8s-app: hubble-ui`, container port `8081`) to `hubble-ui/oauth2-proxy` + `host`, and `restrict-hubble-relay-ingress` restricts `hubble-relay` (`k8s-app: hubble-relay`, gRPC port `4245`) to `kube-system/hubble-ui` + `host` (`cilium hubble port-forward` / `kubectl port-forward`).
 
 ## Reconcile Commands
 

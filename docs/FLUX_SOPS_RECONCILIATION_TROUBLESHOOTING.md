@@ -35,9 +35,11 @@ Key tells:
 `ENC[AES256_GCM,data:…,iv:…,tag:…,type:str]` is the format SOPS writes for an
 **encrypted value**.
 
-How SOPS encryption works in this repo (see `.sops.yaml`): by default SOPS encrypts
-the **values** of a YAML document, leaving the **keys** (`apiVersion:`, `kind:`,
-`metadata:`, etc.) as plain text. So a secret like:
+How SOPS encryption works in this repo (see `.sops.yaml`): `.sops.yaml` now sets
+`encrypted_regex: ^(data|stringData)$`, so structural fields (`apiVersion`, `kind`,
+`metadata`) stay plaintext and only `data`/`stringData` values are encrypted. In the
+earlier incident before `encrypted_regex` was added, SOPS encrypted **every** scalar
+value in the YAML document, so a secret like:
 
 ```yaml
 apiVersion: v1
@@ -46,7 +48,7 @@ metadata:
   name: proxmox-csi-config
 ```
 
-becomes (values encrypted, keys intact):
+became (whole-document values encrypted, keys intact):
 
 ```yaml
 apiVersion: ENC[AES256_GCM,…]
@@ -55,14 +57,9 @@ metadata:
   name: ENC[AES256_GCM,…]
 ```
 
-That is **normal and expected**. The manifest is only valid **after Flux decrypts it**
-(restore `kind: Secret`, etc.) and applies it.
-
-> ⚠️ The earlier sibling doc states structural fields "remain in plain text". More
-> precisely: the **key names** remain plain text, but their **values** are ciphertext.
-> That distinction is exactly why a *missing decryption step* produces this error: Flux
-> applies the file **as-is**, so `kind: ENC[…]` reaches the API server, which replies
-> `no matches for kind "ENC[…]"`.
+With `encrypted_regex: ^(data|stringData)$`, a missing decryption step instead applies
+literal `ENC[AES256_GCM,…]` strings into the Secret's keys (or fails base64 decoding
+on `data:` fields). Either way, the manifest is only valid **after Flux decrypts it**.
 
 **Conclusion:** the encrypted file was applied **without being decrypted first**.
 Two things must both be true for Flux to decrypt:
@@ -138,9 +135,9 @@ sops:
         -----END AGE ENCRYPTED FILE-----
       recipient: age14tnw8z266962s0guenumuyqht55kt68grrx204wsle8u8p8ph9vscxnm22
 ```
-The `recipient:` must match the **public** key derived from your private key:
+The `recipient:` must match the **public** key derived from your private key (`./key.txt` in this repo):
 ```bash
-age-keygen -y ~/.config/sops/age/keys.txt
+age-keygen -y ./key.txt
 # → must equal the `recipient:` above, otherwise you have the wrong key
 ```
 
@@ -157,14 +154,18 @@ kubectl -n <NAMESPACE> get secret sops-age -o name
 ### 5.1 Create the `sops-age` secret from your age private key
 ```bash
 kubectl -n <NAMESPACE> create secret generic sops-age \
-  --from-file=age.agekey=$HOME/.config/sops/age/keys.txt
+  --from-file=age.agekey=./key.txt
 ```
-The secret **must live in the same namespace as the Kustomization** that references it.
+The secret **must live in the same namespace as the Kustomization** that references it (`flux-system` here).
 
-### 5.2 Enable decryption on the Kustomization
-```bash
-kubectl -n <NAMESPACE> patch kustomization <NAME> --type=merge \
-  -p '{"spec":{"decryption":{"provider":"sops","secretRef":{"name":"sops-age"}}}}'
+### 5.2 Enable decryption on the Kustomization (in Git)
+Declare `spec.decryption` on the Flux `Kustomization` in `gitops/clusters/taskflow/<name>.yaml` and commit (an imperative `kubectl patch` on a child Kustomization will be overwritten on the next `flux-system` root sync):
+```yaml
+spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
 ```
 
 ### 5.3 Force a reconcile and watch
@@ -219,31 +220,30 @@ Confirm the **version you pinned is in that tag list**. If it is not, pick an ex
 one or a semver range (e.g. `">=0.3.0"`).
 
 ### 6.3 Fix the manifests
-For an OCI chart, the `HelmRepository` needs `type: oci`:
+For an OCI chart, this repository uses Flux `OCIRepository` + `HelmRelease.spec.chartRef`:
 
 ```yaml
 # repository.yaml
 apiVersion: source.toolkit.fluxcd.io/v1
-kind: HelmRepository
+kind: OCIRepository
 metadata:
   name: proxmox-csi
   namespace: csi-proxmox
 spec:
-  type: oci                       # ← was missing; default is HTTP
   interval: 24h
-  url: oci://ghcr.io/sergelogvinov/charts   # ← OCI registry, not github.io/helm-charts
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    tag: 0.5.15
+  url: oci://ghcr.io/sergelogvinov/charts/proxmox-csi-plugin
 ```
 ```yaml
 # release.yaml
 spec:
-  chart:
-    spec:
-      chart: proxmox-csi-plugin
-      version: 0.5.13            # current valid OCI chart version used by this repository
-      sourceRef:
-        kind: HelmRepository
-        name: proxmox-csi
-        namespace: csi-proxmox
+  chartRef:
+    kind: OCIRepository
+    name: proxmox-csi
 ```
 Commit & push; Flux reconciles and source-controller pulls the chart from the OCI
 registry.
@@ -263,8 +263,8 @@ kubectl get kustomizations -A \
   -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,PATH:.spec.path
 ```
 For each Kustomization whose `PATH` contains an encrypted file:
-1. `kubectl -n <NS> create secret generic sops-age --from-file=age.agekey=$HOME/.config/sops/age/keys.txt`
-2. Patch `spec.decryption` onto it (§5.2).
+1. `kubectl -n <NS> create secret generic sops-age --from-file=age.agekey=./key.txt`
+2. Add `spec.decryption` to its manifest in `gitops/clusters/taskflow/` (§5.2) and commit.
 3. Reconcile and verify (§5.3–5.4).
 
 If all encrypted files share one recipient (typical), one age key covers them all — you
@@ -280,14 +280,12 @@ kubectl config current-context
 kubectl get kustomizations -A
 kubectl get kustomization <NAME> -n <NS> -o yaml | grep -A4 'decryption:'
 grep -rl "ENC\[AES256_GCM" gitops/
-age-keygen -y ~/.config/sops/age/keys.txt
+age-keygen -y ./key.txt
 kubectl -n <NS> get secret sops-age -o name
 
-# Fix (SOPS)
+# Fix (seed SOPS key; commit spec.decryption in gitops/clusters/taskflow/<name>.yaml)
 kubectl -n <NS> create secret generic sops-age \
-  --from-file=age.agekey=$HOME/.config/sops/age/keys.txt
-kubectl -n <NS> patch kustomization <NAME> --type=merge \
-  -p '{"spec":{"decryption":{"provider":"sops","secretRef":{"name":"sops-age"}}}}'
+  --from-file=age.agekey=./key.txt
 kubectl -n <NS> annotate kustomization <NAME> \
   --overwrite reconcile.fluxcd.io/requestedAt="$(date +%s)"
 
@@ -301,9 +299,9 @@ kubectl -n <SECRET_NS> get secret <SECRET_NAME> \
 
 ## 9. Reference: files involved in this repo's incident
 
-| File | Role | What was wrong |
+| File | Role | Current state |
 |------|------|----------------|
-| `.sops.yaml` | SOPS encryption rules (`path_regex: .*-secrets\.yaml$`, age recipient) | — (correct) |
-| `gitops/infrastructure/controllers/proxmox-csi/proxmox-csi-secrets.yaml` | Encrypted `Secret` | Decryption never run (causes A + B) |
-| `gitops/infrastructure/controllers/proxmox-csi/repository.yaml` | `HelmRepository` for Proxmox CSI | Was HTTP GitHub Pages repo without the chart → changed to `type: oci`, `url: oci://ghcr.io/sergelogvinov/charts` |
-| `gitops/infrastructure/controllers/proxmox-csi/release.yaml` | `HelmRelease` for Proxmox CSI | Current pin is `version: 0.5.13`; older incident notes used `0.3.18`. |
+| `.sops.yaml` | SOPS encryption rules (`path_regex: .*-secrets\.yaml$`, `encrypted_regex: ^(data\|stringData)$`, age recipient) | Active |
+| `gitops/infrastructure/controllers/proxmox-csi/proxmox-csi-secrets.yaml` | Encrypted `Secret` | Decrypted via `infra-controllers` (`sops-age`) |
+| `gitops/infrastructure/controllers/proxmox-csi/repository.yaml` | `OCIRepository` for Proxmox CSI | `oci://ghcr.io/sergelogvinov/charts/proxmox-csi-plugin` (`0.5.15`, digest-pinned) |
+| `gitops/infrastructure/controllers/proxmox-csi/release.yaml` | `HelmRelease` for Proxmox CSI | Uses `chartRef: OCIRepository/proxmox-csi` |

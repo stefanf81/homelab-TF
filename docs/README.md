@@ -34,5 +34,10 @@ check the living documents for current state.
 ## Validation
 
 `scripts/validate-gitops.sh` renders every path Flux reconciles and schema-checks
-it (CI: `.github/workflows/validate-gitops.yaml`, which also runs `tofu fmt`,
-`tofu validate` and `tflint`). Locally: `make validate-gitops`, `make lint`.
+it (CI: `.github/workflows/validate-gitops.yaml`, which also runs
+`scripts/bootstrap-foundation.sh --dry-run`, `ruby scripts/check-observability-config.rb`,
+`scripts/check-tool-versions.sh`, `tofu fmt`, `tofu validate`, and `tflint`).
+`.github/workflows/validate-waf-config.yaml` additionally runs
+`gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh` across the WAF
+ConfigMaps, all 13 Grafana dashboards, pinned Helm renders, and disposable
+Alloy/Loki/VictoriaMetrics containers. Locally: `make validate-gitops`, `make lint`.

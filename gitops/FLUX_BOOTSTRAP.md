@@ -6,8 +6,9 @@ GitOps state.
 ## 0. Prereqs
 
 - A remote Git repository containing this tree
-- `tofu`, `kubectl`, `helm`, `flux`, and the Cilium CLI on your workstation
+- `tofu`, `kubectl`, `helm`, `flux`, and `ruby` on your workstation (`mise install` pins the CLI toolchain)
 - `key.txt` present locally for the SOPS age secret
+- SSH agent access to the Proxmox host (`root@<proxmox>`) for cloud-init snippet upload
 
 ## 1. Provision the VM and fetch kubeconfig
 
@@ -15,40 +16,40 @@ GitOps state.
 make init
 make provision
 make kubeconfig
-```
-
-## 2. Install Cilium on the k3s cluster
-
-The VM boots k3s without Flannel, so Cilium must be installed on top.
-
-```bash
 export KUBECONFIG=$PWD/kubeconfig.yaml
-cilium install --version 1.20.4
-cilium status --wait
 ```
 
-If the node stays NotReady, fix Cilium before moving on.
+## 2. Bootstrap the pre-Flux foundation (Gateway API CRDs, Cilium, CoreDNS, Flux Operator)
 
-## 3. Install the Flux Operator
+The VM boots k3s with `--flannel-backend=none`, `--disable-kube-proxy`, and
+`--disable coredns`. Two deadlocks occur if you try to run bare `cilium install`
+or install Flux directly on a fresh node:
 
-Flux is installed and upgraded by the Flux Operator from the `FluxInstance` in
-`gitops/infrastructure/flux-instance/flux-instance.yaml` (all six controllers,
-including image automation). Install the operator by hand once; after the first
-sync, the `flux-operator` HelmRelease in Git adopts this release (same name and
-namespace) and keeps it updated.
+1. Without `kube-proxy`, `cilium-agent` needs `kubeProxyReplacement: true` +
+   `k8sServiceHost: ${NODE_IP}` (`6443`), `ipam.mode: kubernetes`, and the
+   Gateway API CRDs (`gatewayAPI.enabled: true`) — bare `cilium install` sets
+   none of those (`cluster-pool` IPAM, dials `10.43.0.1:443`, hangs).
+2. Without CoreDNS on `10.43.0.10:53`, `flux-operator` (pulling `flux-manifests`
+   from `ghcr.io`) and `source-controller` (cloning `github.com` and pulling OCI
+   charts) fail in-pod DNS lookups before Flux can ever reconcile `coredns`.
+
+`make bootstrap-foundation` (`scripts/bootstrap-foundation.sh`) applies the
+Gateway API CRDs (`--server-side`) and installs `cilium`, `coredns`, and
+`flux-operator` from the **exact** pinned OCI chart versions and `cluster-vars`-
+substituted `.spec.values` in `gitops/infrastructure/controllers/`. After the
+first Flux sync, the matching `HelmRelease`s adopt all three releases in place:
 
 ```bash
-helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator \
-  --namespace flux-system --create-namespace
+make bootstrap-foundation
 ```
 
-## 4. Seed the Git, SOPS and GHCR secrets
+## 3. Seed the Git, SOPS and GHCR secrets
 
 The `FluxInstance` syncs over HTTPS with the `flux-system` basic-auth Secret; the
-token needs write access because image automation pushes digest pins (see 7.1).
-Flux decrypts `*-secrets.yaml` via the `sops-age` Secret. The WAF and application
-images also require the manually managed GHCR pull secret before `taskflow-app`
-reconciles. Create all of them before applying the `FluxInstance`.
+token needs write access because image automation pushes digest pins (see §6.1).
+Flux decrypts `*-secrets.yaml` via the `sops-age` Secret. Create `ghcr-pull-secret`
+in `taskflow` as well (`trivy-operator` also reads `taskflow/ghcr-pull-secret` via
+`privateRegistryScanSecretsNames`). Seed all three **before** applying `FluxInstance`:
 
 ```bash
 kubectl -n flux-system create secret generic flux-system \
@@ -65,34 +66,43 @@ kubectl create secret docker-registry ghcr-pull-secret -n taskflow \
   --docker-password=<read-packages-token>
 ```
 
-## 5. Apply the FluxInstance
+## 4. Apply the FluxInstance and reconcile layers
 
-The operator deploys the controllers and creates the `flux-system`
-GitRepository + Kustomization that sync `gitops/clusters/taskflow`.
+The operator deploys all six Flux controllers and creates the `flux-system`
+`GitRepository` + `Kustomization` that sync `gitops/clusters/taskflow`.
+
+> **TLS / HTTP-01 note:** `taskflow-app` (`wait: true`) includes `Certificate/taskflow-jokelab-cert`
+> (`letsencrypt-http01-production` across all 5 SANs). Public DNS and WAN 80/443
+> port-forwarding to `GATEWAY_IP` must be reachable so the HTTP-01 challenge completes.
 
 ```bash
 kubectl apply -f gitops/infrastructure/flux-instance/flux-instance.yaml
 kubectl -n flux-system wait fluxinstance/flux --for=condition=Ready --timeout=5m
 flux get kustomization flux-system
-```
 
-## 5. Reconcile the platform and app layers
-
-```bash
 flux reconcile kustomization infra-controllers -n flux-system
 flux reconcile kustomization infra-configs -n flux-system
+flux reconcile kustomization abuseipdb -n flux-system
+flux reconcile kustomization trivy-operator -n flux-system
 flux reconcile kustomization taskflow-app -n flux-system
+flux reconcile kustomization reloader -n flux-system
+flux reconcile kustomization monitoring -n flux-system
+flux reconcile kustomization monitoring-logging -n flux-system
+flux reconcile kustomization monitoring-app -n flux-system
+flux reconcile kustomization kyverno-policies -n flux-system
+flux reconcile kustomization policy-reporter -n flux-system
+flux reconcile kustomization hubble-ui -n flux-system
 ```
 
-## 6. Verify
+## 5. Verify
 
 ```bash
 kubectl get pods -A
-kubectl get gateway,httproute -n taskflow
-kubectl get secret -n taskflow db-secret backend-secret redis-secret taskflow-jwt-keys
+kubectl get gateway,httproute -A
+kubectl get secret -n taskflow db-secret backend-secret redis-secret taskflow-jwt-keys cloudflare-secret
 ```
 
-## 7. Image automation (`:latest` digest pinning) — critical gotchas
+## 6. Image automation (`:latest` digest pinning) — critical gotchas
 
 TaskFlow's backend/frontend run the mutable `:latest` tag. Flux pins the
 current digest and commits `repo:latest@sha256:<digest>` to Git so every rollout
@@ -104,7 +114,7 @@ ImagePolicy + ImageUpdateAutomation) and the `# {"$imagepolicy": ...}` markers i
 Two things broke this in the past (with the old `flux bootstrap` install). Both
 were hit and fixed; document them so they aren't hit again.
 
-### 7.1 The Git source MUST be writable
+### 6.1 The Git source MUST be writable
 
 `flux bootstrap` creates a **read-only** SSH deploy key by default. Flux only
 needs read access to *pull* manifests, but `ImageUpdateAutomation` must **push**
@@ -150,7 +160,7 @@ access — you must delete and re-add it, pasting the public half of the cluster
 > ⚠️ Treat any PAT committed to chat/shell history as compromised and rotate it
 > after use.
 
-### 7.2 Use the *basic* marker on Deployment `image:` lines (not `:digest`)
+### 6.2 Use the *basic* marker on Deployment `image:` lines (not `:digest`)
 
 The `:digest` marker variant is for **HelmRelease** charts where `repository`,
 `tag`, and `digest` are separate values. On a single Deployment `image:` line it
@@ -185,7 +195,7 @@ image:
   digest: sha256:…                      # {"$imagepolicy": "flux-system:policy:digest"}
 ```
 
-### 7.4 Troubleshooting: image automation stuck or controllers missing
+### 6.3 Troubleshooting: image automation stuck or controllers missing
 
 **Symptom:** A new `:latest` is pushed to ghcr.io but the cluster never rolls out.
 The `ImageUpdateAutomation` shows `GitOperationFailed`, or the controller pods
@@ -252,16 +262,16 @@ kubectl -n flux-system annotate fluxinstance/flux \
 kubectl -n flux-system patch <resource-type>/<resource-name> \
   -p '{"metadata":{"finalizers":[]}}' --type=merge
 
-# Flux Kustomization will recreate it from Git
-kubectl -n flux-system annotate kustomization/taskflow-app \
-  reconcile.fluxcd.io/requestedAt=$(date +%s) --overwrite
+# Root Kustomization (`flux-system`) owns `./gitops/clusters/taskflow/image-automation`
+kubectl -n flux-system annotate kustomization/flux-system \
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 ```
 
 **Fix — force a full end-to-end cycle after controllers are up:**
 
 ```bash
-# 1. Force the app kustomization to recreate automation resources
-kubectl -n flux-system annotate kustomization/taskflow-app \
+# 1. Force the root kustomization to recreate automation resources
+kubectl -n flux-system annotate kustomization/flux-system \
   reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 
 # 2. Wait for ImageRepository then force an immediate ghcr.io scan
@@ -282,7 +292,8 @@ kubectl -n flux-system annotate imageupdateautomation/taskflow-images \
 # 5. Check that the commit succeeded
 kubectl -n flux-system describe imageupdateautomation taskflow-images
 
-# 6. Force the app kustomization to pull the new Git commit and roll out pods
+# 6. Pull the new Git commit and roll out pods
+flux reconcile source git flux-system
 kubectl -n flux-system annotate kustomization/taskflow-app \
   reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 
@@ -290,7 +301,7 @@ kubectl -n flux-system annotate kustomization/taskflow-app \
 kubectl -n taskflow get pods -w
 ```
 
-### 7.5 Quick reference: force an immediate image update cycle
+### 6.4 Quick reference: force an immediate image update cycle
 
 In normal operation the automation runs every 10 minutes. When you've just
 pushed a new `:latest` to ghcr.io and don't want to wait, run these:
@@ -312,7 +323,8 @@ kubectl -n flux-system get imagepolicy taskflow-frontend \
 kubectl -n flux-system annotate imageupdateautomation/taskflow-images \
   reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 
-# 4. Roll out the new commit to the cluster
+# 4. Pull the new commit and roll out to the cluster
+flux reconcile source git flux-system
 kubectl -n flux-system annotate kustomization/taskflow-app \
   reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 

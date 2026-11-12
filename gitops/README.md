@@ -1,11 +1,8 @@
 # GitOps Layout
 
-This directory contains the Git repository tree reconciled by Flux. The current
-bootstrap manifest points at `https://github.com/stefanf81/homelab-TF.git`; see
-`./FLUX_BOOTSTRAP.md` for bootstrap and recovery procedures. Flux itself is
-being moved under the Flux Operator (`infrastructure/flux-instance/`); until
-that takeover is verified, `clusters/taskflow/flux-system/` remains the
-bootstrap source. OpenTofu does not bootstrap Flux.
+This directory contains the Git repository tree reconciled by Flux (`https://github.com/stefanf81/homelab-TF.git`).
+Flux itself is managed declaratively by the Flux Operator via `infrastructure/flux-instance/flux-instance.yaml`;
+see `./FLUX_BOOTSTRAP.md` for fresh-cluster bring-up (`make bootstrap-foundation`) and recovery procedures. OpenTofu does not bootstrap Flux.
 
 ## Directory Structure & Architecture
 
@@ -27,8 +24,8 @@ gitops/
 │   └── kyverno-policies/       #   CEL ValidatingPolicies (Deny, fail-open); reconciled by kyverno-policies Kustomization
 ├── monitoring/                 # 5. VictoriaMetrics, Grafana, Loki, Alloy, and dashboards
 │   ├── platform/               #   VictoriaMetrics stack, Grafana, routes, grafana secrets
-│   ├── app/                    #   App scrapes + Grafana dashboards (TaskFlow Performance, AbuseIPDB Security, Blocked Sources, cert-manager, Kyverno)
-│   └── logging/                #   Loki, Alloy (WAF logs + derived WAF metrics, abuseipdb-sync logs, Hubble flow export) + WAF, Access Logs, Rate Limits, Falco, Trivy, Logging pipeline dashboards
+│   ├── app/                    #   App scrapes + 7 Grafana dashboards (TaskFlow Performance, AbuseIPDB Security, Blocked Sources, cert-manager, Kyverno, Cilium Agent, Hubble Flows)
+│   └── logging/                #   Loki, Alloy (TaskFlow app/WAF logs + derived WAF metrics, abuseipdb-sync logs, 12 platform namespaces, Hubble flow export) + 6 dashboards (WAF, Access Logs, Rate Limits, Falco, Trivy, Logging pipeline)
 ├── images/                     # Custom images: WAF (Caddy+Coraza) and abuseipdb-sync Dockerfiles
 ├── RENOVATE.md                  #   Dependency-update bot activation and operation
 ├── README.md                   # GitOps directory overview
@@ -50,21 +47,29 @@ This is where your Flux CD controllers start scanning. When you bootstrap Flux o
 This layer manages cluster-wide utilities and operators that provide auxiliary services (network, storage, TLS certs) to other workloads in the cluster. It is split into two logical subdirectories to prevent race conditions during deployment:
 
 #### A. `infrastructure/controllers/` (CRD and Operator Deployments)
-Contains the system controllers deployed primarily via **HelmReleases**. 
-* **`cilium/`**: Installs Cilium with native L2 announcements (`CiliumLoadBalancerIPPool`) to manage external LoadBalancer IPs.
-* **`proxmox-csi/`**: Installs the Proxmox CSI driver to dynamically provision high-performance virtual disk storage on your Proxmox VE hypervisor for persistent volumes (PVCs).
-* **`cert-manager/`**: Handles automated provisioning of TLS certificates.
-* **`kyverno/`**: Installs the Kyverno policy engine (admission + background/cleanup/reports controllers). Validates, mutates, and generates Kubernetes resources via CEL `ValidatingPolicy` CRs (`policies.kyverno.io/v1`; `ClusterPolicy` is removed in Kyverno 1.20). CRDs are owned by the chart (`crds.install: true`); the Flux `HelmRelease` uses `install.crds: Skip` to avoid a CRD ownership conflict. Reconciled by `infra-controllers`.
-* **`policy-reporter/`**: Installs Policy Reporter + its UI subchart — a read-only web dashboard for Kyverno, Trivy, and Falco `PolicyReport` / `ClusterPolicyReport` objects. Exposed at `https://kyverno.jokelab.dev` through the Cilium Gateway (same pattern as Grafana), protected by **GitHub OAuth**. Trivy findings are surfaced via the `trivy-operator-polr-adapter` (Trivy CRDs → PolicyReports) plus the `plugin.trivy` enrichment. Has its **own** cluster Kustomization (`policy-reporter`) that `dependsOn` both `infra-controllers` and `taskflow-app` so the Gateway exists before the HTTPRoute is programmed.
-* **`falco/`**: Installs Falco runtime security as a DaemonSet with modern eBPF driver. Uses Falcosidekick to write native Kubernetes `PolicyReport` CRDs visible in the Policy Reporter UI. Exposes Prometheus metrics on port 8765 for VictoriaMetrics scraping.
-* **`trivy-operator/`**: Installs the Trivy vulnerability scanner operator. Scans container images for CVEs, runs the **config-audit** (misconfiguration), **RBAC**, **infra-assessment**, and **exposed-secret** scanners, and executes **cluster compliance** reports (NSA, CIS, PSS) on a schedule. SBOM generation is disabled in the current configuration. Results produce `VulnerabilityReport`/`ConfigAuditReport`/… CRDs consumed by the Policy Reporter (see `docs/TRIVY_SECURITY_SCANNING.md`). Has its **own** cluster Kustomization (`trivy-operator`) that `dependsOn` `infra-controllers`.
-* **`abuseipdb/`**: Runs the **AbuseIPDB synchronizer** — it downloads the AbuseIPDB blacklist, validates/normalizes it, and maintains two runtime-managed enforcement sinks: `CiliumCIDRGroup/abuseipdb` (used by the `CiliumClusterwideNetworkPolicy` that denies listed sources on the direct path) and a Cloudflare account IP list referenced by a zone WAF custom rule (the enforcement point that sees real client IPs behind the proxy). It also collects Cloudflare Security Events for the `Blocked Sources` dashboard. Has its **own** cluster Kustomization (`abuseipdb`) that `dependsOn` `infra-controllers`. See `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`.
+Contains the system controllers deployed primarily via **HelmReleases** (plus `gateway-api/` static CRDs):
+* **`gateway-api/`**: Vendored Gateway API `v1.6.3` standard-channel CRDs and upgrade `ValidatingAdmissionPolicy`.
+* **`cilium/`**: Installs Cilium with kube-proxy replacement, Gateway API controller, Hubble, and native L2 announcements (`CiliumLoadBalancerIPPool`).
+* **`coredns/`**: Replaces k3s's disabled packaged addon with a GitOps-managed CoreDNS release (`10.43.0.10`, hairpin NAT `hosts` overrides).
+* **`proxmox-csi/`**: Installs the Proxmox CSI driver to dynamically provision virtual disk storage on Proxmox VE (`proxmox-csi` default and `proxmox-csi-db` for PostgreSQL).
+* **`cert-manager/`**: Handles automated provisioning of Let's Encrypt TLS certificates via Gateway API HTTP-01.
+* **`kyverno/`**: Installs the Kyverno policy engine (`admissionController` + `reportsController`; the idle `backgroundController` and `cleanupController` are disabled). Enforces CEL `ValidatingPolicy` CRs (`policies.kyverno.io/v1`). CRDs are owned by the chart (`crds.install: true`); the Flux `HelmRelease` uses `install.crds: Skip` to avoid CRD ownership conflicts.
+* **`falco/`**: Installs Falco runtime security as a DaemonSet with the `modern_ebpf` driver and single-replica Falcosidekick writing native Kubernetes `PolicyReport`s. Exposes Prometheus metrics on port 8765.
+* **`trivy-operator/`**: Installs the Trivy vulnerability/config-audit/RBAC/infra/secret/compliance scanner operator (`targetNamespaces: "taskflow,abuseipdb"`). Reconciled by its own `trivy-operator` Kustomization (`dependsOn: infra-controllers`).
+* **`reloader/`**: Stakater Reloader in namespace-scoped mode (`taskflow`, `abuseipdb`), rolling annotated Deployments on ConfigMap/Secret updates. Reconciled by `reloader` (`dependsOn: taskflow-app, abuseipdb`).
+* **`flux-operator/`**: Manages the Flux Operator `HelmRelease` (`flux-operator` Kustomization -> `flux-instance` Kustomization).
+
+*(Workloads that depend on the Gateway, SOPS secrets, or app-tier ordering — **`policy-reporter/`**, **`hubble-ui/`**, **`abuseipdb/`**, and **`renovate/`** — live under `gitops/platform/` with dedicated cluster Kustomizations.)*
 
 #### B. `infrastructure/configs/` (Controller Instances)
-Contains the actual custom configurations and Custom Resources (CRs) consumed by the controllers installed in the folder above.
-* **`cilium/ippool.yaml`**: Configures the IP pool block for LoadBalancer services via `CiliumLoadBalancerIPPool`. *Optimized:* Adjusted to map your homelab subnet (`192.168.50.200 - 192.168.50.250`).
-* **`cilium/l2announcement-policy.yaml`**: Advertises the allocated IP ranges locally via Layer 2 (ARP) using `CiliumL2AnnouncementPolicy`.
-* **`cilium/abuseipdb-ingress-deny.yaml`**: `CiliumClusterwideNetworkPolicy` that denies sources from `CiliumCIDRGroup/abuseipdb` at the `reserved:ingress` (Cilium Gateway) hop, for direct-to-origin traffic. The referenced CIDR group is maintained at runtime by `abuseipdb-sync` and is deliberately not committed to Git.
+Contains the custom configurations and Custom Resources (CRs) consumed by the controllers installed above:
+* **`gatewayclass.yaml`**: `GatewayClass/cilium`.
+* **`priorityclasses.yaml`**: `PriorityClass/taskflow-critical` (`preemptionPolicy: Never`) for the TaskFlow request path and data stores.
+* **`letsencrypt-http01-issuers.yaml`**: Staging and production Let's Encrypt HTTP-01 `ClusterIssuer`s attached to `taskflow-gateway`.
+* **`cilium/ippool.yaml`**: Configures the LoadBalancer IP pool (`192.168.50.200 - 192.168.50.250`).
+* **`cilium/l2announcement-policy.yaml`**: Advertises LoadBalancer IPs locally via Layer 2 (ARP) using `CiliumL2AnnouncementPolicy`.
+* **`cilium/abuseipdb-ingress-deny.yaml`**: `CiliumClusterwideNetworkPolicy` that denies sources from runtime-managed `CiliumCIDRGroup/abuseipdb` at `reserved:ingress` for direct-to-origin traffic.
+* **`cilium/hubble-isolation.yaml`**: Locks down `hubble-ui` (`:8081`) and `hubble-relay` (`:4245`) in `kube-system` so in-cluster pods cannot bypass `hubble-ui-oauth2-proxy`.
 
 ### 3. `apps/` (The Application Layer)
 This layer houses user-facing workloads and microservices. Workloads here are kept separate from the infrastructure layer to allow application developers to deploy code without risking platform-level system configuration.
@@ -74,14 +79,14 @@ This folder represents your **TaskFlow** application (Angular 22, Spring Boot 4.
 * **`backend.yaml`**: Configures the JVM Spring Boot 4.1.1 server with preflight checks (`wait-for-db` init-container) and a 1 GiB heap (`MaxRAMPercentage=50.0` of its 2 GiB cgroup limit) with G1GC tuning (`JAVA_TOOL_OPTIONS`). The deployment owns the JVM sizing flags. The container image uses the mutable `:latest` tag, which Flux pins to its current `sha256` digest via the `# {"$imagepolicy": ...}` marker (see `../FLUX_BOOTSTRAP.md` §7 — the Git source must be writable and the marker must be the *basic* form, not `:digest`).
 * **`backend-waf.yaml` / `frontend-waf.yaml`**: Put Caddy + Coraza CRS in front of the backend and frontend Services. The Gateway routes only to these WAF Services.
 * **`frontend.yaml`**: Configures the Angular 22 client packaged with Nginx, utilizing custom emptyDirs to secure a `readOnlyRootFilesystem`. Same Flux digest-pin behavior as the backend.
-* **`postgres-db.yaml` & `postgres-pvc.yaml`**: Configures the database storage. *Optimized:* Postgres now runs tuned caching params (`shared_buffers=128MB`, `effective_cache_size=256MB`, `work_mem=8MB`, `max_connections=50`) within its 512Mi RAM limit, and storage is scaled to `10Gi` backed by the dynamic `proxmox-csi` storage engine.
+* **`postgres-db.yaml` & `postgres-pvc.yaml`**: Configures the database storage. *Optimized:* Postgres runs tuned caching params (`shared_buffers=128MB`, `effective_cache_size=384MB`, `work_mem=8MB`, `autovacuum_work_mem=32MB`, `max_connections=50`) within its 768Mi RAM limit, and storage (`postgres-data`) uses `10Gi` on the `proxmox-csi-db` StorageClass (`cache: none`, `noatime`).
 * **`redis.yaml`**: Configures the caching layer. *Optimized:* capped at `--maxmemory 64mb` with `allkeys-lru` eviction to avoid OOM-kill cache loss (ephemeral `emptyDir`, no persistence).
 * **`jaeger.yaml`**: Configures Jaeger All-in-One telemetry for OTLP trace collection.
-*   **`network-policy.yaml`**: Enforces strict network-level isolation (e.g., restricting PostgreSQL & Redis ingress ports to the backend container).
+*   **`network-policy.yaml`**: Enforces strict network-level isolation (restricting PostgreSQL ingress to backend and `postgres-exporter`).
 *   **`default-deny.yaml`**: Default-deny ingress for the data tier (postgres, redis, jaeger) — flips the allow-by-default baseline so `restrict-*` policies actually enforce.
-*   **`namespace-default-deny.yaml`**: Extends default-deny to the **entire** `taskflow` namespace, then selectively re-opens the Cilium Gateway (Envoy) and monitoring scrapes. Implements full zero-trust networking.
-*   **`backend-pdb.yaml`** & **`frontend-pdb.yaml`**: PodDisruptionBudgets (`minAvailable: 1`) blocking voluntary evictions for single-replica workloads.
-*   **`certificate.yaml`**: Let's Encrypt TLS certificate for `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`, and `kyverno.jokelab.dev`.
+*   **`namespace-default-deny.yaml`**: Extends default-deny to the **entire** `taskflow` namespace, then selectively re-opens the Cilium Gateway (Envoy -> WAFs), WAF -> app paths, and `vmagent`-only monitoring scrapes.
+*   **`backend-pdb.yaml`** & **`frontend-pdb.yaml`**: PodDisruptionBudgets (`maxUnavailable: 1`, `unhealthyPodEvictionPolicy: AlwaysAllow`) so single-node drains/upgrades never deadlock on a single replica.
+*   **`certificate.yaml`**: Let's Encrypt ECDSA P-256 TLS certificate for `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`, `kyverno.jokelab.dev`, and `hubble.jokelab.dev`.
 *   **`http-redirect.yaml`**: HTTP→HTTPS 301 redirect (port 80 → 443) and bare apex `jokelab.dev` → `www.jokelab.dev` redirect.
 *   **`cloudflare-ddns.yaml`**: Cloudflare DDNS updater keeping the TaskFlow, Grafana, Policy Reporter, and Hubble host records synced to the public endpoint.
 *   **`kustomization.yaml`**: Aggregates all these resources into a single manifest compilation unit for Flux.
@@ -91,8 +96,8 @@ This folder represents your **TaskFlow** application (Angular 22, Spring Boot 4.
 The scaffolded manifests inside this layout include critical performance and networking adjustments:
 
 ### 1. Database & Storage Scaling (`apps/taskflow/`)
-* **Proxmox CSI Storage Association:** `postgres-pvc.yaml` defines `postgres-data` with `storageClassName: proxmox-csi-db` (`cache: none`, `noatime`) at `10Gi` of high-performance virtual disk storage, mapped directly to VM 900 via the node's `instance-id` annotation.
-* **PostgreSQL Engine Tuning:** `postgres-db.yaml` utilizes container launch variables to tune buffers, cache sizes, and connection limits within its 512Mi RAM limit (e.g. `shared_buffers=128MB`, `effective_cache_size=256MB`, `work_mem=8MB`, `max_connections=50`).
+* **Proxmox CSI Storage Association:** `postgres-pvc.yaml` defines `postgres-data` with `storageClassName: proxmox-csi-db` (`cache: none`, `noatime`) at `10Gi` of virtual disk storage, mapped to the Proxmox node via Kubernetes topology labels (`topology.kubernetes.io/region=homelab`, `topology.kubernetes.io/zone=<proxmox_node>`).
+* **PostgreSQL Engine Tuning:** `postgres-db.yaml` tunes buffers, cache sizes, and connection limits within its 768Mi RAM limit (e.g. `shared_buffers=128MB`, `effective_cache_size=384MB`, `work_mem=8MB`, `autovacuum_work_mem=32MB`, `max_connections=50`).
 
 ### 2. Modern Kubernetes Gateway API with Cilium (`apps/taskflow/`)
 * **Cilium CNI & Gateway API Operator:** Deployed under `infrastructure/controllers/cilium/`. The core Gateway API schemas are fully managed under `infrastructure/controllers/gateway-api/` using a **local-vendored** copy of the official `v1.6.3` standard installation release. This ensures Flux CD performs dry-run validations with 100% compliance, preventing any schema version conflicts or ownership clashes with K3s's built-in platform installers.
@@ -120,7 +125,7 @@ Kyverno provides Kubernetes-native policy enforcement; Policy Reporter gives it 
 
 * **Controller** — `gitops/infrastructure/controllers/kyverno/` (HelmRelease `kyverno` v3.9.2, shipping Kyverno v1.19.2, single-replica, CRDs owned by the chart). System namespaces (`kube-system`, `flux-system`, `kyverno`, `cert-manager`) are excluded from enforcement.
 * **Policies** — `gitops/apps/kyverno-policies/` holds CEL `ValidatingPolicy` resources in **Deny** mode with `failurePolicy: Ignore` (`disallow-latest-tag`, `require-common-labels`). Reconciled by the `kyverno-policies` Kustomization, which `dependsOn: infra-controllers` so the CRDs exist before policies apply.
-* **Dashboard** — `gitops/platform/policy-reporter/` (HelmRelease `policy-reporter` v3.11.2, `ui.enabled`, `plugin.kyverno.enabled` + `plugin.trivy.enabled`, GitHub OAuth, six Trivy `ui.sources`). Its `HTTPRoute` serves `https://kyverno.jokelab.dev` via the shared Cilium Gateway, using the `taskflow-jokelab-cert` certificate, whose `dnsNames` already include `kyverno.jokelab.dev`. Ensure the hostname has a public DNS record before certificate issuance or renewal.
+* **Dashboard** — `gitops/platform/policy-reporter/` (HelmRelease `policy-reporter` v3.11.2, `ui.enabled`, `plugin.kyverno.enabled` + `plugin.trivy.enabled`, `ui.oauth.enabled: false`, fronted by `oauth2-proxy` with `github_users = ["stefanf81"]`, six Trivy `ui.sources`; `dependsOn: [infra-controllers, taskflow-app, trivy-operator]`). Its `HTTPRoute` serves `https://kyverno.jokelab.dev` via `policy-reporter-ui-oauth2-proxy:80` on the shared Cilium Gateway, using the `taskflow-jokelab-cert` certificate. Ensure the hostname has a public DNS record before certificate issuance or renewal.
 
 **Add a policy:** add a `ValidatingPolicy` YAML (start with `validationActions: [Audit]`) to `gitops/apps/kyverno-policies/` and its `kustomization.yaml`, check it with `kubectl apply --dry-run=server -k gitops/apps/kyverno-policies`, and commit — Flux applies it automatically.
 
@@ -136,13 +141,6 @@ kubectl get validatingpolicies
 kubectl get policyreports -A
 ```
 
-> **Security note:** the Policy Reporter UI is protected by **GitHub OAuth** (`ui.oauth`), with the OAuth app credentials in the SOPS-encrypted `policy-reporter-github-oauth` secret. If you later remove OAuth, consider `ui.basicAuth` (SOPS-encrypted secret) to avoid exposing policy reports publicly. Also, the Let's Encrypt certificate requires a DNS record for `kyverno.jokelab.dev` resolving to the Gateway IP — without it the cert stays `Pending`. If the record exists but cert-manager's self-check still times out (hairpin NAT behind a router), add a `hosts` entry in CoreDNS to resolve the domain to the Gateway's internal IP `192.168.50.201` — see `docs/KYVERNO_POLICY_ENGINE.md` §6 for the exact patch.
+> **Security note:** the Policy Reporter UI's built-in OAuth is disabled (`ui.oauth.enabled: false` because it lacks a user allow-list); authentication is enforced by **`oauth2-proxy`** (`oauth2-proxy-release.yaml`, credentials in SOPS-encrypted `policy-reporter-ui-oauth-secrets.yaml`, host-only `__Host-o2p-kyverno` cookie), backed by pod-network default-deny (`oauth2-proxy-network-policy.yaml`). CoreDNS already carries the hairpin-NAT `hosts` override for `kyverno.jokelab.dev` (`controllers/coredns/release.yaml`).
 
 See `docs/KYVERNO_POLICY_ENGINE.md` for the full reference (CRD gotchas, troubleshooting, rollback).
-
-## Next step later
-
-1. Create a remote repository.
-2. Push this `gitops/` directory into it.
-3. Follow `./FLUX_BOOTSTRAP.md`.
-4. Bootstrap Flux manually per `./FLUX_BOOTSTRAP.md` (OpenTofu does not bootstrap Flux).

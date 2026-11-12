@@ -2,7 +2,7 @@
 
 ## Overview
 
-Taskflow uses a **Caddy + Coraza WAF** (Web Application Firewall) to inspect all incoming HTTP traffic before it reaches the application services. Coraza runs as a Coraza-Caddy plugin, using the **OWASP Core Rule Set (CRS)** to detect and optionally block common web attacks (SQL injection, XSS, path traversal, etc.). Caddy additionally enforces **per-client HTTP rate limiting** (HTTP 429, `caddy-ratelimit`): frontend `general` 180/min and backend `api` 300/min, enabled 2026-09-26 after the live client-IP verification passed. Rate limiting complements — and does not replace — IP reputation enforcement (Cloudflare edge + Cilium) or CRS inspection. See [Rate Limiting](#rate-limiting).
+Taskflow uses a **Caddy + Coraza WAF** (Web Application Firewall) to inspect all incoming HTTP traffic before it reaches the application services. Coraza runs as a Coraza-Caddy plugin, using the **OWASP Core Rule Set (CRS)** to detect and optionally block common web attacks (SQL injection, XSS, path traversal, etc.). Caddy additionally enforces **per-client HTTP rate limiting** (HTTP 429, `caddy-ratelimit`): frontend `general` 180/min, backend `api` 300/min, and backend `authentication` (`/api/v1/auth/*`) 20/min, enabled 2026-09-26 after the live client-IP verification passed. Rate limiting complements — and does not replace — IP reputation enforcement (Cloudflare edge + Cilium) or CRS inspection. See [Rate Limiting](#rate-limiting).
 
 Audit logs, access logs (including rate-limit 429s), and Coraza records from the WAFs are collected by **Grafana Alloy**, stored in **Grafana Loki** (30-day retention), and visualized in Grafana dashboards. Alloy also counts the same records into bounded `loki_process_custom_taskflow_waf_*` metrics, which VictoriaMetrics scrapes, so the dashboard overviews do not have to scan Loki (see [Metrics derived from logs](#metrics-derived-from-logs)).
 
@@ -13,7 +13,7 @@ Audit logs, access logs (including rate-limit 429s), and Coraza records from the
 > deliberately not loaded into Caddy/Coraza. See
 > `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`.
 
-> **Status update:** Coraza writes audit JSON directly to container stdout (`SecAuditLog /dev/stdout`); the previous FIFO plus `audit-log-redactor` sidecar was removed because a stalled reader could block every audited request while `/waf-healthz` stayed green. Credential redaction now happens at ingest in Alloy. Caddy runs with `admin off`, so **Caddyfile changes require a manual rollout restart** (see the runbook).
+> **Status update:** Coraza writes audit JSON directly to container stdout (`SecAuditLog /dev/stdout`); the previous FIFO plus `audit-log-redactor` sidecar was removed because a stalled reader could block every audited request while `/waf-healthz` stayed green. Credential redaction now happens at ingest in Alloy. Caddy runs with `admin off` (cannot hot-reload in place); Stakater Reloader (`configmap.reloader.stakater.com/reload` on both WAF Deployments) rolls the WAF pods automatically when their ConfigMaps change (see the runbook).
 
 ```
                     ┌──────────────┐
@@ -80,8 +80,9 @@ Internet → Cloudflare DNS → Port Forward → 192.168.50.201 (L2 announcement
 
 | Path | Backend | Service |
 |------|---------|---------|
-| `/api*` | taskflow-backend-waf | `taskflow-backend-waf:8080` |
-| `/*` | taskflow-frontend-waf | `taskflow-frontend-waf:8080` |
+| `/api/v1/appointments/events` (`Exact`, 31m timeout) | taskflow-backend-waf | `taskflow-backend-waf:8080` |
+| `/api*` (`PathPrefix`, 10s timeout) | taskflow-backend-waf | `taskflow-backend-waf:8080` |
+| `/*` (`PathPrefix`) | taskflow-frontend-waf | `taskflow-frontend-waf:8080` |
 
 ### WAF-to-Application Flow
 
@@ -194,8 +195,8 @@ and skips the push when the revision tag already exists.
 | Service | `taskflow-frontend-waf` (ClusterIP:8080) | `taskflow-backend-waf` (ClusterIP:8080) |
 | ConfigMap | `taskflow-frontend-waf-config` | `taskflow-backend-waf-config` |
 | Security Context | runAsUser: 100, readOnlyRootFilesystem, drop ALL | runAsUser: 100, readOnlyRootFilesystem, drop ALL |
-| Resources | 50m-500m CPU, 96Mi-512Mi memory | 100m-750m CPU, 128Mi-768Mi memory |
-| Probes | /waf-healthz (readiness + liveness) | /waf-healthz (readiness + liveness) |
+| Resources | 50m CPU req (no CPU limit), 96Mi-512Mi memory (`GOMEMLIMIT=460MiB`) | 100m CPU req (no CPU limit), 128Mi-768Mi memory (`GOMEMLIMIT=690MiB`) |
+| Probes | `/waf-healthz` (startup + readiness + liveness) | `/waf-healthz` (startup + readiness + liveness) |
 
 ### ConfigMap Structure
 
@@ -205,6 +206,7 @@ Each WAF ConfigMap contains:
 |-----|---------|
 | `Caddyfile` | Main configuration with inline Coraza directives |
 | `*-exclusions.conf` | CRS exclusion rules (initially empty) |
+| `rate-limit.conf` | Per-client `caddy-ratelimit` zone definitions |
 
 ### Volume Mounts
 
@@ -291,8 +293,8 @@ the matched data of credential variables at ingest (see
 |------|---------|
 | A | Audit log header |
 | B | Request headers |
-| C | Request body |
-| K | Matched rule IDs |
+| F | Response headers |
+| H | Audit log trailer (matched rules / stopwatch metadata) |
 | Z | End of audit log entry |
 
 ## Rate Limiting
@@ -375,7 +377,7 @@ Two access-log fields make rejections attributable:
 | Field | Set by | Notes |
 |-------|--------|-------|
 | `client_ip` | `log_append <client_ip` (early) | Resolved visitor, present even when Coraza interrupts |
-| `rate_limit_zone` | `log_append rate_limit_zone` (late) | `general`/`api` when the limiter rejected; empty otherwise |
+| `rate_limit_zone` | `log_append rate_limit_zone` (late) | `general`/`api`/`authentication` when the limiter rejected; empty otherwise |
 
 `is_interrupted: true` in Coraza audit records identifies WAF blocks. HTTP 403 is
 **not** used as the WAF signal: applications can legitimately return 403 too.
@@ -412,7 +414,7 @@ does not touch Cilium, Gateway API, Coraza, CRS, or the applications:
    rolls them automatically, but reacts asynchronously; `rollout status` alone
    can report the previous rollout's success before Reloader acts. Caddy runs
    with `admin off` and cannot hot-reload.
-4. After the rollout Caddy runs without the limiter. The image can stay at `r3`
+4. After the rollout Caddy runs without the limiter. The pinned WAF image can stay unchanged
    — the module is simply unused.
 
 Keep the narrowed trusted-proxy configuration during rollback. To roll the image
@@ -648,7 +650,7 @@ the dashboards together.
 - **Storage**: 10Gi PVC (`proxmox-csi` StorageClass)
 - **Caches**: in-process results cache (`embedded_cache`, 100 MB); memcached chunk and results caches disabled
 - **Limits**: `max_query_series: 20000` (the top-N tables group by a client-chosen value, such as IP, path, URI or User-Agent; `topk` limits the result but not the grouping, so a scan with more than 20,000 distinct values in the range fails the table with "maximum number of series (20000) reached for a single query", which is itself a scan signal; the category bars stay bounded), tenant ingestion 8 MB/s with a 16 MB burst, per-stream 3 MB/s with a 15 MB burst
-- **Resources**: 100m/256Mi requests, 1 CPU/768Mi limits (the CPU limit lets split range queries run in parallel)
+- **Resources**: 100m/128Mi requests, 512Mi memory limit, no CPU limit (lets split range queries run in parallel without CFS throttling)
 - **Metrics scrape**: the `loki` VMServiceScrape selects only the main Service, not the chart's headless Service, so Loki series are not duplicated
 - **Canary/Test**: Disabled
 
@@ -928,11 +930,12 @@ flux-system
     │
     ▼
 infra-controllers ──▶ infra-configs ──▶ taskflow-app
-                                         (WAF + app manifests)
-    │
-    ▼
-monitoring ──▶ monitoring-logging
-               (Loki + Alloy + Grafana provisioning)
+    │                                    (WAF + app manifests)
+    │                                          │
+    ├──────────────────┬───────────────────────┤
+    ▼                  ▼                       ▼
+trivy-operator     monitoring ──────────▶ monitoring-logging
+(+ platform NS)                            (Loki + Alloy + Grafana provisioning)
 ```
 
 ## Operational Commands
@@ -1041,7 +1044,7 @@ kubectl logs -n monitoring deploy/alloy -c alloy
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `401 Unauthorized` | No pull secret or wrong credentials | Create `ghcr-pull-secret` with valid PAT |
-| `403 Forbidden` | PAT lacks `read:packages` scope | Use PAT with `write:packages` scope |
+| `403 Forbidden` | PAT lacks `read:packages` scope | Use PAT with `read:packages` scope |
 | `no match for platform` | Image built for wrong architecture | Rebuild with `--platform linux/amd64` |
 | `ImagePullBackOff` | Stale image reference | Delete pods to force re-pull |
 

@@ -67,6 +67,10 @@ release changelogs (5,000 requests/hour limit).
 
 ## PR Workflow & Grouping
 
+- **Enabled Managers** (`.github/renovate.json`): `custom.regex`, `dockerfile`,
+  `flux`, `github-actions`, `gomod`, `kubernetes`, `mise`, and `terraform`, with
+  `minimumReleaseAge: "3 days"` (`flux2` and `kubectl` in `mise.toml` are restricted
+  to patch updates so their minors stay aligned with `FluxInstance` and `k3s_version`).
 - **Dependency Dashboard**: Open updates and pending upgrades are tracked in the
   Dependency Dashboard issue.
 - **Major Upgrades**: All major updates require manual opt-in. They appear under
@@ -74,18 +78,21 @@ release changelogs (5,000 requests/hour limit).
   their checkbox is ticked.
 - **Tightly Coupled Stacks**: Co-dependent components are grouped into unified PRs:
   - VictoriaMetrics Stack (`victoria-metrics-k8s-stack`, `victoriametrics/operator`, `grafana/grafana`)
-  - Falco Stack (`falco`, `falcosidekick`)
+  - Falco Stack (`falco`, `ghcr.io/falcosecurity/charts/falco`, `falcosecurity/falcosidekick`)
   - Logging Stack (`loki`, `alloy`)
-  - Proxmox CSI (`proxmox-csi-plugin`, `proxmox-csi-controller`)
+  - Proxmox CSI (`proxmox-csi-plugin`, `ghcr.io/sergelogvinov/charts/proxmox-csi-plugin`, `ghcr.io/sergelogvinov/proxmox-csi-controller`)
   - Metrics Server (`metrics-server` chart and image)
 - **General Patch Updates**: Standalone patch updates are bundled together into a
   single `patch updates` PR to reduce notification noise.
 - **Concurrency**: Up to 5 PRs may remain open concurrently (`prConcurrentLimit: 5`),
   and hourly rate limiting is disabled (`prHourlyLimit: 0`) so scheduled runs
   generate updates in a single batch.
-- **Custom Image Annotations**: Any manifest under `gitops/` supports inline
-  annotations for Renovate:
-  `# renovate: datasource=<ds> depName=<dep> tag: <tag>` or `version: <ver>`.
+- **Custom Image & Bundle Annotations**: Any manifest under `gitops/` supports
+  two-line inline annotations for Renovate:
+  ```yaml
+  # renovate: datasource=<ds> depName=<dep> [versioning=<ver>]
+  tag: <tag> # (or `version: <ver>` / `# bundle-version: <ver>`)
+  ```
 
 ## Operation
 

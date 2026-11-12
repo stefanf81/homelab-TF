@@ -10,6 +10,7 @@ Reference for tuning and maintaining the Taskflow Caddy+Coraza WAF deployments.
 | Backend Caddyfile + Coraza | `gitops/apps/taskflow/backend-waf.yaml` (ConfigMap) | Main Caddyfile with inline Coraza directives |
 | Frontend exclusions | Same ConfigMap, key `frontend-exclusions.conf` | Empty until false positives are found |
 | Backend exclusions | Same ConfigMap, key `backend-exclusions.conf` | Empty until false positives are found |
+| Rate-limit zones | Same ConfigMap, key `rate-limit.conf` | Per-client HTTP rate-limit zones imported by Caddyfile |
 
 With `load_owasp_crs`, the connector merges the embedded CRS filesystem with the OS filesystem. `Include @...` loads from the embedded CRS; `Include /etc/coraza/...` loads from the mounted ConfigMap.
 
@@ -21,21 +22,22 @@ With `load_owasp_crs`, the connector merges the embedded CRS filesystem with the
 
 ```
 directives `
-    Include @coraza.conf-recommended     # 1. Coraza recommended base config
-    SecRuleEngine On                     # 2. Engine mode (active blocking)
+    Include @coraza.conf-recommended              # 1. Coraza recommended base config
+    Include @crs-setup.conf.example               # 2. CRS setup defaults
+    Include /etc/coraza/frontend-exclusions.conf  # 3. Before-CRS exclusions
+
+    SecRuleEngine On                              # 4. Engine mode (active blocking)
     SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=2" # Paranoia level 2
-    SecRequestBodyAccess On              #    Body processing
-    SecResponseBodyAccess Off            #    Response buffering (off)
-    SecAuditEngine RelevantOnly          #    Audit logging
-    SecAuditLog /dev/stdout             #  Audit JSON to stdout (Alloy redacts credentials at ingest)
-    SecAuditLogFormat JSON               #    JSON audit records
-    SecAuditLogParts ABFHZ               #    Rule-match metadata plus request/response headers
-    SecRequestBodyLimit 10485760         #    Max request body (10 MB)
-    SecRequestBodyNoFilesLimit 1048576   #    Max body without files (1 MB)
+    SecRequestBodyAccess On                       #    Body processing
+    SecResponseBodyAccess Off                     #    Response buffering (off)
+    SecAuditEngine RelevantOnly                   #    Audit logging
+    SecAuditLog /dev/stdout                       #    Audit JSON to stdout (Alloy redacts credentials at ingest)
+    SecAuditLogFormat JSON                        #    JSON audit records
+    SecAuditLogParts ABFHZ                        #    Rule-match metadata plus request/response headers
+    SecRequestBodyLimit 10485760                  #    Max request body (10 MB)
+    SecRequestBodyNoFilesLimit 1048576            #    Max body without files (1 MB)
 
-    Include /etc/coraza/frontend-exclusions.conf  # 4. Before-CRS exclusions
-
-    Include @owasp_crs/*.conf            # 5. CRS rules (embedded)
+    Include @owasp_crs/*.conf                     # 5. CRS rules (embedded)
 `
 ```
 
@@ -218,7 +220,7 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
      gitops/apps/taskflow/frontend-waf.yaml > "$tmp/caddy/rate-limit.conf"
    ruby -ryaml -e 'puts YAML.load_file(ARGV[0]).fetch("data").fetch("frontend-exclusions.conf")' \
      gitops/apps/taskflow/frontend-waf.yaml > "$tmp/coraza/frontend-exclusions.conf"
-   docker run --rm -v "$tmp/caddy:/etc/caddy:ro" -v "$tmp/coraza:/etc/coraza:ro" \
+   docker run --rm --platform linux/amd64 -v "$tmp/caddy:/etc/caddy:ro" -v "$tmp/coraza:/etc/coraza:ro" \
      ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8 \
      validate --config /etc/caddy/Caddyfile --adapter caddyfile
    rm -rf "$tmp"

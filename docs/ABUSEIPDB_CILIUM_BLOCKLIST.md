@@ -44,7 +44,7 @@ not a WAF replacement, and it is never duplicated into Caddy/Coraza.
 
 | Component | Location | Notes |
 |---|---|---|
-| Synchronizer image | `gitops/images/abuseipdb-sync/` + `.github/workflows/build-abuseipdb-sync.yaml` | Go, distroless, public GHCR package `ghcr.io/stefanf81/abuseipdb-sync` (currently `0.3.2-r2`, pinned by digest in the Deployment) |
+| Synchronizer image | `gitops/images/abuseipdb-sync/` + `.github/workflows/build-abuseipdb-sync.yaml` | Go, distroless, public GHCR package `ghcr.io/stefanf81/abuseipdb-sync` (deployed `0.3.3-r1` pinned by digest in `deployment.yaml`; Dockerfile recipe `0.3.4-r1`) |
 | Controller manifests | `gitops/platform/abuseipdb/` | Deployment, SA, RBAC, config, secret, Service, network policies |
 | Flux Kustomization | `gitops/clusters/taskflow/abuseipdb.yaml` | `dependsOn: infra-controllers`, SOPS decryption |
 | Deny policy | `gitops/infrastructure/configs/cilium/abuseipdb-ingress-deny.yaml` | Active: `reserved:ingress` ingest deny via `cidrGroupRef` |
@@ -197,21 +197,25 @@ Cloudflare actually blocked:
 | `ABUSEIPDB_MIN_ENTRIES` | `1` | Validated results below this are rejected |
 | `ABUSEIPDB_MAX_SHRINK_PERCENT` | `50` | Reject lists that shrink by more than this (when previous ≥ 100) |
 | `ABUSEIPDB_CIDRGROUP_NAME` | `abuseipdb` | Runtime group name |
-| `CLOUDFLARE_SYNC_ENABLED` | `false` | Enable the Cloudflare edge sink |
+| `ABUSEIPDB_HTTP_TIMEOUT` | `30s` | HTTP client timeout for AbuseIPDB, Cloudflare and Loki calls |
+| `ABUSEIPDB_LISTEN_ADDR` | `:8080` | Metrics and health probe bind address |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
+| `CLOUDFLARE_SYNC_ENABLED` | `false` (`true` in `config.yaml`) | Enable the Cloudflare edge sink |
 | `CLOUDFLARE_ACCOUNT_ID` | — | Cloudflare account owning the IP list |
 | `CLOUDFLARE_ZONE_ID` | — | Zone of `jokelab.dev` (the WAF rule lives here) |
 | `CLOUDFLARE_LIST_NAME` | `abuseipdb` | Account IP list resolved/created by name |
 | `CLOUDFLARE_MAX_ENTRIES` | `10000` | Sink rejects larger lists (free plan cap; Cilium unaffected) |
 | `CLOUDFLARE_RULE_REF` | `abuseipdb` | Stable rule reference; only this rule is ever modified |
-| `CLOUDFLARE_FIREWALL_LOG_ENABLED` | `false` | Enable the Security Events collector (Loki) |
+| `CLOUDFLARE_FIREWALL_LOG_ENABLED` | `false` (`true` in `config.yaml`) | Enable the Security Events collector (Loki) |
 | `CLOUDFLARE_FIREWALL_POLL_INTERVAL` | `5m` | Collector poll interval (minimum 1m) |
 | `CLOUDFLARE_FIREWALL_LOOKBACK` | `5m` | First window size on startup (raise temporarily to backfill) |
-| `CLOUDFLARE_FIREWALL_MAX_WINDOW` | `24h` | Cap on a recovery window after failed polls |
+| `CLOUDFLARE_FIREWALL_MAX_WINDOW` | `1h` (`24h` in `config.yaml`) | Cap on a recovery window after failed polls |
 | `CLOUDFLARE_FIREWALL_LIMIT` | `5000` | Max events fetched per window (1–10000) |
 | `LOKI_PUSH_URL` | `http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push` | Loki endpoint for collected blocks. This is the compiled-in default from image `0.3.3-r1`; older images default to the removed `loki-gateway` Service, so keep the key set while one is pinned |
 
 The exception and protected-range lists live in `abuseipdb-sync-files` and are
-re-read on every cycle, so Git edits apply without a restart.
+re-read on every cycle, so Git edits apply without a restart (Reloader only rolls
+the Deployment on `abuseipdb-sync-config` or `abuseipdb-sync` Secret changes).
 
 ### Metrics
 
@@ -222,9 +226,9 @@ re-read on every cycle, so Git edits apply without a restart.
 `abuseipdb_last_http_status`, `abuseipdb_last_success_timestamp_seconds`,
 `abuseipdb_feed_age_seconds`, `abuseipdb_feed_stale`, `abuseipdb_build_info`.
 
-`abuseipdb_sync_errors_total` reasons: `download` (any failed feed request,
-including HTTP 429; `abuseipdb_last_http_status` has the status), `parse`,
-`validation` and `kube`. `abuseipdb_last_success_timestamp_seconds` and
+`abuseipdb_sync_errors_total` reasons: `rate_limited` (HTTP 429), `http`
+(other HTTP status failures; `abuseipdb_last_http_status` has the status),
+`timeout`, `network`, `parse`, `validation` and `kube`. `abuseipdb_last_success_timestamp_seconds` and
 `abuseipdb_feed_age_seconds` follow the Cilium sink (the `last-success`
 annotation and the stale-feed logic); `abuseipdb_sync_success` covers all
 enabled sinks.

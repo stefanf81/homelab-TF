@@ -3,18 +3,6 @@
 Prioritized, pick-up-later backlog from the September 2026 architecture review.
 Companion to `SOTA_HOMELAB_2026.md` (the SOTA gap comparison).
 
-**Step 0 — commit & push first.** The StorageClass default change, PDB fixes,
-cert-manager resources, and trivy cleanup are edited locally but **not committed**.
-The local clone is behind `origin/main`; run `git pull --rebase`, commit, push,
-and let Flux reconcile before starting any P0 work.
-
-Already changed but uncommitted (for context, do not redo):
-
-- `proxmox-csi` set as default StorageClass (live + Helm values + `--disable local-storage` in cloud-init).
-- PDBs switched to `maxUnavailable: 1` + `unhealthyPodEvictionPolicy: AlwaysAllow` (backend, frontend, postgres).
-- cert-manager controller/webhook/cainjector/startupapicheck resources added.
-- Dead `scanJob.resources` block removed from trivy-operator HelmRelease.
-
 ---
 
 ## P0 — Availability & data safety (this week)
@@ -38,7 +26,7 @@ Already changed but uncommitted (for context, do not redo):
 
 - [ ] **3. k3s secrets encryption at rest.** `sops-age`, Helm release values, and decrypted Secrets
   are plaintext in the sqlite datastore.
-  - `modules/proxmox/main.tf:87`: add `--secrets-encryption` for new nodes.
+  - `modules/proxmox/main.tf` (`/etc/rancher/k3s/config.yaml`): add `secrets-encryption: true` for new nodes.
   - Current node: add the flag to its k3s config, restart k3s once (brief blip), then
     `k3s secrets-encrypt reencrypt`; document key rotation (`rotate-keys`) in a runbook.
 
@@ -69,11 +57,9 @@ Already changed but uncommitted (for context, do not redo):
   - ✅ Done (2026-10-22): both policies migrated to `policies.kyverno.io/v1 ValidatingPolicy`
     and set to `Deny` (`failurePolicy: Ignore`); Grafana Kyverno dashboard moved to the
     `kyverno_validating_policy_*` metrics. See `docs/KYVERNO_POLICY_ENGINE.md` §5 and §8.
-  - ✅ Done: untagged-image hole fixed (untagged images and init containers are now checked).
-  - Pod security (runAsNonRoot/seccomp/drop-ALL, no `hostPath`/`hostNetwork`/privileged): use the
-    PSS labels below rather than Kyverno rules, so there is no webhook to fail.
+  - ✅ Done: untagged-image hole fixed (untagged images, init containers, and ephemeral containers are now checked).
+  - ✅ Done: PSS labels added across all managed namespaces (`restricted` on app/unprivileged controllers, explicit `privileged` + `warn/audit: restricted` on host-access namespaces).
   - Registry allow-list (`ValidatingPolicy` or `ImageValidatingPolicy`) still open.
-  - Add PSS labels to every namespace (`pod-security.kubernetes.io/enforce: baseline|restricted`).
   - ✅ Done: `seccompProfile: RuntimeDefault` + `automountServiceAccountToken: false` on all taskflow workloads.
 
 - [ ] **9. Default-SC follow-through for the current node.** Add `--disable local-storage` to the
@@ -84,9 +70,9 @@ Already changed but uncommitted (for context, do not redo):
   - metrics-server: `--kubelet-certificate-authority` instead of `--kubelet-insecure-tls`.
   - ✅ Done (2026-10-22): CoreDNS image pinned to `1.15.0` with `# renovate:` marker and surge-first `rollingUpdate`.
   - ✅ Done: Jaeger QoS comment fixed (Burstable, not Guaranteed).
-  - Widen the L2 interface regex (`ens*`, `eno*`).
+  - ✅ Done: L2 interface regex widened with `^ens[0-9]+`.
   - Reserve `192.168.50.201` (dedicated pool or Cilium LB-IPAM `serviceSelector`).
-  - Narrow oauth2-proxy scopes to `user:email`.
+  - *(Dropped: narrowing oauth2-proxy scopes to `user:email` — oauth2-proxy's GitHub provider calls `/user/orgs` and requires `read:org`.)*
   - Add Flux `driftDetection: enabled` to HelmReleases.
 
 - [ ] **11. Egress policies.** Start with the `taskflow` namespace: default-deny egress + allow DNS,

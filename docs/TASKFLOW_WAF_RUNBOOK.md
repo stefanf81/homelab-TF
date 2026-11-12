@@ -6,11 +6,11 @@
 - `taskflow-backend-waf` receives `www.jokelab.dev/api` traffic.
 - Both WAFs use Caddy `2.11.9`, Coraza Caddy `v2.6.2`, OWASP CRS, and `caddy-ratelimit` (single container, no sidecars).
 - Both WAFs run with `SecRuleEngine On` and paranoia level 2.
-- Per-client HTTP rate limiting (enabled 2026-09-26): frontend `general` 180/min, backend `api` 300/min, key `{client_ip}`, IPv6 grouped per `/64` (429 + `Retry-After` when exceeded).
+- Per-client HTTP rate limiting (enabled 2026-09-26): frontend `general` 180/min, backend `api` 300/min, backend `authentication` (`/api/v1/auth/*`) 20/min, key `{client_ip}`, IPv6 grouped per `/64` (429 + `Retry-After` when exceeded).
 - Coraza audit JSON goes straight to stdout; Alloy redacts credential headers, sensitive query values and the matched data of credential variables at ingest (what is and is not covered: `docs/TASKFLOW_WAF_ARCHITECTURE.md`, "Redaction and line size").
 - Loki runs as one monolithic replica in `monitoring` with 30-day retention.
 - Alloy collects WAF logs plus all other Taskflow workload logs and the pod logs of the cluster's own components (`job="cluster-platform"`, see `docs/ARCHITECTURE.md`) and sends them to Loki.
-- Grafana dashboards at `https://grafana.jokelab.dev/d/taskflow-waf` and `https://grafana.jokelab.dev/d/taskflow-rate-limits`.
+- Grafana dashboards at `https://grafana.jokelab.dev/d/taskflow-waf`, `https://grafana.jokelab.dev/d/taskflow-access-logs`, and `https://grafana.jokelab.dev/d/taskflow-rate-limits`.
 
 ## Build the WAF image
 
@@ -267,7 +267,7 @@ and that `403` Coraza blocks still occur (`is_interrupted:true` audit records).
 - **Tune:** edit the zone `events` in the `rate-limit.conf` key, reconcile, and
   roll. A ConfigMap edit alone changes nothing in the running pods.
 - **Disable:** comment out the `rate_limit { ... }` block in both `rate-limit.conf`
-  keys, reconcile, and roll. The `r3` image can stay; the module is simply
+  keys, reconcile, and roll. The pinned WAF image can stay; the module is simply
   unused. Keep the narrowed trusted-proxy configuration.
 
 ### Rate-limit troubleshooting
@@ -277,7 +277,7 @@ and that `403` Coraza blocks still occur (`is_interrupted:true` audit records).
 | `client_ip` in access logs is a `10.42.x.x`/peer address | The trusted proxy list does not match the actual Envoy source, so Caddy ignores XFF. Re-run Stage 0 and fix `<PEER_CIDR>` before enabling enforcement. |
 | Legitimate clients receive 429 | Limit too low for the workload (shared NAT/CGNAT, polling clients, large SPA reloads). Raise the zone `events` and observe; the 429 access logs include `client_ip`, path, host, and `rate_limit_zone`. |
 | 429s exist but every one has an empty `rate_limit_zone` | They come from the application/upstream, not the limiter (see the "Rejections by source" dashboard panel). |
-| `unrecognized directive: rate_limit` at startup | The pod runs an image without the module. Pin both WAF Deployments to the `r3` digest. |
+| `unrecognized directive: rate_limit` at startup | The pod runs an image without the module. Pin both WAF Deployments to the current `taskflow-caddy-coraza` digest (`2.11.9-coraza2.6.2-r8`+). |
 
 ## Empty WAF and rate-limit dashboards
 
@@ -379,7 +379,7 @@ a collection-health indicator.
   instant `topk(10, ...)` bounds its final result, but split execution exposes
   the full grouped downstream result to the limit (at 5000, top-IP tables failed
   once a range held more than 5000 distinct client IPs; 19,000 IPs peaked at
-  178 MiB of Loki's 768 MiB). Transient URI/path labels are
+  178 MiB inside Loki's 512 MiB limit). Transient URI/path labels are
   dropped before the route aggregation; exact sanitized URIs remain in log rows.
 
 ### Dashboard validation
@@ -855,13 +855,7 @@ managed by GitOps. When the PAT expires:
      --docker-username=stefanf81 \
      --docker-password="ghp_NEW_TOKEN"
    ```
-3. Consider using Sealed Secrets or External Secrets Operator for proper GitOps management.
-
-### Sealed Secrets Helm Repo 404
-
-The `sealed-secrets` Helm repository returns 404 on `helm repo update`. This is
-non-blocking but should be investigated if you want to use Sealed Secrets for
-secret management.
+3. Secrets in this repository are managed via SOPS + age (see `docs/SOPS_TUTORIAL.md`).
 
 ### Coraza Audit Log Parts
 

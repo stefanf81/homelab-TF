@@ -10,10 +10,12 @@ In GitOps, keeping plain-text secrets in a Git repository is a major security vu
 
 ### How it Works:
 1. **Asymmetric Encryption:** Secrets are encrypted using a public `age` key. Anyone with access to the public key can encrypt secrets.
-2. **Encrypted in Git:** Encrypted secrets are stored in Git. SOPS keeps YAML
-   key names readable, but encrypts their values, including structural values
-   such as `apiVersion`, `kind`, and `metadata.name`. Flux decrypts the complete
-   manifest before applying it.
+2. **Encrypted in Git:** Encrypted secrets are stored in Git. `.sops.yaml` sets
+   `encrypted_regex: ^(data|stringData)$`, so Kubernetes structural metadata
+   (`apiVersion`, `kind`, `metadata.name`, `metadata.namespace`) stays readable for
+   Git review and offline schema validation (`kubeconform`), while every secret
+   value inside `data` and `stringData` is encrypted (`ENC[AES256_GCM,...]`). Flux
+   decrypts the manifest before applying it.
 3. **Decryption at Cluster Edge:** Only authorized developers (with the local `key.txt` private key) and the Kubernetes cluster (via a Secret named `sops-age` inside the `flux-system` namespace) can decrypt these secrets.
 
 ---
@@ -54,22 +56,25 @@ In the root of the project, a `.sops.yaml` configuration file defines which file
 ```yaml
 creation_rules:
   - path_regex: .*-secrets\.yaml$
+    encrypted_regex: ^(data|stringData)$
     age: "age14tnw8z266962s0guenumuyqht55kt68grrx204wsle8u8p8ph9vscxnm22"
 ```
 
 * **`path_regex`**: Any file ending in `-secrets.yaml` is automatically matched by SOPS.
+* **`encrypted_regex`**: Encrypts only `data` and `stringData` values so `apiVersion`, `kind`, and `metadata` remain schema-validatable.
 * **`age`**: This is the public recipient key. When you run a `sops` encryption command, it automatically uses this public key to encrypt the files.
 
 ### Key Files in this Project:
 1. **`.sops.yaml`**: Configures the rules. **Safe to commit to Git.**
 2. **`key.txt`**: Contains your local private key. **NEVER COMMIT `key.txt` TO GIT.** It is explicitly ignored in `.gitignore`.
-3. **`gitops/apps/taskflow/taskflow-secrets.yaml`**: The encrypted application secrets.
-4. **`gitops/infrastructure/controllers/proxmox-csi/proxmox-csi-secrets.yaml`**: Proxmox CSI storage secrets.
-5. **`gitops/monitoring/platform/grafana-secrets.yaml`**: Grafana admin and GitHub OAuth secrets.
-6. **`gitops/platform/hubble-ui/hubble-ui-secrets.yaml`**: Hubble OAuth credentials.
-7. **`gitops/platform/policy-reporter/policy-reporter-secrets.yaml`**: Policy Reporter OAuth credentials.
-8. **`gitops/platform/renovate/job/renovate-secrets.yaml`**: Renovate GitHub credentials.
-9. **`gitops/apps/taskflow/taskflow-jwt-secrets.yaml`**: TaskFlow JWT key material.
+3. **`gitops/apps/taskflow/taskflow-secrets.yaml`**: The encrypted application secrets (`db-secret`, `backend-secret`, `redis-secret`, `cloudflare-secret`).
+4. **`gitops/apps/taskflow/taskflow-jwt-secrets.yaml`**: TaskFlow RSA JWT key material (`taskflow-jwt-keys`).
+5. **`gitops/infrastructure/controllers/proxmox-csi/proxmox-csi-secrets.yaml`**: Proxmox CSI storage secrets.
+6. **`gitops/monitoring/platform/grafana-secrets.yaml`**: Grafana admin and GitHub OAuth secrets.
+7. **`gitops/platform/abuseipdb/abuseipdb-secrets.yaml`**: AbuseIPDB API key and Cloudflare API token.
+8. **`gitops/platform/hubble-ui/hubble-ui-secrets.yaml`**: Hubble UI `oauth2-proxy` GitHub OAuth credentials.
+9. **`gitops/platform/policy-reporter/policy-reporter-ui-oauth-secrets.yaml`**: Policy Reporter UI `oauth2-proxy` GitHub OAuth credentials (`policy-reporter-secrets.yaml` is legacy/unused).
+10. **`gitops/platform/renovate/job/renovate-secrets.yaml`**: Renovate GitHub credentials and host rules.
 
 ---
 

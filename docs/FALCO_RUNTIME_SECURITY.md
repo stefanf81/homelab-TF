@@ -78,8 +78,8 @@ spec:
   url: oci://ghcr.io/falcosecurity/charts/falco
 ```
 
-### Helm Release (`gitops/infrastructure/controllers/falco/release.yaml`)
-Configures the Falco DaemonSet and Falcosidekick with custom homelab-specific values:
+### Helm Release (`gitops/infrastructure/controllers/falco/release.yaml`, excerpt — omits `customRules.homelab-api-clients.yaml`)
+Configures the Falco DaemonSet and single-replica Falcosidekick with custom homelab-specific values:
 ```yaml
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
@@ -117,10 +117,21 @@ spec:
     # Enable Falcosidekick and configure native PolicyReport creation
     falcosidekick:
       enabled: true
+      replicaCount: 1
+      image:
+        tag: 2.35.1
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
       config:
         policyreport:
           enabled: true
           minimumpriority: "notice"
+          maxevents: 300
+          prunebypriority: true
 ```
 
 ### API-client noise tuning
@@ -347,7 +358,7 @@ These are the **actual** metrics that Falco 0.45.2 (chart 9.2.2, modern eBPF dri
 | `dir` | Buffer drop direction (`enter` is always 0) | `exit` |
 | `drop` | Buffer drop category | `clone_fork`, `execve`, `connect`, `open`, `dir_file`, `close`, `proc`, `other_interest` |
 | `engine_name` | Scap engine type | `modern_bpf` |
-| `version` | Falco semantic version | `0.45.1` |
+| `version` | Falco semantic version | `0.45.2` |
 
 ---
 
