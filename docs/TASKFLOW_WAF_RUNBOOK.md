@@ -39,7 +39,7 @@ repository releases, `gitops/monitoring/app/**`, the Grafana sidecar config in
 it validates the unmodified Caddyfiles and every dashboard JSON. Run either locally with:
 
 ```bash
-TEST_IMAGE=ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8 \
+TEST_IMAGE=ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9 \
   gitops/images/taskflow-caddy-coraza/tests/run-tests.sh
 gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh
 ```
@@ -55,7 +55,7 @@ Build and publish the image locally if needed:
 ```bash
 # Build for linux/amd64 (k3s node architecture)
 docker buildx build --platform linux/amd64 --load \
-  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8 \
+  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9 \
   gitops/images/taskflow-caddy-coraza
 
 # Authenticate to GHCR (requires write:packages; prefer a classic PAT — gho_ tokens may lack GHCR scopes)
@@ -64,15 +64,15 @@ echo "$GITHUB_TOKEN" | docker login ghcr.io -u stefanf81 --password-stdin
 unset GITHUB_TOKEN
 
 # Push the image
-docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8
+docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9
 
 # Verify both modules are present
-docker run --rm ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8 list-modules \
+docker run --rm ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9 list-modules \
   | grep -E 'http.handlers.waf|http.handlers.rate_limit'
 
 # Get digest for pinning
 docker inspect --format='{{index .RepoDigests 0}}' \
-  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8
+  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9
 ```
 
 Replace the image reference in both WAF Deployments with the digest returned by
@@ -277,7 +277,7 @@ and that `403` Coraza blocks still occur (`is_interrupted:true` audit records).
 | `client_ip` in access logs is a `10.42.x.x`/peer address | The trusted proxy list does not match the actual Envoy source, so Caddy ignores XFF. Re-run Stage 0 and fix `<PEER_CIDR>` before enabling enforcement. |
 | Legitimate clients receive 429 | Limit too low for the workload (shared NAT/CGNAT, polling clients, large SPA reloads). Raise the zone `events` and observe; the 429 access logs include `client_ip`, path, host, and `rate_limit_zone`. |
 | 429s exist but every one has an empty `rate_limit_zone` | They come from the application/upstream, not the limiter (see the "Rejections by source" dashboard panel). |
-| `unrecognized directive: rate_limit` at startup | The pod runs an image without the module. Pin both WAF Deployments to the current `taskflow-caddy-coraza` digest (`2.11.9-coraza2.6.2-r8`+). |
+| `unrecognized directive: rate_limit` at startup | The pod runs an image without the module. Pin both WAF Deployments to the current `taskflow-caddy-coraza` digest (`2.11.9-coraza2.6.2-r9`+). |
 
 ## Empty WAF and rate-limit dashboards
 
@@ -593,9 +593,9 @@ curl -s -o /dev/null -w "%{http_code}" \
 **Fix**: Rebuild for the correct platform:
 ```bash
 docker buildx build --platform linux/amd64 --load \
-  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8 \
+  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9 \
   gitops/images/taskflow-caddy-coraza
-docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8
+docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9
 # Update digest in frontend-waf.yaml and backend-waf.yaml
 ```
 

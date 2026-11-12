@@ -100,8 +100,8 @@ to GHCR. Builds are automated by
 as a fallback:
 
 - **Repository**: `ghcr.io/stefanf81/taskflow-caddy-coraza`
-- **Tag**: `2.11.9-coraza2.6.2-r8`
-- **Digest**: `sha256:5fe8b6059f2219d9ffd28e510be10647a28b26403123d9a8e574dfd8251678bc` (pinned in both WAF Deployments)
+- **Tag**: `2.11.9-coraza2.6.2-r9`
+- **Digest**: `sha256:7b3bfdd881a3680966efc5a1051de6634e2191a831ac662304ee63ba7cd29938` (pinned in both WAF Deployments)
 - **Dockerfile**: `gitops/images/taskflow-caddy-coraza/Dockerfile`
 - **Platform**: `linux/amd64` (k3s node architecture)
 - **Modules**: `github.com/corazawaf/coraza-caddy/v2@v2.6.2`, `github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db`
@@ -125,7 +125,7 @@ Manual local build if needed:
 
 ```bash
 docker buildx build --platform linux/amd64 --load \
-  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8 \
+  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9 \
   gitops/images/taskflow-caddy-coraza/
 
 # Authenticate to GHCR (requires write:packages scope)
@@ -133,13 +133,13 @@ read -r -s GITHUB_TOKEN
 echo "$GITHUB_TOKEN" | docker login ghcr.io -u stefanf81 --password-stdin
 unset GITHUB_TOKEN
 
-docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8
+docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9
 
 # Verify both modules and get the digest for pinning
-docker run --rm ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8 list-modules \
+docker run --rm ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9 list-modules \
   | grep -E 'http.handlers.waf|http.handlers.rate_limit'
 docker inspect --format='{{index .RepoDigests 0}}' \
-  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r8
+  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9
 ```
 
 ### Image Build Details
