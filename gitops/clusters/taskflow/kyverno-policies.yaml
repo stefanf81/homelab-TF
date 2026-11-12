@@ -4,7 +4,7 @@ metadata:
   name: kyverno-policies
   namespace: flux-system
 spec:
-  # CRDs must exist before ClusterPolicies can be applied.
+  # CRDs must exist before ValidatingPolicies can be applied.
   dependsOn:
     - name: infra-controllers
   interval: 30m

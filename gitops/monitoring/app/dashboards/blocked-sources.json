@@ -135,8 +135,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (reason) (increase(cloudflare_firewall_collector_errors_total[$__range])) or on() vector(0)",
-          "legendFormat": "{{reason}}",
+          "expr": "sum((increase_pure(cloudflare_firewall_collector_errors_total[$__range]) unless last_over_time(cloudflare_firewall_collector_errors_total[1h] offset $__range)) or increase(cloudflare_firewall_collector_errors_total[$__range])) or on() vector(0)",
           "instant": true
         }
       ],

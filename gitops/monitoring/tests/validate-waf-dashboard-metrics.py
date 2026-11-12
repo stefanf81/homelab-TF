@@ -30,6 +30,36 @@ def panels(items):
         yield from panels(panel.get("panels", []))
 
 
+def resolve_vm_image():
+    if "VM_IMAGE" in os.environ:
+        return os.environ["VM_IMAGE"]
+    script = """
+      require "yaml"
+      require "open3"
+      require "tempfile"
+      rel = YAML.load_file(ARGV[0])
+      chart = rel.dig("spec", "chart", "spec")
+      repo = YAML.load_stream(File.read(ARGV[1])).compact.find { |r| r.dig("metadata", "name") == chart.dig("sourceRef", "name") }
+      Tempfile.create(["vm-values-", ".yaml"]) do |vf|
+        vf.write((rel.dig("spec", "values") || {}).to_yaml)
+        vf.flush
+        out, err, st = Open3.capture3("helm", "template", rel.dig("metadata", "name"), chart.fetch("chart"), "--repo", repo.dig("spec", "url"), "--version", chart.fetch("version"), "--namespace", "monitoring", "-f", vf.path)
+        abort "helm template vm stack failed: #{err}" unless st.success?
+        vm = YAML.load_stream(out).compact.find { |d| d["kind"] == "VMSingle" }
+        img = vm.dig("spec", "image") || {}
+        repo_name = img["repository"] || "victoriametrics/victoria-metrics"
+        tag = img["tag"] || "v1.155.0"
+        print "#{repo_name}:#{tag}"
+      end
+    """
+    return subprocess.check_output(
+        ["ruby", "-e", script,
+         str(ROOT / "gitops/monitoring/platform/release.yaml"),
+         str(ROOT / "gitops/monitoring/platform/repository.yaml")],
+        text=True,
+    ).strip()
+
+
 class WafDashboardMetricsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -42,7 +72,7 @@ class WafDashboardMetricsTest(unittest.TestCase):
         for name in ("falco-official", "logging-pipeline"):
             path = ROOT / f"gitops/monitoring/logging/dashboards/{name}.json"
             cls.extra[name] = {p["id"]: p for p in panels(json.loads(path.read_text())["panels"])}
-        image = os.environ.get("VM_IMAGE", "victoriametrics/victoria-metrics:v1.155.0")
+        image = resolve_vm_image()
         flags = ["-memory.allowedBytes=96MiB", "-storage.minFreeDiskSpaceBytes=10MB"]
         binary = os.environ.get("VM_BINARY")
         if binary:
@@ -146,6 +176,7 @@ class WafDashboardMetricsTest(unittest.TestCase):
         for interrupted, count in [("true", 2), ("false", 1)]:
             series("detection_records_total", "mixed", {"interrupted": interrupted}, -600, count)
             series("audit_records_total", "mixed", {"interrupted": interrupted}, -600, count)
+        series("first_rule_total", "mixed", {"rule_id": "942100"}, -600, 3)
         requests("quiet", 200, 24, start=-1800)
         requests("reset", 200, lambda t: 10 if t < -900 else (2 if t < -600 else 5), start=-1800)
         # Real missing counter samples across the left edge of a 5-minute window,
@@ -159,6 +190,7 @@ class WafDashboardMetricsTest(unittest.TestCase):
                 ("rate_limited_total", {"zone": "api"}),
                 ("detection_records_total", {"interrupted": "true"}),
                 ("audit_records_total", {"interrupted": "true"}),
+                ("first_rule_total", {"rule_id": "942100"}),
             ]:
                 rows.append({
                     "metric": {"__name__": PREFIX + name, "application": app, **labels},
@@ -284,6 +316,8 @@ class WafDashboardMetricsTest(unittest.TestCase):
             self.assertEqual({(("application", app),): expected / 300}, self.rate(6, app))
             self.assertEqual({(): 100}, self.rate(104, app, window="5m"))
             self.assertEqual({(): 100}, self.waf(204, app, window="5m"))
+            self.assertEqual({(("rule_id", "942100"),): expected},
+                             self.waf(206, app, interval="5m"))
             for ref in ("A", "B"):
                 self.assertEqual({(("application", app),): expected},
                                  self.waf(205, app, ref=ref, interval="5m"))
@@ -352,6 +386,10 @@ class WafDashboardMetricsTest(unittest.TestCase):
             self.assertEqual({(("application", "quiet"),): 0}, self.waf(205, "quiet", ref=ref))
             self.assertEqual({}, self.waf(205, "missing", ref=ref))
 
+        self.assertEqual({(("rule_id", "942100"),): 3}, self.waf(206, "mixed"))
+        self.assertEqual({}, self.waf(206, "quiet"))
+        self.assertEqual({}, self.waf(206, "missing"))
+
     def test_rate_includes_first_burst_and_stays_zero_when_quiet(self):
         values = self.rate(6, "first-.*", when=self.end - 570)
         self.assertAlmostEqual(24 / 300, sum(values.values()))
@@ -373,7 +411,7 @@ class WafDashboardMetricsTest(unittest.TestCase):
                         self.assertNotIn("vector(0)", expr)
                         self.query(dashboard, panel["id"], ".*", ref=target["refId"])
                         self.assertEqual({}, self.query(dashboard, panel["id"], ".*", ref=target["refId"], when=self.end - 30))
-        self.assertEqual(19, count, "exercise all custom WAF metric targets")
+        self.assertEqual(20, count, "exercise all custom WAF metric targets")
         self.assertEqual({(): 24}, self.rate(201, "first-.*"), "recovery must not invent a new burst")
 
 

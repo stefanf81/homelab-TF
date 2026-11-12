@@ -7,8 +7,13 @@ spec:
   dependsOn:
     - name: monitoring
     - name: taskflow-app
-    # Alloy renders namespace-scoped Roles in trivy-system; create it first.
+    # Alloy renders namespace-scoped Roles in every platform namespace it tails;
+    # ensure all of them exist before installing/upgrading the Alloy HelmRelease.
     - name: trivy-operator
+    - name: policy-reporter
+    - name: hubble-ui
+    - name: reloader
+    - name: renovate
   interval: 30m
   retryInterval: 5m
   path: ./gitops/monitoring/logging

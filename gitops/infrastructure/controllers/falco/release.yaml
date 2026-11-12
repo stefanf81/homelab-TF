@@ -85,6 +85,9 @@ spec:
     # Enable Falcosidekick to write native Kubernetes PolicyReports
     falcosidekick:
       enabled: true
+      # Single-node cluster: one replica avoids duplicate PolicyReport update
+      # conflicts and halves sidekick memory footprint (chart default is 2).
+      replicaCount: 1
       image:
         # renovate: datasource=docker depName=falcosecurity/falcosidekick
         tag: 2.35.1

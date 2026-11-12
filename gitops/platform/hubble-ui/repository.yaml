@@ -10,4 +10,5 @@ spec:
     operation: copy
   ref:
     tag: 10.7.2
+    digest: sha256:01b9c0c33e470d1a0634bef74d627a5915da4be1e37eb88911eef3c8812e234e
   url: oci://ghcr.io/oauth2-proxy/charts/oauth2-proxy

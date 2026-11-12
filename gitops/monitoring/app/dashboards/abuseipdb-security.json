@@ -447,7 +447,7 @@
       "id": 7,
       "type": "timeseries",
       "title": "Sync errors by reason",
-      "description": "Failed synchronization attempts per displayed interval (minimum 5 minutes) by bounded reason: download (any failed feed request, including HTTP 429 rate limiting; see Last API status), parse, validation or kube.",
+      "description": "Failed synchronization attempts per displayed interval (minimum 5 minutes) by bounded reason (rate_limited, http, timeout, network, parse, validation or kube; see Last API status).",
       "gridPos": {
         "x": 0,
         "y": 8,
@@ -461,7 +461,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (reason) (increase(abuseipdb_sync_errors_total[$__interval]))",
+          "expr": "sum by (reason) ((increase_pure(abuseipdb_sync_errors_total[$__interval]) unless last_over_time(abuseipdb_sync_errors_total[1h] offset $__interval)) or increase(abuseipdb_sync_errors_total[$__interval]))",
           "legendFormat": "{{reason}}"
         }
       ],
@@ -1036,7 +1036,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "abuseipdb_cloudflare_entries and on() (abuseipdb_cloudflare_last_success_timestamp_seconds > 0)",
+          "expr": "max(abuseipdb_cloudflare_entries and on(instance) (abuseipdb_cloudflare_last_success_timestamp_seconds > 0))",
           "instant": true
         }
       ],
@@ -1350,7 +1350,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (reason) (increase(abuseipdb_cloudflare_sync_errors_total[$__interval]))",
+          "expr": "sum by (reason) ((increase_pure(abuseipdb_cloudflare_sync_errors_total[$__interval]) unless last_over_time(abuseipdb_cloudflare_sync_errors_total[1h] offset $__interval)) or increase(abuseipdb_cloudflare_sync_errors_total[$__interval]))",
           "legendFormat": "{{reason}}"
         }
       ],

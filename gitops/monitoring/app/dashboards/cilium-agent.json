@@ -153,7 +153,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(rate(cilium_errors_warnings_total{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, level) * 60",
+          "expr": "sum(rate(cilium_errors_warnings_total{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, level) * 60",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{level}}",
@@ -296,7 +296,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "min(irate(cilium_process_cpu_seconds_total{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod) * 100",
+          "expr": "min(irate(cilium_process_cpu_seconds_total{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod) * 100",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "min",
@@ -307,7 +307,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(irate(cilium_process_cpu_seconds_total{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod) * 100",
+          "expr": "avg(irate(cilium_process_cpu_seconds_total{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod) * 100",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "avg",
@@ -318,7 +318,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max(irate(cilium_process_cpu_seconds_total{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod) * 100",
+          "expr": "max(irate(cilium_process_cpu_seconds_total{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod) * 100",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "max",
@@ -1222,7 +1222,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(rate(cilium_agent_api_process_time_seconds_sum{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])/rate(cilium_agent_api_process_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, method, path)",
+          "expr": "avg(rate(cilium_agent_api_process_time_seconds_sum{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])/rate(cilium_agent_api_process_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, method, path)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{method}} {{path}}",
@@ -1363,7 +1363,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max(rate(cilium_agent_api_process_time_seconds_sum{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])/rate(cilium_agent_api_process_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, method, path)",
+          "expr": "max(rate(cilium_agent_api_process_time_seconds_sum{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])/rate(cilium_agent_api_process_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, method, path)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{method}} {{path}}",
@@ -1504,7 +1504,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(rate(cilium_agent_api_process_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, method, path)",
+          "expr": "avg(rate(cilium_agent_api_process_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, method, path)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{method}} {{path}} ",
@@ -1645,7 +1645,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max(rate(cilium_agent_api_process_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, method, path)",
+          "expr": "max(rate(cilium_agent_api_process_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, method, path)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{method}} {{path}} ",
@@ -1786,7 +1786,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(rate(cilium_agent_api_process_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, method, path, return_code)",
+          "expr": "avg(rate(cilium_agent_api_process_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, method, path, return_code)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{return_code}} ({{method}} {{path}} )",
@@ -1927,7 +1927,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(cilium_agent_api_process_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, method, path, return_code)",
+          "expr": "sum(rate(cilium_agent_api_process_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, method, path, return_code)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{return_code}} ({{method}} {{path}} )",
@@ -1974,536 +1974,6 @@
       "pluginVersion": "11.3.1",
       "title": "BPF",
       "type": "text"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "bars",
-            "fillOpacity": 100,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "links": [],
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsZero",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsNull",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 38
-      },
-      "id": 146,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "editorMode": "code",
-          "expr": "avg(rate(cilium_bpf_syscall_duration_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, operation)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{operation}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "# system calls (average node)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "bars",
-            "fillOpacity": 100,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "decimals": 0,
-          "links": [],
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsZero",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsNull",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 38
-      },
-      "id": 145,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "11.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "max(rate(cilium_bpf_syscall_duration_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, operation)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{operation}}",
-          "refId": "A"
-        }
-      ],
-      "title": "# system calls (max node)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "links": [],
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "s"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsZero",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsNull",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 0,
-        "y": 46
-      },
-      "id": 140,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "avg(rate(cilium_bpf_syscall_duration_seconds_sum{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])/ rate(cilium_bpf_syscall_duration_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, operation)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{operation}}",
-          "refId": "A"
-        }
-      ],
-      "title": "system call latency (avg node)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "links": [],
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 12,
-        "y": 46
-      },
-      "id": 148,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "max(rate(cilium_bpf_syscall_duration_seconds_sum{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])/ rate(cilium_bpf_syscall_duration_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, operation)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{operation}}",
-          "refId": "A"
-        }
-      ],
-      "title": "system call latency (max node)",
-      "type": "timeseries"
     },
     {
       "datasource": {
@@ -2592,7 +2062,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 52
+        "y": 38
       },
       "id": 142,
       "options": {
@@ -2711,7 +2181,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 52
+        "y": 38
       },
       "id": 147,
       "options": {
@@ -2850,7 +2320,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 52
+        "y": 38
       },
       "id": 143,
       "options": {
@@ -2891,741 +2361,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 58
-      },
-      "id": 182,
-      "options": {
-        "code": {
-          "language": "plaintext",
-          "showLineNumbers": false,
-          "showMiniMap": false
-        },
-        "content": "",
-        "mode": "markdown"
-      },
-      "pluginVersion": "11.3.1",
-      "title": "kvstore",
-      "type": "text"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "bars",
-            "fillOpacity": 100,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "decimals": 0,
-          "links": [],
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsZero",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsNull",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 12,
-        "x": 0,
-        "y": 59
-      },
-      "id": 184,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "11.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum(rate(kvstore_operations_total{pod=~\"$pod\"}[1m])) by (pod, scope, action)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{scope}} {{action}}",
-          "refId": "A"
-        }
-      ],
-      "title": "# operations (sum all nodes)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "bars",
-            "fillOpacity": 100,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "decimals": 0,
-          "links": [],
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsZero",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsNull",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 12,
-        "x": 12,
-        "y": 59
-      },
-      "id": 186,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "11.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "max(rate(kvstore_operations_total{pod=~\"$pod\"}[1m])) by (pod, scope, action)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{scope}} {{action}}",
-          "refId": "A"
-        }
-      ],
-      "title": "# operations (max node)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "links": [],
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "s"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsZero",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsNull",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 12,
-        "x": 0,
-        "y": 64
-      },
-      "id": 188,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "topk(5, avg(rate(cilium_kvstore_operations_duration_seconds_sum{pod=~\"$pod\"}[1m])) by (pod, action, scope) / avg(rate(cilium_kvstore_operations_duration_seconds_count{pod=~\"$pod\"}[1m])) by (pod, action, scope))",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{action}} {{scope}}",
-          "refId": "A"
-        }
-      ],
-      "title": "latency (average node)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "links": [],
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "s"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsZero",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsNull",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 12,
-        "x": 12,
-        "y": 64
-      },
-      "id": 190,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "topk(5, max(rate(cilium_kvstore_operations_duration_seconds_sum{pod=~\"$pod\"}[1m])) by (pod, action, scope) / avg(rate(cilium_kvstore_operations_duration_seconds_count{pod=~\"$pod\"}[1m])) by (pod, action, scope))",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{action}} {{scope}}",
-          "refId": "A"
-        }
-      ],
-      "title": "latency (max node)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "links": [],
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsZero",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byValue",
-              "options": {
-                "op": "gte",
-                "reducer": "allIsNull",
-                "value": 0
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": true,
-                  "viz": false
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 0,
-        "y": 69
-      },
-      "id": 192,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "avg(rate(cilium_kvstore_events_queue_seconds_count{pod=~\"$pod\"}[1m])) by (pod, scope, action)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{action}} {{scope}}",
-          "refId": "B"
-        }
-      ],
-      "title": "Events received (average node)",
-      "type": "timeseries"
-    },
-    {
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 75
+        "y": 44
       },
       "id": 47,
       "options": {
@@ -3707,7 +2443,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 76
+        "y": 45
       },
       "id": 81,
       "options": {
@@ -3729,7 +2465,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(cilium_forward_count_total{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, direction)",
+          "expr": "sum(rate(cilium_forward_count_total{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, direction)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{direction}}",
@@ -3805,7 +2541,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 76
+        "y": 45
       },
       "id": 111,
       "options": {
@@ -3827,7 +2563,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(cilium_forward_bytes_total{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, direction) * 8",
+          "expr": "sum(rate(cilium_forward_bytes_total{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, direction) * 8",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{direction}}",
@@ -4187,7 +2923,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 82
+        "y": 51
       },
       "id": 56,
       "options": {
@@ -4614,7 +3350,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 82
+        "y": 51
       },
       "id": 128,
       "options": {
@@ -5041,7 +3777,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 88
+        "y": 57
       },
       "id": 129,
       "options": {
@@ -5468,7 +4204,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 88
+        "y": 57
       },
       "id": 130,
       "options": {
@@ -5642,7 +4378,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 94
+        "y": 63
       },
       "id": 87,
       "options": {
@@ -5776,7 +4512,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 94
+        "y": 63
       },
       "id": 79,
       "options": {
@@ -5866,113 +4602,15 @@
               }
             ]
           },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 12,
-        "x": 0,
-        "y": 99
-      },
-      "id": 106,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "avg(rate(cilium_services_events_total{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, action)",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "{{action}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Service Updates",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "links": [],
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
           "unit": "short"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 5,
-        "w": 12,
-        "x": 12,
-        "y": 99
+        "w": 24,
+        "x": 0,
+        "y": 68
       },
       "id": 89,
       "options": {
@@ -6081,7 +4719,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 104
+        "y": 73
       },
       "id": 39,
       "options": {
@@ -6103,7 +4741,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(cilium_drop_count_total{direction=\"EGRESS\", k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (reason)",
+          "expr": "sum(rate(cilium_drop_count_total{direction=\"EGRESS\", k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (reason)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{reason}}",
@@ -6286,7 +4924,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 104
+        "y": 73
       },
       "id": 93,
       "options": {
@@ -6308,7 +4946,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(rate(cilium_nodes_all_events_received_total{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, event_type, source) * 60",
+          "expr": "avg(rate(cilium_nodes_all_events_received_total{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, event_type, source) * 60",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{eventType}} {{source}}",
@@ -6384,7 +5022,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 109
+        "y": 78
       },
       "id": 113,
       "options": {
@@ -6406,7 +5044,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(cilium_drop_bytes_total{direction=\"EGRESS\", k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (reason) * 8",
+          "expr": "sum(rate(cilium_drop_bytes_total{direction=\"EGRESS\", k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (reason) * 8",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{reason}}",
@@ -6541,7 +5179,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 109
+        "y": 78
       },
       "id": 91,
       "options": {
@@ -6604,7 +5242,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 114
+        "y": 83
       },
       "id": 28,
       "options": {
@@ -6732,7 +5370,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 115
+        "y": 84
       },
       "id": 53,
       "options": {
@@ -6755,7 +5393,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by(rule, proxy_type) (rate(cilium_policy_l7_total{k8s_app=\"cilium\", pod=~\"$pod\"}[1m]))",
+          "expr": "sum by(rule, proxy_type) (rate(cilium_policy_l7_total{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval]))",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{proxy_type}} - {{rule}}",
@@ -6832,7 +5470,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 115
+        "y": 84
       },
       "id": 123,
       "options": {
@@ -6930,7 +5568,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 120
+        "y": 89
       },
       "id": 114,
       "options": {
@@ -6952,7 +5590,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(cilium_drop_count_total{k8s_app=\"cilium\", pod=~\"$pod\", reason=\"Policy denied\"}[1m])) by (direction)",
+          "expr": "sum(rate(cilium_drop_count_total{k8s_app=\"cilium\", pod=~\"$pod\", reason=\"Policy denied\"}[$__rate_interval])) by (direction)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{direction}}",
@@ -7025,7 +5663,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 120
+        "y": 89
       },
       "id": 37,
       "options": {
@@ -7047,7 +5685,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(cilium_policy_l7_total{rule=\"denied\", k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (proxy_type)",
+          "expr": "sum(rate(cilium_policy_l7_total{rule=\"denied\", k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (proxy_type)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{reason}}",
@@ -7238,7 +5876,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 125
+        "y": 94
       },
       "id": 104,
       "options": {
@@ -7483,7 +6121,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 125
+        "y": 94
       },
       "id": 102,
       "options": {
@@ -7657,7 +6295,7 @@
         "h": 5,
         "w": 6,
         "x": 0,
-        "y": 130
+        "y": 99
       },
       "id": 33,
       "options": {
@@ -7834,7 +6472,7 @@
         "h": 5,
         "w": 6,
         "x": 6,
-        "y": 130
+        "y": 99
       },
       "id": 100,
       "options": {
@@ -8029,7 +6667,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 130
+        "y": 99
       },
       "id": 117,
       "options": {
@@ -8203,7 +6841,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 135
+        "y": 104
       },
       "id": 85,
       "options": {
@@ -8279,7 +6917,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 140
+        "y": 109
       },
       "id": 73,
       "options": {
@@ -8361,7 +6999,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 141
+        "y": 110
       },
       "id": 55,
       "options": {
@@ -8385,7 +7023,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(histogram_quantile(0.90, rate(cilium_endpoint_regeneration_time_stats_seconds_bucket{k8s_app=\"cilium\", scope!=\"total\", pod=~\"$pod\"}[5m]))) by (scope)",
+          "expr": "histogram_quantile(0.90, sum by (le, scope) (rate(cilium_endpoint_regeneration_time_stats_seconds_bucket{k8s_app=\"cilium\", scope!=\"total\", pod=~\"$pod\"}[$__rate_interval])))",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{scope}}",
@@ -8461,7 +7099,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 141
+        "y": 110
       },
       "id": 115,
       "options": {
@@ -8485,7 +7123,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(histogram_quantile(0.99, rate(cilium_endpoint_regeneration_time_stats_seconds_bucket{k8s_app=\"cilium\", scope!=\"total\", pod=~\"$pod\"}[5m]))) by (scope)",
+          "expr": "histogram_quantile(0.99, sum by (le, scope) (rate(cilium_endpoint_regeneration_time_stats_seconds_bucket{k8s_app=\"cilium\", scope!=\"total\", pod=~\"$pod\"}[$__rate_interval])))",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{scope}}",
@@ -8622,7 +7260,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 150
+        "y": 119
       },
       "id": 49,
       "options": {
@@ -8647,7 +7285,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(cilium_endpoint_regenerations_total{k8s_app=\"cilium\", pod=~\"$pod\"}[30s])) by(outcome)",
+          "expr": "sum(rate(cilium_endpoint_regenerations_total{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by(outcome)",
           "format": "time_series",
           "instant": false,
           "intervalFactor": 1,
@@ -8770,7 +7408,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 150
+        "y": 119
       },
       "id": 51,
       "options": {
@@ -8813,7 +7451,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 155
+        "y": 124
       },
       "id": 74,
       "options": {
@@ -8941,7 +7579,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 156
+        "y": 125
       },
       "id": 70,
       "options": {
@@ -8966,7 +7604,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(cilium_controllers_runs_total{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod)",
+          "expr": "sum(rate(cilium_controllers_runs_total{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "Runs",
@@ -9144,7 +7782,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 156
+        "y": 125
       },
       "id": 68,
       "options": {
@@ -9170,7 +7808,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(cilium_controllers_runs_duration_seconds_sum{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, status) / sum(rate(cilium_controllers_runs_duration_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, status)",
+          "expr": "sum(rate(cilium_controllers_runs_duration_seconds_sum{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, status) / sum(rate(cilium_controllers_runs_duration_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, status)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{status}}",
@@ -9189,7 +7827,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 161
+        "y": 130
       },
       "id": 60,
       "options": {
@@ -9312,7 +7950,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 162
+        "y": 131
       },
       "id": 163,
       "options": {
@@ -9334,7 +7972,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(rate(cilium_k8s_client_api_latency_time_seconds_sum{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])/rate(cilium_k8s_client_api_latency_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, method, path)",
+          "expr": "avg(rate(cilium_k8s_client_api_latency_time_seconds_sum{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])/rate(cilium_k8s_client_api_latency_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, method, path)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{method}} {{path}}",
@@ -9451,7 +8089,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 162
+        "y": 131
       },
       "id": 165,
       "options": {
@@ -9473,7 +8111,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max(rate(cilium_k8s_client_api_latency_time_seconds_sum{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])/rate(cilium_k8s_client_api_latency_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, method, path)",
+          "expr": "max(rate(cilium_k8s_client_api_latency_time_seconds_sum{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])/rate(cilium_k8s_client_api_latency_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, method, path)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{method}} {{path}}",
@@ -9590,7 +8228,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 169
+        "y": 138
       },
       "id": 168,
       "options": {
@@ -9615,7 +8253,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(cilium_k8s_client_api_latency_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, method, path)",
+          "expr": "sum(rate(cilium_k8s_client_api_latency_time_seconds_count{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, method, path)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{method}} {{path}}",
@@ -9732,7 +8370,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 169
+        "y": 138
       },
       "id": 166,
       "options": {
@@ -9756,7 +8394,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(cilium_k8s_client_api_calls_total{k8s_app=\"cilium\", pod=~\"$pod\"}[1m])) by (pod, method, return_code)",
+          "expr": "sum(rate(cilium_k8s_client_api_calls_total{k8s_app=\"cilium\", pod=~\"$pod\"}[$__rate_interval])) by (pod, method, return_code)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{method}} {{return_code}}",
@@ -9873,7 +8511,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 177
+        "y": 146
       },
       "id": 172,
       "options": {
@@ -10014,7 +8652,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 177
+        "y": 146
       },
       "id": 174,
       "options": {
@@ -10155,7 +8793,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 183
+        "y": 152
       },
       "id": 175,
       "options": {
@@ -10296,7 +8934,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 183
+        "y": 152
       },
       "id": 173,
       "options": {
@@ -10396,7 +9034,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 191
+        "y": 160
       },
       "id": 108,
       "options": {
@@ -10418,7 +9056,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(rate(cilium_kubernetes_events_total{k8s_app=\"cilium\", scope=\"CiliumNetworkPolicy\", pod=~\"$pod\"}[1m])) by (pod, action) * 60",
+          "expr": "avg(rate(cilium_kubernetes_events_total{k8s_app=\"cilium\", scope=\"CiliumNetworkPolicy\", pod=~\"$pod\"}[$__rate_interval])) by (pod, action) * 60",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{action}} avg",
@@ -10540,7 +9178,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 191
+        "y": 160
       },
       "id": 119,
       "options": {
@@ -10562,7 +9200,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(rate(cilium_kubernetes_events_total{k8s_app=\"cilium\", scope=\"NetworkPolicy\", pod=~\"$pod\"}[1m])) by (pod, action) * 60",
+          "expr": "avg(rate(cilium_kubernetes_events_total{k8s_app=\"cilium\", scope=\"NetworkPolicy\", pod=~\"$pod\"}[$__rate_interval])) by (pod, action) * 60",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{action}} avg",
@@ -10684,7 +9322,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 198
+        "y": 167
       },
       "id": 109,
       "options": {
@@ -10706,7 +9344,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(rate(cilium_kubernetes_events_total{k8s_app=\"cilium\", scope=\"Pod\", pod=~\"$pod\"}[1m])) by (pod, action) * 60",
+          "expr": "avg(rate(cilium_kubernetes_events_total{k8s_app=\"cilium\", scope=\"Pod\", pod=~\"$pod\"}[$__rate_interval])) by (pod, action) * 60",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{action}} avg",
@@ -10828,7 +9466,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 198
+        "y": 167
       },
       "id": 122,
       "options": {
@@ -10850,7 +9488,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(rate(cilium_kubernetes_events_total{k8s_app=\"cilium\", scope=\"Node\", pod=~\"$pod\"}[1m])) by (pod, action) * 60",
+          "expr": "avg(rate(cilium_kubernetes_events_total{k8s_app=\"cilium\", scope=\"Node\", pod=~\"$pod\"}[$__rate_interval])) by (pod, action) * 60",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{action}} avg",
@@ -10926,7 +9564,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 205
+        "y": 174
       },
       "id": 118,
       "options": {
@@ -10948,7 +9586,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(rate(cilium_kubernetes_events_total{k8s_app=\"cilium\", scope=\"Service\", pod=~\"$pod\"}[1m])) by (pod, action) * 60",
+          "expr": "avg(rate(cilium_kubernetes_events_total{k8s_app=\"cilium\", scope=\"Service\", pod=~\"$pod\"}[$__rate_interval])) by (pod, action) * 60",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{action}}",
@@ -11024,7 +9662,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 205
+        "y": 174
       },
       "id": 120,
       "options": {
@@ -11046,7 +9684,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(rate(cilium_kubernetes_events_total{k8s_app=\"cilium\", scope=\"Endpoint\", pod=~\"$pod\"}[1m])) by (pod, action) * 60",
+          "expr": "avg(rate(cilium_kubernetes_events_total{k8s_app=\"cilium\", scope=\"Endpoint\", pod=~\"$pod\"}[$__rate_interval])) by (pod, action) * 60",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{action}}",
@@ -11122,7 +9760,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 212
+        "y": 181
       },
       "id": 121,
       "options": {
@@ -11144,7 +9782,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg(rate(cilium_kubernetes_events_total{k8s_app=\"cilium\", scope=\"Namespace\", pod=~\"$pod\"}[1m])) by (pod, action) * 60",
+          "expr": "avg(rate(cilium_kubernetes_events_total{k8s_app=\"cilium\", scope=\"Namespace\", pod=~\"$pod\"}[$__rate_interval])) by (pod, action) * 60",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{action}}",

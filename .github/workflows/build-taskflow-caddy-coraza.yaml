@@ -45,12 +45,16 @@ jobs:
       # image. Compare the Dockerfile across the pushed range (or the PR diff).
       - name: Require a new IMAGE_REVISION when the Dockerfile changes
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
           BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
           DOCKERFILE=gitops/images/taskflow-caddy-coraza/Dockerfile
           base=""
-          if [ -n "${BEFORE:-}" ] && git rev-parse --verify --quiet "$BEFORE" >/dev/null; then
+          if [ "${EVENT_NAME:-}" = "pull_request" ] && [ -n "${PR_BASE:-}" ] && git rev-parse --verify --quiet "$PR_BASE" >/dev/null; then
+            base="$PR_BASE"
+          elif [ -n "${BEFORE:-}" ] && git rev-parse --verify --quiet "$BEFORE" >/dev/null; then
             base="$BEFORE"
           elif git rev-parse --verify --quiet HEAD^ >/dev/null; then
             base="HEAD^"

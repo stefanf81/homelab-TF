@@ -30,6 +30,9 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
+        # Pure outbound client (polls public IP + updates Cloudflare DNS every 5m)
+        # with no listening socket or local health binary, so HTTP/TCP probes do
+        # not apply; unrecoverable panics exit non-zero and are restarted by kubelet.
         - name: cloudflare-ddns
           image: favonia/cloudflare-ddns:1.18.0@sha256:345b41895a8846d74c62d30bd27e61101a754f8ab8da10c68115823883803afb
           env:

@@ -14,4 +14,5 @@ spec:
     # "could not parse param ... type 223 (clone)" (falcosecurity/falco#3955).
     # The fix landed in 0.45.0; do not go back below chart 9.2.0.
     tag: 9.2.2
+    digest: sha256:08cd4fd501f12b33c8220886a595bb0cc6a6b5bf9713b5fad9e3381148409d6f
   url: oci://ghcr.io/falcosecurity/charts/falco

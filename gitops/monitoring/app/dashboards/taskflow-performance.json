@@ -280,7 +280,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(jvm_gc_pause_seconds_sum{namespace=\"taskflow\",service=\"backend\"}[$__rate_interval])) / ($__rate_interval_ms / 1000)",
+          "expr": "sum((increase_pure(jvm_gc_pause_seconds_sum{namespace=\"taskflow\",service=\"backend\"}[$__rate_interval]) unless last_over_time(jvm_gc_pause_seconds_sum{namespace=\"taskflow\",service=\"backend\"}[1h] offset $__rate_interval)) or increase(jvm_gc_pause_seconds_sum{namespace=\"taskflow\",service=\"backend\"}[$__rate_interval])) / ($__rate_interval_ms / 1000)",
           "legendFormat": "GC pause seconds/s"
         },
         {
@@ -678,6 +678,52 @@
         }
       },
       "description": "Free space on the root filesystem as a share of its size, and disk busy time per second for each disk device."
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "WAF Request Latency (p50, p95)",
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, application) (rate(loki_process_custom_taskflow_waf_request_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "{{application}} p95"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.50, sum by (le, application) (rate(loki_process_custom_taskflow_waf_request_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "{{application}} p50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "End-to-end Caddy WAF request duration (Coraza inspection + upstream response, `/waf-healthz` probes excluded), derived by Alloy from Caddy access logs."
     }
   ],
   "templating": {

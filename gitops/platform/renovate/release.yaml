@@ -13,12 +13,14 @@ spec:
     kind: OCIRepository
     name: mogenius
   install:
-    crds: CreateReplace
+    # CRDs are rendered as chart templates (crd.mode: template below); skip Flux
+    # crds/ directory handling to keep a single Helm owner (like cert-manager/kyverno).
+    crds: Skip
     remediation:
       retries: 3
       remediateLastFailure: true
   upgrade:
-    crds: CreateReplace
+    crds: Skip
     remediation:
       retries: 3
       remediateLastFailure: true

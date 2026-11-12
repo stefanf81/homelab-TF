@@ -10,6 +10,24 @@ on:
       - main
     paths:
       - 'gitops/**'
+      - 'scripts/bootstrap-foundation.sh'
+      - 'scripts/validate-gitops.sh'
+      - 'scripts/check-tool-versions.sh'
+      - 'scripts/check-observability-config.rb'
+      - 'scripts/tool-versions.sh'
+      - 'scripts/flux-postbuild.rb'
+      - 'mise.toml'
+      - '*.tf'
+      - 'modules/**'
+      - '.terraform.lock.hcl'
+      - '.tflint.hcl'
+      - '.github/workflows/validate-gitops.yaml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'gitops/**'
+      - 'scripts/bootstrap-foundation.sh'
       - 'scripts/validate-gitops.sh'
       - 'scripts/check-tool-versions.sh'
       - 'scripts/check-observability-config.rb'
@@ -52,6 +70,14 @@ jobs:
           echo "$(cat /tmp/kubectl.sha256)  /tmp/kubectl" | sha256sum --check
           sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
 
+      - name: Install pinned Helm
+        run: |
+          curl -fsSLo /tmp/helm.tar.gz "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz"
+          curl -fsSLo /tmp/helm.sha256sum "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz.sha256sum"
+          (cd /tmp && sed 's|  helm-.*|  helm.tar.gz|' helm.sha256sum | sha256sum --check)
+          tar -xzf /tmp/helm.tar.gz -C /tmp linux-amd64/helm
+          sudo install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
+
       # go install verifies the module against the Go checksum database.
       - name: Install pinned kubeconform
         run: |
@@ -60,6 +86,9 @@ jobs:
 
       - name: Build and validate
         run: scripts/validate-gitops.sh
+
+      - name: Dry-run fresh-cluster foundation bootstrap
+        run: scripts/bootstrap-foundation.sh --dry-run
 
       - name: Check telemetry and security filter boundaries
         run: ruby scripts/check-observability-config.rb

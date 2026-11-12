@@ -1571,6 +1571,65 @@
               }
             ]
           }
+        },
+        {
+          "id": 206,
+          "type": "timeseries",
+          "title": "First-matched CRS rules over time (all clients, metrics)",
+          "description": "First matching CRS rule ID per Coraza detection record from Alloy's log-derived counter (`loki_process_custom_taskflow_waf_first_rule_total`), honoring the Application filter without scanning Loki.",
+          "gridPos": {
+            "x": 0,
+            "y": 53,
+            "w": 24,
+            "h": 8
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "(sum by (rule_id) ((increase_pure(loki_process_custom_taskflow_waf_first_rule_total{application=~\"$application\"}[$__interval]) unless last_over_time(loki_process_custom_taskflow_waf_first_rule_total{application=~\"$application\"}[1h] offset $__interval)) or increase(loki_process_custom_taskflow_waf_first_rule_total{application=~\"$application\"}[$__interval])) > 0) and on() (min(up{job=\"alloy\"}) == 1)",
+              "legendFormat": "CRS {{rule_id}}"
+            }
+          ],
+          "interval": "5m",
+          "maxDataPoints": 300,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisSoftMax": 1,
+                "drawStyle": "bars",
+                "fillOpacity": 65,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": []
+          }
         }
       ]
     },

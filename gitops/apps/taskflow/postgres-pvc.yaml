@@ -1,14 +1,10 @@
-# PostgreSQL data. postgres-data is the live volume on the database StorageClass
-# (proxmox-csi-db: Proxmox `cache: none`, `noatime`; the class is defined in
+# PostgreSQL data on the database StorageClass (proxmox-csi-db: Proxmox
+# `cache: none`, `noatime`; defined in
 # gitops/infrastructure/controllers/proxmox-csi/release.yaml).
 #
-# postgres-pvc is the previous volume (proxmox-csi, `cache: writethrough`). A
-# StorageClass cannot change on an existing PVC, so postgres-db.yaml's
-# `migrate-pgdata` init container copied its data into postgres-data once
-# (2026-11-11). It stays, mounted read-only and otherwise unused, as the rollback
-# copy: remove it from Git, together with the init container, once the new volume
-# has run without problems. Its PV has reclaimPolicy Retain, so even a prune keeps
-# the Proxmox disk until it is deleted by hand.
+# Migrated from the legacy `postgres-pvc` (proxmox-csi, `cache: writethrough`) on
+# 2026-11-11. The legacy PV carries `reclaimPolicy: Retain`, so its Proxmox disk
+# remains intact until removed manually by the operator.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -18,19 +14,6 @@ spec:
   accessModes:
     - ReadWriteOnce
   storageClassName: proxmox-csi-db
-  resources:
-    requests:
-      storage: 10Gi
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-pvc
-  namespace: taskflow
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: proxmox-csi
   resources:
     requests:
       storage: 10Gi

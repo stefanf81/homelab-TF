@@ -1,4 +1,4 @@
-# Periodically rewrites the `# {"$imagepolicy": ...:digest}` markers in the app
+# Periodically rewrites the `# {"$imagepolicy": ...}` markers in the app
 # manifests (under ./gitops/apps/taskflow) and pushes the change to main.
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageUpdateAutomation

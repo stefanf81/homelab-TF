@@ -9,6 +9,7 @@ spec:
     mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     operation: copy
   ref:
-    # Chart v3.11.0 -> Policy Reporter / UI app v3.11.0. Cluster is k8s 1.36.4.
+    # Chart v3.11.2 -> Policy Reporter / UI app v3.11.2. Cluster is k8s 1.37.2.
     tag: 3.11.2
+    digest: sha256:8ae9316555bc2f4b111bbec67c428549c1bf254ed806575784738e5a3022f2b7
   url: oci://ghcr.io/kyverno/charts/policy-reporter

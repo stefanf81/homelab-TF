@@ -37,7 +37,45 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: 0 # revision guard compares the image source across the push
           persist-credentials: false # nothing in this job pushes with git
+
+      # A changed image recipe or Go source must ship under a new APP_VERSION or
+      # IMAGE_REVISION so published version tags are never overwritten in GHCR.
+      - name: Require a new version or IMAGE_REVISION when source changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          DOCKERFILE=gitops/images/abuseipdb-sync/Dockerfile
+          base=""
+          if [ "${EVENT_NAME:-}" = "pull_request" ] && [ -n "${PR_BASE:-}" ] && git rev-parse --verify --quiet "$PR_BASE" >/dev/null; then
+            base="$PR_BASE"
+          elif [ -n "${BEFORE:-}" ] && git rev-parse --verify --quiet "$BEFORE" >/dev/null; then
+            base="$BEFORE"
+          elif git rev-parse --verify --quiet HEAD^ >/dev/null; then
+            base="HEAD^"
+          fi
+          if [ -z "$base" ]; then
+            echo "no base commit; skipping revision guard"
+            exit 0
+          fi
+          changed=$(git diff --name-only "$base" HEAD -- 'gitops/images/abuseipdb-sync/' | grep -v '_test\.go$' || true)
+          if [ -z "$changed" ]; then
+            echo "only tests (or nothing) changed since $base; no revision bump required"
+            exit 0
+          fi
+          old_ver=$(git show "$base:$DOCKERFILE" | grep '^ARG APP_VERSION=' | cut -d= -f2 | tr -d ' "')
+          old_rev=$(git show "$base:$DOCKERFILE" | grep '^ARG IMAGE_REVISION=' | cut -d= -f2 | tr -d ' "')
+          new_ver=$(grep '^ARG APP_VERSION=' "$DOCKERFILE" | cut -d= -f2 | tr -d ' "')
+          new_rev=$(grep '^ARG IMAGE_REVISION=' "$DOCKERFILE" | cut -d= -f2 | tr -d ' "')
+          if [ "${old_ver}-${old_rev}" = "${new_ver}-${new_rev}" ]; then
+            echo "::error::abuseipdb-sync source changed ($changed) but tag is still '${new_ver}-${new_rev}'; bump APP_VERSION or IMAGE_REVISION"
+            exit 1
+          fi
+          echo "source changed and tag bumped: ${old_ver}-${old_rev} -> ${new_ver}-${new_rev}"
 
       - name: Extract versions from Dockerfile
         id: versions
@@ -68,12 +106,18 @@ jobs:
           echo "  Target tag: ${IMAGE_TAG}"
           echo "  Repository owner: ${REPO_OWNER}"
 
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ steps.versions.outputs.go_version }}
+          cache-dependency-path: gitops/images/abuseipdb-sync/go.sum
+
       - name: Run Go tests
         run: |
           set -euo pipefail
           cd gitops/images/abuseipdb-sync
           go vet ./...
-          go test ./...
+          go test -race ./...
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -85,6 +129,21 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Published revision tags are immutable: never silently overwrite one.
+      - name: Check whether the revision tag is already published
+        id: tagcheck
+        if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${{ steps.versions.outputs.repo_owner }}/abuseipdb-sync"
+          TAG="${{ steps.versions.outputs.image_tag }}"
+          if docker buildx imagetools inspect "${IMAGE}:${TAG}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::${IMAGE}:${TAG} is already published; skipping push. Bump APP_VERSION or IMAGE_REVISION to publish a new revision."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Extract Docker metadata
         id: meta
@@ -103,7 +162,7 @@ jobs:
           context: gitops/images/abuseipdb-sync
           file: gitops/images/abuseipdb-sync/Dockerfile
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
+          push: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) && steps.tagcheck.outputs.exists != 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
@@ -118,10 +177,12 @@ jobs:
           DIGEST="${{ steps.build.outputs.digest }}"
           IMAGE="ghcr.io/${{ steps.versions.outputs.repo_owner }}/abuseipdb-sync"
           TAG="${{ steps.versions.outputs.image_tag }}"
+          PUSHED="${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) && steps.tagcheck.outputs.exists != 'true' }}"
 
           echo "### abuseipdb-sync build" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Tag**: \`${TAG}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Pushed to GHCR**: \`${PUSHED}\`" >> "$GITHUB_STEP_SUMMARY"
           if [ -n "$DIGEST" ]; then
             echo "- **Digest**: \`${DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"

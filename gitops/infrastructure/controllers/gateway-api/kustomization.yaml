@@ -1,3 +1,8 @@
+# Vendored Gateway API standard channel bundle. When Renovate bumps the comment
+# below, replace standard-install.yaml from the matching upstream GitHub release:
+#   https://github.com/kubernetes-sigs/gateway-api/releases/download/<ver>/standard-install.yaml
+# renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
+# bundle-version: v1.6.3
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

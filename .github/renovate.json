@@ -7,14 +7,16 @@
   "prConcurrentLimit": 5,
   "prHourlyLimit": 0,
   "minimumReleaseAge": "3 days",
-  "enabledManagers": ["custom.regex", "dockerfile", "flux", "github-actions", "kubernetes", "mise"],
+  "minimumReleaseAgeBehaviour": "timestamp-optional",
+  "enabledManagers": ["custom.regex", "dockerfile", "flux", "github-actions", "gomod", "kubernetes", "mise", "terraform"],
   "ignorePaths": [
-    "gitops/infrastructure/controllers/gateway-api/**",
+    "gitops/infrastructure/controllers/gateway-api/standard-install.yaml",
     "**/*-secrets.yaml"
   ],
   "flux": {
     "managerFilePatterns": [
       "/^gitops\\/infrastructure\\/controllers\\/.+\\.ya?ml$/",
+      "/^gitops\\/infrastructure\\/flux-instance\\/.+\\.ya?ml$/",
       "/^gitops\\/platform\\/.+\\.ya?ml$/",
       "/^gitops\\/monitoring\\/.+\\.ya?ml$/"
     ]
@@ -22,6 +24,7 @@
   "kubernetes": {
     "managerFilePatterns": [
       "/^gitops\\/apps\\/.+\\.ya?ml$/",
+      "/^gitops\\/platform\\/abuseipdb\\/.+\\.ya?ml$/",
       "/^gitops\\/platform\\/renovate\\/.+\\.ya?ml$/"
     ]
   },
@@ -32,7 +35,7 @@
         "/^gitops\\/.+\\.ya?ml$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s+(?:tag|version):\\s*[\"']?(?<currentValue>[^\"'\\s#]+)[\"']?"
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s+(?:#\\s*)?(?:tag|version|bundle-version):\\s*[\"']?(?<currentValue>[^\"'\\s#]+)[\"']?"
       ]
     }
   ],

@@ -16,7 +16,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[3]
 RELEASE = ROOT / "gitops/monitoring/logging/alloy-release.yaml"
-IMAGE = os.environ.get("ALLOY_IMAGE", "grafana/alloy:v1.21.3")
+IMAGE = os.environ.get("ALLOY_IMAGE")
 
 
 def run(*args, **kwargs):
@@ -79,11 +79,14 @@ def main():
         names = re.search(r"names\s*=\s*(\[[^\]]*\])", source[f'discovery.kubernetes "{name}"'])
         namespaces.update(json.loads(names[1]))
     assert namespaces == set(values["rbac"]["namespaces"]), "RBAC and discovered namespaces must match"
-    assert "trivy-system" in namespaces
+    for ns in ("trivy-system", "policy-reporter", "hubble-ui", "reloader", "renovate"):
+        assert ns in namespaces, f"{ns} must be included in Alloy platform discovery"
     assert json.loads(re.search(r"names\s*=\s*(\[[^\]]*\])", source['discovery.kubernetes "pods"'])[1]) == ["taskflow"]
     assert values["rbac"]["clusterRules"] == [], "do not add cluster-wide log access"
     ks = yaml_docs((ROOT / "gitops/clusters/taskflow/monitoring-logging.yaml").read_text())[0]
-    assert "trivy-operator" in [d["name"] for d in ks["spec"]["dependsOn"]], "Trivy namespace must exist before its Alloy Role"
+    deps = {d["name"] for d in ks["spec"]["dependsOn"]}
+    for dep in ("trivy-operator", "policy-reporter", "hubble-ui", "reloader", "renovate"):
+        assert dep in deps, f"{dep} Kustomization must run before its Alloy Role is rendered"
 
     repo_docs = yaml_docs((ROOT / "gitops/monitoring/logging/repositories.yaml").read_text())
     chart = release["spec"]["chart"]["spec"]
@@ -93,6 +96,9 @@ def main():
         (tmp / "values.json").write_text(json.dumps(values))
         rendered = yaml_docs(run("helm", "template", "alloy", chart["chart"], "--repo", repo["spec"]["url"],
                                  "--version", chart["version"], "--namespace", "monitoring", "-f", str(tmp / "values.json")))
+        alloy_deploy = next(r for r in rendered if r["kind"] == "Deployment" and r["metadata"]["name"] == "alloy")
+        alloy_container_spec = next(c for c in alloy_deploy["spec"]["template"]["spec"]["containers"] if c["name"] == "alloy")
+        image = IMAGE or alloy_container_spec["image"]
         roles = [r for r in rendered if r["kind"] == "Role"]
         assert {r["metadata"]["namespace"] for r in roles} == namespaces
         role = next(r for r in roles if r["metadata"]["namespace"] == "trivy-system")
@@ -136,7 +142,7 @@ def main():
         try:
             container = run("docker", "run", "-d", "--read-only", "--tmpfs", "/tmp",
                             "-p", "127.0.0.1::12345", "-v", f"{tmp / 'config.alloy'}:/etc/alloy/config.alloy:ro",
-                            IMAGE, "run", "--server.http.listen-addr=0.0.0.0:12345",
+                            image, "run", "--server.http.listen-addr=0.0.0.0:12345",
                             "--storage.path=/tmp/alloy", "/etc/alloy/config.alloy").strip()
             port = json.loads(run("docker", "inspect", container))[0]["NetworkSettings"]["Ports"]["12345/tcp"][0]["HostPort"]
             outputs = {}

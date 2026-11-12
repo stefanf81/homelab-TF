@@ -19,7 +19,24 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "$HERE/../../.." && pwd)}"
 RELEASE="${ALLOY_RELEASE:-$REPO_ROOT/gitops/monitoring/logging/alloy-release.yaml}"
-ALLOY_IMAGE="${ALLOY_IMAGE:-grafana/alloy:v1.21.3}"
+REPOSITORIES="${ALLOY_REPOSITORIES:-$REPO_ROOT/gitops/monitoring/logging/repositories.yaml}"
+resolve_alloy_image() {
+  ruby -ryaml -ropen3 -rtempfile -e '
+    rel = YAML.load_stream(File.read(ARGV[0])).compact.find { |d| d["kind"] == "HelmRelease" && d.dig("metadata", "name") == "alloy" }
+    chart = rel.dig("spec", "chart", "spec")
+    repo = YAML.load_stream(File.read(ARGV[1])).compact.find { |d| d["kind"] == "HelmRepository" && d.dig("metadata", "name") == chart.dig("sourceRef", "name") }
+    Tempfile.create(["alloy-values-", ".yaml"]) do |vf|
+      vf.write((rel.dig("spec", "values") || {}).to_yaml)
+      vf.flush
+      out, err, st = Open3.capture3("helm", "template", "alloy", chart.fetch("chart"), "--repo", repo.dig("spec", "url"), "--version", chart.fetch("version"), "--namespace", "monitoring", "-f", vf.path)
+      abort "helm template alloy failed: #{err}" unless st.success?
+      dep = YAML.load_stream(out).compact.find { |d| %w[Deployment DaemonSet StatefulSet].include?(d["kind"]) && d.dig("metadata", "name") == "alloy" }
+      c = dep.dig("spec", "template", "spec", "containers").find { |x| x["name"] == "alloy" }
+      print c.fetch("image")
+    end
+  ' "$RELEASE" "$REPOSITORIES"
+}
+ALLOY_IMAGE="${ALLOY_IMAGE:-$(resolve_alloy_image)}"
 ALLOY_PORT="${ALLOY_PORT:-12367}"
 : "${LOKI_URL:?LOKI_URL must point at a reachable Loki}"
 

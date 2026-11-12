@@ -67,6 +67,10 @@ spec:
         - kyverno
         - csi-proxmox
         - trivy-system
+        - policy-reporter
+        - hubble-ui
+        - reloader
+        - renovate
       rules:
         - apiGroups: [""]
           resources: ["pods", "pods/log"]
@@ -358,7 +362,7 @@ spec:
           discovery.kubernetes "platform" {
             role = "pod"
             namespaces {
-              names = ["monitoring", "falco", "flux-system", "kube-system", "cert-manager", "kyverno", "csi-proxmox", "trivy-system"]
+              names = ["monitoring", "falco", "flux-system", "kube-system", "cert-manager", "kyverno", "csi-proxmox", "trivy-system", "policy-reporter", "hubble-ui", "reloader", "renovate"]
             }
           }
 

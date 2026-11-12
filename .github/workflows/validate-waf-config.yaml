@@ -13,7 +13,10 @@ on:
       - 'gitops/apps/taskflow/frontend.yaml'
       - 'gitops/infrastructure/controllers/coredns/release.yaml'
       - 'gitops/infrastructure/controllers/trivy-operator/**'
+      - 'gitops/clusters/taskflow/cluster-vars.yaml'
       - 'gitops/clusters/taskflow/monitoring-logging.yaml'
+      - 'gitops/platform/abuseipdb/**'
+      - 'gitops/images/abuseipdb-sync/config.go'
       - 'gitops/monitoring/logging/loki-datasource.yaml'
       - 'gitops/monitoring/logging/kustomization.yaml'
       - 'gitops/monitoring/logging/dashboards/**'
@@ -22,6 +25,7 @@ on:
       - 'gitops/monitoring/logging/alloy-release.yaml'
       - 'gitops/monitoring/logging/repositories.yaml'
       - 'gitops/monitoring/platform/release.yaml'
+      - 'gitops/monitoring/platform/network-policies.yaml'
       - 'gitops/images/taskflow-caddy-coraza/tests/validate-*'
       - 'gitops/monitoring/tests/**'
       - '.github/workflows/validate-waf-config.yaml'
@@ -34,7 +38,10 @@ on:
       - 'gitops/apps/taskflow/frontend.yaml'
       - 'gitops/infrastructure/controllers/coredns/release.yaml'
       - 'gitops/infrastructure/controllers/trivy-operator/**'
+      - 'gitops/clusters/taskflow/cluster-vars.yaml'
       - 'gitops/clusters/taskflow/monitoring-logging.yaml'
+      - 'gitops/platform/abuseipdb/**'
+      - 'gitops/images/abuseipdb-sync/config.go'
       - 'gitops/monitoring/logging/loki-datasource.yaml'
       - 'gitops/monitoring/logging/kustomization.yaml'
       - 'gitops/monitoring/logging/dashboards/**'
@@ -43,6 +50,7 @@ on:
       - 'gitops/monitoring/logging/alloy-release.yaml'
       - 'gitops/monitoring/logging/repositories.yaml'
       - 'gitops/monitoring/platform/release.yaml'
+      - 'gitops/monitoring/platform/network-policies.yaml'
       - 'gitops/images/taskflow-caddy-coraza/tests/validate-*'
       - 'gitops/monitoring/tests/**'
       - '.github/workflows/validate-waf-config.yaml'
@@ -79,6 +87,15 @@ jobs:
           echo "$(cat /tmp/kubectl.sha256)  /tmp/kubectl" | sha256sum --check
           sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
           kubectl version --client --output=yaml
+
+      - name: Install pinned Helm
+        run: |
+          curl -fsSLo /tmp/helm.tar.gz "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz"
+          curl -fsSLo /tmp/helm.sha256sum "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz.sha256sum"
+          (cd /tmp && sed 's|  helm-.*|  helm.tar.gz|' helm.sha256sum | sha256sum --check)
+          tar -xzf /tmp/helm.tar.gz -C /tmp linux-amd64/helm
+          sudo install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
+          helm version --short
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4

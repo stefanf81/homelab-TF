@@ -12,4 +12,5 @@ spec:
     # Chart v3.9.2 ships Kyverno v1.19.2.
     # Cluster is k8s 1.37.2 (supported, k8s >= 1.25 required).
     tag: 3.9.2
+    digest: sha256:83054f30148c3cfc001087c1f5772eda7c7224e9b74b7f0e70c39c9cafe009d1
   url: oci://ghcr.io/kyverno/charts/kyverno

@@ -234,10 +234,9 @@ spec:
 
     victoria-metrics-operator:
       image:
-        # Keep the image aligned with the operator chart bundled by stack 0.97.0
-        # (chart 0.68.1 => operator v0.75.0). v0.75.0 adds the VTAgent CRD and
-        # controller; the chart ships its RBAC rules and Flux applies the new
-        # CRDs via `upgrade.crds: CreateReplace`. Pods roll once on this bump.
+        # Keep the image aligned with the operator chart bundled by stack 0.97.1
+        # (chart 0.68.2 => operator v0.75.2). Flux applies any new CRDs via
+        # `upgrade.crds: CreateReplace`. Pods roll once on this bump.
         # renovate: datasource=docker depName=victoriametrics/operator
         tag: v0.75.2
       resources:

@@ -1039,7 +1039,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (workload) (label_replace(max by (namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=\"taskflow\"}[$__interval])), \"workload\", \"$1\", \"pod\", \"(.+)-[a-z0-9]{6,10}-[a-z0-9]{5}\")) > 0",
+          "expr": "sum by (workload) (label_replace(increase(max by (namespace, pod, container) (kube_pod_container_status_restarts_total{namespace=\"taskflow\"})[$__interval:30s]), \"workload\", \"$1\", \"pod\", \"^(.+?)(?:-[a-z0-9]{6,10}-[a-z0-9]{5}|-[0-9]+|-[a-z0-9]{5})$\")) > 0",
           "legendFormat": "{{workload}}"
         }
       ],
