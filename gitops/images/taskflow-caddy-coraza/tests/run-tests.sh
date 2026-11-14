@@ -8,11 +8,16 @@
 #
 # and asserts against the *production* Caddyfile extracted from the WAF
 # ConfigMaps, substituting only the trusted_proxies list and the upstream target
-# for the test topology. The production zones are overridden with small windows
-# so the suite runs in seconds; the production values (frontend general 180/min,
-# backend api 300/min and authentication 20/min) live in the ConfigMaps.
+# for the test topology. The production list itself is checked statically
+# (check_trusted_lists). The shipped rate-limit zones are used as they are,
+# with only their `events` and `window` shrunk (patch-rate-limit.py) so the
+# suite runs in seconds: zone names, keys, match blocks and IPv6 grouping are
+# the production ones.
 #
-# Usage: TEST_IMAGE=<image> ./run-tests.sh
+# Usage: [TEST_IMAGE=<image>] ./run-tests.sh
+# Without TEST_IMAGE each WAF is tested with the image its Deployment pins
+# (what a ConfigMap-only change will run on); the image build sets TEST_IMAGE to
+# the freshly built image.
 # Requires: docker, python3 with PyYAML (used to extract the ConfigMaps).
 
 set -euo pipefail
@@ -20,19 +25,19 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../../.." && pwd)"
 
-default_image() {
-  awk -F= '
-    /^ARG CADDY_VERSION=/ { caddy=$2 }
-    /^ARG CORAZA_CADDY_VERSION=/ { coraza=$2 }
-    /^ARG IMAGE_REVISION=/ { rev=$2 }
-    END {
-      gsub(/[ "]/,"",caddy); gsub(/[ "]/,"",coraza); gsub(/[ "]/,"",rev);
-      sub(/^v/,"",coraza);
-      print "ghcr.io/stefanf81/taskflow-caddy-coraza:" caddy "-coraza" coraza "-" rev
-    }' "$HERE/../Dockerfile"
+deployment_image() { # waf
+  python3 - "$REPO_ROOT/gitops/apps/taskflow/$1-waf.yaml" <<'PY'
+import sys
+
+import yaml
+
+with open(sys.argv[1]) as fh:
+    dep = next(d for d in yaml.safe_load_all(fh) if d and d.get("kind") == "Deployment")
+print(next(c["image"] for c in dep["spec"]["template"]["spec"]["containers"] if c["name"] == "waf"))
+PY
 }
 
-TEST_IMAGE="${TEST_IMAGE:-$(default_image)}"
+TEST_IMAGE="${TEST_IMAGE:-}"
 
 NET="lrtest-$$"
 NAME_PREFIX="$NET-"
@@ -101,11 +106,16 @@ teardown_suite() {
   CONTAINERS=()
 }
 
-# The Cloudflare ranges are duplicated in both ConfigMaps (the interim peer entry
-# is identical too); fail early if they ever drift apart.
-check_trusted_lists_match() {
+# The behavioural suite replaces trusted_proxies with the test topology, so the
+# production list is checked here instead: both ConfigMaps must carry the same
+# list (the Cloudflare ranges are duplicated), and every private address in it
+# must be a single host. Trusting a wider private range (the Pod CIDR, a node
+# subnet) would let an in-cluster client be skipped as a trusted hop and forge
+# its X-Forwarded-For identity.
+check_trusted_lists() {
   python3 - "$REPO_ROOT/gitops/apps/taskflow/frontend-waf.yaml" \
             "$REPO_ROOT/gitops/apps/taskflow/backend-waf.yaml" <<'PY'
+import ipaddress
 import re
 import sys
 
@@ -123,12 +133,19 @@ front, back = trusted(sys.argv[1]), trusted(sys.argv[2])
 if front != back:
     print("trusted_proxies lists differ between the WAF ConfigMaps; update both together", file=sys.stderr)
     raise SystemExit(1)
-print(f"trusted_proxies lists match ({len(front)} entries)")
+wide = [e for e in front
+        if ipaddress.ip_network(e, strict=False).is_private
+        and ipaddress.ip_network(e, strict=False).num_addresses > 1]
+if wide:
+    print(f"trusted_proxies trusts private ranges wider than one address: {wide}", file=sys.stderr)
+    raise SystemExit(1)
+print(f"trusted_proxies lists match ({len(front)} entries; private entries are single hosts)")
 PY
 }
 
 run_suite() { # waf
   local waf="$1"
+  local image="${TEST_IMAGE:-$(deployment_image "$waf")}"
   local cfg="$WORK/$waf"
   local zone=general
   [ "$waf" = backend ] && zone=api
@@ -143,55 +160,23 @@ run_suite() { # waf
 
   # First validate the config exactly as Git ships it (production zones): a typo
   # in the import or rate-limit.conf must fail CI here.
-  say "$waf: validating shipped config"
+  say "$waf: validating shipped config with $image"
   docker run --rm -v "$cfg/caddy:/etc/caddy:ro" -v "$cfg/coraza:/etc/coraza:ro" \
-    "$TEST_IMAGE" validate --config /etc/caddy/Caddyfile --adapter caddyfile \
+    "$image" validate --config /etc/caddy/Caddyfile --adapter caddyfile \
     >/dev/null 2>&1 || fail "$waf: caddy validate rejected the production config"
 
-  # Override the zones for the test only, with a window long enough that a slow
-  # runner cannot slide it during the burst. Production values live in the
-  # ConfigMaps; the backend also carries the tighter authentication zone.
+  # Shrink the shipped zones for the test only (events and window), with a
+  # window long enough that a slow runner cannot slide it during the burst.
+  # Everything else in rate-limit.conf is tested as shipped.
   if [ "$waf" = backend ]; then
-    cat > "$cfg/caddy/rate-limit.conf" <<'EOF'
-rate_limit {
-    disable_metrics
-
-    zone api {
-        key         {client_ip}
-        events      5
-        window      5m
-        ipv6_prefix 64
-    }
-
-    zone authentication {
-        match {
-            path /api/v1/auth/*
-        }
-        key         {client_ip}
-        events      3
-        window      5m
-        ipv6_prefix 64
-    }
-}
-EOF
+    python3 "$HERE/patch-rate-limit.py" "$cfg/caddy/rate-limit.conf" 5m api=5 authentication=3
   else
-    cat > "$cfg/caddy/rate-limit.conf" <<'EOF'
-rate_limit {
-    disable_metrics
-
-    zone general {
-        key         {client_ip}
-        events      5
-        window      5m
-        ipv6_prefix 64
-    }
-}
-EOF
+    python3 "$HERE/patch-rate-limit.py" "$cfg/caddy/rate-limit.conf" 5m general=5
   fi
 
   say "$waf: validating generated Caddyfile"
   docker run --rm -v "$cfg/caddy:/etc/caddy:ro" -v "$cfg/coraza:/etc/coraza:ro" \
-    "$TEST_IMAGE" validate --config /etc/caddy/Caddyfile --adapter caddyfile \
+    "$image" validate --config /etc/caddy/Caddyfile --adapter caddyfile \
     >/dev/null 2>&1 || fail "$waf: caddy validate rejected the generated Caddyfile"
 
   say "$waf: starting topology"
@@ -200,7 +185,7 @@ EOF
     --upstream "http://$envoy:8080" --client-header X-Test-Client
   start_python "$envoy" "$ENVOY" python3 /srv/xff_proxy.py --listen 8080 --upstream "http://$caddy:8080"
   CONTAINERS+=("$(docker run -d --name "$caddy" --network "$NET" --ip "$CADDY" \
-    -v "$cfg/caddy:/etc/caddy:ro" -v "$cfg/coraza:/etc/coraza:ro" "$TEST_IMAGE")")
+    -v "$cfg/caddy:/etc/caddy:ro" -v "$cfg/coraza:/etc/coraza:ro" "$image")")
   start_client "$ca" "$CA"
   start_client "$ca2" "$CA2"
   start_client "$cb" "$CB"
@@ -209,9 +194,11 @@ EOF
   start_client "$podclient" "$POD"
   start_client "$hzclient" "$HZ"
 
+  # Readiness the way the kubelet probes: straight to the pod, no proxy and
+  # therefore no X-Forwarded-For.
   local ready="" r
   for _ in $(seq 1 30); do
-    if r="$(req "$hzclient" "http://$envoy:8080/waf-healthz" 2>/dev/null)"; then
+    if r="$(req "$hzclient" "http://$caddy:8080/waf-healthz" 2>/dev/null)"; then
       [ "$(json_field "$r" status)" = 200 ] && { ready=1; break; }
     fi
     sleep 2
@@ -274,16 +261,46 @@ EOF
   [ "$(json_field "$r" status)" = 200 ] || fail "$waf: independent client was blocked: $r"
   [ "$(body_field "$r" x_real_ip)" = "$CB" ] || fail "$waf: client B identity wrong"
 
-  r="$(req "$hzclient" "http://$envoy:8080/waf-healthz")"
-  [ "$(json_field "$r" status)" = 200 ] || fail "$waf: health endpoint was rate limited: $r"
+  say "$waf: health endpoint"
+  # Probes (no X-Forwarded-For) are answered by Caddy itself and never limited:
+  # send more than the zone allows from one client, all must stay 200.
+  local hz_before hz_ok=0 i
+  hz_before="$(upstream_count "$upstream" "$HZ")"
+  for i in $(seq 1 8); do
+    r="$(req "$hzclient" "http://$caddy:8080/waf-healthz")"
+    [ "$(json_field "$r" status)" = 200 ] && [ "$(json_field "$r" body)" = healthy ] && hz_ok=$((hz_ok + 1))
+  done
+  [ "$hz_ok" -eq 8 ] || fail "$waf: only $hz_ok/8 probe requests got 'healthy' (probe path limited or changed)"
+  [ "$(upstream_count "$upstream" "$HZ")" -eq "$hz_before" ] \
+    || fail "$waf: a probe request reached the upstream"
+
+  # Through the proxy (X-Forwarded-For present) the same path is ordinary
+  # traffic: Coraza and the limiter apply and allowed requests go upstream.
+  local g_allowed=0 g_denied=0
+  for i in $(seq 1 8); do
+    r="$(req "$hzclient" "http://$envoy:8080/waf-healthz?i=$i")"
+    case "$(json_field "$r" status)" in
+      200)
+        [ "$(body_field "$r" path)" = "/waf-healthz?i=$i" ] \
+          || fail "$waf: proxied /waf-healthz was answered by Caddy, not the upstream: $r"
+        g_allowed=$((g_allowed + 1)) ;;
+      429) g_denied=$((g_denied + 1)) ;;
+      *) fail "$waf: unexpected status on a proxied /waf-healthz: $r" ;;
+    esac
+  done
+  printf 'gateway /waf-healthz allowed=%s denied=%s\n' "$g_allowed" "$g_denied"
+  [ "$g_allowed" -ge 1 ] && [ "$g_denied" -ge 1 ] \
+    || fail "$waf: /waf-healthz through the Gateway is not rate limited"
 
   r="$(req "$podclient" "http://$envoy:8080/api?q=1%20UNION%20SELECT%201")"
   [ "$(json_field "$r" status)" = 403 ] || fail "$waf: Coraza did not block the SQLi test: $r"
 
   if [ "$waf" = backend ]; then
     say "$waf: authentication zone"
+    # 4 requests: above the authentication zone (3) but below the api zone (5),
+    # so a 429 here can only come from the authentication zone and its match.
     local a_allowed=0 a_denied=0
-    for i in $(seq 1 6); do
+    for i in $(seq 1 4); do
       r="$(req "$ca3" "http://$envoy:8080/api/v1/auth/test?i=$i")"
       status="$(json_field "$r" status)"
       case "$status" in
@@ -293,7 +310,8 @@ EOF
       esac
     done
     printf 'auth allowed=%s denied=%s\n' "$a_allowed" "$a_denied"
-    [ "$a_denied" -ge 1 ] || fail "$waf: authentication zone did not trigger"
+    [ "$a_allowed" -eq 3 ] && [ "$a_denied" -eq 1 ] \
+      || fail "$waf: authentication zone did not limit /api/v1/auth/* to 3 (allowed=$a_allowed denied=$a_denied)"
     local auth_logs
     auth_logs="$(docker logs "$caddy" 2>&1)"
     case "$auth_logs" in
@@ -328,9 +346,9 @@ command -v docker >/dev/null || { echo "docker is required" >&2; exit 1; }
 python3 -c 'import yaml' 2>/dev/null || { echo "python3 with PyYAML is required (pip install pyyaml)" >&2; exit 1; }
 
 docker network create --subnet "$SUBNET" "$NET" >/dev/null
-say "image: $TEST_IMAGE"
+say "image: ${TEST_IMAGE:-the image pinned in each WAF Deployment}"
 say "config consistency"
-check_trusted_lists_match
+check_trusted_lists
 run_suite frontend
 run_suite backend
 say "all tests passed"

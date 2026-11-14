@@ -672,14 +672,17 @@ spec:
                 expressions = {
                   status   = "status",
                   method   = "request.method",
-                  uri      = "request.uri",
                   duration = "duration",
+                  probe    = "probe",
                 }
               }
 
+              // Only the kubelet probe handler writes `"probe":"true"` (log_append in the
+              // WAF Caddyfiles). A /waf-healthz request from the internet carries no such
+              // field, so it is counted like any other request instead of being hidden.
               stage.drop {
-                source = "uri"
-                value  = "/waf-healthz"
+                source = "probe"
+                value  = "true"
               }
 
               // The method is client controlled: only the usual methods become label

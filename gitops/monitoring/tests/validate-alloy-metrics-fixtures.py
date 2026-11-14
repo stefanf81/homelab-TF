@@ -76,9 +76,30 @@ for app, filename in APPS.items():
         for j, bound in enumerate(BUCKETS):
             if duration <= bound:
                 h["buckets"][j] += 1
-    for _ in range(300):  # kubelet probes must not be counted
+    for _ in range(300):  # kubelet probes (marked by the probe handler's log_append) must not be counted
         lines.append(json.dumps({"level": "info", "msg": "handled request", "request": {"method": "GET", "uri": "/waf-healthz", "host": "10.0.0.1:8080"},
-                                 "duration": 0.0001, "status": 200}, separators=(",", ":")))
+                                 "duration": 0.0001, "status": 200, "probe": "true"}, separators=(",", ":")))
+    # /waf-healthz through the Gateway goes through the normal handler: no probe marker,
+    # so it must be counted (a flood on the health path stays visible). A client header
+    # whose value is "true" must not pass for the marker.
+    for i in range(25):
+        duration = 0.003
+        status = 429 if i % 5 == 4 else 200
+        zone = ZONES[app][0] if status == 429 else None
+        lines.append(json.dumps({
+            "level": "info", "msg": "handled request", "status": status, "duration": duration,
+            "client_ip": "203.0.113.77", "rate_limit_zone": zone,
+            "request": {"method": "GET", "uri": "/waf-healthz", "client_ip": "203.0.113.77", "headers": {"Probe": ["true"]}},
+        }, separators=(",", ":")))
+        requests[(app, str(status), "GET")] += 1
+        if zone:
+            limited[(app, zone)] += 1
+        h = hist[app]
+        h["count"] += 1
+        h["sum"] += duration
+        for j, bound in enumerate(BUCKETS):
+            if duration <= bound:
+                h["buckets"][j] += 1
     lines.append(json.dumps({"level": "info", "msg": "something else", "status": 200}))  # not an access record
     # Client-controlled text that mimics the selectors' needles. Values are JSON
     # strings, so their quotes are escaped and must never satisfy a key match.

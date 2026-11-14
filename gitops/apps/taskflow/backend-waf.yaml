@@ -10,9 +10,10 @@
 # Rate limiting: caddy-ratelimit keys on Caddy's validated {client_ip} (real
 # visitor, resolved from X-Forwarded-For via trusted_proxies). Coraza remains
 # first (`order coraza_waf first`), so the limiter runs after WAF inspection and
-# before reverse_proxy, and /waf-healthz is never limited. Enabled 2026-09-26
-# after the runbook client-IP verification passed; see the rate-limit.conf key
-# below and docs/TASKFLOW_WAF_RUNBOOK.md ("Rate limiting").
+# before reverse_proxy. The kubelet's /waf-healthz probe is never limited; a
+# /waf-healthz request through the Gateway is inspected and limited like any
+# other. Enabled 2026-09-26 after the runbook client-IP verification passed; see
+# the rate-limit.conf key below and docs/TASKFLOW_WAF_RUNBOOK.md ("Rate limiting").
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -92,7 +93,18 @@ data:
         # as a zero-valued heartbeat baseline during idle periods so "0 detections"
         # is distinguished from a broken log pipeline. Alloy drops `/waf-healthz`
         # from request counters and histograms.
-        handle /waf-healthz {
+        # Kubelet probes only. They reach the pod directly, without the
+        # X-Forwarded-For header Cilium Envoy adds to every Gateway request, so a
+        # /waf-healthz request from the internet does not match here and falls
+        # through to the handler below (Coraza, rate limiter, upstream).
+        # `log_append probe` marks the probe records; Alloy drops exactly those
+        # from the request metrics.
+        @probe {
+            path /waf-healthz
+            header !X-Forwarded-For
+        }
+        handle @probe {
+            log_append probe true
             respond "healthy" 200
         }
 

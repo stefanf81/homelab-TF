@@ -8,7 +8,8 @@
 # build workflow).
 #
 # Usage: [IMAGE=<ref>] [LOKI_IMAGE=<ref>] validate-configs.sh
-# The image defaults to the one pinned in the frontend WAF Deployment.
+# Without IMAGE each WAF config is validated with the image its own Deployment
+# pins.
 #
 # Requires: docker, helm, ruby, python3, and kubectl (with embedded Kustomize).
 
@@ -77,8 +78,6 @@ deployment_image() { # <file>
   ' "$1"
 }
 
-IMAGE="${IMAGE:-$(deployment_image "$WAF_DIR/frontend-waf.yaml")}"
-echo "image: $IMAGE"
 
 tmp="$(mktemp -d)"
 loki_container=""
@@ -96,10 +95,11 @@ for waf in frontend backend; do
   cm_key "$WAF_DIR/$waf-waf.yaml" rate-limit.conf > "$tmp/$waf/caddy/rate-limit.conf"
   cm_key "$WAF_DIR/$waf-waf.yaml" "$waf-exclusions.conf" > "$tmp/$waf/coraza/$waf-exclusions.conf"
 
-  echo "== validating $waf WAF config (as shipped)"
+  waf_image="${IMAGE:-$(deployment_image "$WAF_DIR/$waf-waf.yaml")}"
+  echo "== validating $waf WAF config (as shipped) with $waf_image"
   docker run --rm --platform linux/amd64 \
     -v "$tmp/$waf/caddy:/etc/caddy:ro" -v "$tmp/$waf/coraza:/etc/coraza:ro" \
-    "$IMAGE" validate --config /etc/caddy/Caddyfile --adapter caddyfile
+    "$waf_image" validate --config /etc/caddy/Caddyfile --adapter caddyfile
 done
 
 echo "== validating LogQL with $LOKI_IMAGE"

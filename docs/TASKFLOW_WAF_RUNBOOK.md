@@ -126,7 +126,9 @@ should match (or confirm fresh audit timestamps in Loki).
 Caddy carries per-client HTTP rate limits (HTTP 429 + `Retry-After`) via the
 `caddy-ratelimit` module, keyed on the resolved `{client_ip}`. **Enforcement is
 ON** (enabled 2026-09-26 after the stages below passed). Coraza always runs
-before the limiter; `/waf-healthz` is never rate limited.
+before the limiter; the kubelet's `/waf-healthz` probe (no `X-Forwarded-For`)
+is never rate limited, while `/waf-healthz` requested through the Gateway is
+inspected and limited like any other path.
 
 The stages below document the rollout and remain the re-verification procedure
 after a node change, a trusted-proxy change, or when tuning the zones.
@@ -785,7 +787,7 @@ at their first event and plain `increase()` can discard a large first value.
 
 #### Caddy access logs but no Coraza audit logs
 
-**Cause**: The `/waf-healthz` endpoint bypasses the WAF (handled before `coraza_waf` directive). Only real app traffic triggers Coraza rules.
+**Cause**: Kubelet probes of `/waf-healthz` bypass the WAF (handled before the `coraza_waf` directive). Only real app traffic triggers Coraza rules.
 
 **Fix**: Send actual traffic to the app endpoints, not just health checks. Coraza audit logs are generated when CRS rules match (or when `SecAuditEngine` is `On`).
 

@@ -170,9 +170,14 @@ It asserts:
 - an address that is not in the trusted list (e.g. a pod) is **not** skipped, so
   it cannot spoof a forged value to its left;
 - exceeding the window returns 429 with `Retry-After`, allowed requests reach
-  the upstream exactly once, another client is unaffected, `/waf-healthz` stays
-  available, and the 429 access log carries `rate_limit_zone`;
-- the stricter `authentication` zone fires and is attributed on `/api/v1/auth/*`;
+  the upstream exactly once, another client is unaffected, and the 429 access
+  log carries `rate_limit_zone`;
+- probe-style `/waf-healthz` requests (no `X-Forwarded-For`) always get
+  `healthy` and never reach the upstream, while the same path through the
+  proxy is forwarded upstream and rate limited;
+- the stricter `authentication` zone fires and is attributed on `/api/v1/auth/*`
+  (4 requests: below the `api` zone's limit, so only `authentication` and its
+  `match` can produce the 429);
 - two IPv6 addresses in one `/64` share a bucket while a different `/64` is fresh
   (the edge proxy reports a `X-Test-Client` value to simulate the IPv6 client);
 - Coraza still blocks a SQLi probe in the same fixed image.
@@ -352,8 +357,13 @@ limiter always agree on the visitor identity.
 - Limits are per Caddy replica and held in memory (there is exactly one replica
   per WAF and no shared Caddy storage), so no distributed mode, Redis, or extra
   datastore is involved.
-- `/waf-healthz` is served by its own handler before the rate-limited handler
-  and is never counted. Kubernetes probes therefore cannot trip the limiter.
+- Kubelet probes of `/waf-healthz` are served by their own handler before the
+  rate-limited handler and are never counted, so probes cannot trip the
+  limiter. That handler only matches requests **without** `X-Forwarded-For`:
+  the kubelet connects to the pod directly, while Cilium Envoy adds the header
+  to every Gateway request. A `/waf-healthz` request from the internet
+  therefore goes through Coraza and the limiter to the application like any
+  other path.
 - Rate limiting protects the *applications* from abusive request volume. It is
   deliberately keyed on the network client, not user identity: per-account
   quotas (e.g. "100 API calls/day per user") belong in the application/API layer.
@@ -612,7 +622,7 @@ Three metrics-only `loki.process` components (`waf_requests`, `waf_audit`,
 parses each access record once and derives the request counter, the duration
 histogram and the rate-limit counter from it. Caddy logs `"rate_limit_zone":null`
 for requests that were not limited, so the rate-limit counter only admits lines
-whose zone is a non-empty string. Selectors match compact JSON markers (`"msg":"handled request"`, `"transaction":{` and the top-level `},"messages":[{` array): quotes inside logged header values are escaped, so client-controlled text cannot satisfy them. A bare `"messages"` needle would match a client header `Messages: ...`, which Coraza lowercases into `transaction.request.headers`; only the anchored array and Coraza's own `[id \"N\"]` quoting are trusted. The probe exclusion works the same way: `stage.drop` compares the parsed `request.uri` exactly, and the dashboards' LogQL excludes the literal `"uri":"/waf-healthz"` (never a bare `"/waf-healthz"`, which a request header value can reproduce).
+whose zone is a non-empty string. Selectors match compact JSON markers (`"msg":"handled request"`, `"transaction":{` and the top-level `},"messages":[{` array): quotes inside logged header values are escaped, so client-controlled text cannot satisfy them. A bare `"messages"` needle would match a client header `Messages: ...`, which Coraza lowercases into `transaction.request.headers`; only the anchored array and Coraza's own `[id \"N\"]` quoting are trusted. The probe exclusion in the metrics works the same way: `stage.drop` matches the top-level `"probe":"true"` field that only the kubelet probe handler writes (`log_append`), so a `/waf-healthz` request from the internet is counted and a client cannot set the field; and the dashboards' LogQL excludes the literal `"uri":"/waf-healthz"` (never a bare `"/waf-healthz"`, which a request header value can reproduce).
 
 The WAF source fans out synchronously to the Loki pipeline and the metrics components, so `loki.write` keeps a write-ahead log on the `alloy-data` PVC (`wal { enabled = true, max_segment_age = "30m" }`). This decouples the counters from a slow/unreachable Loki while disk space remains available. Segments older than 30 minutes are eventually deleted: this bounds age, **not bytes**. Sustained ingress of roughly 0.57 MiB/s can fill the 1Gi PVC before expiry; watch PVC usage and size it for peak traffic/outages. Replay is finite, not a guarantee of lossless delivery through arbitrary outages. Without the WAL, a lab test with 300,000 lines and Loki down stalled every counter at about 15%; with it they stayed exact and all lines reached Loki after recovery. The Alloy test refuses a config without it. See [monitoring deployment safety](../gitops/monitoring/platform/README.md) for update/storage precautions.
 They have `forward_to = []`, so they never write to Loki and stored logs and
