@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -20,6 +21,9 @@ const (
 	cloudflareMaxResponse    = 16 << 20
 	cloudflarePageSize       = 100
 	cloudflareBulkTimeout    = 2 * time.Minute
+	// cloudflareMaxAttempts bounds in-process retries of one idempotent API
+	// call after a transient failure (network error, timeout, 429, 5xx).
+	cloudflareMaxAttempts = 3
 )
 
 // cloudflareError represents a non-successful Cloudflare API response.
@@ -82,7 +86,12 @@ type CloudflareClient struct {
 	ruleRef    string
 	http       *http.Client
 	log        *slog.Logger
+	// retryBase is the first retry delay (doubled per attempt, plus jitter).
+	// Zero retries immediately; tests rely on that.
+	retryBase time.Duration
 
+	// listID caches the resolved list. Not goroutine-safe: App serializes all
+	// sink operations through its opMu.
 	listID string
 }
 
@@ -97,6 +106,7 @@ func NewCloudflareClient(cfg *Config, httpClient *http.Client, log *slog.Logger)
 		ruleRef:    cfg.CloudflareRuleRef,
 		http:       httpClient,
 		log:        log,
+		retryBase:  time.Second,
 	}
 }
 
@@ -442,13 +452,61 @@ func (c *CloudflareClient) do(ctx context.Context, method, path string, q url.Va
 	return nil
 }
 
+// request performs one API call. Idempotent methods (everything except POST)
+// are retried up to cloudflareMaxAttempts times on transient failures, so a
+// single 5xx or reset among the ~100 page reads of a large list does not cost
+// a whole sync interval. POST (list/ruleset/rule creation) is never retried:
+// a lost response could otherwise create a duplicate.
 func (c *CloudflareClient) request(ctx context.Context, method, path string, q url.Values, body any) (*cfEnvelope, error) {
-	var reader io.Reader
+	var encoded []byte
 	if body != nil {
-		encoded, err := json.Marshal(body)
-		if err != nil {
+		var err error
+		if encoded, err = json.Marshal(body); err != nil {
 			return nil, err
 		}
+	}
+	attempts := cloudflareMaxAttempts
+	if method == http.MethodPost {
+		attempts = 1
+	}
+	wait := c.retryBase
+	for attempt := 1; ; attempt++ {
+		env, err := c.requestOnce(ctx, method, path, q, encoded)
+		if err == nil || attempt >= attempts || !cfRetryable(ctx, err) {
+			return env, err
+		}
+		d := wait
+		if d > 0 {
+			d += time.Duration(rand.Int63n(int64(d/2) + 1))
+		}
+		c.log.Warn("retrying Cloudflare API request", "method", method, "path", path, "attempt", attempt, "wait", d.String(), "error", err)
+		select {
+		case <-time.After(d):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		wait *= 2
+	}
+}
+
+// cfRetryable reports whether a failed call may succeed when repeated:
+// rate limiting, server errors and transport failures, but not 4xx answers,
+// configuration errors or a cancelled sync.
+func cfRetryable(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	var ce *cloudflareError
+	if errors.As(err, &ce) {
+		return ce.status == http.StatusTooManyRequests || ce.status >= 500
+	}
+	var tooLarge *responseTooLargeError
+	return !errors.As(err, &tooLarge)
+}
+
+func (c *CloudflareClient) requestOnce(ctx context.Context, method, path string, q url.Values, encoded []byte) (*cfEnvelope, error) {
+	var reader io.Reader
+	if encoded != nil {
 		reader = bytes.NewReader(encoded)
 	}
 	endpoint := c.baseURL + path
@@ -462,7 +520,7 @@ func (c *CloudflareClient) request(ctx context.Context, method, path string, q u
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "abuseipdb-sync/"+version)
-	if body != nil {
+	if encoded != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 

@@ -28,6 +28,10 @@ type FeedClient struct {
 	confidenceMinimum int
 	http              *http.Client
 	log               *slog.Logger
+
+	// endpoint and retryBase are test hooks; empty/zero use the defaults.
+	endpoint  string
+	retryBase time.Duration
 }
 
 // rateLimitError indicates the API daily limit has been reached. It is never
@@ -59,11 +63,34 @@ func (e *httpStatusError) Error() string {
 	return fmt.Sprintf("unexpected HTTP status %d from AbuseIPDB: %s", e.status, e.body)
 }
 
+// feedResponseError marks a response whose body is unusable (wrong content
+// type, an error page or JSON payload, empty, or over the size limit). The
+// request reached AbuseIPDB and counts against the daily quota, and the same
+// request would get the same answer, so it is never retried in-process.
+type feedResponseError struct{ err error }
+
+func (e *feedResponseError) Error() string { return "invalid AbuseIPDB response: " + e.err.Error() }
+func (e *feedResponseError) Unwrap() error { return e.err }
+
+// responseTooLargeError is returned by readBounded when a body exceeds its
+// limit.
+type responseTooLargeError struct{ limit int64 }
+
+func (e *responseTooLargeError) Error() string {
+	return fmt.Sprintf("response body exceeds %d-byte limit (truncated)", e.limit)
+}
+
 // Fetch downloads the blacklist and returns the raw body and HTTP status. It
-// retries transient failures with bounded exponential backoff and never
-// retries rate limiting.
+// retries transient failures (network errors, timeouts, 5xx) with bounded
+// exponential backoff, and never retries rate limiting, other HTTP errors or
+// an unusable response body, each of which would spend another call of the
+// daily quota for the same answer.
 func (c *FeedClient) Fetch(ctx context.Context) ([]byte, int, error) {
-	endpoint, err := url.Parse(blacklistEndpoint)
+	rawEndpoint := c.endpoint
+	if rawEndpoint == "" {
+		rawEndpoint = blacklistEndpoint
+	}
+	endpoint, err := url.Parse(rawEndpoint)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -75,7 +102,10 @@ func (c *FeedClient) Fetch(ctx context.Context) ([]byte, int, error) {
 	}
 	endpoint.RawQuery = q.Encode()
 
-	backoff := 2 * time.Second
+	backoff := c.retryBase
+	if backoff <= 0 {
+		backoff = 2 * time.Second
+	}
 	var lastErr error
 	var lastStatus int
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -88,7 +118,8 @@ func (c *FeedClient) Fetch(ctx context.Context) ([]byte, int, error) {
 
 		var rl *rateLimitError
 		var hs *httpStatusError
-		if errors.As(err, &rl) {
+		var fr *feedResponseError
+		if errors.As(err, &rl) || errors.As(err, &fr) {
 			return nil, status, err
 		}
 		if errors.As(err, &hs) && !hs.retryable {
@@ -126,13 +157,17 @@ func (c *FeedClient) do(ctx context.Context, rawURL string) ([]byte, int, error)
 
 	body, err := readBounded(resp.Body, maxResponseBytes)
 	if err != nil {
+		var tooLarge *responseTooLargeError
+		if errors.As(err, &tooLarge) {
+			return nil, resp.StatusCode, &feedResponseError{err}
+		}
 		return nil, resp.StatusCode, err
 	}
 
 	switch {
 	case resp.StatusCode == http.StatusOK:
 		if err := validateFeedBody(resp.Header.Get("Content-Type"), body); err != nil {
-			return nil, resp.StatusCode, err
+			return nil, resp.StatusCode, &feedResponseError{err}
 		}
 		return body, resp.StatusCode, nil
 	case resp.StatusCode == http.StatusTooManyRequests:
@@ -196,7 +231,7 @@ func readBounded(r io.Reader, maxBytes int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(data)) > maxBytes {
-		return nil, fmt.Errorf("response body exceeds %d-byte limit (truncated)", maxBytes)
+		return nil, &responseTooLargeError{limit: maxBytes}
 	}
 	return data, nil
 }
@@ -213,6 +248,12 @@ func errorReason(err error) string {
 	var hs *httpStatusError
 	if errors.As(err, &hs) {
 		return "http"
+	}
+	// An unusable body is a bad payload, not a connectivity problem; it shares
+	// the "parse" label with blacklist lines that fail validation.
+	var fr *feedResponseError
+	if errors.As(err, &fr) {
+		return "parse"
 	}
 	if errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err) {
 		return "timeout"

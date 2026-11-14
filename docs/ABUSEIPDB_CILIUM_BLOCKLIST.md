@@ -120,8 +120,18 @@ GET /api/v2/blacklist?plaintext=true&limit=…   (Accept: text/plain)
   → Cloudflare: atomic IP-list replace (only when changed) + ensure WAF rule
 ```
 
-* The first synchronization runs **immediately at startup**, then every
-  `ABUSEIPDB_SYNC_INTERVAL` (default 6h).
+* Synchronizations run every `ABUSEIPDB_SYNC_INTERVAL` (default 6h). At
+  startup the first one runs immediately unless both sinks were updated within
+  the last interval (judged by the older of the two last-success annotations):
+  then it waits out the remainder, so routine rollouts do not spend the 5/day
+  API quota, and any newly added exception or protected range is pruned from
+  the existing group and list right away without a feed download. The metrics
+  endpoint and probes are served before any of this startup work.
+* Feed downloads retry network errors, timeouts and 5xx answers (3 attempts
+  with backoff). A 429, another HTTP error or an unusable `200` body (not
+  `text/plain`, an HTML/JSON error page, empty, or over the size limit) is not
+  retried, since each call counts against the daily quota; an unusable body is
+  counted as `abuseipdb_sync_errors_total{reason="parse"}`.
 * The same validated list is then applied to each enabled sink:
   * **Cilium:** atomic in-place create/update of `CiliumCIDRGroup/abuseipdb`,
     never delete/recreate, respecting `resourceVersion` (no enforcement gap).
@@ -131,6 +141,9 @@ GET /api/v2/blacklist?plaintext=true&limit=…   (Accept: text/plain)
     second pending operation), then ensure the managed zone rule exists with
     `ref: abuseipdb` (`ip.src in $abuseipdb`, action `block`). Existing
     customer rules are never modified.
+* Cloudflare API calls are retried in-process (3 attempts with backoff) on
+  network errors, timeouts, 429 and 5xx, except creation calls (`POST`), which
+  could otherwise create duplicates.
 * Sinks fail independently: a Cloudflare API/rate-limit failure never prevents
   the Cilium update and vice versa. `abuseipdb_sync_success` is `1` only when
   all enabled sinks succeed.
@@ -147,7 +160,15 @@ GET /api/v2/blacklist?plaintext=true&limit=…   (Accept: text/plain)
   documented stale behavior runs per sink: `fail-open` (default) empties that
   sink (Cilium group / Cloudflare list) so no address is blocked on very old
   data; `retain` keeps the last-known-good list. Either way the corresponding
-  `*_feed_stale` metric is visible on the dashboard.
+  `*_feed_stale` metric is visible on the dashboard. The check runs every
+  minute but never while a synchronization is writing the sinks; a clear that
+  fails is retried after 1m, 2m, 4m, … up to every 30m.
+* The shrink guard (`ABUSEIPDB_MAX_SHRINK_PERCENT`) protects a **fresh** list
+  against a truncated response. Once the current list is older than
+  `ABUSEIPDB_MAX_STALE_AGE`, a smaller list that passed every other check is
+  applied (with a warning log) instead of being rejected: otherwise
+  `fail-open` would empty the sinks and `retain` would reject a legitimate
+  shrink forever.
 
 ### Cloudflare Security Events collector
 
@@ -485,7 +506,7 @@ policy restores `200` immediately.
 | Cloudflare bulk operation pending | `abuseipdb_cloudflare_bulk_operation_pending=1` while awaited (2 min), and left at 1 after a failed or timed-out operation until the next successful push; the next interval retries |
 | Cloudflare analytics permission missing | `cloudflare_firewall_collector_errors_total{reason="authz"}`; feed sync unaffected |
 | Flux reconcile | dynamic CCG untouched (never in inventory) |
-| Pod restart | immediate synchronization; feed ages preserved from annotations |
+| Pod restart | synchronization deferred until the older sink is one interval old (immediate when either sink is older); feed ages preserved from annotations |
 | Per-IP visibility | `Blocked Sources` lists the blocked client IP (Cloudflare) and/or denied source (Cilium) |
 
 ## Rollback
@@ -525,6 +546,7 @@ entry, then delete the leftover runtime objects manually:
 | Pod `CrashLoopBackOff` with "CLOUDFLARE_API_TOKEN is empty" | Same secret, `CLOUDFLARE_API_TOKEN` key |
 | `abuseipdb_last_http_status=401/422` | Bad AbuseIPDB key or unsupported `ABUSEIPDB_CONFIDENCE_MINIMUM` (<100 requires subscription) |
 | `abuseipdb_last_http_status=429` | Daily API limit reached (free tier 5/day); next window resets at 00:00 UTC |
+| `abuseipdb_sync_errors_total{reason="parse"}` with `abuseipdb_last_http_status=200` | AbuseIPDB answered with an unusable body (HTML/JSON error page, wrong content type, empty or oversized); the log line has the details. Not retried until the next interval |
 | `abuseipdb_cloudflare_sync_errors_total{reason="http"}` | Token missing `Account Filter Lists: Edit` / `Zone WAF: Edit`, wrong account/zone ID, or a list name collision with a non-IP list |
 | `abuseipdb_cloudflare_sync_errors_total{reason="rate_limited"}` | A bulk operation is still pending (only 1 per account); the next sync retries |
 | `abuseipdb_cloudflare_sync_errors_total{reason="bulk"}` | Bulk operation failed or exceeded the 2m wait; check the Cloudflare audit log and the next sync |

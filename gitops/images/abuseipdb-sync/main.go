@@ -63,6 +63,33 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Serve /healthz and /metrics before the startup work below: a slow
+	// Kubernetes or Cloudflare call there (a bulk operation can take minutes)
+	// must not fail the liveness probe and restart the pod mid-operation.
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok\n"))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok\n"))
+	})
+
+	srv := &http.Server{
+		Addr:              cfg.ListenAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	serverErr := make(chan error, 1)
+	go func() {
+		logger.Info("metrics server listening", "address", cfg.ListenAddr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+		}
+	}()
+
 	// Recover the last successful synchronization timestamp from the CIDR
 	// group so feed age reporting survives pod restarts and avoids burning the
 	// daily AbuseIPDB blacklist quota on routine rollouts or node reboots.
@@ -97,32 +124,13 @@ func main() {
 		if initialDelay > 0 && state.Exists && state.ManagedByUs {
 			app.applyStartupFilters(ctx, state)
 		}
-		app.updateStaleness(ctx)
+		// No stale-feed enforcement here: when a sink is older than the sync
+		// interval the first synchronization runs immediately and either
+		// refreshes both sinks or applies the stale behavior on failure, so a
+		// pod that was down for a long time does not empty the sinks only to
+		// refill them seconds later. Otherwise the per-minute reporter
+		// enforces it.
 	}
-
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok\n"))
-	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok\n"))
-	})
-
-	srv := &http.Server{
-		Addr:              cfg.ListenAddr,
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-	serverErr := make(chan error, 1)
-	go func() {
-		logger.Info("metrics server listening", "address", cfg.ListenAddr)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverErr <- err
-		}
-	}()
 
 	go app.reportFeedAge(ctx)
 	if app.firewall != nil {
@@ -186,6 +194,12 @@ type App struct {
 	cf       *CloudflareClient
 	firewall *FirewallCollector
 
+	// opMu serializes every operation that writes a sink (synchronization,
+	// startup filter pruning and stale fail-open clearing). CloudflareClient
+	// is not goroutine-safe, and a fail-open clear racing a recovering sync
+	// could otherwise empty a sink right after the sync refilled it.
+	opMu sync.Mutex
+
 	mu             sync.Mutex
 	lastSuccess    time.Time
 	cfLastSuccess  time.Time
@@ -193,13 +207,49 @@ type App struct {
 	staleCFCleared bool
 	staleLogged    bool
 	staleCFLogged  bool
+	// Retry spacing for a failing fail-open clear, per sink.
+	ciliumClearRetry clearBackoff
+	cfClearRetry     clearBackoff
 }
+
+const (
+	staleClearRetryBase = time.Minute
+	staleClearRetryMax  = 30 * time.Minute
+)
+
+// clearBackoff spaces out retries of a failing fail-open clear (1m, 2m, 4m, …
+// capped at 30m) instead of retrying on every one-minute reporter tick.
+// Guarded by App.mu.
+type clearBackoff struct {
+	failures int
+	next     time.Time
+}
+
+func (b *clearBackoff) ready(now time.Time) bool { return !now.Before(b.next) }
+
+func (b *clearBackoff) failed(now time.Time) time.Duration {
+	b.failures++
+	d := staleClearRetryBase
+	for i := 1; i < b.failures && d < staleClearRetryMax; i++ {
+		d *= 2
+	}
+	if d > staleClearRetryMax {
+		d = staleClearRetryMax
+	}
+	b.next = now.Add(d)
+	return d
+}
+
+func (b *clearBackoff) reset() { *b = clearBackoff{} }
 
 // initialSyncDelay returns how long startup should wait before fetching the
 // AbuseIPDB blacklist. When a valid, non-undersized CiliumCIDRGroup already
 // exists within the configured sync interval (and Cloudflare is not newly
 // enabled without a previous push), waiting preserves the 5/day Individual API
-// quota across pod rollouts and node reboots.
+// quota across pod rollouts and node reboots. With Cloudflare enabled the
+// older of the two sinks decides, so a restart that fixes a failing edge sink
+// (for example a rotated token) syncs right away instead of waiting out the
+// Cilium sink's interval.
 func initialSyncDelay(now time.Time, state *GroupState, syncInterval time.Duration, minEntries int, cfEnabled bool) time.Duration {
 	if state == nil || !state.Exists || state.LastSuccess.IsZero() {
 		return 0
@@ -210,7 +260,11 @@ func initialSyncDelay(now time.Time, state *GroupState, syncInterval time.Durati
 	if cfEnabled && state.CloudflareLastSuccess.IsZero() {
 		return 0
 	}
-	age := now.Sub(state.LastSuccess)
+	oldest := state.LastSuccess
+	if cfEnabled && state.CloudflareLastSuccess.Before(oldest) {
+		oldest = state.CloudflareLastSuccess
+	}
+	age := now.Sub(oldest)
 	if age < 0 {
 		return syncInterval
 	}
@@ -224,6 +278,8 @@ func initialSyncDelay(now time.Time, state *GroupState, syncInterval time.Durati
 // from the recovered CiliumCIDRGroup (and Cloudflare IP list) immediately on
 // startup without spending an AbuseIPDB blacklist API call.
 func (a *App) applyStartupFilters(ctx context.Context, state *GroupState) {
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
 	if err := a.reloadFilters(); err != nil {
 		a.log.Warn("startup filter check skipped: cannot reload filter lists", "error", err)
 		return
@@ -253,6 +309,8 @@ func (a *App) applyStartupFilters(ctx context.Context, state *GroupState) {
 }
 
 func (a *App) syncWithLogging(ctx context.Context) {
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
 	if err := a.syncOnce(ctx); err != nil {
 		a.log.Error("synchronization failed", "error", err)
 	}
@@ -295,10 +353,22 @@ func (a *App) syncOnce(ctx context.Context) error {
 		return a.failSync(ctx, "kube", err, "cannot read current CiliumCIDRGroup")
 	}
 	if state.Exists && shrinkRejected(len(state.Prefixes), len(desired), a.cfg.MaxShrinkPercent) {
-		return a.failSync(ctx, "validation",
-			fmt.Errorf("validated list shrank from %d to %d entries (max shrink %d%%); keeping last known good list",
-				len(state.Prefixes), len(desired), a.cfg.MaxShrinkPercent),
-			"feed shrink guard triggered")
+		a.mu.Lock()
+		last := a.lastSuccess
+		a.mu.Unlock()
+		if !currentListStale(last, time.Now(), a.cfg.MaxStaleAge) {
+			return a.failSync(ctx, "validation",
+				fmt.Errorf("validated list shrank from %d to %d entries (max shrink %d%%); keeping last known good list",
+					len(state.Prefixes), len(desired), a.cfg.MaxShrinkPercent),
+				"feed shrink guard triggered")
+		}
+		// The list the guard protects is older than MAX_STALE_AGE: fail-open
+		// would empty it and retain would keep rejecting a legitimate shrink
+		// forever. A fresh list that passed every other check is better
+		// than either.
+		a.log.Warn("shrink guard bypassed: the current list is stale, applying the smaller validated list",
+			"previous", len(state.Prefixes), "next", len(desired),
+			"max_shrink_percent", a.cfg.MaxShrinkPercent, "last_success", last.UTC().Format(time.RFC3339))
 	}
 
 	now := time.Now().UTC()
@@ -315,6 +385,7 @@ func (a *App) syncOnce(ctx context.Context) error {
 		a.lastSuccess = now
 		a.staleCleared = false
 		a.staleLogged = false
+		a.ciliumClearRetry.reset()
 		a.mu.Unlock()
 		metricEntries.Set(float64(len(desired)))
 		metricEntriesAdded.Set(float64(result.Added))
@@ -342,6 +413,7 @@ func (a *App) syncOnce(ctx context.Context) error {
 			a.cfLastSuccess = now
 			a.staleCFCleared = false
 			a.staleCFLogged = false
+			a.cfClearRetry.reset()
 			a.mu.Unlock()
 			metricCloudflareEntries.Set(float64(entries))
 			metricCloudflareSyncSuccess.Set(1)
@@ -494,13 +566,24 @@ func (a *App) updateCiliumStaleness(ctx context.Context) {
 	if cfg.StaleBehavior != staleBehaviorFailOpen || alreadyCleared {
 		return
 	}
-	result, err := a.ccg.Apply(ctx, cfg.CIDRGroupName, nil, time.Time{}, time.Now().UTC())
+	now := time.Now()
+	a.mu.Lock()
+	ready := a.ciliumClearRetry.ready(now)
+	a.mu.Unlock()
+	if !ready {
+		return
+	}
+	result, err := a.ccg.Apply(ctx, cfg.CIDRGroupName, nil, time.Time{}, now.UTC())
 	if err != nil {
-		a.log.Error("stale fail-open: cannot clear CiliumCIDRGroup", "error", err)
+		a.mu.Lock()
+		retryIn := a.ciliumClearRetry.failed(now)
+		a.mu.Unlock()
+		a.log.Error("stale fail-open: cannot clear CiliumCIDRGroup", "error", err, "retry_in", retryIn.String())
 		return
 	}
 	a.mu.Lock()
 	a.staleCleared = true
+	a.ciliumClearRetry.reset()
 	a.mu.Unlock()
 	metricEntries.Set(0)
 	a.log.Warn("stale fail-open: cleared CiliumCIDRGroup so no address is denied on very old data",
@@ -547,12 +630,23 @@ func (a *App) updateCloudflareStaleness(ctx context.Context) {
 	if cfg.StaleBehavior != staleBehaviorFailOpen || alreadyCleared {
 		return
 	}
+	now := time.Now()
+	a.mu.Lock()
+	ready := a.cfClearRetry.ready(now)
+	a.mu.Unlock()
+	if !ready {
+		return
+	}
 	if _, _, err := a.cf.Sync(ctx, nil); err != nil {
-		a.log.Error("stale fail-open: cannot clear Cloudflare IP list", "error", err)
+		a.mu.Lock()
+		retryIn := a.cfClearRetry.failed(now)
+		a.mu.Unlock()
+		a.log.Error("stale fail-open: cannot clear Cloudflare IP list", "error", err, "retry_in", retryIn.String())
 		return
 	}
 	a.mu.Lock()
 	a.staleCFCleared = true
+	a.cfClearRetry.reset()
 	a.mu.Unlock()
 	metricCloudflareEntries.Set(0)
 	a.log.Warn("stale fail-open: cleared Cloudflare IP list so no address is blocked on very old data")
@@ -566,11 +660,29 @@ func (a *App) reportFeedAge(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// Update feed-age gauges AND enforce fail-open clearing within one
-			// minute of crossing MaxStaleAge instead of waiting up to SyncInterval.
-			a.updateStaleness(ctx)
+			a.staleTick(ctx)
 		}
 	}
+}
+
+// staleTick updates the feed-age gauges and enforces fail-open clearing
+// within one minute of crossing MaxStaleAge instead of waiting up to
+// SyncInterval. It skips the tick while a synchronization (or startup
+// pruning) holds opMu: that operation either refreshes the sinks or applies
+// the stale behavior itself, and the next tick catches up.
+func (a *App) staleTick(ctx context.Context) {
+	if !a.opMu.TryLock() {
+		return
+	}
+	defer a.opMu.Unlock()
+	a.updateStaleness(ctx)
+}
+
+// currentListStale reports whether the last successful Cilium push is older
+// than maxStale. An unknown last success is not treated as stale, so the
+// shrink guard still protects a group whose annotation is missing.
+func currentListStale(lastSuccess, now time.Time, maxStale time.Duration) bool {
+	return !lastSuccess.IsZero() && now.Sub(lastSuccess) > maxStale
 }
 
 func logLevel(s string) slog.Level {
