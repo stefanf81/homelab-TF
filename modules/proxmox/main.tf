@@ -163,11 +163,22 @@ runcmd:
   # Commit-pinned and SHA-256-verified k3s installer (from tag v1.37.2+k3s1);
   # the installer itself verifies the downloaded k3s binary against GitHub's
   # published sha256sum-amd64.txt for INSTALL_K3S_VERSION.
+  # cloud-init runs runcmd as one plain `sh` script without `set -e`, so each
+  # step is chained with && and a failure (download, checksum mismatch or
+  # install) exits the script: the unverified installer never runs, and
+  # cloud-init stays enabled (the touch below is skipped) so the failure is
+  # visible in /var/log/cloud-init-output.log and `cloud-init status`.
+  # (`set -e` inside an `if` condition would be ignored, hence the chain.)
   - |
-    curl -fsSLo /tmp/k3s-install.sh https://raw.githubusercontent.com/k3s-io/k3s/f6973cb850e9b245585363d15bde80904ac862fd/install.sh
-    echo "ed01f89fd977bf20ac1516bbebf8370bf3ddbaa55dac8aba610956a4c78cc00b  /tmp/k3s-install.sh" | sha256sum --check
-    INSTALL_K3S_VERSION=${jsonencode(var.k3s_version)} sh /tmp/k3s-install.sh server
-    rm -f /tmp/k3s-install.sh
+    if curl -fsSLo /tmp/k3s-install.sh https://raw.githubusercontent.com/k3s-io/k3s/f6973cb850e9b245585363d15bde80904ac862fd/install.sh &&
+      echo "ed01f89fd977bf20ac1516bbebf8370bf3ddbaa55dac8aba610956a4c78cc00b  /tmp/k3s-install.sh" | sha256sum --check &&
+      INSTALL_K3S_VERSION=${jsonencode(var.k3s_version)} sh /tmp/k3s-install.sh server; then
+      rm -f /tmp/k3s-install.sh
+    else
+      rm -f /tmp/k3s-install.sh
+      echo "k3s installation failed (download, installer checksum or install step); aborting runcmd" >&2
+      exit 1
+    fi
   # Cloud-init has done its job once k3s is installed. Without this, a Proxmox-side
   # stop/start after a snippet change gives the VM a new NoCloud instance-id and
   # re-runs this runcmd, re-installing k3s with the old pinned version and flags.
