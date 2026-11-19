@@ -4,7 +4,7 @@
 # derive the image tag. Keep the ARG format stable.
 ARG GO_VERSION=1.27.4
 ARG APP_VERSION=0.3.5
-ARG IMAGE_REVISION=r2
+ARG IMAGE_REVISION=r3
 
 FROM golang:${GO_VERSION}-alpine AS build
 ENV GOTOOLCHAIN=local
@@ -17,7 +17,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
     -ldflags "-s -w -X main.version=${APP_VERSION}" \
     -o /out/abuseipdb-sync .
 
-FROM gcr.io/distroless/static-debian12:nonroot
+# Distroless only updates the current Debian line (debian12 builds stopped
+# 2026-08-11). The floating nonroot tag picks up the latest base on each build;
+# Renovate does not track it, so move to the next -debianNN when it ships.
+FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /out/abuseipdb-sync /usr/local/bin/abuseipdb-sync
 USER 65532:65532
 EXPOSE 8080
