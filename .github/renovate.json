@@ -78,6 +78,44 @@
       "ignoreTests": false
     },
     {
+      "description": "abuseipdb-sync: the build workflow requires a new IMAGE_REVISION whenever the image source changes, so bump it in every Renovate update to that source (e.g. golang, Go modules).",
+      "matchFileNames": ["gitops/images/abuseipdb-sync/**"],
+      "bumpVersions": [
+        {
+          "name": "abuseipdb-sync IMAGE_REVISION",
+          "filePatterns": ["gitops/images/abuseipdb-sync/Dockerfile"],
+          "matchStrings": ["ARG IMAGE_REVISION=r(?<version>\\d+)"],
+          "bumpType": "major"
+        }
+      ]
+    },
+    {
+      "description": "taskflow-caddy-coraza: the build workflow requires a new IMAGE_REVISION whenever the Dockerfile changes, so bump it in every Renovate update to it (caddy, docker/dockerfile).",
+      "matchFileNames": ["gitops/images/taskflow-caddy-coraza/**"],
+      "bumpVersions": [
+        {
+          "name": "taskflow-caddy-coraza IMAGE_REVISION",
+          "filePatterns": ["gitops/images/taskflow-caddy-coraza/Dockerfile"],
+          "matchStrings": ["ARG IMAGE_REVISION=r(?<version>\\d+)"],
+          "bumpType": "major"
+        }
+      ]
+    },
+    {
+      "description": "Own image abuseipdb-sync (tags <app>-r<revision>): docker versioning treats -rN as an incompatible suffix and never moves the pin, so order by app version then revision. Built and tested by CI, so no release-age wait.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/stefanf81/abuseipdb-sync"],
+      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-r(?<build>\\d+)$",
+      "minimumReleaseAge": "0 days"
+    },
+    {
+      "description": "Own image taskflow-caddy-coraza (tags <caddy>-coraza<coraza>-r<revision>, revision never resets): order by Caddy version then revision. Built and tested by CI, so no release-age wait.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/stefanf81/taskflow-caddy-coraza"],
+      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-coraza\\d+\\.\\d+\\.\\d+-r(?<build>\\d+)$",
+      "minimumReleaseAge": "0 days"
+    },
+    {
       "description": "Group VictoriaMetrics stack components together",
       "matchPackageNames": [
         "victoria-metrics-k8s-stack",
