@@ -61,6 +61,11 @@
       "labels": ["dependencies", "major-update"]
     },
     {
+      "description": "Hold the Gateway API CRDs at the version Cilium is built and conformance-tested against (Cilium 1.20 = v1.6.3: sigs.k8s.io/gateway-api in its go.mod, gateway_api_version in Documentation/conf.py). Raise this bound when the Cilium release in use moves to v1.7. Note: v1.7.0's safe-upgrades policy rejects CRDs older than v1.7.0, so that upgrade cannot simply be rolled back.",
+      "matchPackageNames": ["kubernetes-sigs/gateway-api"],
+      "allowedVersions": "<1.7.0"
+    },
+    {
       "description": "Group general patch updates together",
       "matchUpdateTypes": ["patch"],
       "groupName": "patch updates"

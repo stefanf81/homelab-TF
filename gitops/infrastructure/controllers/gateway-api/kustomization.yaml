@@ -1,6 +1,8 @@
 # Vendored Gateway API standard channel bundle. When Renovate bumps the comment
 # below, replace standard-install.yaml from the matching upstream GitHub release:
 #   https://github.com/kubernetes-sigs/gateway-api/releases/download/<ver>/standard-install.yaml
+# Keep this on the version the deployed Cilium is built against (Cilium 1.20 =
+# v1.6.3); .github/renovate.json holds Renovate below v1.7.0 until Cilium moves.
 # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
 # bundle-version: v1.6.3
 apiVersion: kustomize.config.k8s.io/v1beta1
