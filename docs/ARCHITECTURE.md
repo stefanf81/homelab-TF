@@ -195,7 +195,7 @@ VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 ### 5.4 PostgreSQL Deployment (`gitops/apps/taskflow/postgres-db.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `postgres:18.6-alpine` |
+| Image | `postgres:18.7-alpine` |
 | Replicas | 1 |
 | Storage | 10 GiB PVC (`postgres-data`), `storageClassName: proxmox-csi-db` (`cache: none`, `noatime`, ReadWriteOnce) |
 | SecurityContext | `readOnlyRootFilesystem: true`, `runAsNonRoot` UID/GID 70 (postgres), drop ALL capabilities, `fsGroup: 70` (`OnRootMismatch`) |
