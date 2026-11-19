@@ -437,7 +437,7 @@ spec:
           loki.process "platform" {
             forward_to = [loki.write.local.receiver]
 
-            // Kyverno 1.19 itself reads three deprecated legacy APIs, even with
+            // Kyverno (1.19 and 1.20) itself reads three deprecated legacy APIs, even with
             // no legacy policies/exceptions. Drop only their exact client-go
             // INFO warning messages, not other deprecations, warnings or errors.
             // Normalize ANSI in an extracted COPY: retained log bodies stay intact.

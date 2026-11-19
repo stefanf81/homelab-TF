@@ -139,8 +139,9 @@ spec:
         - cert-manager
     features:
       # No PolicyExceptions exist. Disable unused exception support; both active
-      # policies already use CEL. Kyverno 1.19's compatibility controllers may
-      # still watch the deprecated API even with this feature disabled.
+      # policies already use CEL. Kyverno still reads the deprecated APIs even with
+      # this feature disabled (1.19's compatibility controllers; 1.20's start-up
+      # legacy-policy inventory).
       policyExceptions:
         enabled: false
         namespace: kyverno

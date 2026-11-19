@@ -333,7 +333,7 @@ TF/
 │   │   │   ├── coredns/             # CoreDNS HelmRelease (v1.50.8) — replaces K3s packaged addon
 │   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
 │   │   │   ├── gateway-api/         # Vendored Gateway API v1.6.3 standard bundle
-│   │   │   ├── kyverno/             # Kyverno policy engine (v3.9.2 / Kyverno v1.19.2)
+│   │   │   ├── kyverno/             # Kyverno policy engine (v3.10.0 / Kyverno v1.20.0)
 │   │   │   ├── falco/               # Falco runtime security (v9.2.2 chart, modern eBPF)
 │   │   │   ├── trivy-operator/      # Trivy vulnerability scanner operator (own Kustomization)
 │   │   │   ├── reloader/            # Stakater Reloader (own Kustomization)
@@ -520,7 +520,7 @@ infra-controllers ──▶ infra-configs ──▶ taskflow-app
   - `coredns/release.yaml` — CoreDNS 1.50.2 (replaces K3s packaged addon, manages DNS with custom LAN hairpin-NAT overrides).
   - `proxmox-csi/` — Proxmox CSI driver (dynamic storage provisioning of virtual disks).
   - `gateway-api/` — the standard Gateway API v1.6.3 CRDs.
-  - `kyverno/release.yaml` — Kyverno 3.9.2 (`admissionController` + `reportsController`, CEL `ValidatingPolicy` enforcement).
+  - `kyverno/release.yaml` — Kyverno 3.10.0 (`admissionController` + `reportsController`, CEL `ValidatingPolicy` enforcement).
   - `falco/release.yaml` — Falco 9.2.2 chart (runtime security, modern eBPF driver, single-replica Falcosidekick → PolicyReports).
   - *(Dedicated cluster Kustomizations reconcile `trivy-operator/`, `reloader/`, `flux-operator/`, and `gitops/platform/{policy-reporter,hubble-ui,abuseipdb,renovate}`.)*
 - **`infra-configs`** (`gitops/infrastructure/configs/`) applies Cilium's `CiliumLoadBalancerIPPool` (`192.168.50.200–250`), the `CiliumL2AnnouncementPolicy` (which Ethernet interfaces advertise the IP via ARP), the `GatewayClass` named `cilium`, and the `CiliumClusterwideNetworkPolicy` that denies AbuseIPDB-listed sources at the Gateway. These **must** come after the controllers, hence the dependency.

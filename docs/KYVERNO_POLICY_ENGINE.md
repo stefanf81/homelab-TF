@@ -47,7 +47,7 @@ gitops/
 │   └── kyverno/                     # Kyverno controller (reconciled by infra-controllers)
 │       ├── namespace.yaml           # kyverno ns + PSA enforce:restricted
 │       ├── repository.yaml          # OCIRepository kyverno @ oci://ghcr.io/kyverno/charts/kyverno
-│       ├── release.yaml             # HelmRelease kyverno v3.9.2, admission + reports controllers, crds: Skip
+│       ├── release.yaml             # HelmRelease kyverno v3.10.0, admission + reports controllers, crds: Skip
 │       └── kustomization.yaml
 ├── platform/
 │   └── policy-reporter/             # Policy Reporter + UI (its OWN cluster Kustomization)
@@ -116,8 +116,15 @@ Gateway exists first, so the route programs immediately and `wait` succeeds.
 
 ### Chart & version
 - Chart: `kyverno` from `oci://ghcr.io/kyverno/charts/kyverno` (OCIRepository + HelmRelease `chartRef`)
-- Pinned: **3.9.2** (ships Kyverno **v1.19.2**). Requires k8s ≥ ~1.25 (the
+- Pinned: **3.10.0** (ships Kyverno **v1.20.0**). Kyverno 1.20 supports k8s 1.34-1.37 (the
   provisioned cluster is configured for k3s `v1.37.2+k3s1`).
+- Upgrade gate: from 3.10 the chart refuses to install or upgrade while any legacy
+  `kyverno.io` policy (`ClusterPolicy`, `Policy`, `CleanupPolicy`, `ClusterCleanupPolicy`,
+  `PolicyException`) exists, via a render-time `lookup` and a pre-upgrade hook Job. Do not
+  set `disableHooks` on the HelmRelease. Check before upgrading:
+  `kubectl get clusterpolicies.kyverno.io,policies.kyverno.io,cleanuppolicies.kyverno.io,clustercleanuppolicies.kyverno.io,policyexceptions.kyverno.io -A`
+- Both policies set `failurePolicy: Ignore`; since 1.20 that also admits a request when
+  CEL evaluation hits a runtime error.
 
 ### CRD handling — important gotcha
 Chart **v3** ships its CRDs as **templated resources** controlled by the `crds.install: true`
@@ -220,8 +227,9 @@ scoped to `kyverno`, and use `policies.kyverno.io/v1` `PolicyException` objects 
 the policy in `spec.policyRefs` and selecting resources with CEL `matchConditions`.
 Do not introduce legacy `kyverno.io/v2` exceptions.
 
-Kyverno 1.19's compatibility controllers still watch legacy APIs (including
-`kyverno.io/v2 PolicyException`) even with exception support off. Their deprecation
+Kyverno still reads the legacy APIs (including `kyverno.io/v2 PolicyException`) even with
+exception support off: 1.19 through its compatibility controllers, 1.20 through its start-up
+legacy-policy inventory. Their deprecation
 warnings are an upstream compatibility issue, not evidence of a policy left to migrate.
 Keep background scanning and admission checks enabled; do not remove CRDs to work
 around them. Alloy's platform pipeline filters only the three exact client-go INFO
