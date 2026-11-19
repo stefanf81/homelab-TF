@@ -49,7 +49,7 @@ module.proxmox ──(outputs k3s_node_ip, k3s_node_id)──▶ module.k3s_kube
 
 ### 3.1 Runtime
 - **Distribution**: k3s (single-node cluster)
-- **CNI**: Cilium v1.20.4 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
+- **CNI**: Cilium v1.20.5 with `kubeProxyReplacement: true` (eBPF-based, no kube-proxy)
 - **Storage**: Proxmox CSI (dynamic VM virtual disk provisioning)
 
 ### 3.2 Cilium Configuration (`gitops/infrastructure/controllers/cilium/release.yaml`)
@@ -246,7 +246,7 @@ Cloudflare API token.
 ### 5.10 Monitoring Stack (`gitops/monitoring/`)
 | Component | Implementation |
 |-----------|----------------|
-| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.97.1) in namespace `monitoring` |
+| VictoriaMetrics + Grafana | `victoria-metrics-k8s-stack` HelmRelease (chart 0.98.1) in namespace `monitoring` |
 | CRDs | Installed by the chart (VMServiceScrape, VMSingle, …) |
 | Persistence | VictoriaMetrics TSDB on a **Proxmox CSI-backed PVC** (8Gi) via `vmsingle.storage` (StorageClass `proxmox-csi`) |
 | Grafana auth | GitHub OAuth authentication (`auth.github`) with credentials from a **SOPS-encrypted** secret (`grafana-secrets.yaml`); Grafana UI is routed via the Gateway API (see `routes.yaml`); VictoriaMetrics UI is kept strictly internal and accessed via port-forwarding |
@@ -328,9 +328,9 @@ TF/
 │   ├── infrastructure/
 │   │   ├── flux-instance/           # FluxInstance CR managed by Flux Operator
 │   │   ├── controllers/             # HelmRelease + OCIRepository/HelmRepository for platform add-ons
-│   │   │   ├── cilium/release.yaml  # Cilium v1.20.4 (eBPF, Gateway API, L2 announcements)
+│   │   │   ├── cilium/release.yaml  # Cilium v1.20.5 (eBPF, Gateway API, L2 announcements)
 │   │   │   ├── cert-manager/        # cert-manager HelmRelease (v1.21.3) with Let's Encrypt certificate automation
-│   │   │   ├── coredns/             # CoreDNS HelmRelease (v1.50.2) — replaces K3s packaged addon
+│   │   │   ├── coredns/             # CoreDNS HelmRelease (v1.50.8) — replaces K3s packaged addon
 │   │   │   ├── proxmox-csi/         # Proxmox CSI driver (dynamic storage provisioning)
 │   │   │   ├── gateway-api/         # Vendored Gateway API v1.6.3 standard bundle
 │   │   │   ├── kyverno/             # Kyverno policy engine (v3.9.2 / Kyverno v1.19.2)

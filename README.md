@@ -24,7 +24,7 @@ You also need access to a **Proxmox VE 9.x** host (8.x is end of life) with an A
 - `modules/proxmox` – Provisions the pinned Ubuntu 26.04 VM; cloud-init installs k3s `v1.37.2+k3s1` at boot (no SSH provisioning; the only SSH use is the one-shot kubeconfig fetch in `modules/k3s-kubeconfig`).
 - `modules/k3s-kubeconfig` – SSHs into the node once cloud-init finishes, fetches `/etc/rancher/k3s/k3s.yaml`, and writes a local `kubeconfig.yaml`.
 - `gitops/` – Declarative Flux v2 manifests:
-  - `gitops/infrastructure/controllers` – Gateway API CRDs (`v1.6.3`), Cilium v1.20.4, cert-manager, CoreDNS, Proxmox CSI, Kyverno, Falco, Trivy Operator, Reloader, Flux Operator.
+  - `gitops/infrastructure/controllers` – Gateway API CRDs (`v1.6.3`), Cilium v1.20.5, cert-manager, CoreDNS, Proxmox CSI, Kyverno, Falco, Trivy Operator, Reloader, Flux Operator.
   - `gitops/infrastructure/configs` – Cilium L2 announcement policy (`192.168.50.200-250`), `GatewayClass`, Let's Encrypt ClusterIssuers, `PriorityClass/taskflow-critical`, Hubble pod-network isolation, and the AbuseIPDB ingress deny policy.
   - `gitops/platform` – Policy Reporter + `oauth2-proxy`, Hubble UI `oauth2-proxy`, AbuseIPDB synchronizer, Renovate Operator + scheduled job.
   - `gitops/apps/taskflow` – Spring Boot 4.1.1 backend, Angular 22 frontend, Caddy+Coraza WAFs, PostgreSQL 18.6, Redis 8.10, Jaeger.
@@ -202,7 +202,7 @@ To ensure production-grade security, resiliency, and performance on a single-nod
 * **Reproducible Cloud-Init:** The Ubuntu cloud image is release-pinned and SHA-256 verified, and k3s is installed at the explicit version configured by `k3s_version`.
 
 ### 2. Cilium CNI, Network Security & Gateway API
-* **High-Performance eBPF CNI:** Flannel and k3s network policies are disabled (`--flannel-backend=none --disable-network-policy`) to let **Cilium v1.20.4** handle eBPF routing, SNAT masquerading, and network security policies.
+* **High-Performance eBPF CNI:** Flannel and k3s network policies are disabled (`--flannel-backend=none --disable-network-policy`) to let **Cilium v1.20.5** handle eBPF routing, SNAT masquerading, and network security policies.
 * **Kubernetes Gateway API:** Deployed standard Gateway API CRDs (`gateway-api`) and enabled Cilium's Gateway API controller (`gatewayAPI.enabled = true`).
 * **ServiceLB Deconfliction & L2 Announcements:** K3s ServiceLB is disabled (`--disable servicelb`). Cilium L2 announcements (`CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy`) advertise gateway IP `192.168.50.201`.
 * **Zero-Trust Network Policies:** Ingress to database/cache tiers (`postgres-db`, `redis`, `jaeger`) is restricted strictly to backend pods.

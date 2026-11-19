@@ -8,7 +8,7 @@ spec:
   chart:
     spec:
       chart: victoria-metrics-k8s-stack
-      version: 0.97.1
+      version: 0.98.1
       sourceRef:
         kind: HelmRepository
         name: victoriametrics
@@ -234,7 +234,7 @@ spec:
 
     victoria-metrics-operator:
       image:
-        # Keep the image aligned with the operator chart bundled by stack 0.97.1
+        # Keep the image aligned with the operator chart bundled by stack 0.98.1
         # (chart 0.68.2 => operator v0.75.2). Flux applies any new CRDs via
         # `upgrade.crds: CreateReplace`. Pods roll once on this bump.
         # renovate: datasource=docker depName=victoriametrics/operator
@@ -289,7 +289,7 @@ spec:
         type: Recreate
       image:
         # renovate: datasource=docker depName=grafana/grafana
-        tag: 13.3.0
+        tag: 13.3.1
       persistence:
         enabled: true
         storageClassName: proxmox-csi

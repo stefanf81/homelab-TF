@@ -11,7 +11,7 @@
 # logs (use a fresh one after changing the pipeline: stored records are checked too).
 #
 # ALLOY_IMAGE is pinned to the app version of the Alloy Helm chart in
-# gitops/monitoring/logging/alloy-release.yaml (chart 1.15.0 -> Alloy v1.21.3);
+# gitops/monitoring/logging/alloy-release.yaml (chart 1.16.0 -> Alloy v1.22.0);
 # bump both together. The release sets `alloy.stabilityLevel: experimental` (the
 # loki.write WAL needs it since v1.21), so the test passes the same flag.
 set -euo pipefail

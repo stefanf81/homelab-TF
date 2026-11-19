@@ -52,8 +52,8 @@ kubectl port-forward -n kube-system svc/hubble-relay 4244:80
 | File | Resource |
 |------|----------|
 | `namespace.yaml` | `hubble-ui` namespace |
-| `repository.yaml` | OCIRepository `oauth2-proxy` (`oci://ghcr.io/oauth2-proxy/charts/oauth2-proxy`, tag 10.7.2) |
-| `release.yaml` | HelmRelease `hubble-ui-oauth2-proxy` (oauth2-proxy chart 10.7.2, host-only `__Host-o2p-hubble` cookie) |
+| `repository.yaml` | OCIRepository `oauth2-proxy` (`oci://ghcr.io/oauth2-proxy/charts/oauth2-proxy`, tag 10.7.4) |
+| `release.yaml` | HelmRelease `hubble-ui-oauth2-proxy` (oauth2-proxy chart 10.7.4, host-only `__Host-o2p-hubble` cookie) |
 | `route.yaml` | HTTPRoute `hubble-ui` → `hubble-ui-oauth2-proxy:80` (container port 4180) |
 | `hubble-ui-secrets.yaml` | SOPS-encrypted Secret (GitHub OAuth credentials) |
 | `network-policy.yaml` | CiliumNetworkPolicies `hubble-ui-ingress-default-deny` + `allow-gateway-to-hubble-ui` (paired with `gitops/infrastructure/configs/cilium/hubble-isolation.yaml` in `kube-system`) |
@@ -296,7 +296,7 @@ nohup kubectl port-forward -n kube-system svc/hubble-relay 4244:80 &
 
 ### Hubble CLI version mismatch warning
 
-**Cause**: CLI version older than the Cilium/Hubble relay version (Cilium 1.20.4).
+**Cause**: CLI version older than the Cilium/Hubble relay version (Cilium 1.20.5).
 
 **Fix**: Update CLI:
 ```bash

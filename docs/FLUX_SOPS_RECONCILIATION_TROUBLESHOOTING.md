@@ -235,7 +235,7 @@ spec:
     mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     operation: copy
   ref:
-    tag: 0.5.15
+    tag: 0.5.16
   url: oci://ghcr.io/sergelogvinov/charts/proxmox-csi-plugin
 ```
 ```yaml
@@ -303,5 +303,5 @@ kubectl -n <SECRET_NS> get secret <SECRET_NAME> \
 |------|------|----------------|
 | `.sops.yaml` | SOPS encryption rules (`path_regex: .*-secrets\.yaml$`, `encrypted_regex: ^(data\|stringData)$`, age recipient) | Active |
 | `gitops/infrastructure/controllers/proxmox-csi/proxmox-csi-secrets.yaml` | Encrypted `Secret` | Decrypted via `infra-controllers` (`sops-age`) |
-| `gitops/infrastructure/controllers/proxmox-csi/repository.yaml` | `OCIRepository` for Proxmox CSI | `oci://ghcr.io/sergelogvinov/charts/proxmox-csi-plugin` (`0.5.15`, digest-pinned) |
+| `gitops/infrastructure/controllers/proxmox-csi/repository.yaml` | `OCIRepository` for Proxmox CSI | `oci://ghcr.io/sergelogvinov/charts/proxmox-csi-plugin` (`0.5.16`, digest-pinned) |
 | `gitops/infrastructure/controllers/proxmox-csi/release.yaml` | `HelmRelease` for Proxmox CSI | Uses `chartRef: OCIRepository/proxmox-csi` |
