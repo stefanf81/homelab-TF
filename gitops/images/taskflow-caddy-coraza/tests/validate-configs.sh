@@ -42,6 +42,9 @@ fi
 echo "== validating Grafana dashboard structure"
 env -u LOKI_URL ruby "$MON_TESTS/validate-dashboards.rb" "${DASHBOARDS[@]}"
 
+echo "== checking upstream versions named in the dashboard docs against the pins"
+ruby "$MON_TESTS/validate-dashboard-versions.rb" "$REPO_ROOT"
+
 echo "== validating dashboard provisioning (Kustomize render)"
 ruby "$MON_TESTS/validate-dashboard-provisioning.rb" "$REPO_ROOT"
 
@@ -115,6 +118,7 @@ fi
 
 echo "== testing dashboard validation guards"
 ruby "$MON_TESTS/validate-dashboards-test.rb"
+ruby "$MON_TESTS/validate-dashboard-versions-test.rb"
 
 # Runs after the guards so LOKI_URL (exported above) is the disposable Loki.
 "$MON_TESTS/validate-alloy-metrics.sh"
