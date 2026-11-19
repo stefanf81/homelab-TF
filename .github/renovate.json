@@ -4,7 +4,7 @@
   "labels": ["dependencies"],
   "dependencyDashboard": true,
   "automerge": false,
-  "prConcurrentLimit": 5,
+  "prConcurrentLimit": 10,
   "prHourlyLimit": 0,
   "minimumReleaseAge": "3 days",
   "minimumReleaseAgeBehaviour": "timestamp-optional",
@@ -64,6 +64,13 @@
       "description": "Group general patch updates together",
       "matchUpdateTypes": ["patch"],
       "groupName": "patch updates"
+    },
+    {
+      "description": "Automerge digest-only and patch updates once their CI checks pass (Flux then rolls them out). Minor and major updates stay manual.",
+      "matchUpdateTypes": ["digest", "patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "ignoreTests": false
     },
     {
       "description": "Group VictoriaMetrics stack components together",
