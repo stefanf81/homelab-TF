@@ -159,8 +159,12 @@ spec:
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql
-            # Parallel query and parallel vacuum use POSIX shared memory; the container
-            # default /dev/shm is 64MB. Memory-backed, counted against the limit only when used.
+            # Parallel query and parallel vacuum use POSIX shared memory. 64Mi is the same
+            # size as the runtime's default /dev/shm, so this mount only makes the size
+            # explicit; it does not add room. Enough today (a parallel hash at
+            # work_mem=8MB needs ~48MB). Raise it (128Mi fits the 768Mi budget below) if
+            # the logs show "could not resize shared memory segment". Memory-backed,
+            # counted against the limit only when used.
             - name: dshm
               mountPath: /dev/shm
             # Unix socket and postmaster lock file (pg_isready probes use the socket).
