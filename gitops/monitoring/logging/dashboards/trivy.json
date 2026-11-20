@@ -927,7 +927,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "The installed Trivy Operator v0.35.0 findings collector reads **namespaced InfraAssessmentReports** for `trivy_resource_infraassessments`; it does not export **ClusterInfraAssessmentReports** such as `node-ubuntu`. A missing metric is therefore not proof of zero infrastructure findings.\n\nInspect node reports and scan currency with `kubectl get clusterinfraassessmentreports -o yaml`; use the compliance panels above for exported cluster compliance summaries. **Not exported** means no namespaced metric series for this selection; it does not certify node health.\n\nThe Trivy Operator only creates namespaced InfraAssessmentReports for the control-plane pods in kube-system, and kube-system is excluded from scanning here, so the coverage stat does not change with the namespace selection."
+        "content": "The installed Trivy Operator v0.36.1 findings collector reads **namespaced InfraAssessmentReports** for `trivy_resource_infraassessments`; it does not export **ClusterInfraAssessmentReports** such as `node-ubuntu`. A missing metric is therefore not proof of zero infrastructure findings.\n\nInspect node reports and scan currency with `kubectl get clusterinfraassessmentreports -o yaml`; use the compliance panels above for exported cluster compliance summaries. **Not exported** means no namespaced metric series for this selection; it does not certify node health.\n\nThe Trivy Operator only creates namespaced InfraAssessmentReports for the control-plane pods in kube-system, and kube-system is excluded from scanning here, so the coverage stat does not change with the namespace selection."
       }
     }
   ],

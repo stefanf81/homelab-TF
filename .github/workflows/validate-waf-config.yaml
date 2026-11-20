@@ -2,7 +2,8 @@ name: Validate WAF config and dashboards
 
 # ConfigMap-only changes do not trigger the image build workflow, so validate the
 # shipped WAF Caddyfiles (real trusted_proxies list and zones) and the Grafana
-# dashboard structure and LogQL syntax here, and run the WAF behavioural suite
+# dashboard structure and LogQL syntax here (and that the upstream versions the
+# dashboard docs name still match the chart pins), and run the WAF behavioural suite
 # (identity, rate limits, Coraza, probe path) against the images the WAF
 # Deployments pin.
 
@@ -15,6 +16,12 @@ on:
       - 'gitops/apps/taskflow/frontend.yaml'
       - 'gitops/infrastructure/controllers/coredns/release.yaml'
       - 'gitops/infrastructure/controllers/trivy-operator/**'
+      # Chart pins whose versions the dashboard docs name (validate-dashboard-versions.rb).
+      - 'gitops/infrastructure/controllers/cilium/repository.yaml'
+      - 'gitops/infrastructure/controllers/kyverno/repository.yaml'
+      - 'gitops/infrastructure/controllers/cert-manager/repository.yaml'
+      - 'gitops/infrastructure/controllers/falco/repository.yaml'
+      - 'gitops/monitoring/platform/repository.yaml'
       - 'gitops/clusters/taskflow/cluster-vars.yaml'
       - 'gitops/clusters/taskflow/monitoring-logging.yaml'
       - 'gitops/platform/abuseipdb/**'
@@ -40,6 +47,12 @@ on:
       - 'gitops/apps/taskflow/frontend.yaml'
       - 'gitops/infrastructure/controllers/coredns/release.yaml'
       - 'gitops/infrastructure/controllers/trivy-operator/**'
+      # Chart pins whose versions the dashboard docs name (validate-dashboard-versions.rb).
+      - 'gitops/infrastructure/controllers/cilium/repository.yaml'
+      - 'gitops/infrastructure/controllers/kyverno/repository.yaml'
+      - 'gitops/infrastructure/controllers/cert-manager/repository.yaml'
+      - 'gitops/infrastructure/controllers/falco/repository.yaml'
+      - 'gitops/monitoring/platform/repository.yaml'
       - 'gitops/clusters/taskflow/cluster-vars.yaml'
       - 'gitops/clusters/taskflow/monitoring-logging.yaml'
       - 'gitops/platform/abuseipdb/**'

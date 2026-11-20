@@ -378,14 +378,36 @@ class DashboardValidationTest < Minitest::Test
     assert_equal 4, evidence_count
   end
 
+  # Retention in days from the VMSingle and Loki HelmReleases, so the coverage
+  # text the WAF dashboards show cannot drift from the settings.
+  def retention_days
+    vm = YAML.load_file(File.expand_path("../platform/release.yaml", __dir__))
+             .dig("spec", "values", "vmsingle", "spec", "retentionPeriod").to_s
+    loki = YAML.load_file(File.expand_path("../logging/loki-release.yaml", __dir__))
+               .dig("spec", "values", "loki", "limits_config", "retention_period").to_s
+    days = lambda do |value, unit_days|
+      match = /\A(\d+)([hdwy]?)\z/.match(value) or flunk "unsupported retention #{value.inspect}"
+      count = Integer(match[1]) * unit_days.fetch(match[2])
+      assert_equal 0, count % 1, "retention #{value} is not a whole number of days"
+      count.to_i
+    end
+    # VictoriaMetrics: a bare number is months; Loki: Prometheus-style duration.
+    [days.call(vm, { "d" => 1, "w" => 7, "y" => 365, "" => 31 }),
+     days.call(loki, { "h" => 1 / 24r, "d" => 1, "w" => 7, "y" => 365 })]
+  end
+
   def test_waf_dashboards_expose_metric_coverage_and_filter_scope
+    metric_days, log_days = retention_days
     %w[taskflow-rate-limits taskflow-waf].each do |name|
       dashboard = fixture_dashboard(name)
       heading = dashboard["panels"].find { |item| item["id"] == 100 }.fetch("title")
       assert_includes heading, "all clients"
-      assert_includes heading, "2026-10-18 13:34 UTC"
+      assert_includes heading, "metrics cover the last #{metric_days} days, logs #{log_days}"
       assert_includes heading, "Client IP filter"
       notes = dashboard["panels"].find { |item| item["title"] == "Scope, coverage, and limits" && item["type"] == "text" }
+      assert_includes notes.dig("options", "content"), "which keeps **#{metric_days} days**"
+      assert_includes notes.dig("options", "content"), "which keeps **#{log_days} days**"
+      assert_includes notes.dig("options", "content"), "longer than #{metric_days} days"
       assert_includes notes.dig("options", "content"), "increase_pure()"
       assert_includes notes.dig("options", "content"), "healthy scrape alone does not prove"
     end

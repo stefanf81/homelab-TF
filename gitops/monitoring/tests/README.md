@@ -13,7 +13,19 @@ ruby gitops/monitoring/tests/validate-dashboard-provisioning.rb "$PWD"
 ruby gitops/monitoring/tests/validate-monitoring-configs.rb
 ruby gitops/monitoring/tests/validate-startup-scope.rb
 ruby gitops/monitoring/tests/validate-dashboards-test.rb
+ruby gitops/monitoring/tests/validate-dashboard-versions.rb
+ruby gitops/monitoring/tests/validate-dashboard-versions-test.rb
 ```
+
+`validate-dashboard-versions.rb` needs network access but no Docker or cluster. It finds the
+upstream versions the dashboard docs name (`SOURCE.md`, panel descriptions and text panels, this
+README), written as `<Component> vX.Y.Z` with an optional `(chart A.B.C`, and fails
+when a mention's major.minor differs from what the repository deploys. Deployed versions come from
+the Git pins: the chart `appVersion` from the HelmRepository index, or from the OCI chart's config
+blob fetched at the pinned digest. Patch drift is printed as a note and allowed, because Renovate
+automerges patch updates; a minor update (manual) fails until the dashboards are re-checked against
+it and the mentions updated. The components and their pins are listed in `COMPONENTS` at the top of
+the script.
 
 The `validate-waf-dashboard-metrics.py`, `validate-alloy-metrics.sh` and Loki query checks start
 disposable containers and need Docker. `verify-dashboards-live.py` queries a running cluster.
