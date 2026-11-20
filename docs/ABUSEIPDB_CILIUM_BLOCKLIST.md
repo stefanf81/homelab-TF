@@ -127,11 +127,14 @@ GET /api/v2/blacklist?plaintext=true&limit=…   (Accept: text/plain)
   API quota, and any newly added exception or protected range is pruned from
   the existing group and list right away without a feed download. The metrics
   endpoint and probes are served before any of this startup work.
-* Feed downloads retry network errors, timeouts and 5xx answers (3 attempts
-  with backoff). A 429, another HTTP error or an unusable `200` body (not
-  `text/plain`, an HTML/JSON error page, empty, or over the size limit) is not
-  retried, since each call counts against the daily quota; an unusable body is
-  counted as `abuseipdb_sync_errors_total{reason="parse"}`.
+* Feed downloads retry network errors and timeouts that happen before
+  AbuseIPDB answers, and 5xx answers (3 attempts with backoff). A 429, another
+  HTTP error, an unusable `200` body (not `text/plain`, an HTML/JSON error page,
+  empty, or over the size limit) or a body that breaks off after a non-5xx
+  answer (reset, EOF or timeout mid-download) is not retried, since that call
+  has already counted against the daily quota; the next interval tries again.
+  An unusable body is counted as `abuseipdb_sync_errors_total{reason="parse"}`,
+  a broken-off body under its cause (`timeout` or `network`).
 * The same validated list is then applied to each enabled sink:
   * **Cilium:** atomic in-place create/update of `CiliumCIDRGroup/abuseipdb`,
     never delete/recreate, respecting `resourceVersion` (no enforcement gap).

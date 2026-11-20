@@ -94,7 +94,7 @@ func main() {
 	// group so feed age reporting survives pod restarts and avoids burning the
 	// daily AbuseIPDB blacklist quota on routine rollouts or node reboots.
 	var initialDelay time.Duration
-	if state, err := app.ccg.Get(ctx, cfg.CIDRGroupName); err != nil {
+	if state, err := app.ccg.GetWithRetry(ctx, cfg.CIDRGroupName); err != nil {
 		logger.Warn("cannot read existing CiliumCIDRGroup at startup", "error", err)
 	} else {
 		if state.Exists && !state.ManagedByUs {
@@ -326,6 +326,14 @@ func (a *App) syncOnce(ctx context.Context) error {
 		return a.failSync(ctx, "validation", err, "cannot reload exception/protected filter lists")
 	}
 
+	// Read the current group before downloading: the feed call spends one of the
+	// few daily AbuseIPDB calls, and without the group (shrink guard, current
+	// size) the downloaded list could not be applied anyway.
+	state, err := a.ccg.GetWithRetry(ctx, a.cfg.CIDRGroupName)
+	if err != nil {
+		return a.failSync(ctx, "kube", err, "cannot read current CiliumCIDRGroup; feed download skipped")
+	}
+
 	body, status, err := a.feed.Fetch(ctx)
 	metricLastHTTPStatus.Set(float64(status))
 	if err != nil {
@@ -348,10 +356,6 @@ func (a *App) syncOnce(ctx context.Context) error {
 			"validated feed too small; keeping last known good list")
 	}
 
-	state, err := a.ccg.Get(ctx, a.cfg.CIDRGroupName)
-	if err != nil {
-		return a.failSync(ctx, "kube", err, "cannot read current CiliumCIDRGroup")
-	}
 	if state.Exists && shrinkRejected(len(state.Prefixes), len(desired), a.cfg.MaxShrinkPercent) {
 		a.mu.Lock()
 		last := a.lastSuccess

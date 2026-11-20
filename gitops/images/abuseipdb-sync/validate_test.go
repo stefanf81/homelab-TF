@@ -9,9 +9,13 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 )
 
 func mustPrefix(t *testing.T, s string) netip.Prefix {
@@ -175,6 +179,54 @@ func TestShrinkGuard(t *testing.T) {
 	}
 }
 
+func TestSortDedupOrderAndInput(t *testing.T) {
+	in := []netip.Prefix{
+		mustPrefix(t, "2001:db8::1/128"),
+		mustPrefix(t, "10.0.0.0/16"),
+		mustPrefix(t, "9.9.9.9/32"),
+		mustPrefix(t, "10.0.0.0/8"),
+		mustPrefix(t, "100.0.0.1/32"),
+		mustPrefix(t, "9.9.9.9/32"), // duplicate, not adjacent in the input
+		mustPrefix(t, "2001:db8::/32"),
+	}
+	original := slices.Clone(in)
+	got := SortDedup(in)
+	// Numeric, not lexical: 9.x sorts before 10.x and 100.x; IPv4 before IPv6;
+	// equal addresses by prefix length.
+	want := []string{"9.9.9.9/32", "10.0.0.0/8", "10.0.0.0/16", "100.0.0.1/32", "2001:db8::/32", "2001:db8::1/128"}
+	if len(got) != len(want) {
+		t.Fatalf("want %d prefixes, got %d: %v", len(want), len(got), got)
+	}
+	for i := range want {
+		if got[i].String() != want[i] {
+			t.Fatalf("prefix %d: want %s, got %s (all: %v)", i, want[i], got[i], got)
+		}
+	}
+	if !slices.Equal(in, original) {
+		t.Fatalf("SortDedup modified its input: %v", in)
+	}
+	if out := SortDedup(nil); len(out) != 0 {
+		t.Fatalf("SortDedup(nil) = %v, want empty", out)
+	}
+}
+
+func BenchmarkSortDedup10k(b *testing.B) {
+	in := make([]netip.Prefix, 0, 10000)
+	for i := range 10000 {
+		// Spread over the address space in a non-sorted order, with some duplicates.
+		v := uint32(i*2654435761) | 1
+		if i%50 == 0 {
+			v = 1
+		}
+		a := netip.AddrFrom4([4]byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)})
+		in = append(in, netip.PrefixFrom(a, 32))
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		SortDedup(in)
+	}
+}
+
 func TestSortDedupDeterministic(t *testing.T) {
 	a := SortDedup([]netip.Prefix{mustPrefix(t, "9.9.9.9/32"), mustPrefix(t, "1.1.1.1/32"), mustPrefix(t, "1.1.1.1/32")})
 	b := SortDedup([]netip.Prefix{mustPrefix(t, "1.1.1.1/32"), mustPrefix(t, "9.9.9.9/32")})
@@ -269,6 +321,14 @@ func TestSyncOnceRecordsBoundedDownloadErrorReason(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	// syncOnce reads the CIDR group before the feed; serve an absent group.
+	kube := httptest.NewServer(&fakeCCGServer{})
+	defer kube.Close()
+	dyn, err := dynamic.NewForConfig(&rest.Config{Host: kube.URL})
+	if err != nil {
+		t.Fatalf("dynamic client: %v", err)
+	}
+
 	dir := t.TempDir()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	client := &http.Client{
@@ -282,12 +342,14 @@ func TestSyncOnceRecordsBoundedDownloadErrorReason(t *testing.T) {
 	}
 	app := &App{
 		cfg: &Config{
+			CIDRGroupName:  "abuseipdb",
 			ExceptionsFile: filepath.Join(dir, "exceptions.txt"),
 			ProtectedFile:  filepath.Join(dir, "protected.txt"),
 			MaxStaleAge:    24 * time.Hour,
 		},
 		log:  logger,
 		feed: &FeedClient{apiKey: "test", limit: 100, http: client, log: logger},
+		ccg:  &CIDRGroupClient{client: dyn, log: logger},
 	}
 
 	before := counterValue(t, metricSyncErrors.WithLabelValues("rate_limited"))

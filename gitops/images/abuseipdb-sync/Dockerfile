@@ -4,7 +4,7 @@
 # derive the image tag. Keep the ARG format stable.
 ARG GO_VERSION=1.27.4
 ARG APP_VERSION=0.3.5
-ARG IMAGE_REVISION=r3
+ARG IMAGE_REVISION=r4
 
 FROM golang:${GO_VERSION}-alpine AS build
 ENV GOTOOLCHAIN=local

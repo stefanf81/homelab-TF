@@ -50,6 +50,90 @@ func TestFetchDoesNotRetryUnusableBody(t *testing.T) {
 	}
 }
 
+// A body that breaks off after AbuseIPDB answered 200 was already counted
+// against the daily quota: it must not be retried in-process.
+func TestFetchDoesNotRetryBodyCutOffAfter200(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Length", "1000")
+		_, _ = w.Write([]byte("198.51.100.7\n")) // short write: the server drops the connection
+	}))
+	defer srv.Close()
+
+	feed := &FeedClient{apiKey: "k", limit: 10, http: srv.Client(), log: discardLogger(), endpoint: srv.URL, retryBase: time.Millisecond}
+	_, status, err := feed.Fetch(context.Background())
+	if err == nil {
+		t.Fatal("expected an error for a truncated body")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("truncated 200 was requested %d times, want 1 (each call spends daily quota)", got)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if got := errorReason(err); got != "network" {
+		t.Fatalf("errorReason = %q, want network", got)
+	}
+}
+
+func TestFetchDoesNotRetryBodyTimeoutAfter200(t *testing.T) {
+	var calls atomic.Int32
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("198.51.100.7\n"))
+		w.(http.Flusher).Flush()
+		select { // stall the rest of the body past the client timeout
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	client := srv.Client()
+	client.Timeout = 200 * time.Millisecond
+	feed := &FeedClient{apiKey: "k", limit: 10, http: client, log: discardLogger(), endpoint: srv.URL, retryBase: time.Millisecond}
+	_, _, err := feed.Fetch(context.Background())
+	if err == nil {
+		t.Fatal("expected a timeout reading the body")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("stalled 200 was requested %d times, want 1", got)
+	}
+	if got := errorReason(err); got != "timeout" {
+		t.Fatalf("errorReason = %q, want timeout (err: %v)", got, err)
+	}
+}
+
+// A 5xx is retried whether or not its body arrives intact.
+func TestFetchRetriesServerErrorWithBrokenBody(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			w.Header().Set("Content-Length", "1000")
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte("bad gateway"))
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("198.51.100.7\n"))
+	}))
+	defer srv.Close()
+
+	feed := &FeedClient{apiKey: "k", limit: 10, http: srv.Client(), log: discardLogger(), endpoint: srv.URL, retryBase: time.Millisecond}
+	if _, _, err := feed.Fetch(context.Background()); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("calls = %d, want 2 (the broken 502 is retried)", got)
+	}
+}
+
 func TestFetchRetriesServerErrors(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -407,5 +491,102 @@ func TestShrinkGuardBypassedWhenCurrentListIsStale(t *testing.T) {
 	}
 	if time.Since(app.lastSuccess) > time.Minute {
 		t.Fatal("lastSuccess not refreshed by the accepted sync")
+	}
+}
+
+// failingGets answers the first n GET requests with 503 and then delegates.
+type failingGets struct {
+	next http.Handler
+	n    atomic.Int32
+	seen atomic.Int32
+}
+
+func (f *failingGets) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && f.seen.Add(1) <= f.n.Load() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"kind": "Status", "apiVersion": "v1", "status": "Failure", "reason": "ServiceUnavailable", "code": 503})
+		return
+	}
+	f.next.ServeHTTP(w, r)
+}
+
+// syncScenario is a managed group of 50 entries and a feed returning the same
+// 50, with the apiserver failing the first failGets GET requests.
+func syncScenario(t *testing.T, failGets int32) (*App, *failingGets, *atomic.Int32) {
+	t.Helper()
+	var feedCalls atomic.Int32
+	var feedBody strings.Builder
+	previous := make([]any, 0, 50)
+	for i := 1; i <= 50; i++ {
+		fmt.Fprintf(&feedBody, "45.33.32.%d\n", i)
+		previous = append(previous, fmt.Sprintf("45.33.32.%d/32", i))
+	}
+	feedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		feedCalls.Add(1)
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte(feedBody.String()))
+	}))
+	t.Cleanup(feedSrv.Close)
+
+	ccg := &fakeCCGServer{rv: 1, obj: map[string]any{
+		"apiVersion": "cilium.io/v2",
+		"kind":       "CiliumCIDRGroup",
+		"metadata": map[string]any{
+			"name":            "abuseipdb",
+			"resourceVersion": "1",
+			"labels":          map[string]any{managedByLabel: managedByName},
+		},
+		"spec": map[string]any{"externalCIDRs": previous},
+	}}
+	flaky := &failingGets{next: ccg}
+	flaky.n.Store(failGets)
+	kube := httptest.NewServer(flaky)
+	t.Cleanup(kube.Close)
+	dyn, err := dynamic.NewForConfig(&rest.Config{Host: kube.URL})
+	if err != nil {
+		t.Fatalf("dynamic client: %v", err)
+	}
+	dir := t.TempDir()
+	logger := discardLogger()
+	app := &App{
+		cfg: &Config{
+			CIDRGroupName:    "abuseipdb",
+			ExceptionsFile:   filepath.Join(dir, "exceptions.txt"),
+			ProtectedFile:    filepath.Join(dir, "protected.txt"),
+			MaxStaleAge:      24 * time.Hour,
+			StaleBehavior:    staleBehaviorRetain,
+			MinEntries:       1,
+			MaxShrinkPercent: 50,
+		},
+		log:  logger,
+		feed: &FeedClient{apiKey: "k", limit: 100, http: feedSrv.Client(), log: logger, endpoint: feedSrv.URL, retryBase: time.Millisecond},
+		ccg:  &CIDRGroupClient{client: dyn, log: logger, retryBase: time.Millisecond},
+	}
+	return app, flaky, &feedCalls
+}
+
+// The feed call spends daily quota; it must not be made when the current group
+// cannot be read, because the downloaded list could not be applied.
+func TestSyncSkipsFeedWhenGroupUnreadable(t *testing.T) {
+	app, flaky, feedCalls := syncScenario(t, 1000)
+	if err := app.syncOnce(context.Background()); err == nil {
+		t.Fatal("expected the sync to fail while the apiserver is unavailable")
+	}
+	if got := feedCalls.Load(); got != 0 {
+		t.Fatalf("feed was called %d times with an unreadable CIDR group, want 0", got)
+	}
+	if got := flaky.seen.Load(); got != cidrGroupGetAttempts {
+		t.Fatalf("CIDR group GETs = %d, want %d (bounded retry)", got, cidrGroupGetAttempts)
+	}
+}
+
+func TestSyncRetriesTransientGroupReadError(t *testing.T) {
+	app, _, feedCalls := syncScenario(t, 1)
+	if err := app.syncOnce(context.Background()); err != nil {
+		t.Fatalf("sync after one transient apiserver error: %v", err)
+	}
+	if got := feedCalls.Load(); got != 1 {
+		t.Fatalf("feed calls = %d, want 1", got)
 	}
 }

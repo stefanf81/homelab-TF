@@ -38,7 +38,12 @@ var ccgGVR = schema.GroupVersionResource{
 type CIDRGroupClient struct {
 	client dynamic.Interface
 	log    *slog.Logger
+	// retryBase is the first GetWithRetry backoff (1s when zero).
+	retryBase time.Duration
 }
+
+// cidrGroupGetAttempts bounds GetWithRetry.
+const cidrGroupGetAttempts = 3
 
 type GroupState struct {
 	Exists                bool
@@ -68,6 +73,30 @@ func buildRestConfig() (*rest.Config, error) {
 		return clientcmd.BuildConfigFromFlags("", filepath.Join(home, ".kube", "config"))
 	}
 	return nil, errors.New("no in-cluster configuration and no kubeconfig found")
+}
+
+// GetWithRetry is Get with a short in-process retry (3 attempts, 1s then 2s)
+// for transient apiserver errors. It runs before every feed download and at
+// startup, where a failed read used to cost a daily AbuseIPDB call or skip the
+// quota-saving startup delay.
+func (c *CIDRGroupClient) GetWithRetry(ctx context.Context, name string) (*GroupState, error) {
+	wait := c.retryBase
+	if wait <= 0 {
+		wait = time.Second
+	}
+	for attempt := 1; ; attempt++ {
+		state, err := c.Get(ctx, name)
+		if err == nil || attempt == cidrGroupGetAttempts {
+			return state, err
+		}
+		c.log.Warn("cannot read CiliumCIDRGroup, retrying", "attempt", attempt, "wait", wait.String(), "error", err)
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		wait *= 2
+	}
 }
 
 func (c *CIDRGroupClient) Get(ctx context.Context, name string) (*GroupState, error) {

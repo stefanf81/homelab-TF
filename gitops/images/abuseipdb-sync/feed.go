@@ -72,6 +72,22 @@ type feedResponseError struct{ err error }
 func (e *feedResponseError) Error() string { return "invalid AbuseIPDB response: " + e.err.Error() }
 func (e *feedResponseError) Unwrap() error { return e.err }
 
+// answeredReadError marks a body that broke off (connection reset, EOF,
+// timeout) after AbuseIPDB had already answered with a non-5xx status. That
+// request has been counted against the daily quota, so it is not retried
+// in-process (a cut-off 200 used to cost up to three of the five daily calls);
+// the next interval tries again. errorReason still reports the underlying
+// timeout/network cause.
+type answeredReadError struct {
+	status int
+	err    error
+}
+
+func (e *answeredReadError) Error() string {
+	return fmt.Sprintf("reading AbuseIPDB response body (status %d): %v", e.status, e.err)
+}
+func (e *answeredReadError) Unwrap() error { return e.err }
+
 // responseTooLargeError is returned by readBounded when a body exceeds its
 // limit.
 type responseTooLargeError struct{ limit int64 }
@@ -119,7 +135,8 @@ func (c *FeedClient) Fetch(ctx context.Context) ([]byte, int, error) {
 		var rl *rateLimitError
 		var hs *httpStatusError
 		var fr *feedResponseError
-		if errors.As(err, &rl) || errors.As(err, &fr) {
+		var ar *answeredReadError
+		if errors.As(err, &rl) || errors.As(err, &fr) || errors.As(err, &ar) {
 			return nil, status, err
 		}
 		if errors.As(err, &hs) && !hs.retryable {
@@ -161,7 +178,11 @@ func (c *FeedClient) do(ctx context.Context, rawURL string) ([]byte, int, error)
 		if errors.As(err, &tooLarge) {
 			return nil, resp.StatusCode, &feedResponseError{err}
 		}
-		return nil, resp.StatusCode, err
+		if resp.StatusCode >= 500 {
+			// Retried like any other 5xx answer.
+			return nil, resp.StatusCode, err
+		}
+		return nil, resp.StatusCode, &answeredReadError{status: resp.StatusCode, err: err}
 	}
 
 	switch {
@@ -254,6 +275,10 @@ func errorReason(err error) string {
 	var fr *feedResponseError
 	if errors.As(err, &fr) {
 		return "parse"
+	}
+	var ar *answeredReadError
+	if errors.As(err, &ar) {
+		err = ar.err
 	}
 	if errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err) {
 		return "timeout"
