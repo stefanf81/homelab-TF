@@ -1,12 +1,15 @@
 # syntax=docker/dockerfile:1.28
 
 ARG CADDY_VERSION=2.11.9
+# renovate: datasource=go depName=github.com/corazawaf/coraza-caddy/v2
 ARG CORAZA_CADDY_VERSION=v2.6.2
 # github.com/mholt/caddy-ratelimit has no tagged release with ipv4_prefix/
 # ipv6_prefix, disable_metrics, or the metrics re-registration fix, so it is
-# pinned to an immutable commit (post-dates the Caddy 2.11.4 release).
+# pinned to an immutable commit (post-dates the Caddy 2.11.4 release). Not
+# tracked by Renovate on purpose: following its default branch would propose
+# (and could automerge) every upstream commit; move it by hand after review.
 ARG RATE_LIMIT_VERSION=5625512f24f6f59d6f64fb3aafe5eecff0b286db
-ARG IMAGE_REVISION=r9
+ARG IMAGE_REVISION=r10
 
 FROM caddy:${CADDY_VERSION}-builder-alpine AS builder
 

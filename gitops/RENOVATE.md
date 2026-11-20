@@ -3,8 +3,11 @@
 Renovate runs through the Mogenius Renovate Operator in the `renovate`
 namespace. The operator discovers `stefanf81/homelab-TF` daily at 03:17
 Europe/Brussels, then runs a single hardened Renovate executor for that
-repository. Updates create pull requests only; Renovate never pushes to `main`
-or merges updates.
+repository. Every update is a pull request; Renovate never pushes to `main`
+directly. Digest and patch PRs are merged automatically once their CI checks
+pass (`automerge` in `.github/renovate.json`; Flux then rolls them out). Minor
+and major updates, and Gateway API bumps (which need a manual CRD bundle swap),
+stay manual.
 
 ## Credentials
 
@@ -15,7 +18,9 @@ sops gitops/platform/renovate/job/renovate-secrets.yaml
 ```
 
 Use a fine-grained PAT for the dedicated GitHub bot account, restricted to
-`stefanf81/homelab-TF`, with Contents, Pull requests, and Issues read/write.
+`stefanf81/homelab-TF`, with Contents, Pull requests, Issues and Workflows
+read/write. Workflows is needed because the `github-actions` manager updates
+files under `.github/workflows/`; GitHub rejects such pushes without it.
 
 ## Manual Run
 
@@ -84,7 +89,7 @@ release changelogs (5,000 requests/hour limit).
   - Metrics Server (`metrics-server` chart and image)
 - **General Patch Updates**: Standalone patch updates are bundled together into a
   single `patch updates` PR to reduce notification noise.
-- **Concurrency**: Up to 5 PRs may remain open concurrently (`prConcurrentLimit: 5`),
+- **Concurrency**: Up to 10 PRs may remain open concurrently (`prConcurrentLimit: 10`),
   and hourly rate limiting is disabled (`prHourlyLimit: 0`) so scheduled runs
   generate updates in a single batch.
 - **Custom Image & Bundle Annotations**: Any manifest under `gitops/` supports
@@ -93,6 +98,10 @@ release changelogs (5,000 requests/hour limit).
   # renovate: datasource=<ds> depName=<dep> [versioning=<ver>]
   tag: <tag> # (or `version: <ver>` / `# bundle-version: <ver>`)
   ```
+  Dockerfiles under `gitops/images/` take the same comment on the line above an
+  `ARG NAME=<version>` (used for the Coraza plugin in the WAF image). Renovate
+  bumps the image's `IMAGE_REVISION` in the same PR, as the build workflows
+  require.
 
 ## Operation
 

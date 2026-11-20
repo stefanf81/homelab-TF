@@ -32,6 +32,16 @@
   },
   "customManagers": [
     {
+      "description": "Versions passed as Dockerfile ARGs (e.g. the Coraza plugin compiled into the WAF image) that no built-in manager reads. Mark them with `# renovate: datasource=... depName=...` on the line above the ARG.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^gitops\\/images\\/[^/]+\\/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s+ARG [A-Z0-9_]+=(?<currentValue>\\S+)"
+      ]
+    },
+    {
       "customType": "regex",
       "managerFilePatterns": [
         "/^gitops\\/.+\\.ya?ml$/"
