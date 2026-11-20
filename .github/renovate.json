@@ -2,7 +2,9 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
   "labels": ["dependencies"],
-  "dependencyDashboard": true,
+  "dependencyDashboard": {
+    "enabled": true
+  },
   "automerge": false,
   "prConcurrentLimit": 10,
   "prHourlyLimit": 0,
@@ -66,8 +68,9 @@
       "allowedVersions": "<1.7.0"
     },
     {
-      "description": "Group general patch updates together",
+      "description": "Group general patch updates together (Gateway API stays separate: its PR needs a manual CRD bundle swap and must not block the group's automerge)",
       "matchUpdateTypes": ["patch"],
+      "matchPackageNames": ["!kubernetes-sigs/gateway-api"],
       "groupName": "patch updates"
     },
     {
@@ -76,6 +79,11 @@
       "automerge": true,
       "automergeType": "pr",
       "ignoreTests": false
+    },
+    {
+      "description": "Never automerge Gateway API bumps: the update only changes the version comment in gateway-api/kustomization.yaml, while the vendored standard-install.yaml (in ignorePaths) has to be replaced by hand from the matching release in the same PR.",
+      "matchPackageNames": ["kubernetes-sigs/gateway-api"],
+      "automerge": false
     },
     {
       "description": "abuseipdb-sync: the build workflow requires a new IMAGE_REVISION whenever the image source changes, so bump it in every Renovate update to that source (e.g. golang, Go modules).",
