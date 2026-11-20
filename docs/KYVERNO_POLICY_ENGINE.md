@@ -28,7 +28,7 @@ inside the range with `increase_pure()` and series that already existed with
 `increase_pure()` would count a whole lifetime after a scrape gap). Admission
 results include server-side dry runs, so Flux's drift check re-counts a failing
 object on every reconcile. CEL policies report under
-`kyverno_validating_policy_results_total` (no rule names) and Kyverno 1.19 exports
+`kyverno_validating_policy_results_total` (no rule names) and Kyverno 1.20 exports
 no info, readiness or change metric for them, so *Active policies* counts the
 policies seen by the hourly background scan. Both policies are `Deny`, which
 Kyverno evaluates synchronously, so admission latency includes rule cost.

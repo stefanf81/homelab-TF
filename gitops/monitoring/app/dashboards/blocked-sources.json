@@ -121,7 +121,7 @@
       "id": 3,
       "type": "stat",
       "title": "Cloudflare collector errors",
-      "description": "Failed Security Events collections in the range, by reason.",
+      "description": "Failed Security Events collections in the selected range, all reasons combined. Per-reason counts: `cloudflare_firewall_collector_errors_total` by `reason` (authz, graphql, rate_limited, http, loki, timeout, network) in Explore; the synchronizer logs each failure with its reason.",
       "gridPos": {
         "x": 10,
         "y": 0,
