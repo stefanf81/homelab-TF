@@ -5,6 +5,10 @@
 # broken kustomization.yaml, a missing resource file or an invalid manifest fails
 # here instead of after the merge. Flux and cert-manager CRDs are validated against
 # the community CRD catalog; kinds without a schema are skipped, not failed.
+# Validation is strict (unknown fields fail, e.g. a misspelt key that the API server
+# would silently drop) against the Kubernetes version kubectl is pinned to in
+# mise.toml (kept on the k3s minor by check-tool-versions.sh). Schemas are cached
+# for the whole run (KUBECONFORM_CACHE to keep them across runs).
 # RenovateJob is skipped explicitly: the catalog schema lags the operator and rejects
 # spec.renovateConfig, which the deployed operator version accepts.
 #
@@ -38,6 +42,20 @@ fi
 # cannot change results without a change here. Bump deliberately.
 CRD_CATALOG_REF=49729e49e8f062933e3716a26540d41b0cd0856c
 
+# Core schemas for the cluster's Kubernetes version (CI exports KUBECTL_VERSION from
+# scripts/tool-versions.sh; read it from mise.toml otherwise).
+K8S_VERSION="${KUBECTL_VERSION:-$(scripts/tool-versions.sh | sed -n 's/^KUBECTL_VERSION=//p')}"
+[ -n "$K8S_VERSION" ] || { echo "cannot determine the Kubernetes version from mise.toml" >&2; exit 1; }
+
+# One schema download per kind for the whole run instead of one per path.
+if [ -n "${KUBECONFORM_CACHE:-}" ]; then
+  schema_cache="$KUBECONFORM_CACHE"
+  mkdir -p "$schema_cache"
+else
+  schema_cache="$(mktemp -d)"
+  trap 'rm -rf "$schema_cache"' EXIT
+fi
+
 # Flux applies a path without kustomization.yaml by generating one over every
 # manifest below it; approximate that by concatenating them.
 render() {
@@ -60,7 +78,10 @@ for p in "${paths[@]}"; do
   echo "CHECK $p"
   # flux-postbuild.rb applies cluster-vars substitution exactly when the path's Flux
   # Kustomization declares it, and fails on undefined or unsubstituted variables.
+  # flux-postbuild.rb also drops the `sops:` metadata block where Flux decrypts, so
+  # -strict sees what Flux applies.
   if ! { render "$p" | ruby scripts/flux-postbuild.rb "$p" | kubeconform \
+      -strict -kubernetes-version "$K8S_VERSION" -cache "$schema_cache" \
       -summary -ignore-missing-schemas \
       -skip RenovateJob \
       -schema-location default \

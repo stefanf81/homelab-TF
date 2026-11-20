@@ -14,6 +14,13 @@
 #
 # Without postBuild the stream is passed through unchanged, but it is an error if it
 # references a cluster-vars key: Flux would apply the literal ${NAME}.
+#
+# SOPS: kustomize-controller decrypts SOPS-encrypted documents and drops their
+# top-level `sops:` metadata block before applying. When the path's Kustomization
+# declares `decryption.provider: sops` the block is removed here too, so strict
+# schema validation sees what Flux applies (values stay encrypted strings). Without
+# the decryption block it is an error: Flux would try to apply the encrypted
+# document as is.
 
 require "yaml"
 
@@ -46,7 +53,28 @@ vars_doc = documents(VARS_FILE).find { |d| d["kind"] == "ConfigMap" && d.dig("me
 abort "#{VARS_FILE}: no ConfigMap named cluster-vars" unless vars_doc
 vars = (vars_doc["data"] || {}).transform_values(&:to_s)
 
-text = $stdin.read
+# Rendered YAML is UTF-8 regardless of the caller's locale (dashboards contain
+# non-ASCII text; a US-ASCII locale would make the regexes below raise).
+text = $stdin.read.force_encoding(Encoding::UTF_8)
+
+decrypts = kustomizations.any? { |k| k.dig("spec", "decryption", "provider") == "sops" }
+if text.match?(/^sops:/)
+  unless decrypts
+    abort "#{path}: contains SOPS-encrypted documents but no Flux Kustomization for it " \
+          "declares decryption.provider: sops"
+  end
+  # Drop each top-level `sops:` key with its indented body (rendered output puts
+  # top-level keys at column 0, so the block ends at the next unindented line).
+  in_sops = false
+  text = text.each_line.reject do |line|
+    if line.start_with?("sops:")
+      in_sops = true
+    elsif in_sops && !(line.start_with?(" ", "\t") || line.strip.empty?)
+      in_sops = false
+    end
+    in_sops
+  end.join
+end
 
 if uses_vars
   missing = []
