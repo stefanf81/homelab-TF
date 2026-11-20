@@ -10,7 +10,8 @@ metadata:
 spec:
   # Evaluated in Europe/Brussels by the operator's TZ environment variable.
   schedule: "17 3 * * *"
-  image: renovate/renovate:44.254.0
+  # Tag and digest: Renovate bumps both; validate-renovate.yaml reads the tag.
+  image: renovate/renovate:44.254.0@sha256:7f044e90037223f5ede31fc03a7c3391f2b4fd8f4d51a498bdd67993952bc576
   provider:
     name: github
   discoveryFilters:

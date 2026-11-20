@@ -1,0 +1,50 @@
+name: Validate Renovate config
+
+# renovate-config-validator --strict for .github/renovate.json, with the Renovate
+# version the self-hosted job runs (read from its RenovateJob, the single source),
+# so a config that version rejects or wants migrated fails here instead of in the
+# nightly run.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/renovate.json'
+      - 'gitops/platform/renovate/job/renovate-job.yaml'
+      - '.github/workflows/validate-renovate.yaml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/renovate.json'
+      - 'gitops/platform/renovate/job/renovate-job.yaml'
+      - '.github/workflows/validate-renovate.yaml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  renovate-config:
+    name: Validate Renovate config
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # npx installs that exact version from the npm registry (integrity-checked).
+      - name: renovate-config-validator --strict
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's|^  image: renovate/renovate:\([0-9][0-9.]*\)@sha256:.*|\1|p' gitops/platform/renovate/job/renovate-job.yaml)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::cannot read the Renovate version from renovate-job.yaml"; exit 1; }
+          echo "Renovate ${version}"
+          npx --yes --package "renovate@${version}" renovate-config-validator --strict .github/renovate.json

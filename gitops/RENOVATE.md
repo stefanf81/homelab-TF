@@ -9,6 +9,10 @@ pass (`automerge` in `.github/renovate.json`; Flux then rolls them out). Minor
 and major updates, and Gateway API bumps (which need a manual CRD bundle swap),
 stay manual.
 
+CI validates `.github/renovate.json` with `renovate-config-validator --strict`
+(`.github/workflows/validate-renovate.yaml`), using the Renovate version pinned in
+`gitops/platform/renovate/job/renovate-job.yaml`.
+
 ## Credentials
 
 The SOPS-encrypted GitHub credential is at:

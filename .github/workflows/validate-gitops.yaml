@@ -17,6 +17,8 @@ on:
       - 'scripts/check-observability-config.rb'
       - 'scripts/tool-versions.sh'
       - 'scripts/flux-postbuild.rb'
+      - 'scripts/check-sops-secrets.rb'
+      - '.sops.yaml'
       - 'mise.toml'
       - '.github/workflows/validate-gitops.yaml'
   push:
@@ -30,6 +32,8 @@ on:
       - 'scripts/check-observability-config.rb'
       - 'scripts/tool-versions.sh'
       - 'scripts/flux-postbuild.rb'
+      - 'scripts/check-sops-secrets.rb'
+      - '.sops.yaml'
       - 'mise.toml'
       - '.github/workflows/validate-gitops.yaml'
 
@@ -90,6 +94,9 @@ jobs:
 
       - name: Check telemetry and security filter boundaries
         run: ruby scripts/check-observability-config.rb
+
+      - name: Check that secrets are SOPS-encrypted
+        run: ruby scripts/check-sops-secrets.rb
 
       - name: Check toolchain pins against the cluster
         run: scripts/check-tool-versions.sh
