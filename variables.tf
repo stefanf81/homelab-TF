@@ -26,6 +26,12 @@ variable "datastore_id" {
   default     = "local-lvm"
 }
 
+variable "cloudinit_datastore_id" {
+  type        = string
+  description = "The datastore for the VM's cloud-init drive. Defaults to local-lvm, the provider's previous implicit choice, so existing VMs see no change; set it when the host has no local-lvm (e.g. local-zfs)."
+  default     = "local-lvm"
+}
+
 variable "network_bridge" {
   type        = string
   description = "The network bridge to attach the VM to"
@@ -86,7 +92,7 @@ variable "disk_size" {
 
 variable "ssh_user" {
   type        = string
-  description = "The SSH user used to connect to the k3s node"
+  description = "The user cloud-init creates on the node (SSH key, passwordless sudo) and the kubeconfig fetch logs in as"
   default     = "ubuntu"
 }
 

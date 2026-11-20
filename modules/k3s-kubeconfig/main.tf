@@ -30,8 +30,9 @@ resource "null_resource" "fetch_kubeconfig" {
       SSH_OPTS='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=10'
       SSH_TARGET='${var.ssh_user}@${local.node_ip}'
 
-      # Bounded wait (about 10 minutes) so a failed cloud-init/k3s install surfaces as an
-      # error instead of an endless loop.
+      # Bounded wait so a failed cloud-init/k3s install surfaces as an error instead of
+      # an endless loop: 120 tries of up to 10s connect timeout + 5s sleep, i.e. 10
+      # minutes when the VM answers SSH and up to 30 minutes while it does not.
       tries=0
       until ssh $SSH_OPTS "$SSH_TARGET" 'sudo test -f /etc/rancher/k3s/k3s.yaml'; do
         tries=$((tries + 1))
@@ -43,11 +44,19 @@ resource "null_resource" "fetch_kubeconfig" {
         sleep 5
       done
 
+      # The kubeconfig holds the cluster-admin client key: create it 0600 from the
+      # start (umask) in a temp file next to the target, and move it into place only
+      # once complete, so a failed SSH never leaves a truncated or world-readable file.
+      umask 077
+      dest='${abspath(var.kubeconfig_path)}'
+      tmp="$(mktemp "$dest.XXXXXX")"
+      trap 'rm -f "$tmp"' EXIT
       ssh $SSH_OPTS "$SSH_TARGET" 'sudo cat /etc/rancher/k3s/k3s.yaml' \
-        | sed 's|127.0.0.1|${local.node_ip}|g' \
-        > '${abspath(var.kubeconfig_path)}'
-
-      chmod 600 '${abspath(var.kubeconfig_path)}'
+        | sed 's|127.0.0.1|${local.node_ip}|g' > "$tmp"
+      [ -s "$tmp" ] || { echo "fetched kubeconfig is empty" >&2; exit 1; }
+      chmod 600 "$tmp"
+      mv -f "$tmp" "$dest"
+      trap - EXIT
       echo "Kubeconfig fetched successfully: ${abspath(var.kubeconfig_path)}"
     EOT
   }

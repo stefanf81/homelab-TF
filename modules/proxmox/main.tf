@@ -21,7 +21,7 @@ resource "proxmox_virtual_environment_file" "cloud_config" {
 #cloud-config
 users:
   - default
-  - name: ubuntu
+  - name: ${var.ssh_user}
     groups: sudo
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
@@ -76,6 +76,14 @@ write_files:
   - path: /etc/udev/rules.d/60-io-scheduler.rules
     content: |
       ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd[a-z]*", ATTR{queue/scheduler}="none"
+
+  # Cap the journal at 100M with a drop-in: the sed this replaced only edited a
+  # commented `#SystemMaxUse=` line in /etc/systemd/journald.conf, which newer
+  # systemd packaging no longer ships, and a no-match was silent.
+  - path: /etc/systemd/journald.conf.d/10-size.conf
+    content: |
+      [Journal]
+      SystemMaxUse=100M
 
   # Graceful node shutdown: on a Proxmox shutdown/reboot the kubelet holds a
   # logind delay lock and stops pods within their grace periods (Postgres 60s,
@@ -132,13 +140,13 @@ runcmd:
   - swapoff -a
   - sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
   - sysctl --system
-  - sed -i 's/^#SystemMaxUse=.*/SystemMaxUse=100M/' /etc/systemd/journald.conf
   - systemctl restart systemd-journald
   - udevadm control --reload-rules
   - udevadm trigger --subsystem-match=block --action=change
   # Not needed on a k3s node: storage is Proxmox CSI (virtio disks, no iSCSI or
-  # multipath), and snapd/motd-news only add background wakeups.
-  - systemctl disable --now multipathd.service multipathd.socket snapd.service snapd.socket snapd.seeded.service motd-news.timer || true
+  # multipath), and snapd/motd-news only add background wakeups. Same unit list as
+  # the live node (docs/NODE_HOST_TUNING.md); the packages stay installed.
+  - systemctl disable --now iscsid.socket iscsid.service open-iscsi.service multipathd.service multipathd.socket snapd.service snapd.socket snapd.seeded.service motd-news.timer || true
   # The Ubuntu cloud image enables a getty on ttyS0, but the VM has no serial port:
   # agetty fails ("Input/output error") and systemd restarts it every ~10s, five
   # journal entries per restart (most of journald's ~4 GB/day of writes, 2026-11-03).
@@ -196,6 +204,13 @@ resource "proxmox_virtual_environment_vm" "k3s_node" {
   agent {
     enabled = true
     trim    = true
+    # Nothing reads the agent's IP addresses (the address is static, see the
+    # k3s_node_ip output), but by default create and refresh waited up to 15m for
+    # the agent to report one. On first boot the agent only starts after
+    # package_upgrade, and a stopped VM made every plan wait out the timeout.
+    wait_for_ip {
+      disabled = true
+    }
   }
 
   description     = "K3s Single Node Cluster managed by OpenTofu"
@@ -230,6 +245,10 @@ resource "proxmox_virtual_environment_vm" "k3s_node" {
   }
 
   initialization {
+    # Explicit instead of the provider default (local-lvm), so a host without
+    # local-lvm can place the cloud-init drive; the default keeps today's value.
+    datastore_id = var.cloudinit_datastore_id
+
     ip_config {
       ipv4 {
         address = var.ip_address
@@ -276,6 +295,14 @@ output "k3s_node_ip" {
   # and silently depends on the NIC being the second interface.
   value       = split("/", var.ip_address)[0]
   description = "The IP address of the deployed VM"
+}
+
+output "k3s_node_build_id" {
+  # Changes whenever the VM is recreated: Proxmox assigns a new MAC address to the
+  # NIC of a new VM, while vm_id (k3s_node_id) stays the same. The kubeconfig
+  # module re-fetches on a change of this value (new cluster CA and certs).
+  value       = "${proxmox_virtual_environment_vm.k3s_node.id}-${proxmox_virtual_environment_vm.k3s_node.network_device[0].mac_address}"
+  description = "An identifier that changes when the VM is rebuilt"
 }
 
 output "k3s_node_id" {

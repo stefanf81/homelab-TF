@@ -48,14 +48,18 @@ validate-gitops:
 plan: ensure-cache
 	tofu -chdir=$(ROOT) plan
 
-# Convenience bring-up target: applies the Proxmox VM and kubeconfig sync targets.
-# Run `tofu -chdir=$(ROOT) apply` directly when a full root-module apply is required.
-apply: ensure-cache provision kubeconfig
-	@true
+# Full bring-up in one plan: the VM, then (once cloud-init has installed k3s) the
+# kubeconfig fetch. A single apply matters: the fetch re-runs when the VM is
+# rebuilt only if both modules are planned together (the build id is unknown
+# until apply); the old two-step -target flow left the previous cluster's
+# kubeconfig in place after a VM replacement, and planned and prompted twice.
+apply: ensure-cache
+	tofu -chdir=$(ROOT) apply
 
 destroy: ensure-cache
 	tofu -chdir=$(ROOT) destroy
 
+# Single-module steps, for debugging. Prefer `make apply`.
 # Creates the VM; k3s itself installs at boot via cloud-init.
 provision: ensure-cache
 	tofu -chdir=$(ROOT) apply -target=module.proxmox
@@ -69,7 +73,7 @@ kubeconfig: ensure-cache provision
 bootstrap-foundation:
 	KUBECONFIG="$${KUBECONFIG:-$(PWD)/kubeconfig.yaml}" scripts/bootstrap-foundation.sh
 
-all: init provision kubeconfig
+all: init apply
 
 # Show the cache location and its current on-disk size.
 cache:

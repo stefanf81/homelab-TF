@@ -2,8 +2,8 @@
 # Bootstrap the pre-Flux cluster foundation on a fresh k3s node (or validate it offline).
 #
 # WHY THIS SCRIPT EXISTS (C-1):
-# modules/proxmox/main.tf installs k3s with:
-#   --flannel-backend=none --disable-network-policy --disable-kube-proxy --disable coredns
+# modules/proxmox/main.tf installs k3s with (declaratively, in /etc/rancher/k3s/config.yaml):
+#   flannel-backend: none, disable-network-policy, disable-kube-proxy, disable: [coredns, ...]
 #
 # On a freshly provisioned node:
 #   1. Bare `cilium install` fails because `--disable-kube-proxy` leaves 10.43.0.1:443

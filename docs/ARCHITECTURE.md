@@ -514,7 +514,7 @@ The single most important design decision here is: **no SSH provisioners for k3s
   These flags are why Cilium (not Flannel/kube-proxy/servicelb/traefik) is the *only* networking + ingress + LB stack. They are set **once at boot**, not by Terraform on every apply — so Terraform never re-runs a fragile script against a live node.
 - `proxmox_virtual_environment_vm` creates the VM. Note `ignore_changes` on `tags` / `user_account` / `mac_address` / `user_data_file_id` / `disk[0].file_id` so day-2 tweaks (including snippet edits and cloud-image re-pins) don't trigger a VM rebuild.
 
-Then `modules/k3s-kubeconfig/main.tf` is a `null_resource` with a `local-exec` that **polls over SSH** until `/etc/rancher/k3s/k3s.yaml` exists, copies it locally, and `sed`s `127.0.0.1` → the VM IP so the kubeconfig is usable from your laptop. Its `triggers` include `vm_recreate_id` (= the Proxmox VM ID), so **destroying/rebuilding the VM auto-re-fetches** the kubeconfig (new certs) — no stale-cert errors.
+Then `modules/k3s-kubeconfig/main.tf` is a `null_resource` with a `local-exec` that **polls over SSH** until `/etc/rancher/k3s/k3s.yaml` exists, copies it locally, and `sed`s `127.0.0.1` → the VM IP so the kubeconfig is usable from your laptop. Its `triggers` include `vm_recreate_id` (= the `k3s_node_build_id` output: VM ID plus the NIC's MAC address, which Proxmox regenerates for a new VM), so **rebuilding the VM auto-re-fetches** the kubeconfig (new certs) — no stale-cert errors. This needs both modules in one plan (`make apply`); the VM ID alone stays the same across a rebuild. The file is written 0600 via a temp file, so a failed fetch never leaves a partial kubeconfig.
 
 ### 10.4 How the cluster gets its brains (Half B controllers)
 

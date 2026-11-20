@@ -71,7 +71,8 @@ make plan    # Pure dry-run; does not provision the VM or fetch kubeconfig
 make apply
 ```
 
-*Or run manually step-by-step:*
+`make apply` is one `tofu apply` over both modules, so a rebuilt VM always gets a
+freshly fetched kubeconfig. For debugging, the two halves can run on their own:
 ```bash
 make provision   # Provisions VM; cloud-init installs k3s on boot
 make kubeconfig  # Waits for k3s boot to finish and fetches kubeconfig.yaml
@@ -220,7 +221,7 @@ OpenTofu is configured via `Makefile` to use project-local plugin caching (`.ter
 ```bash
 make cache        # Show cache size
 make cache-clean  # Wipe cached provider binaries
-make all          # Convenience: init + provision + kubeconfig
+make all          # Convenience: init + apply
 make fmt          # Fail on formatting drift (`tofu fmt -recursive` fixes it)
 make validate     # Static validation of the root module and child modules (after `make init`)
 ```

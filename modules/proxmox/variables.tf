@@ -7,6 +7,12 @@ variable "datastore_id" {
   default = "local-lvm"
 }
 
+variable "cloudinit_datastore_id" {
+  type        = string
+  description = "Datastore for the VM's cloud-init drive (the provider default is local-lvm)"
+  default     = "local-lvm"
+}
+
 variable "network_bridge" {
   type    = string
   default = "vmbr0"
@@ -61,4 +67,10 @@ variable "k3s_version" {
 variable "docker_hub_mirror" {
   type    = string
   default = ""
+}
+
+variable "ssh_user" {
+  type        = string
+  description = "Login user created by cloud-init (with the SSH key and passwordless sudo)"
+  default     = "ubuntu"
 }

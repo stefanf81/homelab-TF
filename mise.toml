@@ -4,6 +4,8 @@
 # Renovate's mise manager bumps them. flux2 must stay on the FluxInstance minor
 # (gitops/infrastructure/flux-instance/flux-instance.yaml) and kubectl on the k3s minor;
 # scripts/check-tool-versions.sh enforces both, and Renovate only proposes patches for them.
+# ruby and python3 (with PyYAML) are also required by the validators and
+# scripts/bootstrap-foundation.sh; they come from the system, not from mise.
 [tools]
 opentofu    = "1.13.9"
 kubectl     = "1.37.2"

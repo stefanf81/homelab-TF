@@ -44,13 +44,13 @@ end of §4.5.
 | # | Change | Layer | Benefit | Risk | Verdict |
 |---|---|---|---|---|---|
 | 1 | CPU governor `performance` | Host | The only change that touches every request: no frequency ramp-up latency | More idle power and heat; thermal throttling on small fanless hosts can cancel it | Already set on this host (`amd-pstate-epp`, governor and EPP `performance`, 2026-11-03) |
-| 2 | `net.ipv4.tcp_mtu_probing = 1` | Node | Prevents stalls of Cloudflare → Envoy connections when PMTU ICMP is dropped (PPPoE/DS-Lite uplinks) | None known; only activates after a black hole is detected | Do it (in Terraform) |
+| 2 | `net.ipv4.tcp_mtu_probing = 1` | Node | Prevents stalls of Cloudflare → Envoy connections when PMTU ICMP is dropped (PPPoE/DS-Lite uplinks) | None known; only activates after a black hole is detected | Done (in Terraform) |
 | 3 | Proxmox VE 8 → 9 | Host | Security support (PVE 8 is past end of life), newer kernel/KVM | **Highest risk on the list**: major Debian upgrade, NIC renames, provider/CSI compatibility | Done: host runs PVE 9.2 (kernel 7.0), checked 2026-11-03 |
 | 4 | virtio-net multiqueue (`queues = cpu_cores`) | VM | RX/TX softirq over all vCPUs; one `fq` leaf per queue. Only matters when one vCPU saturates on network work | NIC hot-replug on apply (short outage); slightly more CPU per packet | Done 2026-11-03 (`Combined: 10`, `mq` + per-queue `fq`) |
 | 5 | KSM off | Host | Frees host CPU — only if `ksmtuned` is actually scanning (it starts below ~20 % free RAM) | If host RAM is tight, memory use rises and the host may swap | **Keep KSM on here**: on the 15 GiB host it merged ~370 MiB with a 14 GiB VM (2026-11-03) |
 | 6 | Microcode | Host | Stability and security, not speed | Rare regressions; mitigations can cost a little speed | Already installed (`amd64-microcode`) |
 | 7 | HA services off (standalone) | Host | Fewer small writes to the boot SSD | Must be re-enabled before clustering | Optional |
-| 8 | Drop `nfs-common`/`open-iscsi`/multipath; disable snapd, motd-news | Node | Tiny: fewer daemons, tens of MB RAM | Reinstall if NFS/iSCSI storage is added; snaps (e.g. Livepatch) stop working | Done (in Terraform) |
+| 8 | Disable the iSCSI (`iscsid`, `open-iscsi`) and multipath units, snapd and motd-news (packages stay installed) | Node | Tiny: fewer daemons, tens of MB RAM | Re-enable if NFS/iSCSI storage is added; snaps (e.g. Livepatch) stop working | Done (in Terraform) |
 | 9 | Guest I/O scheduler `none` (udev rule) | Node | Probably none: the kernel already picks `none` for multi-queue disks; the rule pins it | On a single-queue disk the guest loses read/write prioritisation (minor) | Done (in Terraform); harmless |
 | 10 | Remove `net.bridge.bridge-nf-call-*` | Node | Cleanup; Cilium has no bridge on the pod path | None | Done (in Terraform) |
 | 11 | `kernel.core_pattern = \|/bin/false` | Node | Prevents disk fill: the node had the relative pattern `core` (systemd `10-coredump-debian.conf`) and k3s runs with `LimitCORE=infinity`, so a crashing container writes a full core file (JVM ~2 GiB into its writable layer, PostgreSQL into its PVC) | No core dumps for debugging; set a path temporarily when needed | Done (in Terraform) |
@@ -392,8 +392,9 @@ findmnt -no OPTIONS /; cat /sys/kernel/mm/transparent_hugepage/enabled; ls -lh /
 | needrestart / unattended-upgrades installed | Services restart and kernels install on their own schedule; belongs with REL-08 (planned reboots) |
 
 Optional, same drop-in: `serializeImagePulls: false` and `maxParallelImagePulls: 3` for faster
-recovery when many images must be pulled. `--disable-helm-controller` (unused: Flux manages Helm)
-is an install flag and waits for REL-00.
+recovery when many images must be pulled. `disable-helm-controller: true` (unused: Flux manages Helm)
+can go into the declarative `/etc/rancher/k3s/config.yaml` in `modules/proxmox/main.tf` for new
+nodes, and into the live node's config.yaml followed by a k3s restart.
 
 ---
 

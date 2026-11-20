@@ -8,6 +8,7 @@ proxmox_node      = "homelab"
 
 # VM and network
 datastore_id  = "local-lvm"
+# cloudinit_datastore_id = "local-lvm"   # cloud-init drive; set when the host has no local-lvm
 network_bridge = "vmbr0"
 ssh_public_key = "ssh-ed25519 AAAA... replace-me"
 ip_address     = "192.168.50.55/24"

@@ -14,5 +14,5 @@ variable "kubeconfig_path" {
 
 variable "vm_recreate_id" {
   type        = string
-  description = "Dependency trigger to track VM recreation"
+  description = "Changes whenever the VM is recreated (proxmox module output k3s_node_build_id); a change re-fetches the kubeconfig"
 }
