@@ -1,0 +1,75 @@
+name: Validate OpenTofu
+
+# fmt, validate and tflint for the OpenTofu root and modules (no backend, no
+# credentials). Split from validate-gitops.yaml so it runs only when the OpenTofu
+# code or its tool pins change.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '*.tf'
+      - 'modules/**'
+      - '.terraform.lock.hcl'
+      - '.tflint.hcl'
+      - 'mise.toml'
+      - 'scripts/tool-versions.sh'
+      - '.github/workflows/validate-opentofu.yaml'
+  push:
+    branches:
+      - main
+    paths:
+      - '*.tf'
+      - 'modules/**'
+      - '.terraform.lock.hcl'
+      - '.tflint.hcl'
+      - 'mise.toml'
+      - 'scripts/tool-versions.sh'
+      - '.github/workflows/validate-opentofu.yaml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  opentofu:
+    name: OpenTofu fmt, validate and tflint
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Tool versions come from mise.toml (single source; Renovate bumps it).
+      - name: Read tool versions from mise.toml
+        run: scripts/tool-versions.sh >> "$GITHUB_ENV"
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: ${{ env.OPENTOFU_VERSION }}
+
+      - name: Format check
+        run: tofu fmt -check -recursive
+
+      # No backend and no credentials needed: this only type-checks the configuration.
+      - name: Validate
+        run: |
+          tofu init -backend=false -input=false
+          tofu validate
+
+      - name: Set up tflint
+        uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: v${{ env.TFLINT_VERSION }}
+
+      # Bundled terraform ruleset (see .tflint.hcl); needs no network.
+      - name: Lint
+        run: tflint --recursive --format compact

@@ -1,0 +1,63 @@
+name: Validate WAF behaviour
+
+# Identity, rate-limit, Coraza and probe tests (tests/run-tests.sh) against the
+# images the two WAF Deployments pin, with the ConfigMaps from Git. The suite reads
+# only the *-waf.yaml manifests and its own test directory, so it is triggered by
+# those alone (it used to run on every Flux image-automation bump of
+# frontend.yaml). New WAF images are tested by build-taskflow-caddy-coraza.yaml.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'gitops/apps/taskflow/*-waf.yaml'
+      - 'gitops/images/taskflow-caddy-coraza/tests/**'
+      - '.github/workflows/validate-waf-behaviour.yaml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'gitops/apps/taskflow/*-waf.yaml'
+      - 'gitops/images/taskflow-caddy-coraza/tests/**'
+      - '.github/workflows/validate-waf-behaviour.yaml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  waf-behaviour:
+    name: WAF behavioural tests (pinned images)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # PyYAML from the distribution's signed archive, not an unpinned PyPI
+      # download: nothing in this job installs from PyPI.
+      - name: Ensure python3-yaml
+        run: |
+          if ! python3 -c 'import yaml' 2>/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends python3-yaml
+          fi
+          python3 -c 'import yaml; print("PyYAML", yaml.__version__)'
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # No TEST_IMAGE: each WAF is tested with the image its Deployment pins.
+      - name: Run identity, rate-limit and probe tests
+        run: gitops/images/taskflow-caddy-coraza/tests/run-tests.sh
