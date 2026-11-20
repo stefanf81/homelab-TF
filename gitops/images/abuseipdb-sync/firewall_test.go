@@ -103,7 +103,7 @@ func TestFirewallCollectorPollAndPush(t *testing.T) {
 	if parsed.ClientIP != "192.0.2.10" || parsed.Count != 2 {
 		t.Fatalf("unexpected aggregated line: %+v", parsed)
 	}
-	if !client.lastWindowEnd.After(time.Now().UTC().Add(-time.Minute)) {
+	if !client.lastWindowEnd.After(time.Now().UTC().Add(-firewallIngestLag - time.Minute)) {
 		t.Fatalf("window end was not advanced: %s", client.lastWindowEnd)
 	}
 }
@@ -301,13 +301,14 @@ func TestFirewallWindowsAreWholeMinutes(t *testing.T) {
 			}
 		}
 	}
-	if got, want := mock.filters[0]["datetime_lt"], "2026-10-20T10:07:00Z"; got != want {
+	// Windows end firewallIngestLag (2m) before the poll: 10:07:25 -> 10:05.
+	if got, want := mock.filters[0]["datetime_lt"], "2026-10-20T10:05:00Z"; got != want {
 		t.Errorf("first window end = %v, want %v", got, want)
 	}
-	if got, want := mock.filters[0]["datetime_geq"], "2026-10-20T10:01:00Z"; got != want {
+	if got, want := mock.filters[0]["datetime_geq"], "2026-10-20T09:59:00Z"; got != want {
 		t.Errorf("first window start = %v, want %v", got, want)
 	}
-	if got, want := mock.filters[1]["datetime_geq"], "2026-10-20T10:24:00Z"; got != want {
+	if got, want := mock.filters[1]["datetime_geq"], "2026-10-20T10:22:00Z"; got != want {
 		t.Errorf("cut window start = %v, want %v", got, want)
 	}
 	if client.lastWindowEnd.Second() != 0 {
@@ -340,8 +341,8 @@ func TestFirewallSplitMinuteIsNotPushedTwice(t *testing.T) {
 		}
 		now = now.Add(5 * time.Minute)
 	}
-	// Polls ran at 10:05:25 and 10:10:25 -> windows [10:00,10:05) and [10:05,10:10);
-	// the second poll's data stops at the minute boundary 10:10:00.
+	// Polls ran at 10:05:25 and 10:10:25 -> windows [10:00,10:03) and [10:03,10:08)
+	// (each ends firewallIngestLag before the poll); data stops at 10:08:00.
 	got, dup := lokiCountSum(t, mock)
 	if dup != 0 {
 		t.Fatalf("%d identical (stream, timestamp, line) pushes would be dropped by Loki", dup)
@@ -349,7 +350,7 @@ func TestFirewallSplitMinuteIsNotPushedTwice(t *testing.T) {
 	want := 0
 	for _, e := range mock.events {
 		ts, _ := time.Parse(time.RFC3339, e["datetime"].(string))
-		if ts.Before(time.Date(2026, 10, 20, 10, 10, 0, 0, time.UTC)) {
+		if ts.Before(time.Date(2026, 10, 20, 10, 8, 0, 0, time.UTC)) {
 			want++
 		}
 	}

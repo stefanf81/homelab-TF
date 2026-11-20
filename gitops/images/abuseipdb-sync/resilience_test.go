@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -364,15 +365,20 @@ func TestCurrentListStale(t *testing.T) {
 // fakeCCGServer serves the single CiliumCIDRGroup endpoint the synchronizer
 // uses (get, create, update) so the real dynamic client can be exercised.
 type fakeCCGServer struct {
-	mu  sync.Mutex
-	obj map[string]any
-	rv  int
+	mu       sync.Mutex
+	obj      map[string]any
+	rv       int
+	requests map[string]int // by HTTP method
 }
 
 func (f *fakeCCGServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
+	if f.requests == nil {
+		f.requests = map[string]int{}
+	}
+	f.requests[r.Method]++
 	notFound := func() {
 		w.WriteHeader(http.StatusNotFound)
 		_ = json.NewEncoder(w).Encode(map[string]any{"kind": "Status", "apiVersion": "v1", "status": "Failure", "reason": "NotFound", "code": 404})
@@ -390,10 +396,52 @@ func (f *fakeCCGServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		if r.Method == http.MethodPut && f.obj != nil {
+			sent, _ := obj["metadata"].(map[string]any)["resourceVersion"].(string)
+			if sent != f.obj["metadata"].(map[string]any)["resourceVersion"] {
+				w.WriteHeader(http.StatusConflict)
+				_ = json.NewEncoder(w).Encode(map[string]any{"kind": "Status", "apiVersion": "v1", "status": "Failure", "reason": "Conflict", "code": 409})
+				return
+			}
+		}
 		f.rv++
 		obj["metadata"].(map[string]any)["resourceVersion"] = fmt.Sprint(f.rv)
 		f.obj = obj
 		_ = json.NewEncoder(w).Encode(obj)
+	case http.MethodPatch:
+		// JSON merge patch of metadata only (what MergeAnnotations sends), with the
+		// resourceVersion precondition the API server applies.
+		if f.obj == nil {
+			notFound()
+			return
+		}
+		var patch struct {
+			Metadata struct {
+				ResourceVersion string            `json:"resourceVersion"`
+				Annotations     map[string]string `json:"annotations"`
+			} `json:"metadata"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		meta := f.obj["metadata"].(map[string]any)
+		if rv := patch.Metadata.ResourceVersion; rv != "" && rv != meta["resourceVersion"] {
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]any{"kind": "Status", "apiVersion": "v1", "status": "Failure", "reason": "Conflict", "code": 409})
+			return
+		}
+		ann, _ := meta["annotations"].(map[string]any)
+		if ann == nil {
+			ann = map[string]any{}
+		}
+		for k, v := range patch.Metadata.Annotations {
+			ann[k] = v
+		}
+		meta["annotations"] = ann
+		f.rv++
+		meta["resourceVersion"] = fmt.Sprint(f.rv)
+		_ = json.NewEncoder(w).Encode(f.obj)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -679,5 +727,124 @@ func TestCloudflareRuleFailureKeepsFreshListFresh(t *testing.T) {
 	app.updateCloudflareStaleness(context.Background())
 	if n, _ := cf.state(); n != 50 || app.staleCFCleared {
 		t.Fatalf("fresh list was cleared by the stale check (items=%d)", n)
+	}
+}
+
+// syncScenarioWithCloudflare is syncScenario with a healthy Cloudflare sink, so
+// one sync exercises the read, the Cilium write and the annotation write.
+func syncScenarioWithCloudflare(t *testing.T) (*App, *fakeCCGServer) {
+	t.Helper()
+	app, flaky, _ := syncScenario(t, 0)
+	cf := &statefulCloudflare{ruleStatus: http.StatusOK}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/rulesets") {
+			cfOK(w, map[string]any{"id": "rs-1", "rules": []map[string]any{{"id": "r1", "ref": "abuseipdb", "action": "block", "expression": "ip.src in $abuseipdb", "enabled": true}}})
+			return
+		}
+		cf.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	app.cf = testCloudflareClient(t, srv, 0)
+	return app, flaky.next.(*fakeCCGServer)
+}
+
+// One sync reads the 190 KiB group once and writes it once; the Cloudflare
+// timestamp is a small patch (it used to be 3 GETs and 2 full PUTs).
+func TestSyncReadsTheGroupOnceAndPatchesAnnotations(t *testing.T) {
+	app, ccg := syncScenarioWithCloudflare(t)
+	if err := app.syncOnce(context.Background()); err != nil {
+		t.Fatalf("syncOnce: %v", err)
+	}
+	ccg.mu.Lock()
+	got := map[string]int{"GET": ccg.requests["GET"], "PUT": ccg.requests["PUT"], "PATCH": ccg.requests["PATCH"]}
+	ann := ccg.obj["metadata"].(map[string]any)["annotations"].(map[string]any)
+	ccg.mu.Unlock()
+	if want := map[string]int{"GET": 1, "PUT": 1, "PATCH": 1}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("apiserver requests per sync = %v, want %v", got, want)
+	}
+	if ann[annotationCloudflareOK] == nil || ann[annotationLastOK] == nil {
+		t.Fatalf("success annotations not persisted: %v", ann)
+	}
+}
+
+// A change to the group between the cached read and a write must not be
+// overwritten: the stale resourceVersion is rejected and the write retried on a
+// fresh read.
+func TestStaleCachedGroupIsRereadOnConflict(t *testing.T) {
+	app, ccg := syncScenarioWithCloudflare(t)
+	ctx := context.Background()
+	if _, err := app.ccg.Get(ctx, "abuseipdb"); err != nil { // fills the cache
+		t.Fatalf("Get: %v", err)
+	}
+	bump := func() { // someone else writes the group
+		ccg.mu.Lock()
+		defer ccg.mu.Unlock()
+		ccg.rv++
+		meta := ccg.obj["metadata"].(map[string]any)
+		meta["resourceVersion"] = fmt.Sprint(ccg.rv)
+		ann, _ := meta["annotations"].(map[string]any)
+		if ann == nil {
+			ann = map[string]any{}
+			meta["annotations"] = ann
+		}
+		ann["other.example/keep"] = "yes"
+	}
+	bump()
+	if _, err := app.ccg.Apply(ctx, "abuseipdb", mustPrefixes(t, "45.33.32.1/32"), time.Now(), time.Time{}); err != nil {
+		t.Fatalf("Apply after a concurrent change: %v", err)
+	}
+	bump()
+	if err := app.ccg.MergeAnnotations(ctx, "abuseipdb", map[string]string{annotationCloudflareOK: "2026-11-20T00:00:00Z"}); err != nil {
+		t.Fatalf("MergeAnnotations after a concurrent change: %v", err)
+	}
+	ccg.mu.Lock()
+	defer ccg.mu.Unlock()
+	ann := ccg.obj["metadata"].(map[string]any)["annotations"].(map[string]any)
+	if ann[annotationCloudflareOK] != "2026-11-20T00:00:00Z" || ann["other.example/keep"] != "yes" {
+		t.Fatalf("annotations after conflicting writes: %v", ann)
+	}
+	if ccg.requests["GET"] < 3 {
+		t.Fatalf("expected re-reads after the conflicts, GETs=%d", ccg.requests["GET"])
+	}
+}
+
+// The feed cap scales with ABUSEIPDB_LIMIT: an oversized response is rejected
+// (once, without a retry) instead of being buffered up to the fixed 64 MiB.
+func TestFetchRejectsBodyAboveTheScaledCap(t *testing.T) {
+	var calls atomic.Int32
+	big := strings.Repeat("198.51.100.7\n", (minResponseBytes/13)+1000) // just over 1 MiB
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte(big))
+	}))
+	defer srv.Close()
+
+	feed := &FeedClient{apiKey: "k", limit: 10000, http: srv.Client(), log: discardLogger(), endpoint: srv.URL, retryBase: time.Millisecond}
+	if got := feed.maxBodyBytes(); got != minResponseBytes {
+		t.Fatalf("cap for 10k entries = %d, want the %d floor", got, minResponseBytes)
+	}
+	_, _, err := feed.Fetch(context.Background())
+	var tooLarge *responseTooLargeError
+	if !errors.As(err, &tooLarge) || calls.Load() != 1 {
+		t.Fatalf("want one call rejected as too large, got calls=%d err=%v", calls.Load(), err)
+	}
+	if got := (&FeedClient{limit: 500000}).maxBodyBytes(); got != 500000*maxBytesPerEntry {
+		t.Fatalf("cap for 500k entries = %d", got)
+	}
+}
+
+// A group above the API server's request limit fails with a clear error
+// before any write is attempted.
+func TestApplyRejectsOversizedGroupBeforeWriting(t *testing.T) {
+	app, _, _ := syncScenario(t, 0)
+	ccg := app.ccg
+	huge := make([]netip.Prefix, 0, 200000)
+	for i := range 200000 {
+		huge = append(huge, netip.PrefixFrom(netip.AddrFrom4([4]byte{45, byte(i >> 16), byte(i >> 8), byte(i)}), 32))
+	}
+	_, err := ccg.Apply(context.Background(), "abuseipdb", huge, time.Now(), time.Time{})
+	if err == nil || !strings.Contains(err.Error(), "lower ABUSEIPDB_LIMIT") {
+		t.Fatalf("want a size error, got %v", err)
 	}
 }

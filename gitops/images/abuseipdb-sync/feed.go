@@ -19,7 +19,11 @@ import (
 const (
 	blacklistEndpoint = "https://api.abuseipdb.com/api/v2/blacklist"
 	maxResponseBytes  = 64 << 20 // 64 MiB covers the 500k-entry premium tier
-	maxAttempts       = 3
+	// Per-entry allowance for the scaled cap below: the longest plaintext entry is
+	// a 39-character IPv6 address plus a newline; 64 leaves room for CIDR suffixes.
+	maxBytesPerEntry = 64
+	minResponseBytes = 1 << 20
+	maxAttempts      = 3
 )
 
 type FeedClient struct {
@@ -172,7 +176,7 @@ func (c *FeedClient) do(ctx context.Context, rawURL string) ([]byte, int, error)
 	}
 	defer resp.Body.Close()
 
-	body, err := readBounded(resp.Body, maxResponseBytes)
+	body, err := readBounded(resp.Body, c.maxBodyBytes())
 	if err != nil {
 		var tooLarge *responseTooLargeError
 		if errors.As(err, &tooLarge) {
@@ -246,6 +250,15 @@ func bodySnippet(body []byte) string {
 // readBounded reads up to maxBytes from r and fails explicitly if the stream
 // exceeds maxBytes instead of silently truncating (which could cut an IP/CIDR
 // mid-line into a different valid address).
+// maxBodyBytes scales the response cap to the configured entry limit: a
+// 10k-entry feed is well under 1 MiB, but the fixed 64 MiB cap let a
+// misbehaving response grow the 128 MiB pod past its limit before the clean
+// "too large" error.
+func (c *FeedClient) maxBodyBytes() int64 {
+	n := int64(c.limit) * maxBytesPerEntry
+	return min(max(n, minResponseBytes), maxResponseBytes)
+}
+
 func readBounded(r io.Reader, maxBytes int64) ([]byte, error) {
 	data, err := io.ReadAll(io.LimitReader(r, maxBytes+1))
 	if err != nil {

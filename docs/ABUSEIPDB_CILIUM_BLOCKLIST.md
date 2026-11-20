@@ -148,7 +148,9 @@ GET /api/v2/blacklist?plaintext=true&limit=…   (Accept: text/plain)
     customer rules are never modified.
 * Cloudflare API calls are retried in-process (3 attempts with backoff) on
   network errors, timeouts, 429 and 5xx, except creation calls (`POST`), which
-  could otherwise create duplicates. List items are read 500 per page (the API
+  could otherwise create duplicates. A 429 waits for its `Retry-After` (seconds
+  form) when that is longer than the backoff; above one minute the attempt ends
+  and the next interval tries again. List items are read 500 per page (the API
   maximum); a walk stops with an error after 1000 pages.
 * If the IP list was replaced but the WAF rule check fails, the Cloudflare sync
   counts as failed (`_sync_success` 0, `_rule_present` 0), but the list itself
@@ -157,6 +159,16 @@ GET /api/v2/blacklist?plaintext=true&limit=…   (Accept: text/plain)
 * Every apiserver request is bounded by `ABUSEIPDB_HTTP_TIMEOUT`, and a whole
   synchronization by 15 minutes, so a hung call cannot hold the sink lock that
   the per-minute stale check needs.
+* One synchronization reads the CIDR group once and writes it once (the copy
+  from the read is reused; a stale copy is rejected by its `resourceVersion` and
+  re-read). The Cloudflare last-success timestamp is a small JSON merge patch
+  with the same precondition, not a second full write.
+* The feed download is capped at 64 bytes per `ABUSEIPDB_LIMIT` entry (1 MiB
+  minimum, 64 MiB maximum). The CIDR group is a single object (~19 bytes per
+  entry, ~190 KiB at 10k); one above the API server's 3 MiB request limit
+  (about 160k entries) is refused with an error naming `ABUSEIPDB_LIMIT`.
+  etcd-backed clusters reject objects above ~1.5 MiB (about 78k entries); this
+  cluster's k3s uses SQLite.
 * Sinks fail independently: a Cloudflare API/rate-limit failure never prevents
   the Cilium update and vice versa. `abuseipdb_sync_success` is `1` only when
   all enabled sinks succeed.
@@ -199,8 +211,10 @@ Cloudflare actually blocked:
   IPs stay in the log body and are parsed at query time.
 * A window only advances after **both** the API fetch and the Loki push
   succeed, so a failure is retried and covered by the next poll. Recovery
-  windows are capped at `CLOUDFLARE_FIREWALL_MAX_WINDOW` (24h). Window edges
-  are whole minutes: groups are stamped with the start of their minute, so a
+  windows are capped at `CLOUDFLARE_FIREWALL_MAX_WINDOW` (24h). A window ends
+  two minutes before the poll, a margin for Cloudflare's analytics ingestion
+  (events recorded late would otherwise fall into an already collected
+  window). Window edges are whole minutes: groups are stamped with the start of their minute, so a
   minute split across two polls would be pushed twice with the same timestamp
   and Loki would drop one of two identical lines.
 * Each window is one unpaginated query of at most `CLOUDFLARE_FIREWALL_LIMIT`

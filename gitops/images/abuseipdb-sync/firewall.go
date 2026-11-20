@@ -110,8 +110,14 @@ func (c *FirewallCollector) pollWithLogging(ctx context.Context) {
 	}
 }
 
+// firewallIngestLag keeps the newest minutes out of a window. Cloudflare's
+// analytics are near-real-time, not instant: an event recorded a little after
+// its timestamp used to land in a window that had already been collected and
+// was never fetched. A heuristic margin; blocks reach Loki this much later.
+const firewallIngestLag = 2 * time.Minute
+
 func (c *FirewallCollector) pollOnce(ctx context.Context) error {
-	end := c.clock().Truncate(time.Minute)
+	end := c.clock().Add(-firewallIngestLag).Truncate(time.Minute)
 	start := c.lastWindowEnd
 	if start.IsZero() {
 		start = end.Add(-c.lookback).Truncate(time.Minute)

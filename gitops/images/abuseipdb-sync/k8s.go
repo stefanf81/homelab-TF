@@ -2,18 +2,21 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -40,10 +43,54 @@ type CIDRGroupClient struct {
 	log    *slog.Logger
 	// retryBase is the first GetWithRetry backoff (1s when zero).
 	retryBase time.Duration
+
+	// last is the most recent copy of the group this client read or wrote
+	// (~190 KiB at 10k entries). Apply and MergeAnnotations start from it instead
+	// of fetching the object again; the resourceVersion makes the API server
+	// reject a write based on a stale copy (409), after which they re-read.
+	mu   sync.Mutex
+	last *unstructured.Unstructured
+}
+
+func (c *CIDRGroupClient) remember(obj *unstructured.Unstructured) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.last = obj
+}
+
+// cached returns the remembered copy of the named group, or nil.
+func (c *CIDRGroupClient) cached(name string) *unstructured.Unstructured {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.last == nil || c.last.GetName() != name {
+		return nil
+	}
+	return c.last
+}
+
+// fetch reads the group from the API server (nil, nil when it does not exist).
+func (c *CIDRGroupClient) fetch(ctx context.Context, name string) (*unstructured.Unstructured, error) {
+	obj, err := c.client.Resource(ccgGVR).Get(ctx, name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		c.remember(nil)
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	c.remember(obj)
+	return obj, nil
 }
 
 // cidrGroupGetAttempts bounds GetWithRetry.
 const cidrGroupGetAttempts = 3
+
+// maxCIDRGroupBytes is the API server's default request body limit (3 MiB).
+// The group is one object (~19 bytes per entry, ~190 KiB at 10k), so a much
+// larger ABUSEIPDB_LIMIT fails here with a clear error instead of an opaque
+// apiserver/datastore rejection. etcd-backed clusters reject objects above
+// ~1.5 MiB (about 78k entries) earlier; this cluster's k3s uses SQLite.
+const maxCIDRGroupBytes = 3 << 20
 
 type GroupState struct {
 	Exists                bool
@@ -100,12 +147,12 @@ func (c *CIDRGroupClient) GetWithRetry(ctx context.Context, name string) (*Group
 }
 
 func (c *CIDRGroupClient) Get(ctx context.Context, name string) (*GroupState, error) {
-	obj, err := c.client.Resource(ccgGVR).Get(ctx, name, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		return &GroupState{}, nil
-	}
+	obj, err := c.fetch(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("getting CiliumCIDRGroup %q: %w", name, err)
+	}
+	if obj == nil {
+		return &GroupState{}, nil
 	}
 	prefixes, err := parseExternalCIDRs(obj)
 	if err != nil {
@@ -143,19 +190,29 @@ func (c *CIDRGroupClient) Apply(
 	desired := prefixesToStrings(prefixes)
 
 	for attempt := 1; attempt <= 5; attempt++ {
-		obj, err := c.client.Resource(ccgGVR).Get(ctx, name, metav1.GetOptions{})
-		if err != nil && !apierrors.IsNotFound(err) {
-			return ApplyResult{}, fmt.Errorf("getting CiliumCIDRGroup %q: %w", name, err)
+		// First attempt: the copy read moments ago by the same sync (syncOnce reads
+		// the group before the feed download). Later attempts re-read.
+		obj := c.cached(name)
+		if obj == nil || attempt > 1 {
+			var err error
+			if obj, err = c.fetch(ctx, name); err != nil {
+				return ApplyResult{}, fmt.Errorf("getting CiliumCIDRGroup %q: %w", name, err)
+			}
 		}
 
-		if apierrors.IsNotFound(err) {
+		if obj == nil {
 			created := c.buildObject(name, desired, successTime, clearTime, "")
-			if _, err := c.client.Resource(ccgGVR).Create(ctx, created, metav1.CreateOptions{}); err != nil {
+			if err := checkObjectSize(created); err != nil {
+				return ApplyResult{}, err
+			}
+			result, err := c.client.Resource(ccgGVR).Create(ctx, created, metav1.CreateOptions{})
+			if err != nil {
 				if apierrors.IsAlreadyExists(err) || apierrors.IsConflict(err) {
 					continue
 				}
 				return ApplyResult{}, fmt.Errorf("creating CiliumCIDRGroup %q: %w", name, err)
 			}
+			c.remember(result)
 			c.log.Info("created CiliumCIDRGroup", "name", name, "entries", len(desired))
 			return ApplyResult{Changed: len(desired) > 0, Added: len(desired), Created: true}, nil
 		}
@@ -174,7 +231,11 @@ func (c *CIDRGroupClient) Apply(
 
 		updated := c.buildObject(name, desired, successTime, clearTime, obj.GetResourceVersion())
 		mergeAnnotations(updated, obj, successTime)
-		if _, err := c.client.Resource(ccgGVR).Update(ctx, updated, metav1.UpdateOptions{}); err != nil {
+		if err := checkObjectSize(updated); err != nil {
+			return ApplyResult{}, err
+		}
+		result, err := c.client.Resource(ccgGVR).Update(ctx, updated, metav1.UpdateOptions{})
+		if err != nil {
 			if apierrors.IsConflict(err) {
 				c.log.Info("CiliumCIDRGroup update conflict, retrying", "name", name, "attempt", attempt)
 				select {
@@ -186,9 +247,22 @@ func (c *CIDRGroupClient) Apply(
 			}
 			return ApplyResult{}, fmt.Errorf("updating CiliumCIDRGroup %q: %w", name, err)
 		}
+		c.remember(result)
 		return ApplyResult{Changed: added > 0 || removed > 0, Added: added, Removed: removed}, nil
 	}
 	return ApplyResult{}, fmt.Errorf("updating CiliumCIDRGroup %q: too many resourceVersion conflicts", name)
+}
+
+func checkObjectSize(obj *unstructured.Unstructured) error {
+	b, err := obj.MarshalJSON()
+	if err != nil {
+		return err
+	}
+	if len(b) > maxCIDRGroupBytes {
+		return fmt.Errorf("CiliumCIDRGroup %q would be %d bytes, above the API server's %d-byte request limit; lower ABUSEIPDB_LIMIT",
+			obj.GetName(), len(b), maxCIDRGroupBytes)
+	}
+	return nil
 }
 
 func (c *CIDRGroupClient) buildObject(
@@ -257,14 +331,22 @@ func mergeAnnotations(dst, src *unstructured.Unstructured, successTime time.Time
 // MergeAnnotations sets the given annotations on the managed CIDR group,
 // preserving all other annotations. It is used to persist per-sink success
 // timestamps outside of the list update path.
+//
+// The write is a JSON merge patch of just the annotations, carrying the
+// resourceVersion of the copy whose ownership was checked, so it fails with a
+// conflict (and is retried on a fresh read) if the group changed in between. It
+// used to re-read and re-send the whole ~190 KiB object for one timestamp.
 func (c *CIDRGroupClient) MergeAnnotations(ctx context.Context, name string, annotations map[string]string) error {
 	for attempt := 1; attempt <= 5; attempt++ {
-		obj, err := c.client.Resource(ccgGVR).Get(ctx, name, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("getting CiliumCIDRGroup %q: %w", name, err)
+		obj := c.cached(name)
+		if obj == nil || attempt > 1 {
+			var err error
+			if obj, err = c.fetch(ctx, name); err != nil {
+				return fmt.Errorf("getting CiliumCIDRGroup %q: %w", name, err)
+			}
+			if obj == nil {
+				return nil
+			}
 		}
 		if !isManagedByUs(obj) {
 			return fmt.Errorf("CiliumCIDRGroup %q is not managed by %s", name, managedByName)
@@ -283,13 +365,21 @@ func (c *CIDRGroupClient) MergeAnnotations(ctx context.Context, name string, ann
 		if !changed {
 			return nil
 		}
-		obj.SetAnnotations(ann)
-		if _, err := c.client.Resource(ccgGVR).Update(ctx, obj, metav1.UpdateOptions{}); err != nil {
-			if apierrors.IsConflict(err) {
+		patch, err := json.Marshal(map[string]any{"metadata": map[string]any{
+			"resourceVersion": obj.GetResourceVersion(),
+			"annotations":     annotations,
+		}})
+		if err != nil {
+			return err
+		}
+		result, err := c.client.Resource(ccgGVR).Patch(ctx, name, types.MergePatchType, patch, metav1.PatchOptions{})
+		if err != nil {
+			if apierrors.IsConflict(err) || apierrors.IsNotFound(err) {
 				continue
 			}
 			return fmt.Errorf("updating annotations on CiliumCIDRGroup %q: %w", name, err)
 		}
+		c.remember(result)
 		return nil
 	}
 	return fmt.Errorf("updating annotations on CiliumCIDRGroup %q: too many resourceVersion conflicts", name)

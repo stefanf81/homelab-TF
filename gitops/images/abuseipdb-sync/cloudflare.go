@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -39,7 +40,13 @@ type cloudflareError struct {
 	status  int
 	code    int
 	message string
+	// retryAfter is the Retry-After of a 429 (seconds form), zero otherwise.
+	retryAfter time.Duration
 }
+
+// cloudflareMaxRetryAfter is the longest Retry-After a sync waits for in-process;
+// a longer one ends the attempt and the next interval tries again.
+const cloudflareMaxRetryAfter = time.Minute
 
 func (e *cloudflareError) Error() string {
 	return fmt.Sprintf("Cloudflare API error (status %d, code %d): %s", e.status, e.code, e.message)
@@ -518,6 +525,15 @@ func (c *CloudflareClient) request(ctx context.Context, method, path string, q u
 		if d > 0 {
 			d += time.Duration(rand.Int63n(int64(d/2) + 1))
 		}
+		// Honour the server's Retry-After on 429: retrying sooner only spends the
+		// remaining attempts inside the same rate-limit window.
+		var ce *cloudflareError
+		if errors.As(err, &ce) && ce.retryAfter > 0 {
+			if ce.retryAfter > cloudflareMaxRetryAfter {
+				return env, err
+			}
+			d = max(d, ce.retryAfter)
+		}
 		c.log.Warn("retrying Cloudflare API request", "method", method, "path", path, "attempt", attempt, "wait", d.String(), "error", err)
 		select {
 		case <-time.After(d):
@@ -581,6 +597,11 @@ func (c *CloudflareClient) requestOnce(ctx context.Context, method, path string,
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 || !env.Success {
 		ce := &cloudflareError{status: resp.StatusCode}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			if secs, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After"))); err == nil && secs > 0 {
+				ce.retryAfter = time.Duration(secs) * time.Second
+			}
+		}
 		if len(env.Errors) > 0 {
 			ce.code = env.Errors[0].Code
 			ce.message = env.Errors[0].Message

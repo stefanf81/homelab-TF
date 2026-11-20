@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type cfMock struct {
@@ -347,5 +348,38 @@ func TestListItemsUsesLargePagesAndBoundsPagination(t *testing.T) {
 	}
 	if got := perPage.Load(); got != "500" {
 		t.Fatalf("items per_page = %v, want 500", got)
+	}
+}
+
+func TestCloudflareHonoursRetryAfter(t *testing.T) {
+	var calls atomic.Int32
+	retryAfter := "1"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			w.Header().Set("Retry-After", retryAfter)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"success":false,"errors":[{"code":10000,"message":"rate limited"}]}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"result":[]}`))
+	}))
+	defer srv.Close()
+
+	c := testCloudflareClient(t, srv, 0) // retryBase 0: only Retry-After delays
+	start := time.Now()
+	if _, err := c.ListItems(context.Background(), "list-1"); err != nil {
+		t.Fatalf("ListItems: %v", err)
+	}
+	if waited := time.Since(start); waited < time.Second || calls.Load() != 2 {
+		t.Fatalf("retried after %s with %d calls, want >= 1s (Retry-After) and 2 calls", waited, calls.Load())
+	}
+
+	// A Retry-After longer than a sync should wait ends the attempt at once.
+	calls.Store(0)
+	retryAfter = "300"
+	if _, err := c.ListItems(context.Background(), "list-1"); err == nil || calls.Load() != 1 {
+		t.Fatalf("Retry-After 300: want an error after 1 call, got calls=%d err=%v", calls.Load(), err)
 	}
 }
