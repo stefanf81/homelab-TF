@@ -252,6 +252,13 @@ resource "proxmox_virtual_environment_vm" "k3s_node" {
   }
 
   lifecycle {
+    # This VM is the whole cluster: its root disk holds the k3s datastore (kine
+    # state.db) and nothing backs it up yet (docs/reports/BACKLOG_2026.md #2). Any
+    # plan that would destroy or replace it now fails instead of relying on someone
+    # reading the plan. To rebuild or retire the node on purpose, remove this line,
+    # apply, and restore it afterwards.
+    prevent_destroy = true
+
     # user_data_file_id is ForceNew: never replace the node because the cloud-init
     # snippet changed. Snippet edits apply to new nodes; the running node is changed
     # by hand (docs/reports/REMEDIATION_PLAN_2026-10.md REL-00).

@@ -416,7 +416,7 @@ TF/
 ```bash
 make init          # Download providers into plugin cache
 make apply         # Full: provision VM → wait for k3s → fetch kubeconfig
-make destroy       # Tear down everything
+make destroy       # Tear down everything (refused while modules/proxmox sets prevent_destroy)
 make cache         # Show provider cache size
 make cache-clean   # Wipe cached providers
 ```
