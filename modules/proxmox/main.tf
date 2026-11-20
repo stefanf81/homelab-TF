@@ -1,10 +1,12 @@
-# Ubuntu 26.04 (Resolute) Cloud Image, pinned to the 2026-10-16 release image.
+# Ubuntu 26.04 (Resolute) Cloud Image, pinned to the 2026-11-08 release image.
+# The checksum comes from that release's SHA256SUMS, whose signature verifies
+# against the Ubuntu cloud image signing key (ubuntu-cloudimage-keyring).
 resource "proxmox_download_file" "ubuntu_cloud_image" {
   content_type        = "iso"
   datastore_id        = "local"
   node_name           = var.proxmox_node
-  url                 = "https://cloud-images.ubuntu.com/releases/resolute/release-20261016/ubuntu-26.04-server-cloudimg-amd64.img"
-  checksum            = "5645d0318ad21f643ebb1ac4567514620e9893380b07b0201fda163baa5b7eb5"
+  url                 = "https://cloud-images.ubuntu.com/releases/resolute/release-20261108/ubuntu-26.04-server-cloudimg-amd64.img"
+  checksum            = "7b90593f5532b49b7e3fe3d2743f0d1f0d822e5b07cebcd8e00c0df8069ecab9"
   checksum_algorithm  = "sha256"
   file_name           = "ubuntu-26.04-server-cloudimg-amd64.img"
   overwrite           = false

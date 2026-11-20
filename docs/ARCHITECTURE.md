@@ -13,7 +13,7 @@ TaskFlow is a **single-node homelab Kubernetes platform** running on Proxmox VE,
 |-----------|---------------|---------|
 | IaC Engine | OpenTofu (minimum ≥ 1.8.0) | VM provisioning & kubeconfig fetch |
 | Provider | `bpg/proxmox` v0.121.0 | Proxmox VE API integration |
-| Cloud Image | Ubuntu 26.04 (Resolute), release-20261016, SHA-256 pinned (the VM ignores later re-pins: `disk[0].file_id` is in `ignore_changes`) | k3s host OS |
+| Cloud Image | Ubuntu 26.04 (Resolute), release-20261108, SHA-256 pinned (the VM ignores later re-pins: `disk[0].file_id` is in `ignore_changes`) | k3s host OS |
 | k3s | v1.37.2+k3s1 | Kubernetes distribution |
 | Orchestration | Makefile (`make init`, `make apply`) | Enforces correct provisioning sequence |
 
@@ -591,7 +591,7 @@ AbuseIPDB-listed sources are rejected even earlier than the HTTPRoute chain: at 
 2. **Jaeger UI is not on the Gateway anymore** — don't re-add a `/jaeger` route without putting auth in front of it.
 3. **Postgres UID is 70 on purpose** — don't "standardize" it to `10001`; the Postgres volume ownership depends on 70.
 4. **`proxmox_insecure = true`** disables TLS verification to Proxmox. Fine for a self-signed homelab, dangerous anywhere else.
-5. **Ubuntu 26.04 ("Resolute")** is pinned to the `release-20261016` cloud image and verified with a SHA-256 checksum in `modules/proxmox/main.tf`.
+5. **Ubuntu 26.04 ("Resolute")** is pinned to the `release-20261108` cloud image and verified with a SHA-256 checksum in `modules/proxmox/main.tf`.
 6. The whole stack is **single-replica** — there is no HA. A node reboot = full downtime. That's the accepted homelab tradeoff, not a bug.
 
 ### 10.9 The monitoring stack (VictoriaMetrics + Grafana) and how to reach it
