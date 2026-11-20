@@ -6,20 +6,17 @@ ROOT := .
 # ------------------------------------------------------------------------------
 # OpenTofu provider plugin cache
 #
-# Providers can be hundreds of MB. By pointing OpenTofu at a shared, project-local
-# cache directory we download each distinct provider binary exactly once and reuse
-# it (via symlink where the filesystem allows) across `init`/`plan`/`apply`/`destroy`.
+# Providers are tens of MB each. TF_PLUGIN_CACHE_DIR (honoured by OpenTofu) keeps
+# one copy per provider version outside the project, so a fresh `tofu init`
+# (after deleting .terraform/, in a second checkout or worktree) links from the
+# cache instead of downloading again. It used to live under .terraform/, which is
+# exactly what gets deleted, so it never saved a download.
 #
-# OpenTofu will NOT create this directory itself, so `ensure-cache` creates it
-# before any tofu command runs. The path lives under `.terraform/`, which is
-# already excluded from version control by the `**/.terraform/*` rule in .gitignore.
-#
-# This is the Terraform-compatible `TF_PLUGIN_CACHE_DIR` env var, which OpenTofu
-# honors. To make the cache persistent across direct `tofu` invocations (outside
-# `make`), export the same variable in your shell, or use a project-local CLI
-# config file (`.tofurc` / `tofu.tfrc`) with `plugin_cache_dir = ".terraform/providers-cache"`.
+# Override with `make TF_PLUGIN_CACHE_DIR=...` or by exporting the variable; set
+# it in your shell (or plugin_cache_dir in ~/.tofurc) to cover direct `tofu` runs.
 # ------------------------------------------------------------------------------
-export TF_PLUGIN_CACHE_DIR := $(ROOT)/.terraform/providers-cache
+TF_PLUGIN_CACHE_DIR ?= $(HOME)/.cache/opentofu/plugins
+export TF_PLUGIN_CACHE_DIR
 
 # Ensure the cache directory exists; OpenTofu refuses to cache into a missing dir.
 ensure-cache:
@@ -87,6 +84,8 @@ cache:
 
 # Drop all cached provider binaries (e.g. after a major provider upgrade bump).
 # OpenTofu never prunes the cache itself, so this is the supported cleanup path.
+# The default directory is per user, so this also empties it for other projects
+# that use it; they simply download again on their next init.
 cache-clean:
 	@echo "Removing cached providers in $(TF_PLUGIN_CACHE_DIR)"
 	@rm -rf "$(TF_PLUGIN_CACHE_DIR)"

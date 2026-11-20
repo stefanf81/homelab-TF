@@ -57,7 +57,7 @@ variable "vm_id" {
 
 variable "ip_address" {
   type        = string
-  description = "The static IP address and CIDR for the VM (e.g. 192.168.1.50/24)"
+  description = "The static IP address and CIDR for the VM (e.g. 192.168.1.50/24). Set once: cloud-init is disabled after the first boot, so a change is not applied inside the running guest (and the kubeconfig fetch would then wait on the new address)."
 
   validation {
     condition     = can(cidrhost(var.ip_address, 0))
@@ -86,7 +86,7 @@ variable "memory_size" {
 
 variable "disk_size" {
   type        = number
-  description = "Size of the root disk in Gigabytes"
+  description = "Size of the root disk in Gigabytes. Raising it grows the Proxmox disk only: cloud-init is disabled after the first boot, so grow the partition and filesystem on the node (growpart /dev/sda 1 && resize2fs /dev/sda1)."
   default     = 100
 }
 

@@ -29,6 +29,10 @@ data:
     {
         admin off
         auto_https off
+        # Bound graceful shutdown inside the pod's budget (30s termination grace
+        # minus the 5s preStop = 25s). Caddy's default (0) waits for open
+        # connections forever, so a lingering connection ended in SIGKILL.
+        grace_period 20s
         order coraza_waf first
         order log_append before coraza_waf
         servers {

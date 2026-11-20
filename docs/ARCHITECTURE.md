@@ -580,7 +580,7 @@ AbuseIPDB-listed sources are rejected even earlier than the HTTPRoute chain: at 
 | Pause either denylist sink | `abuseipdb-ingress-deny` file (Cilium) / `CLOUDFLARE_SYNC_ENABLED` (edge) | see rollback in `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md` |
 | Rotate the AbuseIPDB key / Cloudflare token | `sops edit gitops/platform/abuseipdb/abuseipdb-secrets.yaml` | Flux re-decrypts on next sync |
 | Bump Cilium/Proxmox CSI/cert-manager version | `ref.tag` + `ref.digest` in the relevant `repository.yaml` | Flux upgrades (cert-manager/kyverno/renovate use `crds: Skip`; Cilium/Falco use `CreateReplace`) |
-| Change VM size/network | `terraform.tfvars` + `variables.tf` | `make apply` (note: some changes force VM recreate → auto re-fetch kubeconfig) |
+| Change VM size/network | `terraform.tfvars` + `variables.tf` | `make apply` (some changes force a VM recreate, which `prevent_destroy` refuses until lifted; a recreate re-fetches the kubeconfig). Cloud-init is disabled after the first boot: a larger `disk_size` still needs `growpart`/`resize2fs` on the node, and `ip_address` is fixed for the node's lifetime |
 | Add a TLS cert | `gitops/infrastructure/controllers/cert-manager/` + HTTPS listener in `gateway.yaml` | see `docs/archive/ISSUES.md` #19 |
 | Change VictoriaMetrics retention / storage | `gitops/monitoring/platform/release.yaml` (`vmsingle.spec`, `vmsingle.storage`) | `flux reconcile kustomization monitoring -n flux-system` |
 | Rotate the Grafana admin password | `sops edit gitops/monitoring/platform/grafana-secrets.yaml` | Flux re-decrypts on next sync |

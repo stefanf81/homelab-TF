@@ -63,11 +63,13 @@ spec:
             # Keep the default single I/O thread: extra threads cost latency/throughput
             # on small CPU budgets with one shared Lettuce connection (BENCHMARKS.md §59).
             # Guard against client-connection memory blowup. Caps the combined output
-            # buffers of all connected clients (Lettuce + redis_exporter) at 5% of
-            # maxmemory (~3 MB here). Exceeding the cap drops the greediest connection
-            # rather than OOM-killing the pod.
+            # buffers of all connected clients (Lettuce + redis_exporter); exceeding it
+            # drops the greediest connection rather than OOM-killing the pod. 16mb, not
+            # the earlier 5% of maxmemory (~3.2 MB): one reply larger than that would
+            # have dropped the backend's single shared Lettuce connection mid-read once
+            # cached values grow. 64mb maxmemory + 16mb clients stays inside 128Mi.
             - "--maxmemory-clients"
-            - "5%"
+            - "16mb"
             # Expiry-scan CPU budget. 1 = default (balanced). Lower reduces CPU stolen
             # from the backend at the cost of stale keys lingering slightly longer.
             # Raise to 4 only if TTL-based key buildup is observed.

@@ -29,6 +29,11 @@ data:
     {
         admin off
         auto_https off
+        # Bound graceful shutdown inside the pod's budget (45s termination grace
+        # minus the 5s preStop = 40s). Caddy's default (0) waits for open
+        # connections forever, so a rollout with an admin SSE stream open (up to
+        # 31 min) always ended in SIGKILL; now the stream is closed first.
+        grace_period 30s
         order coraza_waf first
         order log_append before coraza_waf
         servers {

@@ -23,7 +23,9 @@ spec:
       remediateLastFailure: true
   values:
     replicaCount: 1
-    # Enable the REST API to receive external events (e.g. Falco alerts)
+    # REST API for the UI. The chart enables it whenever ui.enabled is set
+    # (--rest-enabled = rest.enabled or ui.enabled); explicit here for clarity.
+    # Falco does not use it: falcosidekick writes PolicyReports directly.
     rest:
       enabled: true
     # Expose /metrics for the VMServiceScrape (future alerting; no dashboard reads

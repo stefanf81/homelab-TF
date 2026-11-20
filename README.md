@@ -63,7 +63,7 @@ k3s_version       = "v1.37.2+k3s1"
 
 ### 2️⃣ Provision the Proxmox VM & Fetch `kubeconfig`
 
-Initialize OpenTofu (utilizes project-local plugin caching in `.terraform/providers-cache`), run a non-mutating preview, then apply the configuration:
+Initialize OpenTofu (providers are cached in `~/.cache/opentofu/plugins`, override with `TF_PLUGIN_CACHE_DIR`), run a non-mutating preview, then apply the configuration:
 
 ```bash
 make init
@@ -216,7 +216,7 @@ To ensure production-grade security, resiliency, and performance on a single-nod
 * **JVM Heap & Off-Heap Guard:** Spring Boot backend uses `MaxRAMPercentage=50.0` (1 GiB heap at a 2 GiB limit) with bounded off-heap (`MaxMetaspaceSize=256m`, `MaxDirectMemorySize=256m`). Its memory request is 1536Mi; QoS is Burstable because CPU has no limit.
 
 ### 4. Provider Plugin Cache
-OpenTofu is configured via `Makefile` to use project-local plugin caching (`.terraform/providers-cache`), avoiding re-downloading large provider binaries (`bpg/proxmox`) on every run.
+The `Makefile` points OpenTofu's provider plugin cache at `~/.cache/opentofu/plugins` (override with `TF_PLUGIN_CACHE_DIR`), so a fresh `init` after deleting `.terraform/`, or in a second checkout, links the large `bpg/proxmox` binary from the cache instead of downloading it again.
 
 ```bash
 make cache        # Show cache size
