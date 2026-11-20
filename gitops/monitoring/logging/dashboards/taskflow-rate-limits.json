@@ -1599,7 +1599,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"uri\\\":\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"request.client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*` [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__range])))",
+          "expr": "sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"uri\\\":\\\"/waf-healthz\\\"\" |= \"\\\"client_ip\\\":\\\"10.42.\" | json request_uri=\"request.uri\", client_ip=\"request.client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*` [$__range])) or (0 * sum(count_over_time({job=\"coraza-waf\", container=\"waf\", application=~\"$application\"}[$__range])))",
           "queryType": "instant"
         }
       ],
@@ -1662,7 +1662,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"uri\\\":\\\"/waf-healthz\\\"\" | json status=\"status\", request_method=\"request.method\", request_uri=\"request.uri\", client_ip=\"request.client_ip\", rate_limit_zone=\"rate_limit_zone\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*` | line_format `{{.status}} {{.application}} | {{.request_method}} {{.request_uri}} | ip={{.client_ip}} zone={{.rate_limit_zone | default \"-\"}}`",
+          "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"uri\\\":\\\"/waf-healthz\\\"\" |= \"\\\"client_ip\\\":\\\"10.42.\" | json status=\"status\", request_method=\"request.method\", request_uri=\"request.uri\", client_ip=\"request.client_ip\", rate_limit_zone=\"rate_limit_zone\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*` | line_format `{{.status}} {{.application}} | {{.request_method}} {{.request_uri}} | ip={{.client_ip}} zone={{.rate_limit_zone | default \"-\"}}`",
           "queryType": "range",
           "maxLines": 100
         }
@@ -2276,7 +2276,7 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"uri\\\":\\\"/waf-healthz\\\"\" | json request_uri=\"request.uri\", client_ip=\"request.client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*`",
+              "expr": "{job=\"coraza-waf\", container=\"waf\", application=~\"$application\"} |= \"\\\"handled request\\\"\" != \"\\\"uri\\\":\\\"/waf-healthz\\\"\" |= \"\\\"client_ip\\\":\\\"10.42.\" | json request_uri=\"request.uri\", client_ip=\"request.client_ip\" | __error__=\"\" | request_uri != \"/waf-healthz\" | client_ip=~`10\\.42\\..*`",
               "queryType": "range",
               "maxLines": 100
             }
