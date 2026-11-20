@@ -257,7 +257,25 @@ module DashboardValidation
       end
     end
     visit.call(dashboard["panels"])
+    errors.concat(grid_order_errors(dashboard["panels"]))
     [errors, queries]
+  end
+
+  # An expanded row owns the panels that follow it in the array, so top-level
+  # panels must be stored in grid order (top to bottom, then left to right);
+  # otherwise a row can end up after the panels it is meant to head.
+  def self.grid_order_errors(panels)
+    return [] unless panels.is_a?(Array)
+    positions = panels.filter_map do |panel|
+      grid = panel.is_a?(Hash) ? panel["gridPos"] : nil
+      next unless grid.is_a?(Hash) && grid["y"].is_a?(Integer) && grid["x"].is_a?(Integer)
+      [[grid["y"], grid["x"]], "panel #{panel['id'].inspect} (#{panel['title']})"]
+    end
+    positions.each_cons(2).filter_map do |(previous, previous_context), (current, context)|
+      next unless (current <=> previous).negative?
+      "#{context}: stored after #{previous_context} but placed above or left of it " \
+        "(y=#{current[0]}, x=#{current[1]}); order top-level panels by gridPos"
+    end
   end
 
   def self.get(base_url, path, params = {})

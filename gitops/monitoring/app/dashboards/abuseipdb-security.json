@@ -137,7 +137,7 @@
       "id": 2,
       "type": "stat",
       "title": "Feed age",
-      "description": "Time since the CiliumCIDRGroup denylist was last updated successfully, as tracked by the synchronizer (restored from the group annotation after restarts, refreshed every minute). Orange beyond 7h (missed 6h cycle), red beyond ABUSEIPDB_MAX_STALE_AGE (24h). No data: no successful update recorded yet (exporter 0.3.1 exports 0 until then and after a restart until the first refresh; the tile hides that 0). Cloudflare edge freshness is shown separately below.",
+      "description": "Time since the CiliumCIDRGroup denylist was last updated successfully, as tracked by the synchronizer (restored from the group annotation after restarts, refreshed every minute). Orange beyond 7h (missed 6h cycle), red beyond ABUSEIPDB_MAX_STALE_AGE (24h). No data: no successful update recorded yet. Cloudflare edge freshness is shown separately below.",
       "gridPos": {
         "x": 4,
         "y": 3,
@@ -237,7 +237,7 @@
           "values": false
         }
       },
-      "description": "When the CiliumCIDRGroup denylist was last updated successfully (exporter 0.3.2 and later: tracks the Cilium sink and is restored after restarts). An old value means the synchronizer is failing; Cloudflare edge freshness is shown separately below. No data: no successful update recorded yet. Exporter 0.3.1 sets this only when every sink succeeded and does not restore it after a restart, so it stays empty until the next fully successful sync; Feed age next to it is correct on both versions."
+      "description": "When the CiliumCIDRGroup denylist was last updated successfully. The timestamp follows the Cilium sink and is restored from the group annotation after restarts. An old value means the synchronizer is failing; Cloudflare edge freshness is shown separately below. No data: no successful update recorded yet."
     },
     {
       "id": 4,
@@ -947,7 +947,7 @@
       "id": 18,
       "type": "stat",
       "title": "Cloudflare sync status",
-      "description": "Result of the most recent push to the Cloudflare edge (IP list + WAF rule). No attempt: no push has been attempted since the synchronizer started (each push follows a successful feed download, none after an AbuseIPDB 429). FAILING appears only after a push failed in this process, so a restart does not paint the tile red (exporter 0.3.1 exports 0 until the first push; the tile hides that 0).",
+      "description": "Result of the most recent push to the Cloudflare edge (IP list + WAF rule). No attempt: no push has been attempted since the synchronizer started (each push follows a successful feed download, none after an AbuseIPDB 429). FAILING appears only after a push failed in this process, so a restart does not paint the tile red.",
       "gridPos": {
         "x": 0,
         "y": 29,
@@ -1119,13 +1119,13 @@
           "values": false
         }
       },
-      "description": "When the denylist last synced to Cloudflare successfully (restored after restarts on exporter 0.3.2 and later; exporter 0.3.1 shows No data after a restart until the next successful push). An old value means the Cloudflare sync is failing. No data: no successful Cloudflare sync recorded yet."
+      "description": "When the denylist last synced to Cloudflare successfully (restored from the group annotation after restarts). An old value means the Cloudflare sync is failing. No data: no successful Cloudflare sync recorded yet."
     },
     {
       "id": 21,
       "type": "stat",
       "title": "Cloudflare feed age",
-      "description": "Time since the last successful Cloudflare edge update, as tracked by the synchronizer (restored after restarts, refreshed every minute). Orange beyond 7h (missed 6h cycle), red beyond ABUSEIPDB_MAX_STALE_AGE (24h). No data: no successful Cloudflare sync recorded yet (exporter 0.3.1 exports 0 until then; the tile hides that 0).",
+      "description": "Time since the last successful Cloudflare edge update, as tracked by the synchronizer (restored after restarts, refreshed every minute). Orange beyond 7h (missed 6h cycle), red beyond ABUSEIPDB_MAX_STALE_AGE (24h). No data: no successful Cloudflare sync recorded yet.",
       "gridPos": {
         "x": 12,
         "y": 29,
@@ -1186,7 +1186,7 @@
       "id": 22,
       "type": "stat",
       "title": "WAF rule present",
-      "description": "Result of the managed zone custom rule (ref abuseipdb) step at the last push that reached it. Pushes run every 6h, and a failure in the list stage skips this step and keeps the previous value. Present (1): the rule was confirmed, and created, re-enabled or corrected if needed; a rule deleted in the Cloudflare dashboard afterwards still shows Present until the next push. Not confirmed (0): the check or repair failed (API, permission, rate-limit or network error; the rule may still exist); see Cloudflare sync errors by reason. Exporter 0.3.1 also reports 0 when the push failed before reaching the rule step. Unknown: no push has reached the rule step since the synchronizer started (exporter 0.3.1 exports 0 until then; the tile hides that 0 once nothing failed).",
+      "description": "Result of the managed zone custom rule (ref abuseipdb) step at the last push that reached it. Pushes run every 6h, and a failure in the list stage skips this step and keeps the previous value. Present (1): the rule was confirmed, and created, re-enabled or corrected if needed; a rule deleted in the Cloudflare dashboard afterwards still shows Present until the next push. Not confirmed (0): the check or repair failed (API, permission, rate-limit or network error; the rule may still exist); see Cloudflare sync errors by reason. Unknown: no push has reached the rule step since the synchronizer started.",
       "gridPos": {
         "x": 16,
         "y": 29,
@@ -1261,7 +1261,7 @@
       "id": 23,
       "type": "stat",
       "title": "Bulk operation pending",
-      "description": "Cloudflare allows one pending list bulk operation per account; a stuck pending operation delays the next update. Pending / last failed (1): a list bulk operation is being awaited (at most 2 minutes), or the last one failed, timed out or could not be polled, and stays 1 until the next successful Cloudflare push; a sustained 1 usually means the last bulk operation did not complete (see Cloudflare sync errors by reason: bulk, network). No (0): nothing outstanding. Unknown (0.3.2 and later): no bulk operation started and no Cloudflare push succeeded since the synchronizer started; exporter 0.3.1 exports 0 from the start.",
+      "description": "Cloudflare allows one pending list bulk operation per account; a stuck pending operation delays the next update. Pending / last failed (1): a list bulk operation is being awaited (at most 2 minutes), or the last one failed, timed out or could not be polled, and stays 1 until the next successful Cloudflare push; a sustained 1 usually means the last bulk operation did not complete (see Cloudflare sync errors by reason: bulk, network). No (0): nothing outstanding. Unknown: no bulk operation started and no Cloudflare push succeeded since the synchronizer started.",
       "gridPos": {
         "x": 20,
         "y": 29,

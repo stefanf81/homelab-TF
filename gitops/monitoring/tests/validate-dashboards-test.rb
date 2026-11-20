@@ -273,6 +273,19 @@ class DashboardValidationTest < Minitest::Test
     assert_empty errors([row, panel(3, 1)])
   end
 
+  def test_top_level_panels_must_be_stored_in_grid_order
+    row = { "id" => 10, "title" => "Section", "type" => "row", "collapsed" => false,
+            "gridPos" => { "x" => 0, "y" => 8, "w" => 24, "h" => 1 }, "panels" => [] }
+    below = panel(2, 9)
+    out_of_order = errors([panel(1), below, row])
+    assert_equal 1, out_of_order.length
+    assert_match(/panel 10 \(Section\): stored after panel 2 \(Count\) but placed above or left of it \(y=8, x=0\)/, out_of_order.first)
+    assert_empty errors([panel(1), row, below])
+    side_by_side = [panel(1), panel(2).merge("gridPos" => { "x" => 12, "y" => 0, "w" => 12, "h" => 8 })]
+    assert_empty errors(side_by_side)
+    assert_equal 1, errors(side_by_side.reverse).length
+  end
+
   def test_rejects_sibling_overlap_and_out_of_bounds
     assert errors([panel(1), panel(2, 7)]).any? { |error| error.include?("grid overlaps") }
     invalid = panel(3)

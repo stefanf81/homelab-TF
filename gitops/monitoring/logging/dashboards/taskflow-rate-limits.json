@@ -361,6 +361,19 @@
       }
     },
     {
+      "id": 105,
+      "type": "row",
+      "title": "Fixed-window summaries — each window ends at the range end and can include data outside the graph",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
       "id": 1,
       "type": "stat",
       "title": "429 responses — 5 min",
@@ -548,19 +561,6 @@
         },
         "overrides": []
       }
-    },
-    {
-      "id": 105,
-      "type": "row",
-      "title": "Fixed-window summaries — each window ends at the range end and can include data outside the graph",
-      "collapsed": false,
-      "gridPos": {
-        "x": 0,
-        "y": 6,
-        "w": 24,
-        "h": 1
-      },
-      "panels": []
     },
     {
       "id": 106,
