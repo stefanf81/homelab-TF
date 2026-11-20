@@ -26,10 +26,20 @@ spec:
     # Enable the REST API to receive external events (e.g. Falco alerts)
     rest:
       enabled: true
-    # Expose /metrics for the VMServiceScrape (dashboard + alerting).
+    # Expose /metrics for the VMServiceScrape (future alerting; no dashboard reads
+    # policy_report_* today). `detailed` emitted one policy_report_result series per
+    # result, labelled down to the resource name and rule: every Trivy CVE per
+    # workload (via the adapter), every compliance check and Falco event, scraped
+    # every 60s. Per-resource detail stays in the UI and the PolicyReports; the
+    # metrics keep what an alert needs (which policy fails where, how badly), and
+    # passing/skipped results are not exported.
     metrics:
       enabled: true
-      mode: detailed
+      mode: custom
+      customLabels: [namespace, policy, status, severity, source]
+      filter:
+        status:
+          exclude: ["pass", "skip"]
     resources:
       requests:
         cpu: "25m"
