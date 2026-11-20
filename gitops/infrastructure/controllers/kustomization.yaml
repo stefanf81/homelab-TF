@@ -4,7 +4,9 @@ kind: Kustomization
 # Workloads that need the app tier (Gateway/HTTPRoute), SOPS secrets or their own
 # ordering are reconciled from gitops/platform/ by dedicated cluster-root
 # Kustomizations (abuseipdb, hubble-ui, policy-reporter, renovate), and
-# trivy-operator has its own Kustomization (gitops/clusters/taskflow/trivy-operator.yaml).
+# trivy-operator and falco have their own Kustomizations (gitops/clusters/taskflow/
+# trivy-operator.yaml, falco.yaml): a failed release of either must not block the
+# Kustomizations that depend on infra-controllers.
 resources:
   - gateway-api
   - cilium
@@ -12,4 +14,3 @@ resources:
   - coredns
   - proxmox-csi
   - kyverno
-  - falco

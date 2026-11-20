@@ -1,0 +1,23 @@
+# Falco runtime security, in its own Kustomization (moved out of infra-controllers).
+# A Falco release that fails to install or upgrade (the sensor depends on the node
+# kernel, see falco/repository.yaml) now only marks this Kustomization not Ready
+# instead of blocking everything that depends on infra-controllers.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: falco
+  namespace: flux-system
+spec:
+  # Same position in the bootstrap order as before: after Cilium and the other
+  # cluster controllers.
+  dependsOn:
+    - name: infra-controllers
+  interval: 30m
+  retryInterval: 5m
+  path: ./gitops/infrastructure/controllers/falco
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 10m

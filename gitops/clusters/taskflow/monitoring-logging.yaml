@@ -35,6 +35,10 @@ spec:
       readyExpr: >-
         has(dep.status) && has(dep.status.inventory) &&
         has(dep.status.inventory.entries) && size(dep.status.inventory.entries) > 0
+    - name: falco
+      readyExpr: >-
+        has(dep.status) && has(dep.status.inventory) &&
+        has(dep.status.inventory.entries) && size(dep.status.inventory.entries) > 0
   interval: 30m
   retryInterval: 5m
   path: ./gitops/monitoring/logging

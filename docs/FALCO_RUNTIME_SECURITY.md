@@ -366,7 +366,7 @@ These are the **actual** metrics that Falco 0.45.2 (chart 9.2.2, modern eBPF dri
 
 ### Force Flux to sync changes
 ```bash
-flux reconcile kustomization infra-controllers --with-source
+flux reconcile kustomization falco --with-source
 flux reconcile kustomization monitoring-app --with-source
 flux reconcile kustomization monitoring-logging --with-source   # Falco dashboard ConfigMap
 ```

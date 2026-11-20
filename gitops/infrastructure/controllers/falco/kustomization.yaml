@@ -4,12 +4,11 @@ resources:
   - namespace.yaml
   - repository.yaml
   - release.yaml
-# Migration, step 1 of 2 (Flux FAQ "How can I safely move resources from one dir
+# Migration, step 2 of 2 (step 1 added this annotation) (Flux FAQ "How can I safely move resources from one dir
 # to another?"): Falco moves out of infra-controllers into its own Kustomization,
 # so an unhealthy Falco no longer blocks every Kustomization that depends on
-# infra-controllers. This annotation must be live on the cluster before step 2
-# removes `falco` from ../kustomization.yaml; otherwise infra-controllers may prune
-# the namespace and HelmRelease before the new Kustomization adopts them.
-# Removed again once the new Kustomization owns the objects.
+# infra-controllers. Keep this annotation until `flux tree ks falco` lists the
+# namespace, OCIRepository and HelmRelease and `flux tree ks infra-controllers`
+# no longer does; then remove it in a follow-up commit.
 commonAnnotations:
   kustomize.toolkit.fluxcd.io/prune: disabled

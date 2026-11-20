@@ -4,6 +4,7 @@ resources:
   - cluster-vars.yaml
   - flux-operator.yaml
   - infra-controllers.yaml
+  - falco.yaml
   - infra-configs.yaml
   - abuseipdb.yaml
   - image-automation
