@@ -59,12 +59,21 @@ module DashboardVersionValidation
   # Not part of a longer name; a JSON "\n" escape counts as a line start.
   START = /(?:(?<=\\n)|(?<![\w-]))/
 
+  # Compiled once per label: building them per scanned line was ~2/3 of the run
+  # (27k lines x labels x 2 patterns).
+  PATTERNS = Hash.new do |cache, label|
+    cache[label] = /#{START}#{Regexp.escape(label)}(?:\s+image)?\s+#{NUMBER}(?:#{CHART})?/
+  end
+  CHART_ONLY_PATTERNS = Hash.new do |cache, label|
+    cache[label] = /#{START}#{Regexp.escape(label)}\s+(?:stack\s+)?chart\s+v?(?<chart>\d+\.\d+\.\d+)/
+  end
+
   def self.pattern(label)
-    /#{START}#{Regexp.escape(label)}(?:\s+image)?\s+#{NUMBER}(?:#{CHART})?/
+    PATTERNS[label]
   end
 
   def self.chart_only_pattern(label)
-    /#{START}#{Regexp.escape(label)}\s+(?:stack\s+)?chart\s+v?(?<chart>\d+\.\d+\.\d+)/
+    CHART_ONLY_PATTERNS[label]
   end
 
   # Version mentions per component, with file and line for the report.
