@@ -169,8 +169,10 @@ jobs:
             GO_VERSION=${{ steps.versions.outputs.go_version }}
             APP_VERSION=${{ steps.versions.outputs.app_version }}
             IMAGE_REVISION=${{ steps.versions.outputs.revision }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Own cache scope: the default `buildkit` scope is shared with the WAF image
+          # build, and each gha export replaces the scope's cache.
+          cache-from: type=gha,scope=abuseipdb-sync
+          cache-to: type=gha,mode=max,scope=abuseipdb-sync
 
       - name: Generate build summary
         run: |

@@ -127,8 +127,11 @@ jobs:
           load: true
           push: false
           tags: taskflow-caddy-coraza:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Each image has its own cache scope: both workflows default to `buildkit`,
+          # and a gha export replaces that scope's cache, so the abuseipdb-sync build
+          # used to evict the xcaddy layers (and the other way round).
+          cache-from: type=gha,scope=taskflow-caddy-coraza
+          cache-to: type=gha,mode=max,scope=taskflow-caddy-coraza
 
       - name: Run identity and rate-limit tests
         env:
@@ -184,8 +187,9 @@ jobs:
           push: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) && steps.tagcheck.outputs.exists != 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Same builder as the test build above, so its layers are already local;
+          # the test build exported them to the cache, no second export needed.
+          cache-from: type=gha,scope=taskflow-caddy-coraza
 
       - name: Generate build summary
         run: |
