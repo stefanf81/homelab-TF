@@ -34,6 +34,10 @@ func main() {
 		logger.Error("cannot build Kubernetes client configuration", "error", err)
 		os.Exit(1)
 	}
+	// Bound every apiserver request like the external HTTP clients: with the
+	// client-go default (no timeout) a hung call held the sink lock, so the
+	// per-minute stale check never ran and fail-open could not fire.
+	restConfig.Timeout = cfg.HTTPTimeout
 	dyn, err := dynamic.NewForConfig(restConfig)
 	if err != nil {
 		logger.Error("cannot create Kubernetes dynamic client", "error", err)
@@ -308,9 +312,16 @@ func (a *App) applyStartupFilters(ctx context.Context, state *GroupState) {
 		"remaining", len(filtered))
 }
 
+// syncDeadline bounds one synchronization end to end (feed download with retries,
+// both sinks including a Cloudflare bulk operation). Runs take seconds; this only
+// stops a stuck run from holding opMu, which the stale check needs, indefinitely.
+const syncDeadline = 15 * time.Minute
+
 func (a *App) syncWithLogging(ctx context.Context) {
 	a.opMu.Lock()
 	defer a.opMu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, syncDeadline)
+	defer cancel()
 	if err := a.syncOnce(ctx); err != nil {
 		a.log.Error("synchronization failed", "error", err)
 	}
@@ -406,13 +417,23 @@ func (a *App) syncOnce(ctx context.Context) error {
 	cloudflareOK := true
 	if a.cf != nil {
 		entries, changed, cfErr := a.cf.Sync(ctx, desired)
+		// A failed WAF rule check after the list was replaced leaves fresh data in
+		// the list: record its freshness (stale-feed age, fail-open) separately from
+		// the sync result, or the stale check would empty a list just refilled.
+		var ruleErr *cloudflareRuleError
+		listUpdated := cfErr == nil || errors.As(cfErr, &ruleErr)
 		if cfErr != nil {
 			cloudflareOK = false
 			reason := cfErrorReason(cfErr)
 			metricCloudflareSyncSuccess.Set(0)
 			metricCloudflareSyncErrors.WithLabelValues(reason).Inc()
-			a.log.Error("Cloudflare sink update failed; edge list unchanged", "error", cfErr, "reason", reason)
-		} else {
+			if ruleErr != nil {
+				a.log.Error("Cloudflare IP list updated, but the WAF rule could not be ensured", "error", cfErr, "reason", reason)
+			} else {
+				a.log.Error("Cloudflare sink update failed; edge list unchanged", "error", cfErr, "reason", reason)
+			}
+		}
+		if listUpdated {
 			a.mu.Lock()
 			a.cfLastSuccess = now
 			a.staleCFCleared = false
@@ -420,7 +441,9 @@ func (a *App) syncOnce(ctx context.Context) error {
 			a.cfClearRetry.reset()
 			a.mu.Unlock()
 			metricCloudflareEntries.Set(float64(entries))
-			metricCloudflareSyncSuccess.Set(1)
+			if cfErr == nil {
+				metricCloudflareSyncSuccess.Set(1)
+			}
 			metricCloudflareLastSuccess.Set(float64(now.Unix()))
 			metricCloudflareFeedAge.Set(0)
 			metricCloudflareFeedStale.Set(0)
@@ -430,7 +453,9 @@ func (a *App) syncOnce(ctx context.Context) error {
 			}); err != nil {
 				a.log.Warn("cannot persist Cloudflare last-success annotation", "error", err)
 			}
-			a.log.Info("Cloudflare edge sink updated", "entries", entries, "changed", changed)
+			if cfErr == nil {
+				a.log.Info("Cloudflare edge sink updated", "entries", entries, "changed", changed)
+			}
 		}
 	}
 
@@ -641,7 +666,7 @@ func (a *App) updateCloudflareStaleness(ctx context.Context) {
 	if !ready {
 		return
 	}
-	if _, _, err := a.cf.Sync(ctx, nil); err != nil {
+	if _, err := a.cf.ClearList(ctx); err != nil {
 		a.mu.Lock()
 		retryIn := a.cfClearRetry.failed(now)
 		a.mu.Unlock()

@@ -590,3 +590,94 @@ func TestSyncRetriesTransientGroupReadError(t *testing.T) {
 		t.Fatalf("feed calls = %d, want 1", got)
 	}
 }
+
+// statefulCloudflare keeps the managed list's items, completes bulk replaces
+// immediately, and answers every ruleset request with ruleStatus (the WAF rule
+// check), e.g. 403 for a token without zone ruleset permissions.
+type statefulCloudflare struct {
+	mu         sync.Mutex
+	items      []string
+	puts       int
+	ruleStatus int
+}
+
+func (f *statefulCloudflare) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	switch {
+	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/rules/lists"):
+		cfOK(w, []map[string]any{{"id": "list-1", "name": "abuseipdb", "kind": "ip"}})
+	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/items"):
+		out := make([]map[string]string, 0, len(f.items))
+		for _, ip := range f.items {
+			out = append(out, map[string]string{"ip": ip})
+		}
+		cfOK(w, out)
+	case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/items"):
+		var in []map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			cfFail(w, http.StatusBadRequest)
+			return
+		}
+		f.items = f.items[:0]
+		for _, it := range in {
+			f.items = append(f.items, it["ip"])
+		}
+		f.puts++
+		cfOK(w, map[string]any{}) // no operation_id: applied synchronously
+	default:
+		cfFail(w, f.ruleStatus)
+	}
+}
+
+func (f *statefulCloudflare) state() (int, int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.items), f.puts
+}
+
+// A failing WAF rule check must not make the fail-open clear count as failed:
+// it used to be retried (and the list emptied again) forever.
+func TestStaleCloudflareClearSucceedsWhenRuleCheckFails(t *testing.T) {
+	cf := &statefulCloudflare{items: []string{"198.51.100.7", "198.51.100.8"}, ruleStatus: http.StatusForbidden}
+	srv := httptest.NewServer(cf)
+	defer srv.Close()
+	app := staleCloudflareApp(t, srv)
+	ctx := context.Background()
+
+	app.updateCloudflareStaleness(ctx)
+	if n, _ := cf.state(); n != 0 || !app.staleCFCleared {
+		t.Fatalf("stale clear: items=%d cleared=%v, want 0 and true", n, app.staleCFCleared)
+	}
+	_, puts := cf.state()
+	app.updateCloudflareStaleness(ctx)
+	if _, again := cf.state(); again != puts {
+		t.Fatalf("cleared list was replaced again (%d -> %d PUTs)", puts, again)
+	}
+}
+
+// When the list is replaced but the rule check fails, the list holds fresh data:
+// its freshness must be recorded so the stale check does not empty it again.
+func TestCloudflareRuleFailureKeepsFreshListFresh(t *testing.T) {
+	app, _, _ := syncScenario(t, 0)
+	cf := &statefulCloudflare{ruleStatus: http.StatusForbidden}
+	srv := httptest.NewServer(cf)
+	defer srv.Close()
+	app.cf = testCloudflareClient(t, srv, 0)
+	app.cfLastSuccess = time.Now().Add(-25 * time.Hour) // the edge list is stale
+	app.cfg.StaleBehavior = staleBehaviorFailOpen
+
+	if err := app.syncOnce(context.Background()); err == nil {
+		t.Fatal("expected the sync to report the failed rule check")
+	}
+	if n, _ := cf.state(); n != 50 {
+		t.Fatalf("Cloudflare list has %d items after the sync, want 50", n)
+	}
+	if age := time.Since(app.cfLastSuccess); age > time.Minute {
+		t.Fatalf("list freshness not recorded (last success %s ago)", age.Round(time.Second))
+	}
+	app.updateCloudflareStaleness(context.Background())
+	if n, _ := cf.state(); n != 50 || app.staleCFCleared {
+		t.Fatalf("fresh list was cleared by the stale check (items=%d)", n)
+	}
+}

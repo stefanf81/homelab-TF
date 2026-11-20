@@ -19,8 +19,16 @@ import (
 const (
 	defaultCloudflareAPIBase = "https://api.cloudflare.com/client/v4"
 	cloudflareMaxResponse    = 16 << 20
-	cloudflarePageSize       = 100
-	cloudflareBulkTimeout    = 2 * time.Minute
+	// Page sizes: list items accept up to 500 per page (Cloudflare API reference,
+	// GET .../rules/lists/{id}/items), so reading a 10k-entry list takes 20 requests
+	// instead of 100. The lists endpoint documents no paging parameters; it keeps
+	// the size it always sent.
+	cloudflareItemsPageSize = 500
+	cloudflareListsPageSize = 100
+	// cloudflareMaxPages bounds a walk whose cursor never ends (an API fault would
+	// otherwise loop and grow memory without limit).
+	cloudflareMaxPages    = 1000
+	cloudflareBulkTimeout = 2 * time.Minute
 	// cloudflareMaxAttempts bounds in-process retries of one idempotent API
 	// call after a transient failure (network error, timeout, 429, 5xx).
 	cloudflareMaxAttempts = 3
@@ -196,10 +204,38 @@ func (c *CloudflareClient) Sync(ctx context.Context, prefixes []netip.Prefix) (e
 
 	if err := c.EnsureRule(ctx); err != nil {
 		metricCloudflareRulePresent.Set(0)
-		return 0, changed, fmt.Errorf("ensuring WAF rule: %w", err)
+		return len(prefixes), changed, &cloudflareRuleError{err}
 	}
 	metricCloudflareRulePresent.Set(1)
 	return len(prefixes), changed, nil
+}
+
+// cloudflareRuleError means the IP list was updated but the zone WAF rule could
+// not be ensured. The list content is fresh (it counts for stale-feed age); the
+// sink still reports a failed sync until the rule is in place.
+type cloudflareRuleError struct{ err error }
+
+func (e *cloudflareRuleError) Error() string { return "ensuring WAF rule: " + e.err.Error() }
+func (e *cloudflareRuleError) Unwrap() error { return e.err }
+
+// ClearList empties the managed IP list (stale fail-open) without the WAF rule
+// check of Sync: a failing rule check used to make every clear count as failed,
+// so the list was emptied again on each retry and after every refill.
+func (c *CloudflareClient) ClearList(ctx context.Context) (changed bool, err error) {
+	listID, err := c.EnsureList(ctx)
+	if err != nil {
+		return false, fmt.Errorf("ensuring IP list: %w", err)
+	}
+	changed, err = c.ReplaceItems(ctx, listID, nil)
+	if err != nil && cfIsNotFound(err) {
+		// Deleted outside of the controller: nothing left to clear.
+		c.listID = ""
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("clearing IP list items: %w", err)
+	}
+	return changed, nil
 }
 
 // EnsureList resolves the account-level IP list by name, creating it when
@@ -239,7 +275,7 @@ func (c *CloudflareClient) EnsureList(ctx context.Context) (string, error) {
 
 func (c *CloudflareClient) listLists(ctx context.Context) ([]cfList, error) {
 	var out []cfList
-	err := c.walk(ctx, c.accountPath("/rules/lists"), func(raw json.RawMessage) error {
+	err := c.walk(ctx, c.accountPath("/rules/lists"), cloudflareListsPageSize, func(raw json.RawMessage) error {
 		var lists []cfList
 		if err := json.Unmarshal(raw, &lists); err != nil {
 			return fmt.Errorf("decoding Cloudflare response: %w", err)
@@ -256,7 +292,7 @@ func (c *CloudflareClient) listLists(ctx context.Context) ([]cfList, error) {
 // ListItems returns the current items of the list, canonicalized and sorted.
 func (c *CloudflareClient) ListItems(ctx context.Context, listID string) ([]netip.Prefix, error) {
 	var out []netip.Prefix
-	err := c.walk(ctx, fmt.Sprintf("/accounts/%s/rules/lists/%s/items", c.accountID, listID), func(raw json.RawMessage) error {
+	err := c.walk(ctx, fmt.Sprintf("/accounts/%s/rules/lists/%s/items", c.accountID, listID), cloudflareItemsPageSize, func(raw json.RawMessage) error {
 		var items []cfListItem
 		if err := json.Unmarshal(raw, &items); err != nil {
 			return fmt.Errorf("decoding Cloudflare response: %w", err)
@@ -404,12 +440,15 @@ func (c *CloudflareClient) accountPath(suffix string) string {
 // an opaque `cursor` (page/per_page is accepted for the first request), so the
 // loop prefers the returned cursor and only falls back to page numbers when a
 // total_pages count is provided.
-func (c *CloudflareClient) walk(ctx context.Context, path string, handle func(json.RawMessage) error) error {
+func (c *CloudflareClient) walk(ctx context.Context, path string, pageSize int, handle func(json.RawMessage) error) error {
 	cursor := ""
 	page := 1
-	for {
+	for requests := 1; ; requests++ {
+		if requests > cloudflareMaxPages {
+			return fmt.Errorf("listing %s: pagination did not end after %d pages", path, cloudflareMaxPages)
+		}
 		q := url.Values{}
-		q.Set("per_page", fmt.Sprintf("%d", cloudflarePageSize))
+		q.Set("per_page", fmt.Sprintf("%d", pageSize))
 		if cursor != "" {
 			q.Set("cursor", cursor)
 		} else {

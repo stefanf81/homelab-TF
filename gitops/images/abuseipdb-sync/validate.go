@@ -17,6 +17,15 @@ import (
 // as an IPv4/IPv6 address or CIDR. If any line fails, an error is returned
 // together with the number of invalid lines, and the caller must keep the
 // last known good list instead of applying a partial result.
+// Broadest prefixes accepted from the feed. The plaintext blacklist lists host
+// addresses; a range broader than this (a /8, a /6) would deny far more than one
+// bad actor and would pass every size guard, so it counts as an invalid line and
+// the whole response is rejected like any other malformed feed.
+const (
+	feedMinBitsV4 = 24
+	feedMinBitsV6 = 48
+)
+
 func ParseBlacklist(data []byte) ([]netip.Prefix, int, error) {
 	var out []netip.Prefix
 	invalid := 0
@@ -32,6 +41,9 @@ func ParseBlacklist(data []byte) ([]netip.Prefix, int, error) {
 			continue
 		}
 		p, err := parseEntry(line)
+		if err == nil {
+			err = checkFeedPrefixLength(p)
+		}
 		if err != nil {
 			invalid++
 			if firstErr == nil {
@@ -48,6 +60,17 @@ func ParseBlacklist(data []byte) ([]netip.Prefix, int, error) {
 		return nil, invalid, firstErr
 	}
 	return out, 0, nil
+}
+
+func checkFeedPrefixLength(p netip.Prefix) error {
+	minBits := feedMinBitsV6
+	if p.Addr().Is4() {
+		minBits = feedMinBitsV4
+	}
+	if p.Bits() < minBits {
+		return fmt.Errorf("prefix %s is broader than /%d", p, minBits)
+	}
+	return nil
 }
 
 // ParseFilterList parses a Git-managed list of trusted exceptions or protected

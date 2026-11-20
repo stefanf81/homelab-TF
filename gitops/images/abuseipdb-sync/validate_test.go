@@ -28,7 +28,7 @@ func mustPrefix(t *testing.T, s string) netip.Prefix {
 }
 
 func TestParseBlacklistValid(t *testing.T) {
-	body := []byte("1.2.3.4\n2001:db8::1\n\n# comment\n10.0.0.0/8\n::ffff:192.0.2.9\n")
+	body := []byte("1.2.3.4\n2001:db8::1\n\n# comment\n10.0.0.0/24\n::ffff:192.0.2.9\n")
 	got, invalid, err := ParseBlacklist(body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -36,7 +36,7 @@ func TestParseBlacklistValid(t *testing.T) {
 	if invalid != 0 {
 		t.Fatalf("unexpected invalid count: %d", invalid)
 	}
-	want := []string{"1.2.3.4/32", "10.0.0.0/8", "192.0.2.9/32", "2001:db8::1/128"}
+	want := []string{"1.2.3.4/32", "10.0.0.0/24", "192.0.2.9/32", "2001:db8::1/128"}
 	got = SortDedup(got)
 	if len(got) != len(want) {
 		t.Fatalf("want %d prefixes, got %d: %v", len(want), len(got), got)
@@ -45,6 +45,20 @@ func TestParseBlacklistValid(t *testing.T) {
 		if got[i].String() != want[i] {
 			t.Fatalf("prefix %d: want %s, got %s", i, want[i], got[i])
 		}
+	}
+}
+
+func TestParseBlacklistRejectsBroadPrefixes(t *testing.T) {
+	for _, broad := range []string{"8.0.0.0/7", "1.0.0.0/8", "104.16.0.0/12", "198.51.100.0/23", "2400::/6", "2001:db8::/47"} {
+		_, invalid, err := ParseBlacklist([]byte("198.51.100.7\n" + broad + "\n"))
+		if err == nil || invalid != 1 {
+			t.Fatalf("%s: want the feed rejected with 1 invalid line, got invalid=%d err=%v", broad, invalid, err)
+		}
+	}
+	// The floor itself is accepted.
+	got, _, err := ParseBlacklist([]byte("198.51.100.0/24\n2001:db8::/48\n"))
+	if err != nil || len(got) != 2 {
+		t.Fatalf("/24 and /48 must be accepted: %v %v", got, err)
 	}
 }
 

@@ -177,7 +177,11 @@ func (c *CIDRGroupClient) Apply(
 		if _, err := c.client.Resource(ccgGVR).Update(ctx, updated, metav1.UpdateOptions{}); err != nil {
 			if apierrors.IsConflict(err) {
 				c.log.Info("CiliumCIDRGroup update conflict, retrying", "name", name, "attempt", attempt)
-				time.Sleep(time.Duration(attempt) * 250 * time.Millisecond)
+				select {
+				case <-time.After(time.Duration(attempt) * 250 * time.Millisecond):
+				case <-ctx.Done():
+					return ApplyResult{}, ctx.Err()
+				}
 				continue
 			}
 			return ApplyResult{}, fmt.Errorf("updating CiliumCIDRGroup %q: %w", name, err)

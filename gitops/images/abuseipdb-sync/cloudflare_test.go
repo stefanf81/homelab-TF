@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -318,5 +319,33 @@ func TestCloudflareMaxEntriesRejected(t *testing.T) {
 	}
 	if mock.itemPuts != 0 {
 		t.Fatalf("no items should be pushed, got %d PUTs", mock.itemPuts)
+	}
+}
+
+func TestListItemsUsesLargePagesAndBoundsPagination(t *testing.T) {
+	var requests atomic.Int32
+	var perPage atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		perPage.Store(r.URL.Query().Get("per_page"))
+		w.Header().Set("Content-Type", "application/json")
+		// Every page claims there is another one: a cursor that never ends.
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success":     true,
+			"result":      []map[string]string{{"ip": "198.51.100.7"}},
+			"result_info": map[string]any{"cursors": map[string]string{"after": "again"}},
+		})
+	}))
+	defer srv.Close()
+
+	_, err := testCloudflareClient(t, srv, 0).ListItems(context.Background(), "list-1")
+	if err == nil || !strings.Contains(err.Error(), "pagination did not end") {
+		t.Fatalf("want a bounded-pagination error, got %v", err)
+	}
+	if got := requests.Load(); got != cloudflareMaxPages {
+		t.Fatalf("requests = %d, want %d", got, cloudflareMaxPages)
+	}
+	if got := perPage.Load(); got != "500" {
+		t.Fatalf("items per_page = %v, want 500", got)
 	}
 }

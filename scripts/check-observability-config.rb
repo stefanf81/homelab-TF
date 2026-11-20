@@ -10,6 +10,27 @@ class ObservabilityConfigTest < Minitest::Test
     YAML.load_file(File.join(ROOT, path)).fetch('spec').fetch('values')
   end
 
+  # The synchronizer must never block a Cloudflare edge address (proxied visitors
+  # reach the Gateway from them). Its protected list carries the same snapshot as
+  # the WAFs' trusted_proxies; fail when either side changes alone.
+  def test_abuseipdb_protects_the_waf_cloudflare_ranges
+    waf_ranges = %w[backend frontend].map do |waf|
+      caddyfile = YAML.load_stream(File.read(File.join(ROOT, "gitops/apps/taskflow/#{waf}-waf.yaml")))
+                      .compact.find { |d| d['kind'] == 'ConfigMap' && d.dig('data', 'Caddyfile') }
+                      .dig('data', 'Caddyfile')
+      block = caddyfile[/trusted_proxies static (.*?)\n\s*trusted_proxies_strict/m, 1]
+      refute_nil block, "#{waf}-waf: trusted_proxies list not found"
+      block.scan(%r{[0-9a-f:.]+/\d+}) - ['10.42.0.148/32']
+    end
+    assert_equal waf_ranges[0].sort, waf_ranges[1].sort, 'the two WAF Cloudflare lists differ'
+    files = YAML.load_stream(File.read(File.join(ROOT, 'gitops/platform/abuseipdb/config.yaml')))
+                .compact.find { |d| d.dig('metadata', 'name') == 'abuseipdb-sync-files' }
+    protected = files.dig('data', 'protected-cidrs.txt').lines.map { |l| l.sub(/#.*/, '').strip }.reject(&:empty?)
+    assert_empty waf_ranges[0] - protected, 'Cloudflare ranges missing from abuseipdb protected-cidrs.txt'
+    cloudflare_in_protected = protected.select { |c| c.include?('/') && !c.start_with?('10.') } - waf_ranges[0]
+    assert_empty cloudflare_in_protected, 'protected-cidrs.txt lists ranges the WAF snapshot does not (update both)'
+  end
+
   def test_apiserver_drops_duplicate_kubelet_metrics_only
     config = values('gitops/monitoring/platform/release.yaml')
     endpoint = config.dig('kubeApiServer', 'vmScrape', 'spec', 'endpoints').first

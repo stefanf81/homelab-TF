@@ -110,9 +110,11 @@ Pipeline per cycle:
 
 ```text
 GET /api/v2/blacklist?plaintext=true&limit=…   (Accept: text/plain)
-  → strict validation (any malformed line aborts the whole update)
+  → strict validation (any malformed line, or a range broader than /24 for
+    IPv4 or /48 for IPv6, aborts the whole update)
   → canonicalize IP→/32,/128 and mask CIDRs
-  → drop internal/reserved ranges (built-in + protected-cidrs.txt)
+  → drop internal/reserved ranges (built-in + protected-cidrs.txt, which also
+    carries Cloudflare's edge ranges)
   → subtract trusted exceptions (exceptions.txt)
   → deduplicate + deterministic sort
   → sanity checks (non-empty, min entries, shrink guard)
@@ -146,7 +148,15 @@ GET /api/v2/blacklist?plaintext=true&limit=…   (Accept: text/plain)
     customer rules are never modified.
 * Cloudflare API calls are retried in-process (3 attempts with backoff) on
   network errors, timeouts, 429 and 5xx, except creation calls (`POST`), which
-  could otherwise create duplicates.
+  could otherwise create duplicates. List items are read 500 per page (the API
+  maximum); a walk stops with an error after 1000 pages.
+* If the IP list was replaced but the WAF rule check fails, the Cloudflare sync
+  counts as failed (`_sync_success` 0, `_rule_present` 0), but the list itself
+  holds fresh data: its last-success timestamp and feed age are updated, so the
+  stale check does not empty it again.
+* Every apiserver request is bounded by `ABUSEIPDB_HTTP_TIMEOUT`, and a whole
+  synchronization by 15 minutes, so a hung call cannot hold the sink lock that
+  the per-minute stale check needs.
 * Sinks fail independently: a Cloudflare API/rate-limit failure never prevents
   the Cilium update and vice versa. `abuseipdb_sync_success` is `1` only when
   all enabled sinks succeed.
@@ -165,7 +175,8 @@ GET /api/v2/blacklist?plaintext=true&limit=…   (Accept: text/plain)
   data; `retain` keeps the last-known-good list. Either way the corresponding
   `*_feed_stale` metric is visible on the dashboard. The check runs every
   minute but never while a synchronization is writing the sinks; a clear that
-  fails is retried after 1m, 2m, 4m, … up to every 30m.
+  fails is retried after 1m, 2m, 4m, … up to every 30m. The Cloudflare clear
+  only empties the list; it does not depend on the WAF rule check.
 * The shrink guard (`ABUSEIPDB_MAX_SHRINK_PERCENT`) protects a **fresh** list
   against a truncated response. Once the current list is older than
   `ABUSEIPDB_MAX_STALE_AGE`, a smaller list that passed every other check is
