@@ -1,6 +1,8 @@
 # Reloader gets namespaced RBAC in every namespace it watches (see
 # gitops/infrastructure/controllers/reloader/release.yaml), so those namespaces
-# must exist first.
+# must exist first. Only existence: both dependencies are required to have applied
+# once (readyExpr), not to be healthy, so a failing app or synchronizer rollout does
+# not hold back Reloader, which those rollouts may themselves need.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -9,7 +11,13 @@ metadata:
 spec:
   dependsOn:
     - name: taskflow-app
+      readyExpr: >-
+        has(dep.status) && has(dep.status.inventory) &&
+        has(dep.status.inventory.entries) && size(dep.status.inventory.entries) > 0
     - name: abuseipdb
+      readyExpr: >-
+        has(dep.status) && has(dep.status.inventory) &&
+        has(dep.status.inventory.entries) && size(dep.status.inventory.entries) > 0
   interval: 1h
   retryInterval: 5m
   timeout: 5m

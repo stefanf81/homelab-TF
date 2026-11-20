@@ -5,15 +5,36 @@ metadata:
   namespace: flux-system
 spec:
   dependsOn:
+    # VMServiceScrape CRDs: the full Ready check.
     - name: monitoring
+    # Alloy renders namespace-scoped Roles in every namespace it tails, so these
+    # namespaces must exist before installing/upgrading the Alloy HelmRelease. Only
+    # existence: each dependency is required to have applied once (readyExpr), not to
+    # be healthy, so one unhealthy workload does not freeze log collection.
     - name: taskflow-app
-    # Alloy renders namespace-scoped Roles in every platform namespace it tails;
-    # ensure all of them exist before installing/upgrading the Alloy HelmRelease.
+      readyExpr: >-
+        has(dep.status) && has(dep.status.inventory) &&
+        has(dep.status.inventory.entries) && size(dep.status.inventory.entries) > 0
     - name: trivy-operator
+      readyExpr: >-
+        has(dep.status) && has(dep.status.inventory) &&
+        has(dep.status.inventory.entries) && size(dep.status.inventory.entries) > 0
     - name: policy-reporter
+      readyExpr: >-
+        has(dep.status) && has(dep.status.inventory) &&
+        has(dep.status.inventory.entries) && size(dep.status.inventory.entries) > 0
     - name: hubble-ui
+      readyExpr: >-
+        has(dep.status) && has(dep.status.inventory) &&
+        has(dep.status.inventory.entries) && size(dep.status.inventory.entries) > 0
     - name: reloader
+      readyExpr: >-
+        has(dep.status) && has(dep.status.inventory) &&
+        has(dep.status.inventory.entries) && size(dep.status.inventory.entries) > 0
     - name: renovate
+      readyExpr: >-
+        has(dep.status) && has(dep.status.inventory) &&
+        has(dep.status.inventory.entries) && size(dep.status.inventory.entries) > 0
   interval: 30m
   retryInterval: 5m
   path: ./gitops/monitoring/logging

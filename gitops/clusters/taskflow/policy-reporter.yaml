@@ -6,11 +6,15 @@ metadata:
   name: policy-reporter
   namespace: flux-system
 spec:
-  # Gateway (taskflow-app) must exist before the HTTPRoute is programmed, and
   # Kyverno's PolicyReport CRDs must exist before Policy Reporter can read them.
+  # The HTTPRoute only needs taskflow-gateway to exist: taskflow-app is required to
+  # have applied once, not to be healthy.
   dependsOn:
     - name: infra-controllers
     - name: taskflow-app
+      readyExpr: >-
+        has(dep.status) && has(dep.status.inventory) &&
+        has(dep.status.inventory.entries) && size(dep.status.inventory.entries) > 0
     # The Trivy adapter watches VulnerabilityReport/ConfigAuditReport CRDs owned by
     # trivy-operator; without this ordering it crash-loops until they exist.
     - name: trivy-operator

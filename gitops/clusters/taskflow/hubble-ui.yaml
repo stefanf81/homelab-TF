@@ -6,7 +6,11 @@ metadata:
 spec:
   dependsOn:
     - name: infra-controllers
+    # The HTTPRoute only needs taskflow-gateway to exist: applied once, not healthy.
     - name: taskflow-app
+      readyExpr: >-
+        has(dep.status) && has(dep.status.inventory) &&
+        has(dep.status.inventory.entries) && size(dep.status.inventory.entries) > 0
   interval: 10m
   retryInterval: 5m
   timeout: 5m

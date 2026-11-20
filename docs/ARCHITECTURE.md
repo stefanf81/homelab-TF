@@ -108,6 +108,17 @@ taskflow-app                     monitoring (VictoriaMetrics + Grafana + CRDs;
 > route targets the TaskFlow Gateway); `monitoring-app`
 > depends on `monitoring` (so the VMServiceScrape CRD exists before the VMServiceScrapes
 > are applied); `abuseipdb` depends on `infra-controllers` (Cilium CRDs).
+>
+> **Two kinds of dependency.** Where a Kustomization needs CRDs or a working
+> controller from its dependency, `dependsOn` uses Flux's built-in check (the
+> dependency is Ready). Where it only needs objects to *exist* (a namespace for an
+> Alloy or Reloader Role, the Gateway an HTTPRoute attaches to), the entry carries a
+> `readyExpr` that is true once the dependency has applied at least once (non-empty
+> `status.inventory`), whether or not its workloads are currently healthy. Marked
+> *(applied)* in the table below. This keeps a stuck TaskFlow rollout (image
+> automation rolls the app often) from freezing monitoring, logging, Hubble UI,
+> Policy Reporter and Reloader, which are what you need to debug it. On a fresh
+> cluster the ordering is unchanged: nothing has an inventory until it has applied.
 
 ### 4.2 Flux Kustomizations
 | Name | Path | Interval | Prune | Wait | Timeout | Depends On |
@@ -118,14 +129,14 @@ taskflow-app                     monitoring (VictoriaMetrics + Grafana + CRDs;
 | `infra-configs` | `./gitops/infrastructure/configs` | 30m | ✅ | ✅ | 10m | infra-controllers |
 | `abuseipdb` | `./gitops/platform/abuseipdb` | 30m | ✅ | ✅ | 5m | infra-controllers |
 | `taskflow-app` | `./gitops/apps/taskflow` | 10m | ✅ | ✅ | 5m | infra-configs |
-| `reloader` | `./gitops/infrastructure/controllers/reloader` | 1h | ✅ | ✅ | 5m | taskflow-app, abuseipdb |
-| `monitoring` | `./gitops/monitoring/platform` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app |
+| `reloader` | `./gitops/infrastructure/controllers/reloader` | 1h | ✅ | ✅ | 5m | taskflow-app *(applied)*, abuseipdb *(applied)* |
+| `monitoring` | `./gitops/monitoring/platform` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app *(applied)* |
 | `monitoring-app` | `./gitops/monitoring/app` | 30m | ✅ | ✅ | 10m | monitoring |
-| `monitoring-logging` | `./gitops/monitoring/logging` | 30m | ✅ | ✅ | 10m | monitoring, taskflow-app, trivy-operator, policy-reporter, hubble-ui, reloader, renovate |
+| `monitoring-logging` | `./gitops/monitoring/logging` | 30m | ✅ | ✅ | 10m | monitoring; *(applied)*: taskflow-app, trivy-operator, policy-reporter, hubble-ui, reloader, renovate |
 | `kyverno-policies` | `./gitops/apps/kyverno-policies` | 30m | ✅ | ✅ | 5m | infra-controllers |
-| `policy-reporter` | `./gitops/platform/policy-reporter` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app, trivy-operator |
+| `policy-reporter` | `./gitops/platform/policy-reporter` | 30m | ✅ | ✅ | 10m | infra-controllers, taskflow-app *(applied)*, trivy-operator |
 | `trivy-operator` | `./gitops/infrastructure/controllers/trivy-operator` | 30m | ✅ | ✅ | 5m | infra-controllers |
-| `hubble-ui` | `./gitops/platform/hubble-ui` | 10m | ✅ | ✅ | 5m | infra-controllers, taskflow-app |
+| `hubble-ui` | `./gitops/platform/hubble-ui` | 10m | ✅ | ✅ | 5m | infra-controllers, taskflow-app *(applied)* |
 | `renovate` | `./gitops/platform/renovate` | 1h | ✅ | ✅ | 5m | infra-controllers |
 | `renovate-job` | `./gitops/platform/renovate/job` | 1h | ✅ | ✅ | 5m | renovate |
 

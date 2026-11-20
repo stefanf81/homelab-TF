@@ -10,11 +10,17 @@ metadata:
   namespace: flux-system
 spec:
   # CRDs (VMServiceScrape, VMSingle, ...) must exist before the app-layer
-  # VMServiceScrapes in gitops/monitoring/app are applied. The platform HTTPRoute also
-  # targets taskflow-gateway, so wait for taskflow-app before programming that route.
+  # VMServiceScrapes in gitops/monitoring/app are applied. The platform HTTPRoute
+  # targets taskflow-gateway, which only has to exist: taskflow-app is required to
+  # have applied once, not to be healthy, so a stuck app rollout does not freeze the
+  # monitoring stack (readyExpr replaces the built-in Ready check; see
+  # docs/ARCHITECTURE.md §4.1).
   dependsOn:
     - name: infra-controllers
     - name: taskflow-app
+      readyExpr: >-
+        has(dep.status) && has(dep.status.inventory) &&
+        has(dep.status.inventory.entries) && size(dep.status.inventory.entries) > 0
   interval: 30m
   retryInterval: 5m
   path: ./gitops/monitoring/platform
