@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       push:
-        description: 'Push image to GitHub Container Registry (GHCR)'
+        description: 'Push image to GitHub Container Registry (GHCR); only runs on main'
         required: true
         default: true
         type: boolean
@@ -123,7 +123,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GitHub Container Registry
-        if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
+        if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ghcr.io
@@ -133,16 +133,22 @@ jobs:
       # Published revision tags are immutable: never silently overwrite one.
       - name: Check whether the revision tag is already published
         id: tagcheck
-        if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
+        if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
         run: |
           set -euo pipefail
           IMAGE="ghcr.io/${{ steps.versions.outputs.repo_owner }}/abuseipdb-sync"
           TAG="${{ steps.versions.outputs.image_tag }}"
-          if docker buildx imagetools inspect "${IMAGE}:${TAG}" >/dev/null 2>&1; then
+          # Only a definite "not found" means unpublished. Any other failure (auth,
+          # network, registry outage) used to read as "not published" and let the
+          # push overwrite an existing, supposedly immutable tag.
+          if err=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" 2>&1 >/dev/null); then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "::warning::${IMAGE}:${TAG} is already published; skipping push. Bump APP_VERSION or IMAGE_REVISION to publish a new revision."
-          else
+          elif printf '%s\n' "$err" | grep -qF "${IMAGE}:${TAG}: not found"; then
             echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::cannot tell whether ${IMAGE}:${TAG} is published: $err"
+            exit 1
           fi
 
       - name: Extract Docker metadata
@@ -162,7 +168,7 @@ jobs:
           context: gitops/images/abuseipdb-sync
           file: gitops/images/abuseipdb-sync/Dockerfile
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) && steps.tagcheck.outputs.exists != 'true' }}
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) && steps.tagcheck.outputs.exists != 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
@@ -179,7 +185,7 @@ jobs:
           DIGEST="${{ steps.build.outputs.digest }}"
           IMAGE="ghcr.io/${{ steps.versions.outputs.repo_owner }}/abuseipdb-sync"
           TAG="${{ steps.versions.outputs.image_tag }}"
-          PUSHED="${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) && steps.tagcheck.outputs.exists != 'true' }}"
+          PUSHED="${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) && steps.tagcheck.outputs.exists != 'true' }}"
 
           echo "### abuseipdb-sync build" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
