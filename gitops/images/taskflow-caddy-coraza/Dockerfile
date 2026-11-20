@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.28
+# syntax=docker/dockerfile:1.29
 
 ARG CADDY_VERSION=2.11.9
 ARG CORAZA_CADDY_VERSION=v2.6.2
@@ -6,7 +6,7 @@ ARG CORAZA_CADDY_VERSION=v2.6.2
 # ipv6_prefix, disable_metrics, or the metrics re-registration fix, so it is
 # pinned to an immutable commit (post-dates the Caddy 2.11.4 release).
 ARG RATE_LIMIT_VERSION=5625512f24f6f59d6f64fb3aafe5eecff0b286db
-ARG IMAGE_REVISION=r9
+ARG IMAGE_REVISION=r10
 
 FROM caddy:${CADDY_VERSION}-builder-alpine AS builder
 
