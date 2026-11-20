@@ -1,3 +1,11 @@
 # Never send a locally built binary or VCS metadata into the image context.
 abuseipdb-sync
 .git
+# Not part of the binary: keep them out of the context so editing a test (which
+# the revision guard in build-abuseipdb-sync.yaml exempts from a version bump) or
+# the Dockerfile's own comments does not invalidate the `COPY . .` layer and
+# recompile client-go from scratch.
+*_test.go
+Dockerfile
+.dockerignore
+.gitignore
