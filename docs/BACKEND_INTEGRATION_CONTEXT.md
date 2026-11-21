@@ -173,4 +173,4 @@ If that curl returns metrics, verify the output includes `jvm_memory_used_bytes`
 | `gitops/apps/taskflow/configmap.yaml` | `SPRING_PROFILES_ACTIVE=prod`, CORS origins, `APP_TRUSTED_PROXY_REGEX`, `SERVER_TOMCAT_REMOTEIP_REMOTEIPHEADER` |
 | `gitops/monitoring/app/vmservicescrapes.yaml` | The `taskflow-backend` VMServiceScrape |
 | `gitops/monitoring/platform/release.yaml` | victoria-metrics-k8s-stack (VictoriaMetrics + Grafana) |
-| `docs/ARCHITECTURE.md` §10.9 | How to reach Grafana (via the public Gateway) and VictoriaMetrics (via `kubectl port-forward`) |
+| `docs/ARCHITECTURE.md` §5.10 | How to reach Grafana (via the public Gateway) and VictoriaMetrics (via `kubectl port-forward`) |

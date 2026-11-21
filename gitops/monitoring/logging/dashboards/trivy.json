@@ -855,7 +855,7 @@
       "id": 13,
       "type": "stat",
       "title": "Infrastructure metric coverage",
-      "description": "Whether namespaced infrastructure finding metrics exist for the selected namespaces while the Trivy scrape is healthy. This reports telemetry coverage, not the number of findings or scan freshness. An unavailable scrape returns no data. With kube-system in excludeNamespaces (trivy-operator release.yaml) the operator creates no namespaced InfraAssessmentReports, so this stat always reads Not exported while the scrape is up.",
+      "description": "Whether namespaced infrastructure finding metrics exist for the selected namespaces while the Trivy scrape is healthy. This reports telemetry coverage, not the number of findings or scan freshness. An unavailable scrape returns no data. With kube-system outside targetNamespaces (trivy-operator release.yaml) the operator creates no namespaced InfraAssessmentReports, so this stat always reads Not exported while the scrape is up.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -927,7 +927,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "The installed Trivy Operator v0.36.1 findings collector reads **namespaced InfraAssessmentReports** for `trivy_resource_infraassessments`; it does not export **ClusterInfraAssessmentReports** such as `node-ubuntu`. A missing metric is therefore not proof of zero infrastructure findings.\n\nInspect node reports and scan currency with `kubectl get clusterinfraassessmentreports -o yaml`; use the compliance panels above for exported cluster compliance summaries. **Not exported** means no namespaced metric series for this selection; it does not certify node health.\n\nThe Trivy Operator only creates namespaced InfraAssessmentReports for the control-plane pods in kube-system, and kube-system is excluded from scanning here, so the coverage stat does not change with the namespace selection."
+        "content": "The installed Trivy Operator v0.36.1 findings collector reads **namespaced InfraAssessmentReports** for `trivy_resource_infraassessments`; it does not export **ClusterInfraAssessmentReports** such as `node-ubuntu`. A missing metric is therefore not proof of zero infrastructure findings.\n\nInspect node reports and scan currency with `kubectl get clusterinfraassessmentreports -o yaml`; use the compliance panels above for exported cluster compliance summaries. **Not exported** means no namespaced metric series for this selection; it does not certify node health.\n\nThe Trivy Operator only creates namespaced InfraAssessmentReports for the control-plane pods in kube-system, and kube-system is not in the scanned targetNamespaces here, so the coverage stat does not change with the namespace selection."
       }
     }
   ],

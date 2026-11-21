@@ -1,5 +1,9 @@
 # Network Configuration Review — Edge to Pod (October 2026)
 
+> **Dated snapshot (October 2026), not maintained.** Statements about what is open or done
+> reflect that date and are partly out of date. Current status of every item:
+> [`docs/BACKLOG.md`](../BACKLOG.md).
+
 Scope: every network setting on the request path and the DNS path **above** the
 Cilium datapath. That covers Cloudflare → Gateway, the Envoy listener and route
 settings Cilium generates, the WAF (Caddy) proxy hop, the application servers'

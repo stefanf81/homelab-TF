@@ -138,7 +138,7 @@ spec:
     # other ingress to this pod — so no in-cluster pod can reach the UI. Admin
     # access still works via `kubectl port-forward svc/jaeger-ui 16686:16686`
     # because that traffic originates from the node (Cilium host exemption), not
-    # from another pod. The Gateway route for /jaeger was already removed (#2).
+    # from another pod. There is no Gateway route for the UI.
     - from:
         - podSelector:
             matchLabels:

@@ -7,7 +7,7 @@ data:
   SPRING_PROFILES_ACTIVE: "prod"
   # Origins the browser may call /api from.
   # - https://jokelab.dev          : bare apex (documented access URL in
-  #                                  GATEWAY_ACCESS_GUIDE.md / ARCHITECTURE.md;
+  #                                  docs/ARCHITECTURE.md §5.9;
   #                                  cert includes this SAN, so it must be allowed
   #                                  even though the Gateway 301-redirects apex->www)
   # - https://www.jokelab.dev      : canonical prod hostname (HTTPRoute hostnames +

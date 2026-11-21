@@ -1,5 +1,10 @@
 # Remediation Plan — October 2026
 
+> **Dated snapshot (October 2026), not maintained.** Statements about what is open or done
+> reflect that date and are partly out of date. Current status of every item:
+> [`docs/BACKLOG.md`](../BACKLOG.md).
+> `POD_SPEC_REVIEW_2026-10.md`, cited in REL-06, was removed; see `git log`.
+
 Issue-by-issue follow-up to `CLUSTER_AUDIT_2026-10.md`. Every issue has:
 evidence (file and line), impact, the solution options with trade-offs, a
 recommended option with copy-pasteable configuration, how to verify it, and how

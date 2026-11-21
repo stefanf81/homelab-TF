@@ -1,5 +1,9 @@
 # Cilium Configuration Review vs. Home-Operations Repos (October 2026)
 
+> **Dated snapshot (October 2026), not maintained.** Statements about what is open or done
+> reflect that date and are partly out of date. Current status of every item:
+> [`docs/BACKLOG.md`](../BACKLOG.md).
+
 Scope: every Cilium object in this repository, compared against the Cilium
 v1.20.4 chart (`install/kubernetes/cilium/values.yaml`), the v1.20.4 tuning guide
 (`Documentation/operations/performance/tuning.rst`) and the Cilium values of six

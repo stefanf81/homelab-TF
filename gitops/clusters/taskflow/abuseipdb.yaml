@@ -4,9 +4,10 @@
 # group dynamically; the group itself is deliberately NOT part of this (or any)
 # Flux Kustomization, so Flux can never overwrite or prune the live list.
 #
-# Enforcement is a separate, staged step: see
-# gitops/infrastructure/configs/cilium/abuseipdb-ingress-deny.yaml and
-# docs/ABUSEIPDB_CILIUM_BLOCKLIST.md.
+# The synchronizer also mirrors the list to a Cloudflare IP list and zone WAF
+# rule. Cilium enforcement is the cluster-wide policy in
+# gitops/infrastructure/configs/cilium/abuseipdb-ingress-deny.yaml (infra-configs);
+# see docs/ABUSEIPDB_CILIUM_BLOCKLIST.md.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -26,7 +27,8 @@ spec:
     name: flux-system
   wait: true
   timeout: 5m
-  # Decrypt the SOPS-encrypted AbuseIPDB API key (reuses the same age key).
+  # Decrypt the SOPS-encrypted AbuseIPDB API key and Cloudflare API token
+  # (reuses the same age key).
   decryption:
     provider: sops
     secretRef:

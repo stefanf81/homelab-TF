@@ -28,7 +28,7 @@ spec:
       remediateLastFailure: true
   values:
     # ---------------------------------------------------------------------
-    # Trimmed stack for a 14 GiB single-node homelab. Replaces Prometheus with
+    # Trimmed stack for a 12 GiB single-node homelab. Replaces Prometheus with
     # the dramatically lighter VictoriaMetrics (VMSingle + vmagent).
     # ---------------------------------------------------------------------
     # Evaluate the recording rules required by the bundled Kubernetes dashboards.

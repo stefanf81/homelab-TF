@@ -43,7 +43,8 @@ spec:
             # container peaked at 102Mi over 14 days (2026-10-22), so 128MB of shared_buffers
             # still holds the whole dataset several times over. Raise shared_buffers and the
             # 768Mi limit together if the data approaches ~100 MB.
-            # Budget: docs/reports/PERF_DEEP_DIVE_2026-10.md §5.1.
+            # Budget method: docs/reports/PERF_DEEP_DIVE_2026-10.md §5.1 (worked
+            # there for the earlier 512Mi limit).
             - "-c"
             - "shared_buffers=128MB"
             - "-c"

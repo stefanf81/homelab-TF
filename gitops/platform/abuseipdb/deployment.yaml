@@ -1,4 +1,5 @@
-# AbuseIPDB → CiliumCIDRGroup synchronizer.
+# AbuseIPDB synchronizer: maintains CiliumCIDRGroup/abuseipdb and the Cloudflare
+# IP list + WAF rule, and collects Cloudflare Security Events for Grafana.
 #
 # The Deployment runs the synchronizer only; it never serves traffic. The
 # CiliumCIDRGroup/abuseipdb object it maintains is intentionally NOT committed
