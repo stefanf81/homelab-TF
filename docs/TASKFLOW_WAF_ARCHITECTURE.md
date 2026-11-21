@@ -153,6 +153,9 @@ The Dockerfile uses a multi-stage build:
     - Runs as the numeric distroless `nonroot` user (UID/GID 65532)
     - Stages `/data` and `/config` (owned by 65532) in the builder and sets `XDG_DATA_HOME` / `XDG_CONFIG_HOME`, as the official Caddy image does
     - Exposes port 8080
+    - Raises `golang.org/x/net` with `xcaddy --replace` (from r13) above the version Caddy and the plugins require, for CVE-2026-78661; drop it once Caddy itself requires that version
+
+The build workflow lints the Dockerfile with hadolint, scans the test image with Trivy (HIGH/CRITICAL findings that have a fix fail the build, before any registry login) and publishes an SBOM attestation with the image.
 
 There is no shell in the container: use `kubectl debug` with an ephemeral container for interactive debugging. `kubectl exec ... -- caddy <command>` (for example `caddy build-info`) still works.
 

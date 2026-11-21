@@ -12,6 +12,7 @@ on:
     paths:
       - 'gitops/images/abuseipdb-sync/**'
       - '.github/workflows/build-abuseipdb-sync.yaml'
+      - '.github/actions/install-trivy/**'
   workflow_dispatch:
     inputs:
       push:
@@ -19,6 +20,10 @@ on:
         required: true
         default: true
         type: boolean
+
+# renovate: datasource=github-releases depName=aquasecurity/trivy
+env:
+  TRIVY_VERSION: v0.76.2
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -39,6 +44,11 @@ jobs:
         with:
           fetch-depth: 0 # revision guard compares the image source across the push
           persist-credentials: false # nothing in this job pushes with git
+
+      - name: Lint Dockerfile (hadolint)
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: gitops/images/abuseipdb-sync/Dockerfile
 
       # A changed image recipe or Go source must ship under a new APP_VERSION or
       # IMAGE_REVISION so published version tags are never overwritten in GHCR.
@@ -125,6 +135,37 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
+      # Built into the local daemon for the scan, before any registry login. The
+      # push step below rebuilds from the same cache, so it reuses these layers.
+      - name: Build image for scan (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: gitops/images/abuseipdb-sync
+          file: gitops/images/abuseipdb-sync/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: abuseipdb-sync:scan
+          build-args: |
+            APP_VERSION=${{ steps.versions.outputs.app_version }}
+            IMAGE_REVISION=${{ steps.versions.outputs.revision }}
+          # Own cache scope: the default `buildkit` scope is shared with the WAF image
+          # build, and each gha export replaces the scope's cache.
+          cache-from: type=gha,scope=abuseipdb-sync
+          cache-to: type=gha,mode=max,scope=abuseipdb-sync
+
+      # Hard gate on the image this run would publish: HIGH/CRITICAL findings
+      # with a released fix fail the build (OS packages and the Go binary's modules).
+      - name: Install Trivy
+        uses: ./.github/actions/install-trivy
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+
+      - name: Scan image (Trivy, HIGH/CRITICAL with a fix)
+        run: |
+          trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --exit-code 1 --no-progress abuseipdb-sync:scan
+
       - name: Log in to GitHub Container Registry
         if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
@@ -179,10 +220,10 @@ jobs:
           build-args: |
             APP_VERSION=${{ steps.versions.outputs.app_version }}
             IMAGE_REVISION=${{ steps.versions.outputs.revision }}
-          # Own cache scope: the default `buildkit` scope is shared with the WAF image
-          # build, and each gha export replaces the scope's cache.
+          # Same builder as the scan build above, which exported the cache.
           cache-from: type=gha,scope=abuseipdb-sync
-          cache-to: type=gha,mode=max,scope=abuseipdb-sync
+          # SBOM attestation next to the default provenance.
+          sbom: true
 
       - name: Generate build summary
         run: |
