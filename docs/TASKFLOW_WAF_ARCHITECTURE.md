@@ -100,8 +100,8 @@ to GHCR. Builds are automated by
 as a fallback:
 
 - **Repository**: `ghcr.io/stefanf81/taskflow-caddy-coraza`
-- **Tag**: `2.11.9-coraza2.6.2-r11`
-- **Digest**: `sha256:c2cf665552b7eaf22ca095938d0d6b017477ea88801a0b96ff034f518c85dfda` (pinned in both WAF Deployments)
+- **Tag**: `2.11.9-coraza2.6.2-r12`
+- **Digest**: `sha256:d0504e4ff50cebf9a2791d6badd0b7f3e59510d6b23269f12aa0f2e69c505cf4` (pinned in both WAF Deployments)
 - **Dockerfile**: `gitops/images/taskflow-caddy-coraza/Dockerfile`
 - **Platform**: `linux/amd64` (k3s node architecture)
 - **Modules**: `github.com/corazawaf/coraza-caddy/v2@v2.6.2`, `github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db`
