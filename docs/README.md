@@ -36,6 +36,7 @@ check the living documents for current state.
 `scripts/validate-gitops.sh` renders every path Flux reconciles and schema-checks
 it (CI: `.github/workflows/validate-gitops.yaml`, which also runs
 `scripts/bootstrap-foundation.sh --dry-run`, `ruby scripts/check-observability-config.rb`,
+`ruby scripts/check-postgres-major.rb` (the PostgreSQL image major must match its data directory),
 `scripts/check-tool-versions.sh`, `tofu fmt`, `tofu validate`, and `tflint`).
 `.github/workflows/validate-waf-config.yaml` additionally runs
 `gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh` across the WAF
