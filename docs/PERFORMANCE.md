@@ -208,30 +208,11 @@ times out, the two policies and the pod labels do not agree: compare
 `kubectl -n monitoring get pod loki-0 --show-labels` with both policies.
 
 **PostgreSQL volume → `proxmox-csi-db`** (`cache: none`, `noatime`; was `proxmox-csi`,
-`cache: writethrough`). A PVC's class cannot change, so `postgres-data` is a new PVC and the
-`migrate-pgdata` init container in `postgres-db.yaml` copies the old volume into it once:
-the Deployment is `Recreate`, so the old pod has stopped first; the old volume is mounted
-read-only; the copy is renamed into place only when complete and its entry count matches.
-Rehearsed with the pinned `postgres:18.6-alpine` image in Docker: clean stop, killed pod
-(normal crash recovery on the copy), interrupted copy (redone) and an empty old volume
-(initdb). `postgres-pvc` stays as the rollback copy; it receives no writes after the switch.
-
-Before merging, check that the class exists (`kubectl get sc proxmox-csi-db`): if the new
-PVC cannot be provisioned, Postgres stays down until the commit is reverted. Afterwards:
-
-```bash
-kubectl -n taskflow logs deploy/postgres-db -c migrate-pgdata
-```
-
-```bash
-kubectl -n taskflow get pvc postgres-data postgres-pvc
-```
-
-The first prints `copied … entries`, the second shows both `Bound`. Rollback: revert the
-commit (Postgres returns to `postgres-pvc`; writes made since the switch are lost).
-Cleanup after a few days without problems: remove the init container, the
-`postgres-storage-old` volume and the `postgres-pvc` object from Git; the PV is `Retain`, so
-delete its Proxmox disk by hand once no longer wanted.
+`cache: writethrough`). A PVC's class cannot change, so `postgres-data` is a new PVC; a
+one-time `migrate-pgdata` init container copied the old volume into it on 2026-11-11.
+The init container, the old volume mount and the legacy `postgres-pvc` object have since
+been removed from Git (the file `postgres-pvc.yaml` now holds only `postgres-data`). The old
+PV is `Retain`, so its Proxmox disk stays until deleted by hand.
 
 ### 1.3 ~~PostgreSQL runs on Longhorn (network storage)~~ (RESOLVED)
 **File:** `gitops/apps/taskflow/postgres-pvc.yaml` (`postgres-data`, `storageClassName: proxmox-csi-db` since 2026-11-11)
@@ -278,12 +259,12 @@ requests: { cpu: "500m", memory: "1536Mi" }
 limits:   { memory: "2Gi" }   # Burstable; no CPU quota
 ```
 
-### 2.3 Redis is ephemeral → cold-cache stampede on restart (MEDIUM)
+### 2.3 Redis is ephemeral → cold-cache stampede on restart (MEDIUM) — ✅ ACCEPTED
 **File:** `gitops/apps/taskflow/redis.yaml`
 
 `/data` is an `emptyDir` with a clear comment that persistence is intentionally off. That's a legitimate L2-cache choice, **but** on every Redis pod restart (or the node rebooting) the entire cache is lost and the backend falls back to PostgreSQL — a cache stampede that can spike DB latency/CPU until the cache warms. With a single replica there's no warm standby.
 
-**Fix:** Accept it (documented tradeoff) **or** back Redis with a small Proxmox CSI PVC + `appendonly yes` so restartswarm doesn't start fully cold. At minimum, ensure the backend degrades gracefully (it presumably does, since Redis is "L2").
+**Decision:** accepted as a documented tradeoff (§4 item 6): RDB and AOF are explicitly off (`--save ""`, `--appendonly no`). If stampedes ever show up in the PostgreSQL metrics, back Redis with a small Proxmox CSI PVC + `appendonly yes` so a restart doesn't start fully cold. The backend should degrade gracefully (it presumably does, since Redis is "L2").
 ### 2.4 Connection pool overlap during rolling updates (`max_connections=80`, DONE)
 
 **File:** `gitops/apps/taskflow/postgres-db.yaml` (`max_connections=80`)
@@ -318,7 +299,7 @@ The backend fixes HikariCP at `minimum-idle=25, maximum-pool-size=25`. During a 
 | 5 | **Postgres PVC** migrated from Longhorn to Proxmox CSI | ✅ Applied in `postgres-pvc.yaml` |
 | 6 | **Harden Redis** — add persistence PVC or document stampede risk | ✅ Resolved (intentionally ephemeral) — RDB/AOF are now explicitly disabled (`--save ""`, `--appendonly no`) so no stray bgsave/fork memory spikes occur; stampede risk on restart is accepted (see §2.3) |
 | 7 | **Re-evaluate pool sizes** when adding replicas | Backend autoscaling is disabled. Local SSE state and the Hikari pool require distributed event fan-out and connection-pool redesign before scaling. |
-| 8 | **Redis / Jaeger QoS** — Guaranteed (requests==limits) | ⚠️ Redis and Jaeger use Burstable QoS (requests < limits). This is intentional: Redis is ephemeral and Jaeger is a dev tool. Guaranteed QoS is not required for either. |
+| 8 | **Redis / Jaeger QoS** — Guaranteed (requests==limits) | ⚠️ Redis and Jaeger use Burstable QoS (no CPU limit; Redis memory request == limit at 128Mi, Jaeger 64Mi request / 256Mi limit). This is intentional: Redis is ephemeral and Jaeger is a dev tool. Guaranteed QoS is not required for either. |
 | 9 | **Backend startup probe** tightened 20→15 failures | ✅ Applied in `backend.yaml` |
 | 10 | **Scrape intervals** relaxed to 60s for postgres/redis exporters | ✅ Applied in `vmservicescrapes.yaml` |
 | 11 | **Flux image-poll interval** 5m→10m | ✅ Applied in `image-automation/*-repository.yaml` |

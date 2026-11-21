@@ -13,7 +13,7 @@ Audit logs, access logs (including rate-limit 429s), and Coraza records from the
 > deliberately not loaded into Caddy/Coraza. See
 > `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`.
 
-> **Status update:** Coraza writes audit JSON directly to container stdout (`SecAuditLog /dev/stdout`); the previous FIFO plus `audit-log-redactor` sidecar was removed because a stalled reader could block every audited request while `/waf-healthz` stayed green. Credential redaction now happens at ingest in Alloy. Caddy runs with `admin off` (cannot hot-reload in place); Stakater Reloader (`configmap.reloader.stakater.com/reload` on both WAF Deployments) rolls the WAF pods automatically when their ConfigMaps change (see the runbook).
+> **Design notes:** Coraza writes audit JSON directly to container stdout (`SecAuditLog /dev/stdout`) and credentials are redacted at ingest in Alloy. There is deliberately no FIFO/redactor sidecar: a stalled reader would block every audited request while `/waf-healthz` stayed green. Caddy runs with `admin off` (no hot reload); Stakater Reloader (`configmap.reloader.stakater.com/reload` on both WAF Deployments) rolls the WAF pods when their ConfigMaps change.
 
 ```
                   ┌──────────────────┐
@@ -94,10 +94,10 @@ Internet → Cloudflare (proxied DNS + edge) → Port Forward → 192.168.50.201
 ## Image
 
 The custom Caddy+Coraza image is built from the repository Dockerfile and pushed
-to GHCR. Builds are automated by
-`.github/workflows/build-taskflow-caddy-coraza.yaml` for changes under
-`gitops/images/taskflow-caddy-coraza/`; the manual steps below remain available
-as a fallback:
+to GHCR by `.github/workflows/build-taskflow-caddy-coraza.yaml` for changes under
+`gitops/images/taskflow-caddy-coraza/`. Publishing does not deploy: both WAF
+Deployments pin `tag@digest`. The build, pin and manual-fallback procedures are in
+[`TASKFLOW_WAF_RUNBOOK.md` § Build the WAF image](TASKFLOW_WAF_RUNBOOK.md#build-the-waf-image).
 
 - **Repository**: `ghcr.io/stefanf81/taskflow-caddy-coraza`
 - **Tag**: `2.11.9-coraza2.6.2-r13`
@@ -105,44 +105,6 @@ as a fallback:
 - **Dockerfile**: `gitops/images/taskflow-caddy-coraza/Dockerfile`
 - **Platform**: `linux/amd64` (k3s node architecture)
 - **Modules**: `github.com/corazawaf/coraza-caddy/v2@v2.6.2`, `github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db`
-
-### Build & Push (Manual)
-
-The image can be built manually when `gitops/images/taskflow-caddy-coraza/`
-changes:
-
-The release tag is derived from the Dockerfile's `CADDY_VERSION`,
-`CORAZA_CADDY_VERSION`, and `IMAGE_REVISION` arguments. Increment
-`IMAGE_REVISION` for recipe-only changes so immutable revision tags are never
-overwritten. A publishing account needs package write permission; the pull secret
-used by the cluster needs only package read permission.
-
-`github.com/mholt/caddy-ratelimit` has no tagged release with `ipv4_prefix`/
-`ipv6_prefix`, `disable_metrics`, or the metrics re-registration fix, so
-`RATE_LIMIT_VERSION` pins an immutable commit instead of a tag.
-
-Manual local build if needed:
-
-```bash
-# Use the tag the Dockerfile declares (currently r13); never push over a
-# revision tag that is already published.
-docker buildx build --platform linux/amd64 --load \
-  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r13 \
-  gitops/images/taskflow-caddy-coraza/
-
-# Authenticate to GHCR (requires write:packages scope)
-read -r -s GITHUB_TOKEN
-echo "$GITHUB_TOKEN" | docker login ghcr.io -u stefanf81 --password-stdin
-unset GITHUB_TOKEN
-
-docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r13
-
-# Verify both modules and get the digest for pinning
-docker run --rm ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r13 list-modules \
-  | grep -E 'http.handlers.waf|http.handlers.rate_limit'
-docker inspect --format='{{index .RepoDigests 0}}' \
-  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r13
-```
 
 ### Image Build Details
 
@@ -236,15 +198,9 @@ Each WAF ConfigMap contains:
 
 ### Image Pull Secret
 
-A `ghcr-pull-secret` Docker registry secret is required in the `taskflow` namespace for pulling the private GHCR image:
-
-```bash
-kubectl create secret docker-registry ghcr-pull-secret \
-  --namespace=taskflow \
-  --docker-server=ghcr.io \
-  --docker-username=stefanf81 \
-  --docker-password="$GITHUB_TOKEN"
-```
+Both WAF Deployments pull the private GHCR image with `imagePullSecrets:
+ghcr-pull-secret` in `taskflow`, created by hand during bring-up
+([`gitops/FLUX_BOOTSTRAP.md` §3](../gitops/FLUX_BOOTSTRAP.md#3-seed-the-git-sops-and-ghcr-secrets)).
 
 ## Cilium Network Policies
 
@@ -259,63 +215,16 @@ kubectl create secret docker-registry ghcr-pull-secret \
 
 ## Coraza WAF Configuration
 
-### Directive Load Order
+Both WAFs load the same directive block from their ConfigMap: `SecRuleEngine On`
+(blocking), CRS paranoia level **2** (`tx.blocking_paranoia_level=2`), request-body
+inspection with a 10 MB limit (1 MB without files), and `SecAuditEngine RelevantOnly`
+with parts **ABFHZ** as JSON to stdout (no request bodies; part H carries the matched
+rules and stopwatch the dashboards read). Alloy redacts credentials at ingest; see
+[Redaction and line size](#redaction-and-line-size).
 
-```
-directives `
-    Include @coraza.conf-recommended     # Coraza base config
-    Include @crs-setup.conf.example      # CRS setup (tunable knobs)
-    Include /etc/coraza/<waf>-exclusions.conf # frontend-/backend-; before-CRS exclusions
-
-    SecRuleEngine On                      # Engine mode (blocking)
-    SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=2" # Paranoia level 2
-    SecRequestBodyAccess On              # Body inspection
-    SecResponseBodyAccess Off            # Response buffering off
-    SecAuditEngine RelevantOnly          # Audit logging
-    SecAuditLog /dev/stdout               # Audit JSON to container stdout
-    SecAuditLogFormat JSON               # JSON audit records
-    SecAuditLogParts ABFHZ               # Includes matched-rule metadata
-    SecRequestBodyLimit 10485760         # 10 MB max body
-    SecRequestBodyNoFilesLimit 1048576   # 1 MB max non-file body
-
-    Include @owasp_crs/*.conf            # CRS rules (embedded)
-`
-```
-
-### SecRuleEngine Modes
-
-| Mode | Effect |
-|------|--------|
-| `DetectionOnly` | Logs matches but never blocks |
-| `On` | Enables blocking (current setting) |
-
-### Paranoia Level
-
-Current: **2** on both WAFs (`tx.blocking_paranoia_level=2`).
-
-| Level | Description |
-|-------|-------------|
-| 1 | Minimal rules, low false-positive rate |
-| 2 | More exotic attack detection, moderate false-positive risk |
-| 3 | Aggressive, high false-positive rate |
-| 4 | Maximum, not recommended for production |
-
-### Audit Log Parts
-
-Current: **ABFHZ** (request headers, response headers, matched-rule metadata, end
-marker). It excludes request bodies. Coraza writes the records straight to stdout;
-Alloy redacts inbound credential headers, sensitive query parameter values and
-the matched data of credential variables at ingest (see
-[Redaction and line size](#redaction-and-line-size) and
-`gitops/monitoring/logging/alloy-release.yaml`).
-
-| Part | Content |
-|------|---------|
-| A | Audit log header |
-| B | Request headers |
-| F | Response headers |
-| H | Audit log trailer (matched rules / stopwatch metadata) |
-| Z | End of audit log entry |
+Directive load order, engine modes, paranoia levels, audit-log parts, exclusions and
+the tuning workflow are documented once, in
+[`CORAZA_CONFIGURATION.md`](CORAZA_CONFIGURATION.md).
 
 ## Rate Limiting
 
@@ -428,22 +337,9 @@ the WAF pod CPU/memory panels on the Taskflow WAF dashboard after rollout.
 
 ### Disable / rollback
 
-Enforcement lives entirely in the ConfigMap `rate-limit.conf` key. Disabling it
-does not touch Cilium, Gateway API, Coraza, CRS, or the applications:
-
-1. Comment out or delete the `rate_limit` block in the `rate-limit.conf` keys of
-   `gitops/apps/taskflow/{frontend,backend}-waf.yaml`.
-2. `flux reconcile kustomization taskflow-app -n flux-system --with-source`
-3. Follow "Apply Caddyfile changes" in `docs/TASKFLOW_WAF_RUNBOOK.md`: explicitly
-   restart both WAF Deployments, then wait for each rollout. Reloader normally
-   rolls them automatically, but reacts asynchronously; `rollout status` alone
-   can report the previous rollout's success before Reloader acts. Caddy runs
-   with `admin off` and cannot hot-reload.
-4. After the rollout Caddy runs without the limiter. The pinned WAF image can stay unchanged
-   — the module is simply unused.
-
-Keep the narrowed trusted-proxy configuration during rollback. To roll the image
-back as well, restore the previous digest in both WAF Deployments.
+Enforcement lives entirely in the `rate-limit.conf` ConfigMap keys; disabling it does
+not touch Cilium, Gateway API, Coraza, CRS or the applications. Steps:
+[`TASKFLOW_WAF_RUNBOOK.md` § Tune or disable](TASKFLOW_WAF_RUNBOOK.md#tune-or-disable).
 
 ## Logging Stack
 
@@ -975,139 +871,15 @@ trivy-operator     monitoring ──────────▶ monitoring-loggi
 (+ platform NS)                            (Loki + Alloy + Grafana provisioning)
 ```
 
-## Operational Commands
+## Operations and troubleshooting
 
-### Check WAF Status
-
-```bash
-# Pod status
-kubectl get pods -n taskflow -l app.kubernetes.io/component=waf
-
-# Deployment status
-kubectl get deployment -n taskflow | grep waf
-
-# Service endpoints
-kubectl get svc -n taskflow | grep waf
-
-# HTTPRoute status
-kubectl get httproute taskflow-route -n taskflow
-
-# Network policies
-kubectl get ciliumnetworkpolicy -n taskflow
-```
-
-### Check Logging Stack
-
-```bash
-# Loki pods
-kubectl get pods -n monitoring | grep loki
-
-# Alloy pods
-kubectl get pods -n monitoring | grep alloy
-
-# Loki health
-kubectl exec -n monitoring loki-0 -- wget -qO- http://localhost:3100/ready
-
-# Query Loki labels
-kubectl run loki-query --image=curlimages/curl --rm -i --restart=Never -n monitoring -- \
-  curl -s 'http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/labels'
-
-# Query WAF logs
-kubectl run loki-query --image=curlimages/curl --rm -i --restart=Never -n monitoring -- \
-  curl -s -G 'http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/query_range' \
-  --data-urlencode 'query={job="coraza-waf"}' \
-  --data-urlencode 'limit=5' \
-  --data-urlencode "start=$(date -v-1H +%s)000000000" \
-  --data-urlencode "end=$(date +%s)000000000"
-```
-
-### Test WAF Internally
-
-A test pod cannot reach the WAF Services directly: `allow-gateway-to-waf` admits
-only the Gateway/Envoy (`reserved:ingress`) identity. Use `kubectl port-forward`
-(node-originated traffic is allowed by the network policy):
-
-```bash
-# Frontend WAF health
-kubectl -n taskflow port-forward svc/taskflow-frontend-waf 8080:8080 &
-PF=$!; sleep 1
-curl -s http://localhost:8080/waf-healthz
-kill "$PF"
-
-# Backend WAF health
-kubectl -n taskflow port-forward svc/taskflow-backend-waf 8081:8080 &
-PF=$!; sleep 1
-curl -s http://localhost:8081/waf-healthz
-kill "$PF"
-
-# SQL injection test (blocking mode - may return a WAF block status)
-kubectl -n taskflow port-forward svc/taskflow-backend-waf 8082:8080 &
-PF=$!; sleep 1
-curl -s -o /dev/null -w "%{http_code}" \
-  'http://localhost:8082/api?test=1%20UNION%20SELECT%201'
-kill "$PF"
-```
-
-### Reconcile
-
-```bash
-# WAF + app manifests
-flux reconcile kustomization taskflow-app -n flux-system --with-source
-
-# Logging stack
-flux reconcile kustomization monitoring-logging -n flux-system --with-source
-
-# Full stack
-flux reconcile kustomization flux-system -n flux-system --with-source
-```
-
-### View Logs
-
-```bash
-# Frontend WAF logs
-kubectl logs -n taskflow deploy/taskflow-frontend-waf
-
-# Backend WAF logs
-kubectl logs -n taskflow deploy/taskflow-backend-waf
-
-# Alloy logs
-kubectl logs -n monitoring deploy/alloy -c alloy
-```
-
-## Troubleshooting
-
-### Image Pull Issues
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `401 Unauthorized` | No pull secret or wrong credentials | Create `ghcr-pull-secret` with valid PAT |
-| `403 Forbidden` | PAT lacks `read:packages` scope | Use PAT with `read:packages` scope |
-| `no match for platform` | Image built for wrong architecture | Rebuild with `--platform linux/amd64` |
-| `ImagePullBackOff` | Stale image reference | Delete pods to force re-pull |
-
-### Container Runtime Issues
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `exec /usr/bin/caddy: operation not permitted` | File capabilities on binary | Keep `ENV XCADDY_SETCAP=0` in the Dockerfile's builder stage |
-| `container has runAsNonRoot and image has non-numeric user` | Image `USER` is a name and the pod sets no `runAsUser` | Keep the numeric `USER 65532:65532` in the Dockerfile and `runAsUser: 65532` in the securityContext |
-| `CreateContainerConfigError` | Volume mount or config issue | Check ConfigMap exists and keys match |
-
-### Flux Reconciliation Issues
-
-| Issue | Fix |
-|-------|-----|
-| Kustomization stuck | Check dependency chain: `flux get kustomizations` |
-| SOPS decryption fails | Verify `sops-age` secret exists in `flux-system` namespace |
-| Health check timeout | Check pod logs for startup errors |
-
-### Logging Issues
-
-| Issue | Fix |
-|-------|-----|
-| No logs in Loki | Verify Alloy is running and configured correctly |
-| Dashboard shows no data | Check Loki datasource is provisioned (sidecar logs) |
-| Missing labels | Verify Alloy relabel rules match pod labels |
+Day-2 procedures live in [`TASKFLOW_WAF_RUNBOOK.md`](TASKFLOW_WAF_RUNBOOK.md):
+[Reconcile](TASKFLOW_WAF_RUNBOOK.md#reconcile),
+[Apply Caddyfile changes](TASKFLOW_WAF_RUNBOOK.md#apply-caddyfile-changes),
+[Internal tests](TASKFLOW_WAF_RUNBOOK.md#internal-tests) (health checks and CRS
+canaries through a port-forward), [Rollback](TASKFLOW_WAF_RUNBOOK.md#rollback) and
+[Troubleshooting](TASKFLOW_WAF_RUNBOOK.md#troubleshooting) (image pull, runtime, Flux and
+logging failures).
 
 ## Security Considerations
 

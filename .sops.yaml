@@ -3,8 +3,10 @@
 # To generate an age key: age-keygen -o key.txt
 # To encrypt your secrets file: sops -e -i gitops/apps/taskflow/taskflow-secrets.yaml
 #
-# KEY ROTATION: the age public key below is the RECEIVER. If you rotate it (new key.txt),
-# you MUST re-encrypt every *-secrets.yaml (sops -r -i <file>) or Flux decryption fails.
+# KEY ROTATION: the age public key below is the RECIPIENT. If you rotate it (new key.txt),
+# re-wrap every *-secrets.yaml for it with the old key still loaded
+# (sops updatekeys <file>; `sops -r` keeps the old recipients) and replace the
+# flux-system/sops-age Secret, or Flux decryption fails. See docs/SOPS.md §4.
 # Never commit key.txt (see .gitignore); only this public key belongs here.
 
 creation_rules:

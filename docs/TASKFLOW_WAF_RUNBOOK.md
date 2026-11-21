@@ -154,8 +154,8 @@ before the limiter; the kubelet's `/waf-healthz` probe (no `X-Forwarded-For`)
 is never rate limited, while `/waf-healthz` requested through the Gateway is
 inspected and limited like any other path.
 
-The stages below document the rollout and remain the re-verification procedure
-after a node change, a trusted-proxy change, or when tuning the zones.
+Re-run the stages below after a node change, a trusted-proxy change, or when
+tuning the zones (they were first run on 2026-09-26, before enforcement was enabled).
 
 Zones (see `gitops/apps/taskflow/*-waf.yaml`, `rate-limit.conf` key):
 
@@ -203,7 +203,7 @@ trusted peer changed. Trust only the address(es) that actually carry Gateway
 traffic; do **not** trust the whole Pod CIDR, or a pod that reaches the Gateway
 could be skipped as a trusted hop.
 
-### Stage 1 — narrow the trusted proxy range (applied 2026-09-26)
+### Stage 1 — update the trusted proxy entry
 
 Both WAF ConfigMaps trust `10.42.0.148/32` plus the Cloudflare ranges. If Stage 0
 yields a different address:
@@ -214,7 +214,7 @@ yields a different address:
    WAFs and wait for the new rollout (do not wait on Reloader with `rollout status` alone).
 3. Run the identity checks below.
 
-### Stage 2 — verify the client identity (passed 2026-09-26; re-run after changes)
+### Stage 2 — verify the client identity
 
 ```bash
 # 1) Different external clients must resolve to different client_ip values
@@ -254,17 +254,11 @@ Confirm on the Taskflow Access Logs dashboard (or via the LogQL above) that
 `10.42.x.x`/peer address, the trust list is wrong — fix it at once: with
 enforcement on, all requests that resolve to that address share one rate-limit bucket.
 
-### Stage 3 — enable enforcement (applied 2026-09-26)
+### Stage 3 — verify enforcement
 
-1. **Prerequisite: Stage 1 and Stage 2 must have passed.** The trust list is
-   already narrowed to the observed Envoy peer (`10.42.0.148/32`); if it is ever
-   back to a broad range (e.g. the Pod CIDR), narrow it first.
-2. Ensure the zone block is enabled in the `rate-limit.conf` key of each WAF
-   ConfigMap (frontend `general` 180/min, backend `api` 300/min). It is enabled
-   in Git; after a rollback, restore it by removing the `#` comment markers from
-   the zone block.
-3. Reconcile and roll (same commands as Stage 1).
-4. Verify enforcement from one external client:
+The zone blocks are enabled in Git. After a rollback, re-enable them (remove the `#`
+markers in each `rate-limit.conf` key) only once Stages 1 and 2 pass, then reconcile
+and roll as in Stage 1. Verify from one external client:
 
 ```bash
 # Expect normal statuses until the window fills, then 429 with Retry-After.
@@ -645,34 +639,18 @@ echo $GITHUB_TOKEN | docker login ghcr.io -u stefanf81 --password-stdin
 
 #### nginx exits after a reboot: `host not found in upstream` / `host not found in resolver`
 
-The November 3, 2026 reboot exposed two startup DNS dependencies:
+nginx resolves upstream names while loading its configuration, so a plain upstream
+name makes the frontend exit whenever CoreDNS is not up yet (seen after the
+2026-11-03 reboot). The override in `gitops/apps/taskflow/frontend.yaml` therefore
+uses a literal resolver IP and `server ... resolve;`, which needs the
+`zone backend_upstream 64k` that the pinned nginx image provides; do not remove the
+zone or deploy an older nginx image without re-running the test below.
 
-- The frontend's plain upstream server name was resolved while nginx loaded its
-  configuration. CoreDNS being temporarily unavailable made nginx exit, even though
-  serving static files does not need the backend.
-- Loki gateway's chart-default `resolver kube-dns.kube-system.svc.cluster.local.;`
-  requires DNS to find the DNS server itself. This also fails during config loading.
-  (The gateway has since been removed, 2026-11-11: clients use the Loki Service on
-  port 3100 directly, so there is no nginx left to start.)
-
-The frontend override in `gitops/apps/taskflow/frontend.yaml` now supplies an
-upstream-level literal resolver IP and `server ... resolve;`. The pinned frontend
-image (nginx 1.30.6) already provides `zone backend_upstream 64k`, required for runtime
-resolution. Do not remove the zone or deploy an older nginx image without re-running
-the smoke test.
-
-The resolver is **10.43.0.10**, matching the `kube-dns` ClusterIP pinned in
-`gitops/infrastructure/controllers/coredns/release.yaml`. The regression test checks
-that the two agree. If changing the cluster DNS IP, update both files.
-
-This allows nginx to start and serve local static/health endpoints before DNS is
-available; upstream requests can still fail until DNS and their backends recover.
-It does not change NetworkPolicy or bypass the WAF routes. In particular, the
-frontend's direct backend proxy is not the production API path. Increasing a startup
-probe's allowance alone would not fix an nginx configuration-time exit.
-
-Run `python3 gitops/monitoring/tests/validate-nginx-dns-startup.py` to reproduce the
-old failures and test the revised configs in disposable network-disabled containers.
+The resolver is **10.43.0.10**, the `kube-dns` ClusterIP pinned in
+`gitops/infrastructure/controllers/coredns/release.yaml`; change both together.
+A longer startup probe would not help: the exit happens at configuration load.
+`python3 gitops/monitoring/tests/validate-nginx-dns-startup.py` reproduces the failure
+and tests the config in disposable network-disabled containers.
 
 #### `exec /usr/bin/caddy: operation not permitted`
 
@@ -681,25 +659,6 @@ old failures and test the revised configs in disposable network-disabled contain
 **Fix**: Do not let xcaddy set the capability (the builder image defaults to `XCADDY_SETCAP=1`). The Dockerfile sets this in the builder stage and fails the build if `getcap` still reports one:
 ```dockerfile
 ENV XCADDY_SETCAP=0
-```
-
-Images up to r11 stripped it afterwards with `RUN setcap -r /usr/bin/caddy`, which needs `setcap` in the runtime image and stores the binary a second time.
-
-#### `container has runAsNonRoot and image has non-numeric user (caddy)`
-
-**Cause**: The security context has `runAsNonRoot: true` but no `runAsUser` specified, and the image's `USER` is a name. Kubernetes can't verify the numeric UID. From r12 the image declares `USER 65532:65532` (distroless `nonroot`), so this only occurs with r11 and earlier.
-
-**Fix**: Set the image's UID/GID in the security context:
-```yaml
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 65532
-  runAsGroup: 65532
-  allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: true
-  capabilities:
-    drop:
-      - ALL
 ```
 
 #### `CreateContainerConfigError`
@@ -889,15 +848,14 @@ managed by GitOps. When the PAT expires:
      --docker-username=stefanf81 \
      --docker-password="ghp_NEW_TOKEN"
    ```
-3. Secrets in this repository are managed via SOPS + age (see `docs/SOPS_TUTORIAL.md`).
+This Secret is deliberately kept out of Git; the SOPS-encrypted ones are listed in
+`docs/SOPS.md`.
 
-### Coraza Audit Log Parts
+### Coraza audit log
 
-Current setting: `ABFHZ` (request headers, response headers, matched-rule metadata,
-and end marker). It excludes request bodies. Coraza writes records directly to
-container stdout; Alloy sanitizes credential headers and sensitive query values at
-ingest before they reach Loki. Do not add a blocking FIFO/file sink to
-`SecAuditLog` — a stalled reader can block every audited request.
+Parts, engine and redaction: `docs/CORAZA_CONFIGURATION.md` § Audit Log Parts. Do not
+add a blocking FIFO or file sink to `SecAuditLog`: a stalled reader blocks every
+audited request.
 
 ---
 
