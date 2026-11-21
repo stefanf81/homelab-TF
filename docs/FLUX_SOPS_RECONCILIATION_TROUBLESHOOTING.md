@@ -236,6 +236,7 @@ spec:
     operation: copy
   ref:
     tag: 0.5.16
+    digest: sha256:…   # Renovate pins tag and digest
   url: oci://ghcr.io/sergelogvinov/charts/proxmox-csi-plugin
 ```
 ```yaml
@@ -269,6 +270,17 @@ For each Kustomization whose `PATH` contains an encrypted file:
 
 If all encrypted files share one recipient (typical), one age key covers them all — you
 just need the secret present in **each** Kustomization's namespace.
+
+In this repo all nine `*-secrets.yaml` files use the `.sops.yaml` recipient, and every
+Flux Kustomization lives in `flux-system`, so the one `flux-system/sops-age` Secret covers
+them. The Kustomizations that declare `spec.decryption` are `infra-controllers`,
+`taskflow-app`, `monitoring`, `abuseipdb`, `hubble-ui`, `policy-reporter`, `renovate-job`
+and `renovate` (the last without an encrypted file of its own). CI
+(`.github/workflows/validate-gitops.yaml`) catches both halves before merge:
+`scripts/validate-gitops.sh` (through `scripts/flux-postbuild.rb`) fails a path that contains
+SOPS-encrypted documents when its Kustomization has no `spec.decryption`, and
+`ruby scripts/check-sops-secrets.rb` fails on unencrypted values, a wrong recipient, or
+Secret data outside a `*-secrets.yaml` file.
 
 ---
 

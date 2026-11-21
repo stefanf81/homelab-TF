@@ -5,7 +5,7 @@
 | Document | Purpose |
 |---|---|
 | `ARCHITECTURE.md` | System overview, known limitations |
-| `PERFORMANCE.md` | Resource sizing, RPO/RTO notes |
+| `PERFORMANCE.md` | Resource sizing and tuning decisions (JVM, PostgreSQL, Redis, monitoring) |
 | `NODE_HOST_TUNING.md` | Ubuntu node and Proxmox host tuning runbook (commands, risks, evidence) |
 | `GATEWAY_ACCESS_GUIDE.md`, `HUBBLE_SETUP.md` | Access and networking |
 | `KYVERNO_POLICY_ENGINE.md`, `FALCO_RUNTIME_SECURITY.md`, `TRIVY_SECURITY_SCANNING.md` | Security tooling |
@@ -29,14 +29,16 @@ check the living documents for current state.
 | `reports/CILIUM_REVIEW_2026-10.md` | Cilium settings vs. Cilium 1.20 tuning guide and home-operations repos |
 | `reports/NETWORK_REVIEW_2026-10.md` | Edge-to-pod network settings (timeouts per hop, CoreDNS, node sysctls) vs. upstream docs and home-operations repos |
 
-`archive/` holds superseded migration guides.
+`archive/` holds superseded migration guides and the closed issue list (`ISSUES.md`).
 
 ## Validation
 
 `scripts/validate-gitops.sh` renders every path Flux reconciles and schema-checks
 it (CI: `.github/workflows/validate-gitops.yaml`, which also runs
 `scripts/bootstrap-foundation.sh --dry-run`, `ruby scripts/check-observability-config.rb`,
-`scripts/check-tool-versions.sh`, `tofu fmt`, `tofu validate`, and `tflint`).
+`ruby scripts/check-sops-secrets.rb` and `scripts/check-tool-versions.sh`;
+`.github/workflows/validate-opentofu.yaml` runs `tofu fmt`, `tofu validate` and `tflint`,
+and `.github/workflows/validate-renovate.yaml` runs `renovate-config-validator --strict`).
 `.github/workflows/validate-waf-config.yaml` additionally runs
 `gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh` across the WAF
 ConfigMaps, all 13 Grafana dashboards, pinned Helm renders, and disposable

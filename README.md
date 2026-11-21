@@ -10,10 +10,10 @@ Cluster workloads and platform controllers are managed declaratively through Git
 Before starting bring-up from scratch, ensure the following CLI tools are installed on your workstation:
 
 - **IaC & Automation:** [OpenTofu](https://opentofu.org/) (≥ 1.8.0), `make`, `ruby`
-- **Kubernetes Management:** `kubectl`, `helm`, [Flux CLI](https://fluxcd.io/flux/cmd/) (≥ 2.x) (optional: [Cilium CLI](https://github.com/cilium/cilium-cli) for ad-hoc `cilium`/`hubble` inspection)
+- **Kubernetes Management:** `kubectl`, `helm`, [Flux CLI](https://fluxcd.io/flux/cmd/) 2.10.x (same minor as the `FluxInstance`; `scripts/check-tool-versions.sh` enforces it) (optional: [Cilium CLI](https://github.com/cilium/cilium-cli) for ad-hoc `cilium`/`hubble` inspection)
 - **Secrets Management:** [SOPS](https://github.com/getsops/sops) (≥ v3.9), [age](https://github.com/FiloSottile/age)
 
-`mise install` (see `mise.toml`) installs pinned versions of OpenTofu, kubectl, Kustomize, Helm, kubeconform, tflint, Flux, SOPS and age; `make lint` and `make validate-gitops` run the same checks as CI.
+`mise install` (see `mise.toml`) installs pinned versions of OpenTofu, kubectl, Kustomize, Helm, kubeconform, tflint, Flux, SOPS and age; `make lint` (tflint) and `make validate-gitops` (render and schema-check every Flux path) run the same checks as the matching CI steps.
 
 You also need access to a **Proxmox VE 9.x** host (8.x is end of life) with an API token (with VM creation, Datastore, and Network privileges) and SSH agent access (`root@<proxmox>`) for cloud-init snippet uploads (`providers.tf`).
 
@@ -25,9 +25,9 @@ You also need access to a **Proxmox VE 9.x** host (8.x is end of life) with an A
 - `modules/k3s-kubeconfig` – SSHs into the node once cloud-init finishes, fetches `/etc/rancher/k3s/k3s.yaml`, and writes a local `kubeconfig.yaml`.
 - `gitops/` – Declarative Flux v2 manifests:
   - `gitops/infrastructure/controllers` – Gateway API CRDs (`v1.6.3`), Cilium v1.20.5, cert-manager, CoreDNS, Proxmox CSI, Kyverno, Falco, Trivy Operator, Reloader, Flux Operator.
-  - `gitops/infrastructure/configs` – Cilium L2 announcement policy (`192.168.50.200-250`), `GatewayClass`, Let's Encrypt ClusterIssuers, `PriorityClass/taskflow-critical`, Hubble pod-network isolation, and the AbuseIPDB ingress deny policy.
+  - `gitops/infrastructure/configs` – Cilium LB IP pool (`192.168.50.200-250`) and L2 announcement policy, `GatewayClass`, Let's Encrypt ClusterIssuers, `PriorityClass/taskflow-critical`, Hubble pod-network isolation, and the AbuseIPDB ingress deny policy.
   - `gitops/platform` – Policy Reporter + `oauth2-proxy`, Hubble UI `oauth2-proxy`, AbuseIPDB synchronizer, Renovate Operator + scheduled job.
-  - `gitops/apps/taskflow` – Spring Boot 4.1.1 backend, Angular 22 frontend, Caddy+Coraza WAFs, PostgreSQL 18.6, Redis 8.10, Jaeger.
+  - `gitops/apps/taskflow` – Spring Boot 4.1.1 backend, Angular 22 frontend, Caddy+Coraza WAFs, PostgreSQL 18.7, Redis 8.10, Jaeger.
   - `gitops/apps/kyverno-policies` – CEL `ValidatingPolicy` admission rules (`Deny`, fail-open).
   - `gitops/monitoring` – VictoriaMetrics TSDB + Grafana stack + metrics-server + Loki/Alloy + 13 custom/vendored dashboards (Taskflow WAF/Access Logs/Rate Limits/Performance, Blocked Sources, AbuseIPDB, Cilium Agent, Hubble Flows, Falco, Trivy, Kyverno, cert-manager, Logging pipeline).
   - `gitops/images` – Custom image sources: TaskFlow Caddy+Coraza WAF and `abuseipdb-sync`.
@@ -116,7 +116,7 @@ kubectl create secret docker-registry ghcr-pull-secret -n taskflow \
   --docker-password=<read-packages-token>
 ```
 
-> **Note for new environments:** If generating your own age key (`age-keygen -o key.txt`), update the public recipient key in `.sops.yaml` and re-encrypt all `*-secrets.yaml` files via `sops -e -i <file>` before committing to your remote Git repository.
+> **Note for new environments:** If generating your own age key (`age-keygen -o key.txt`), update the public recipient key in `.sops.yaml`, put your own values into every `*-secrets.yaml` and encrypt each with `sops -e -i <file>` (the committed ciphertext only decrypts with the original key) before committing to your remote Git repository.
 
 ### 5️⃣ Apply `FluxInstance` and Reconcile All Layers
 
@@ -133,16 +133,19 @@ flux reconcile kustomization flux-system
 # Reconcile platform and application layers in dependency order
 flux reconcile kustomization infra-controllers -n flux-system
 flux reconcile kustomization infra-configs -n flux-system
+flux reconcile kustomization falco -n flux-system
 flux reconcile kustomization abuseipdb -n flux-system
 flux reconcile kustomization trivy-operator -n flux-system
 flux reconcile kustomization taskflow-app -n flux-system
 flux reconcile kustomization reloader -n flux-system
 flux reconcile kustomization monitoring -n flux-system
-flux reconcile kustomization monitoring-logging -n flux-system
 flux reconcile kustomization monitoring-app -n flux-system
 flux reconcile kustomization kyverno-policies -n flux-system
 flux reconcile kustomization policy-reporter -n flux-system
 flux reconcile kustomization hubble-ui -n flux-system
+flux reconcile kustomization renovate -n flux-system
+flux reconcile kustomization renovate-job -n flux-system
+flux reconcile kustomization monitoring-logging -n flux-system
 ```
 
 ### 6️⃣ CoreDNS Management
@@ -153,9 +156,10 @@ Gateway hostnames. Do not patch the live CoreDNS ConfigMap; update the HelmRelea
 and commit the change instead.
 
 For an existing node, migrate from the packaged K3s addon during a maintenance
-window. The `--disable coredns` setting in `modules/proxmox/main.tf` applies to new
-nodes only. On an existing node, disable the packaged addon, then immediately
-reconcile Flux so the GitOps-managed release takes ownership:
+window. The `disable: [coredns]` entry that `modules/proxmox/main.tf` writes to
+`/etc/rancher/k3s/config.yaml` applies to new nodes only. On an existing node,
+disable the packaged addon, then immediately reconcile Flux so the GitOps-managed
+release takes ownership:
 
 ```bash
 sudoedit /etc/rancher/k3s/config.yaml
@@ -166,11 +170,19 @@ kubectl -n kube-system get svc kube-dns
 kubectl -n kube-system get endpointslice -l k8s-app=kube-dns
 ```
 
-Preserve the existing settings and add this YAML to the K3s config:
+Preserve the existing settings and add `coredns` to the single `disable:` list in the
+K3s config; the list must name every disabled component, as `modules/proxmox/main.tf`
+writes it. `--disable` flags still on the unit's `ExecStart` replace the YAML list
+entirely, so move them into `config.yaml` first
+(`docs/reports/REMEDIATION_PLAN_2026-10.md` REL-00):
 
 ```yaml
 disable:
+  - servicelb
+  - traefik
   - coredns
+  - metrics-server
+  - local-storage
 ```
 
 ### 7️⃣ Verify Cluster & Application Health
@@ -199,14 +211,14 @@ Access services via Cilium Gateway:
 To ensure production-grade security, resiliency, and performance on a single-node homelab, several optimizations are built into this repository:
 
 ### 1. Control Plane & Provisioning Stability
-* **Reconstruction-Aware Kubeconfig Sync:** The `fetch_kubeconfig` module is linked to the Proxmox VM instance ID. Rebuilding the VM automatically re-fetches the `kubeconfig.yaml`, avoiding stale SSH/TLS certificate errors.
+* **Reconstruction-Aware Kubeconfig Sync:** The `fetch_kubeconfig` resource (`modules/k3s-kubeconfig`) is keyed to the VM's build ID (`k3s_node_build_id`: VM ID plus NIC MAC address, which changes on every rebuild). Rebuilding the VM with `make apply` automatically re-fetches the `kubeconfig.yaml`, avoiding stale SSH/TLS certificate errors.
 * **Reproducible Cloud-Init:** The Ubuntu cloud image is release-pinned and SHA-256 verified, and k3s is installed at the explicit version configured by `k3s_version`.
 
 ### 2. Cilium CNI, Network Security & Gateway API
 * **High-Performance eBPF CNI:** Flannel and k3s network policies are disabled (`--flannel-backend=none --disable-network-policy`) to let **Cilium v1.20.5** handle eBPF routing, SNAT masquerading, and network security policies.
 * **Kubernetes Gateway API:** Deployed standard Gateway API CRDs (`gateway-api`) and enabled Cilium's Gateway API controller (`gatewayAPI.enabled = true`).
 * **ServiceLB Deconfliction & L2 Announcements:** K3s ServiceLB is disabled (`--disable servicelb`). Cilium L2 announcements (`CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy`) advertise gateway IP `192.168.50.201`.
-* **Zero-Trust Network Policies:** Ingress to database/cache tiers (`postgres-db`, `redis`, `jaeger`) is restricted strictly to backend pods.
+* **Zero-Trust Network Policies:** Ingress to database/cache tiers (`postgres-db`, `redis`, `jaeger`) is restricted strictly to backend pods (plus `postgres-exporter`/`redis-exporter` for their data store).
 * **IP Reputation Denylist (AbuseIPDB):** A Go synchronizer (`gitops/images/abuseipdb-sync`) maintains a runtime-managed `CiliumCIDRGroup` that a `CiliumClusterwideNetworkPolicy` denies on the direct-to-origin path, and mirrors the same validated list into a Cloudflare account IP list referenced by a zone WAF block rule — the enforcement point that sees real client IPs behind the Cloudflare proxy. Caddy/Coraza are untouched (no list duplication). Per-IP visibility: Grafana `Blocked Sources` (Cloudflare + Cilium); see `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`.
 
 ### 3. Storage Resiliency & Database Performance

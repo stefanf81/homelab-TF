@@ -101,14 +101,20 @@ kubectx <context-name>
 
 ### `yaml: found character that cannot start any token`
 
-Usually caused by: - Markdown code fences - Bad indentation - Tabs
-instead of spaces
+Usually caused by:
+
+- Markdown code fences
+- Bad indentation
+- Tabs instead of spaces
 
 ### `tls: failed to find any PEM data in certificate input`
 
-Usually caused by: - Corrupted `certificate-authority-data` - Corrupted
-`client-certificate-data` - Incomplete base64 data - Manually copied
-kubeconfig
+Usually caused by:
+
+- Corrupted `certificate-authority-data`
+- Corrupted `client-certificate-data`
+- Incomplete base64 data
+- Manually copied kubeconfig
 
 Best practice: copy the kubeconfig directly from the server via SSH
 instead of copying it through a browser or chat.

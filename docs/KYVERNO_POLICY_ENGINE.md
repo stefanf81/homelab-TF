@@ -57,7 +57,7 @@ gitops/
 │       ├── policy-reporter-secrets.yaml  # (legacy) SOPS OAuth secret, unused after the oauth2-proxy migration
 │       ├── policy-reporter-ui-oauth-secrets.yaml # SOPS OAuth credentials for oauth2-proxy (client-id/client-secret/cookie-secret)
 │       ├── oauth2-proxy-repository.yaml  # OCIRepository oauth2-proxy @ oci://ghcr.io/oauth2-proxy/charts/oauth2-proxy
-│       ├── oauth2-proxy-release.yaml     # HelmRelease oauth2-proxy (github_users allow-list, __Host-o2p-kyverno cookie)
+│       ├── oauth2-proxy-release.yaml     # HelmRelease policy-reporter-ui-oauth2-proxy (chart 10.7.4, github_users allow-list, __Host-o2p-kyverno cookie)
 │       ├── oauth2-proxy-network-policy.yaml # Namespace default-deny + Gateway -> oauth2-proxy + vmagent scrape
 │       ├── release.yaml                  # HelmRelease policy-reporter v3.11.2, ui + plugins, ui.oauth disabled, metrics on, crds: Skip
 │       ├── trivy-adapter-release.yaml    # HelmRelease trivy-operator-polr-adapter v0.11.5 (Trivy CRDs -> PolicyReports)
@@ -96,7 +96,8 @@ GitRepository (flux-system)
   policies are applied (avoids `no matches for kind "ValidatingPolicy"`).
 - `policy-reporter` `dependsOn: [infra-controllers, taskflow-app, trivy-operator]` so Kyverno's
   PolicyReport CRDs, Trivy's report CRDs, and the Gateway all exist before the dashboard,
-  adapter, and route are reconciled.
+  adapter, and route are reconciled. The `taskflow-app` entry uses a `readyExpr` (non-empty
+  inventory): the app only has to have applied once, not be Ready.
 
 ---
 
@@ -198,7 +199,7 @@ Kustomization. Both are CEL `ValidatingPolicy` objects with `validationActions: 
 
 | Policy | Scope | Rule |
 |---|---|---|
-| `disallow-latest-tag` | Pods in every namespace except `kube-system`, `kyverno`, `flux-system`, `cert-manager`; autogen for Deployments, StatefulSets, DaemonSets, Jobs, CronJobs | Every container and init container uses an `@sha256` digest or an explicit tag other than `latest`. Untagged images are rejected; `:latest@sha256:…` is allowed because the digest is immutable; a registry port (`host:5000/app`) is not mistaken for a tag. |
+| `disallow-latest-tag` | Pods in every namespace except `kube-system`, `kyverno`, `flux-system`, `cert-manager`; autogen for Deployments, StatefulSets, DaemonSets, Jobs, CronJobs | Every container, init container and ephemeral container uses an `@sha256` digest or an explicit tag other than `latest`. Untagged images are rejected; `:latest@sha256:…` is allowed because the digest is immutable; a registry port (`host:5000/app`) is not mistaken for a tag. |
 | `require-common-labels` | Deployments and StatefulSets in `taskflow` | `app.kubernetes.io/name` and `app.kubernetes.io/part-of` are set. |
 
 Design choices:
@@ -257,23 +258,25 @@ compatibility reads no longer occur.
 ### Trivy Plugin & Adapter
 Two components surface Trivy results in the UI:
 
-1. **`plugin.trivy.enabled: true`** — the Policy Reporter **Trivy plugin** watches the
-   `aquasecurity.github.io` report CRDs Trivy Operator produces (`VulnerabilityReport`,
-   `ConfigAuditReport`, `RbacAssessmentReport`, `ExposedSecretReport`, ...). Policy Reporter
-   then emits its WAF-like `policy` metrics (`policy_report_info`, `policy_report_result`,
-   ...) so findings also appear in the main Policy Reporter metrics.
+1. **`plugin.trivy.enabled: true`** — the Policy Reporter **Trivy plugin** (its own
+   Deployment) enriches the UI with vulnerability details. It does not produce reports or
+   metrics: Policy Reporter's `policy_report_result` metrics (`metrics.mode: custom`, labels
+   `namespace`, `policy`, `status`, `severity`, `source`; `pass`/`skip` not exported; no
+   dashboard reads them yet) are derived from the PolicyReports, so Trivy findings reach
+   them through the adapter below.
 2. **`trivy-operator-polr-adapter`** (HelmRelease `trivy-operator-polr-adapter` v0.11.5,
    chart from `oci://ghcr.io/fjogeleit/charts/trivy-operator-polr-adapter`) — converts the
    Trivy CRDs into vanilla `wgpolicyk8s.io/v1alpha2` `PolicyReport` /
    `ClusterPolicyReport` objects, so they are visible directly in the UI's **report
-   list**. All adapters are enabled (vulnerability, config-audit, RBAC, exposed-secret,
-   compliance, infra-assessment, cluster variants).
+   list**. Eight adapters are enabled (vulnerability, config-audit, RBAC, exposed-secret,
+   compliance, infra-assessment, and the cluster infra-assessment and cluster vulnerability
+   variants).
    
 > **Why both?** The UI report list reads `wgpolicyk8s.io` reports. Trivy does **not**
-> write those natively — hence the adapter. Without the adapter the report list stays
-> Kyverno/Falco-only; without the plugin the `policy` Prometheus metrics stay
-> Kyverno-only. See `docs/TRIVY_SECURITY_SCANNING.md` §6 for what each Trivy report type
-> maps to.
+> write those natively — hence the adapter. Without the adapter the report list and the
+> `policy_report_result` metrics stay Kyverno/Falco-only; without the plugin the UI loses
+> the extra vulnerability details. See `docs/TRIVY_SECURITY_SCANNING.md` §6 for what each
+> Trivy report type maps to.
 
 > **Compliance detail caveat:** the adapter's compliance adapter requires the Trivy
 > operator to emit **detailed** compliance reports. The HelmRelease is configured with
@@ -330,9 +333,10 @@ alongside `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`, and `hubble.j
 > `http://kyverno.jokelab.dev/.well-known/acme-challenge/...` through the Gateway, which
 > requires the hostname to resolve. If the SAN is added while the DNS record is missing, the
 > cert stays `InProgress`, and because `taskflow-app` health-checks that Certificate
-> (`wait: true`), the **main app Kustomization goes `Progressing`/`NotReady`** — which also
-> blocks `policy-reporter` (`dependsOn: taskflow-app`). Create the DNS record first, then add
-> the SAN; re-issuance validates and `taskflow-app` returns to Ready.
+> (`wait: true`), the **main app Kustomization goes `Progressing`/`NotReady`** (`policy-reporter`
+> keeps reconciling: its `taskflow-app` dependency only requires the app to have applied once).
+> Create the DNS record first, then add the SAN; re-issuance validates and `taskflow-app`
+> returns to Ready.
 >
 > **Hairpin NAT caveat.** Even when the DNS record exists and resolves to the Gateway's
 > external IP, cert-manager's self-check may **time out** behind a router that doesn't
@@ -383,7 +387,8 @@ The Policy Reporter UI's built-in GitHub OAuth has **no user/org allow-list**, s
 - Pod-network isolation (`gitops/platform/policy-reporter/oauth2-proxy-network-policy.yaml`)
   default-denies cross-namespace ingress to `policy-reporter-ui:8080`, `policy-reporter:8080`
   (REST API), and the plugins, opening only `reserved:ingress` → `oauth2-proxy:4180` and
-  `monitoring/vmagent` → `policy-reporter:8080` (`/metrics`).
+  `monitoring/vmagent` → `policy-reporter:8080` (`/metrics`), plus intra-namespace traffic and
+  `host` (kubelet probes, `kubectl port-forward`).
 - Credentials (`client-id` / `client-secret` / `cookie-secret`) live in the
   SOPS-encrypted `policy-reporter-ui-github-oauth` Secret
   (`policy-reporter-ui-oauth-secrets.yaml`). Create a GitHub OAuth App with the
@@ -465,7 +470,7 @@ Then open `https://kyverno.jokelab.dev` (after DNS + cert are ready).
 | `Helm install failed … invalid ownership metadata` on Kyverno | `install.crds: CreateReplace` set on the HelmRelease. Change to `Skip` (§4). |
 | `policy-reporter-ui` HTTPRoute shows `Not Programmed` / no address | The `policy-reporter` namespace is missing from the Gateway `allowedRoutes` selector, or the Gateway (`taskflow-app`) hasn't reconciled yet. |
 | Certificate `taskflow-jokelab-cert` stays `InProgress` after adding a new SAN | **Two common causes:** (1) DNS record for the new SAN doesn't exist yet — create it first (§6). (2) DNS exists but cert-manager self-check times out (hairpin NAT) — see next row. |
-| HTTP-01 self-check times out with `context deadline exceeded` | Hairpin NAT: the router can't forward outbound traffic back to the internal Gateway. **Fix:** add a `hosts` entry in CoreDNS to resolve the domain to the internal Gateway IP (`192.168.50.201`) — see §6 for the exact patch. Alternative: switch to DNS-01 with Cloudflare API token. |
+| HTTP-01 self-check times out with `context deadline exceeded` | Hairpin NAT: the router can't forward outbound traffic back to the internal Gateway. **Fix:** add the hostname to the CoreDNS `hosts` line in `gitops/infrastructure/controllers/coredns/release.yaml` so it resolves to the internal Gateway IP (`192.168.50.201`) — see §6 (Fix a). Alternative: switch to DNS-01 with Cloudflare API token. |
 | cert-manager does **not** create a new CertificateRequest after a failed order | The Issuing controller sits on a retry backoff. Deleting the failed CR does **not** reset the timer. **Fix:** delete the Certificate and let Flux recreate it — `kubectl delete certificate -n taskflow taskflow-jokelab-cert && flux -n flux-system reconcile ks taskflow-app`. This resets all issuance state to zero. |
 | No `KyvernoValidatingPolicy` results in `kubectl get policyreports -A` | Reports are generated asynchronously by the reports controller after its background scan (on policy change, then hourly). Wait ~1–2 min; if still empty, check `spec.evaluation.background.enabled` and `kubectl -n kyverno logs deploy/kyverno-reports-controller`. |
 | A policy doesn't seem to evaluate a namespace | Check its `matchConstraints.namespaceSelector` and the global resource filters (§4); `kubectl get validatingpolicy <name> -o yaml` shows `WebhookConfigured` and `RBACPermissionsGranted` in `status`. |

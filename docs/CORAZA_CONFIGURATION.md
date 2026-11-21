@@ -73,37 +73,27 @@ Configured by `SecAuditLogParts`. Each letter adds a section:
 
 | Part | Content |
 |------|---------|
-| A | Audit log header (timestamp, parts) |
+| A | Audit log header (mandatory) |
 | B | Request headers |
-| C | Request body |
-| D | (Reserved, currently unused) |
-| E | Request body after rules |
-| F | Response headers |
-| G | Response body |
+| C | Request body (requires `SecRequestBodyAccess On`) |
+| D | Reserved for intermediary response headers (not implemented) |
+| E | Intermediary response body (requires `SecResponseBodyAccess On`) |
+| F | Final response headers |
+| G | Reserved for the actual response body (not implemented) |
 | H | Audit log trailer, including matched-rule messages and metadata |
-| I | Compact request body (multipart) |
-| J | Uploaded file information |
-| K | Matched rule IDs |
-| L | Final boundary |
-| M | Error messages |
-| N | Phase 1 and 2 compressed output |
-| O | Connection metadata |
-| P | Protocol info |
-| Q | Filename (if logged) |
-| R | Non-standard response codes |
-| S | Rule action messages |
-| T | Timestamp |
-| U | URI path |
-| V | Protocol version |
-| X | Request body inspection notes |
-| Y | Response body inspection notes |
-| Z | End of audit log entry |
+| I | Request body without file contents for multipart (not implemented) |
+| J | Uploaded file information (Coraza v3.7.0+) |
+| K | Every matched rule, in match order |
+| Z | Final boundary, end of the entry (mandatory) |
+
+Coraza accepts only these letters (see the `SecAuditLogParts` reference linked below).
 
 Current setting: **`ABFHZ`** — includes request and response headers plus the `H`
 rule-match metadata. Request bodies remain excluded. Coraza writes these records
-directly to container stdout; Alloy removes inbound `Authorization`,
-`Proxy-Authorization`, and `Cookie` headers and sensitive query parameters while
-ingesting the records. Nothing is written to disk.
+directly to container stdout; Alloy replaces the `Authorization`,
+`Proxy-Authorization`, `Cookie` and `Set-Cookie` header values, sensitive query
+parameter values and the matched data of credential variables with `REDACTED`
+while ingesting the records. No audit log file is written.
 
 ## SecAuditEngine
 
@@ -112,7 +102,8 @@ ingesting the records. Nothing is written to disk.
 | `Off` | Never audit |
 | `On` | Audit all requests |
 | `RelevantOnly` | Audit only transactions with warnings/errors or matching `SecAuditLogRelevantStatus` |
-| `Dynamic` | Per-transaction decision via `SecAuditEngine` rule action |
+
+To change it per transaction, use the `ctl:auditEngine=...` rule action.
 
 ## Body Processing
 
@@ -120,9 +111,9 @@ ingesting the records. Nothing is written to disk.
 |-----------|-------|---------|
 | `SecRequestBodyAccess` | `On` | Enables body buffering and inspection |
 | `SecResponseBodyAccess` | `Off` | Disables response body inspection (recommended for reverse proxy) |
-| `SecRequestBodyLimit` | `10485760` | Max body size in bytes (10 MB). Larger bodies are partially inspected. |
+| `SecRequestBodyLimit` | `10485760` | Max body size in bytes (10 MB). Larger bodies are rejected (see below). |
 | `SecRequestBodyNoFilesLimit` | `1048576` | Max non-file body size (1 MB) |
-| `SecRequestBodyLimitAction` | `ProcessPartial` | Default. Inspects bytes within limit, sets `INBOUND_DATA_ERROR` if truncated. |
+| `SecRequestBodyLimitAction` | `Reject` | Not set in the ConfigMaps; Coraza's default with `SecRuleEngine On`. Interrupts the transaction (HTTP 413). `ProcessPartial` (inspect up to the limit, set `INBOUND_DATA_ERROR`) applies only in `DetectionOnly` or when set explicitly. |
 
 ## Exclusion Files
 
@@ -144,7 +135,9 @@ SecRule REQUEST_FILENAME "@beginsWith /api/jobs" \
 
 ### After-CRS Exclusions
 
-To use after-CRS exclusions, add a second `Include` line and a separate ConfigMap key:
+To use after-CRS exclusions, add a separate ConfigMap key and a second `Include`
+line **after** `Include @owasp_crs/*.conf`. The Deployment's `coraza-config`
+volume projects only the keys listed under its `items`, so add the new key there too:
 
 ```
 Include /etc/coraza/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf
@@ -171,26 +164,26 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
 | `ARGS:message` | A specific query/form parameter |
 | `ARGS:/^json\.\d+\.jobdescription$/` | Regex match on parameter name |
 | `REQUEST_COOKIES:session` | A specific cookie |
-| `REQUEST_URI` | The request path |
+| `REQUEST_URI` | The request path including the query string |
 | `REQUEST_FILENAME` | The request path without query string |
 | `REQUEST_METHOD` | GET, POST, etc. |
-| `!REQUEST_COOKIES:session` | Negate (remove from exclusion) |
+| `!REQUEST_COOKIES:session` | Negation in `SecRuleUpdateTargetById`: remove this target from the rule |
 
 ## CRS Rule Families
 
 | Rule ID Range | Attack Type |
 |---------------|-------------|
 | 913 | Scanner detection |
-| 920-929 | Protocol enforcement (HTTP methods, headers) |
-| 930-931 | Path traversal |
-| 932-934 | Remote command execution |
+| 920-922 | Protocol enforcement (920), protocol attacks (921), multipart attacks (922) |
+| 930-931 | Local file inclusion / path traversal (930), remote file inclusion (931) |
+| 932-934 | Remote command execution (932), PHP injection (933), generic/Node.js attacks (934) |
 | 941 | XSS (cross-site scripting) |
 | 942 | SQL injection |
 | 943 | Session fixation |
 | 944 | Java attack detection |
 | 949 | Inbound attack-score evaluation |
-| 950-959 | Outbound attack detection |
-| 959-959 | Outbound attack score blocking |
+| 950-956 | Outbound (response) data-leakage detection |
+| 959 | Outbound attack-score evaluation |
 
 ## Tuning Workflow
 
@@ -220,12 +213,16 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
      gitops/apps/taskflow/frontend-waf.yaml > "$tmp/caddy/rate-limit.conf"
    ruby -ryaml -e 'puts YAML.load_file(ARGV[0]).fetch("data").fetch("frontend-exclusions.conf")' \
      gitops/apps/taskflow/frontend-waf.yaml > "$tmp/coraza/frontend-exclusions.conf"
+   # The image the Deployment pins (tag@digest)
+   img=$(ruby -ryaml -e 'puts YAML.load_stream(File.read(ARGV[0])).compact.find { |d| d["kind"] == "Deployment" }.dig("spec", "template", "spec", "containers", 0, "image")' \
+     gitops/apps/taskflow/frontend-waf.yaml)
    docker run --rm --platform linux/amd64 -v "$tmp/caddy:/etc/caddy:ro" -v "$tmp/coraza:/etc/coraza:ro" \
-     ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9 \
-     validate --config /etc/caddy/Caddyfile --adapter caddyfile
+     "$img" validate --config /etc/caddy/Caddyfile --adapter caddyfile
    rm -rf "$tmp"
    ```
-6. Reconcile and replay the test request. Confirm the false positive is gone and the rule still fires on other inputs.
+   `gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh` does the same
+   for both WAFs (it also needs Helm and kubectl, for the dashboard checks).
+6. Reconcile (Reloader rolls the WAF; see `docs/TASKFLOW_WAF_RUNBOOK.md` § "Apply Caddyfile changes") and replay the test request. Confirm the false positive is gone and the rule still fires on other inputs.
 7. Reconcile and repeat the replay tests after every exclusion or CRS change.
 
 ## Client IP Forwarding

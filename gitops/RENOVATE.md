@@ -105,7 +105,8 @@ release changelogs (5,000 requests/hour limit).
   Dockerfiles under `gitops/images/` take the same comment on the line above an
   `ARG NAME=<version>` (used for the Coraza plugin in the WAF image). Renovate
   bumps the image's `IMAGE_REVISION` in the same PR, as the build workflows
-  require.
+  require. Workflows under `.github/workflows/` take it on the line above an
+  `env` pin (e.g. `TRIVY_VERSION`).
 
 ## Operation
 

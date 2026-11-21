@@ -49,7 +49,7 @@ end of §4.5.
 | 4 | virtio-net multiqueue (`queues = cpu_cores`) | VM | RX/TX softirq over all vCPUs; one `fq` leaf per queue. Only matters when one vCPU saturates on network work | NIC hot-replug on apply (short outage); slightly more CPU per packet | Done 2026-11-03 (`Combined: 10`, `mq` + per-queue `fq`) |
 | 5 | KSM off | Host | Frees host CPU — only if `ksmtuned` is actually scanning (it starts below ~20 % free RAM) | If host RAM is tight, memory use rises and the host may swap | **Keep KSM on here**: on the 15 GiB host it merged ~370 MiB with a 14 GiB VM (2026-11-03) |
 | 6 | Microcode | Host | Stability and security, not speed | Rare regressions; mitigations can cost a little speed | Already installed (`amd64-microcode`) |
-| 7 | HA services off (standalone) | Host | Fewer small writes to the boot SSD | Must be re-enabled before clustering | Optional |
+| 7 | HA services off (standalone) | Host | Fewer small writes to the boot SSD | Must be re-enabled before clustering | Done on this host (2026-11-03, §4.2) |
 | 8 | Disable the iSCSI (`iscsid`, `open-iscsi`) and multipath units, snapd and motd-news (packages stay installed) | Node | Tiny: fewer daemons, tens of MB RAM | Re-enable if NFS/iSCSI storage is added; snaps (e.g. Livepatch) stop working | Done (in Terraform) |
 | 9 | Guest I/O scheduler `none` (udev rule) | Node | Probably none: the kernel already picks `none` for multi-queue disks; the rule pins it | On a single-queue disk the guest loses read/write prioritisation (minor) | Done (in Terraform); harmless |
 | 10 | Remove `net.bridge.bridge-nf-call-*` | Node | Cleanup; Cilium has no bridge on the pod path | None | Done (in Terraform) |
@@ -109,7 +109,7 @@ invalidates its allocatable memory and leads to OOM kills.
 | Duplicate `kernel.panic*` sysctls | The kubelet already sets them |
 | `aio=native` on disks | Blockbridge's benchmark warns it can block on thin LVM; keep the `io_uring` default with an IOThread (§6) |
 | 1 GiB hugepages | Small TLB gain; memory is reserved, KSM cannot merge it, and the VM fails to start if pages are not free |
-| kubelet `cpu-manager-policy=static` | Pins the backend to 2 cores and squeezes every other pod onto the remaining 4; a botched switch leaves kubelet unable to start |
+| kubelet `cpu-manager-policy=static` | Only Guaranteed pods with whole-CPU requests get exclusive cores: the backend (Burstable, 500m request, no CPU limit) would need e.g. 2 CPUs as request = limit, which squeezes every other pod onto the remaining cores; a botched switch leaves kubelet unable to start |
 | `machine = "q35"` | Reboot and changed virtual PCI layout for a minor gain |
 | Smaller `vm.dirty_*` limits | Can slow bulk writes (image pulls); measure first |
 | 64 MiB `rmem`/`wmem`, `somaxconn` 65535, `tcp_fastopen` | Sized for 10 GbE/QUIC; see `reports/NETWORK_REVIEW_2026-10.md` §2.5 |
@@ -201,7 +201,8 @@ With the 12 GiB default, the plan also shows `~ dedicated`/`~ floating` 14336 �
 `memory_size` in your `terraform.tfvars` too). The provider reboots the VM for the memory change
 (`reboot_after_update`, default true), which also applies the NIC change; if it only prints a
 warning, reboot manually as below.
-**If the VM shows `-/+` (replace), stop** — that would rebuild the node. The usual cause is a
+**If the VM shows `-/+` (replace), stop** — that would rebuild the node (since 2026-11-20
+`prevent_destroy` in `modules/proxmox/main.tf` makes such a plan fail). The usual cause is a
 `# forces replacement` on `disk.file_id` (the cloud image download was re-pinned or replaced);
 `disk[0].file_id` is in `ignore_changes` since 2026-11-03 for that reason. Replacing the
 `proxmox_download_file` itself (a re-download of the image) and the `cloud_config` snippet is
@@ -674,8 +675,8 @@ Per-volume result (5-minute sample, 2026-11-03): VM root disk 94.9 GB/day, Victo
 - Leases now renewed every 15s (lease 60s, renew 40s unless noted), one commit per component:
 
   | Component | Where | Setting |
-|---|---|---|
-  | Kyverno x4 | `kyverno/release.yaml`, per-controller `extraArgs` | `leaderElectionRetryPeriod: 15s` (Kyverno derives lease 6x = 90s, renew 5x = 75s) |
+  |---|---|---|
+  | Kyverno (admission, reports; the background and cleanup controllers have since been disabled) | `kyverno/release.yaml`, per-controller `extraArgs` (`admissionController.container.extraArgs`) | `leaderElectionRetryPeriod: 15s` (Kyverno derives lease 6x = 90s, renew 5x = 75s) |
   | cilium-operator | `cilium/release.yaml`, `operator.extraArgs` | `--leader-election-*` |
   | VictoriaMetrics operator | `monitoring/platform/release.yaml` | `leader-elect: "false"` + `strategy: Recreate` (no retry-period flag exists) |
   | Flux x6 | FluxInstance kustomize patch (args appended to every controller Deployment) | `--leader-election-*` |
@@ -696,7 +697,7 @@ Per-volume result (5-minute sample, 2026-11-03): VM root disk 94.9 GB/day, Victo
 - **Result, 30 min after the Flux, VictoriaMetrics and lease changes (2026-11-03):**
 
   | Measure | Before | After |
-|---|---|---|
+  |---|---|---|
   | VM root disk (host `dm-*`) | 94.9 GB/day | 17.4 GB/day |
   | Thin-pool metadata (`pve-data_tmeta`) | 11.6 | 0.6 |
   | VictoriaMetrics PVC (host) | 11.6 | 4.8 |

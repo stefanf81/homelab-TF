@@ -15,14 +15,15 @@ Local CLI → kubectl port-forward → Hubble Relay (kube-system) ────�
 | Component | Namespace | Service | Port | Purpose |
 |-----------|-----------|---------|------|---------|
 | Hubble UI | `kube-system` | `hubble-ui` | 80 | Web interface for network flow visualization |
-| Hubble Relay | `kube-system` | `hubble-relay` | 80 → 4245 | gRPC relay for CLI access |
+| Hubble Relay | `kube-system` | `hubble-relay` | 80 → 4245 | gRPC relay for Hubble UI and CLI access |
 | oauth2-proxy | `hubble-ui` | `hubble-ui-oauth2-proxy` | 80 → 4180 | GitHub OAuth authentication proxy |
 | Cilium Agent | `kube-system` | — | — | eBPF dataplane + Hubble exporter |
 
 ### Traffic Flow (Public)
 
 1. Browser requests `https://hubble.jokelab.dev`
-2. Cloudflare proxies to cluster IP `192.168.50.201`
+2. Cloudflare proxies to the WAN address, which port-forwards to the Gateway
+   LoadBalancer IP `192.168.50.201` (`GATEWAY_IP`)
 3. Cilium Gateway terminates TLS (certificate: `taskflow-tls-secret`)
 4. HTTPRoute `hubble-ui` routes `/` → `hubble-ui-oauth2-proxy:80` (the
    Service forwards to oauth2-proxy's container port 4180)
@@ -148,7 +149,8 @@ nohup kubectl port-forward -n kube-system svc/hubble-relay 4244:80 &
 
 ## Cilium Hubble Configuration
 
-Added to `gitops/infrastructure/controllers/cilium/release.yaml`:
+Set in `gitops/infrastructure/controllers/cilium/release.yaml` (excerpt; the
+release also sets `rollOutPods` and per-container resources for Relay and UI):
 
 ```yaml
 hubble:
@@ -208,7 +210,7 @@ and are shown as `No reason recorded (Envoy denials, incl. AbuseIPDB)`. See
 ## Network Policy
 
 Pod-network isolation covers both namespaces so no compromised in-cluster pod can bypass `oauth2-proxy`:
-- **In `hubble-ui` (`gitops/platform/hubble-ui/network-policy.yaml`):** `hubble-ui-ingress-default-deny` denies cross-namespace pod ingress (preserving `host` probes), and `allow-gateway-to-hubble-ui` allows only the Cilium Gateway (`reserved:ingress`) to reach `oauth2-proxy` on TCP `4180`.
+- **In `hubble-ui` (`gitops/platform/hubble-ui/network-policy.yaml`):** `hubble-ui-ingress-default-deny` denies all pod ingress in the namespace except from `host` (probes, port-forward), and `allow-gateway-to-hubble-ui` allows only the Cilium Gateway (`reserved:ingress`) to reach `oauth2-proxy` on TCP `4180`.
 - **In `kube-system` (`gitops/infrastructure/configs/cilium/hubble-isolation.yaml`):** `restrict-hubble-ui-ingress` restricts `hubble-ui` (`k8s-app: hubble-ui`, container port `8081`) to `hubble-ui/oauth2-proxy` + `host`, and `restrict-hubble-relay-ingress` restricts `hubble-relay` (`k8s-app: hubble-relay`, gRPC port `4245`) to `kube-system/hubble-ui` + `host` (`cilium hubble port-forward` / `kubectl port-forward`).
 
 ## Reconcile Commands
@@ -275,7 +277,7 @@ kubectl delete pod -n hubble-ui -l app.kubernetes.io/name=oauth2-proxy
 
 ### Hubble UI shows "No flows"
 
-**Cause**: Hubble metrics not enabled, or eBPF not loaded.
+**Cause**: Hubble or Hubble Relay not running, or eBPF not loaded (the UI reads flows through Relay, not from the Hubble metrics).
 
 **Fix**:
 ```bash
@@ -309,7 +311,7 @@ curl -s -L https://github.com/cilium/hubble/releases/latest/download/hubble-darw
 
 **Fix**: Verify:
 - GitHub OAuth App callback URL is exactly `https://hubble.jokelab.dev/oauth2/callback`
-- oauth2-proxy `cookie_domains = [".jokelab.dev"]`
+- oauth2-proxy has no `cookie_domains` (host-only `__Host-o2p-hubble` cookie) and `whitelist_domains = ["hubble.jokelab.dev"]`
 - Browser is accessing `https://hubble.jokelab.dev` (not `http`)
 
 ### DNS not resolving hubble.jokelab.dev
@@ -324,7 +326,7 @@ sudo sh -c 'echo "192.168.50.201 hubble.jokelab.dev" >> /etc/hosts'
 ## Security Notes
 
 - Cookie is secure-only (HTTPS)
-- Cookie domain scoped to `.jokelab.dev`
-- oauth2-proxy runs with read-only root filesystem
-- CiliumNetworkPolicy limits ingress to Gateway only
+- Cookie is host-only (`__Host-o2p-hubble`, no `Domain`), sent only to `hubble.jokelab.dev`
+- oauth2-proxy runs with read-only root filesystem (chart default)
+- CiliumNetworkPolicy limits ingress to Gateway only (plus `host`)
 - Hubble UI has no public LoadBalancer or NodePort

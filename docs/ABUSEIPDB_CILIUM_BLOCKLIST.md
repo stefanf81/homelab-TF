@@ -245,8 +245,8 @@ Cloudflare actually blocked:
 | `ABUSEIPDB_STALE_BEHAVIOR` | `fail-open` | `fail-open` or `retain` |
 | `ABUSEIPDB_MIN_ENTRIES` | `1` | Validated results below this are rejected |
 | `ABUSEIPDB_MAX_SHRINK_PERCENT` | `50` | Reject lists that shrink by more than this (when previous ≥ 100) |
-| `ABUSEIPDB_CIDRGROUP_NAME` | `abuseipdb` | Runtime group name |
-| `ABUSEIPDB_HTTP_TIMEOUT` | `30s` | HTTP client timeout for AbuseIPDB, Cloudflare and Loki calls |
+| `ABUSEIPDB_CIDRGROUP_NAME` | `abuseipdb` | Runtime group name (the RBAC `resourceNames` and the deny policy's `cidrGroupRef` name `abuseipdb`; change all three together) |
+| `ABUSEIPDB_HTTP_TIMEOUT` | `30s` | Timeout for each AbuseIPDB, Cloudflare, Loki and Kubernetes API request |
 | `ABUSEIPDB_LISTEN_ADDR` | `:8080` | Metrics and health probe bind address |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
 | `CLOUDFLARE_SYNC_ENABLED` | `false` (`true` in `config.yaml`) | Enable the Cloudflare edge sink |
@@ -260,7 +260,7 @@ Cloudflare actually blocked:
 | `CLOUDFLARE_FIREWALL_LOOKBACK` | `5m` | First window size on startup (raise temporarily to backfill) |
 | `CLOUDFLARE_FIREWALL_MAX_WINDOW` | `1h` (`24h` in `config.yaml`) | Cap on a recovery window after failed polls |
 | `CLOUDFLARE_FIREWALL_LIMIT` | `5000` | Max events fetched per window (1–10000) |
-| `LOKI_PUSH_URL` | `http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push` | Loki endpoint for collected blocks. This is the compiled-in default from image `0.3.3-r1`; older images default to the removed `loki-gateway` Service, so keep the key set while one is pinned |
+| `LOKI_PUSH_URL` | `http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push` | Loki endpoint for collected blocks. This is also the compiled-in default (since image `0.3.3-r1`); `config.yaml` keeps it set so a rollback to an older image does not fall back to the removed `loki-gateway` Service |
 
 The exception and protected-range lists live in `abuseipdb-sync-files` and are
 re-read on every cycle, so Git edits apply without a restart (Reloader only rolls
@@ -288,16 +288,14 @@ Cloudflare sink: `abuseipdb_cloudflare_sync_success`, `_entries`,
 Error reasons: `network`, `http`, `rate_limited`, `bulk`, `validation`,
 `timeout`. `_sync_success`, `_entries`, `_bulk_operation_pending` and
 `_rule_present` are not exported until the first Cloudflare push after a pod
-start (a push only follows a successful feed download), so an unknown state
+start (a push only follows a successful feed download, or a startup prune of a
+newly added exception/protected range), so an unknown state
 reads as "No data" instead of a false `0`; the timestamp and age gauges are
 restored from the annotation, or absent while no Cloudflare success was ever
-recorded. This lazy export is exporter 0.3.2 and later; 0.3.1 exports all of
-them as `0` from process start, does not restore the last-success timestamps
-after a restart and sets `abuseipdb_last_success_timestamp_seconds` only when
-every sink succeeded. The `AbuseIPDB Security` dashboard reads correctly on
-both: the Cloudflare status tiles show FAILING / 0 only after a push failed in
-the current process (`abuseipdb_cloudflare_sync_errors_total` exists) and the
-feed-age tiles hide the initial `0`. `_rule_present` is `0` when the rule
+recorded. On the `AbuseIPDB Security` dashboard the Cloudflare status tiles
+show FAILING / 0 only after a push failed in the current process
+(`abuseipdb_cloudflare_sync_errors_total` above 0; the counters start at 0) and
+the feed-age tiles hide an initial `0`. `_rule_present` is `0` when the rule
 check or repair failed (the rule may still exist) and `1` when the last push
 confirmed it, creating or re-enabling it if needed; `_bulk_operation_pending`
 stays `1` after a failed or timed-out bulk operation until the next successful
@@ -375,9 +373,10 @@ more so future restarts use the normal lookback.
 
 ## RBAC, secrets and egress
 
-* ServiceAccount `abuseipdb-sync` + ClusterRole limited to `get`, `create`,
-  `update`, `patch` on `ciliumcidrgroups`. No `delete`, no wildcards, no
-  cluster-admin.
+* ServiceAccount `abuseipdb-sync` + ClusterRole limited to `create` on
+  `ciliumcidrgroups` (RBAC cannot scope `create` by name) and `get`, `update`,
+  `patch` on `ciliumcidrgroups` named `abuseipdb` only (`resourceNames`). No
+  `delete`, no wildcards, no cluster-admin.
 * Secrets: SOPS-encrypted Secret `abuseipdb-sync` (`.sops.yaml` matches
   `*-secrets.yaml`) holding `ABUSEIPDB_API_KEY` and `CLOUDFLARE_API_TOKEN`.
   Edit with `sops gitops/platform/abuseipdb/abuseipdb-secrets.yaml`;
@@ -410,8 +409,10 @@ more so future restarts use the normal lookback.
 
 ```bash
 cd gitops/images/abuseipdb-sync && go vet ./... && go test ./...
-# push to main triggers .github/workflows/build-abuseipdb-sync.yaml
-# optionally pin the digest printed in the workflow summary into deployment.yaml
+# a Go/Dockerfile change needs a new APP_VERSION or IMAGE_REVISION in the
+# Dockerfile (the workflow fails otherwise); push to main triggers
+# .github/workflows/build-abuseipdb-sync.yaml
+# then pin the `<tag>@<digest>` from the workflow summary in deployment.yaml
 ```
 
 ### Stage 2 — deploy the synchronizer (Cloudflare edge sink activates)
@@ -421,7 +422,7 @@ or rotate them with:
 
 ```bash
 sops gitops/platform/abuseipdb/abuseipdb-secrets.yaml
-# bump the image in gitops/images/abuseipdb-sync/Dockerfile, push to main; CI builds it
+# (only for a new image: build and pin it as in Stage 1)
 # then commit, and:
 flux reconcile kustomization flux-system --with-source
 flux get kustomizations | grep abuseipdb
@@ -463,8 +464,9 @@ afterwards and let the next sync reconcile it (or clear it via the API).
 
 **Cilium (direct path).** From a client whose source IP reaches Cilium directly
 (bypassing Cloudflare, e.g. `curl --resolve www.jokelab.dev:443:192.168.50.201`
-from the LAN with a public source), temporarily add that IP to the runtime Cilium
-group only (not to Git):
+from the LAN with a public source), temporarily put that IP into the runtime
+Cilium group only (not into Git). The merge patch replaces the whole list, so
+the feed entries are not enforced until the group is restored:
 
 ```bash
 kubectl patch ccg abuseipdb --type=merge -p '{"spec":{"externalCIDRs":["<TEST-CLIENT-IP>/32"]}}'
@@ -472,10 +474,17 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://www.jokelab.dev/   # expect 40
 hubble observe --last 20 --verdict DROPPED
 ```
 
-Then restore by triggering a synchronization (`kubectl -n abuseipdb rollout
-restart deploy/abuseipdb-sync`) and confirm 200 again. If the test IP cannot
-reach Cilium directly, verify at least that the deny matches nothing while the
-group is empty.
+Then restore by forcing a synchronization and confirm 200 again. A plain
+restart does not sync while both sinks are younger than one interval, so drop
+the last-success annotation first (this spends one blacklist call):
+
+```bash
+kubectl annotate ccg abuseipdb abuseipdb.io/last-success-
+kubectl -n abuseipdb rollout restart deploy/abuseipdb-sync
+```
+
+If the test IP cannot reach Cilium directly, verify at least that the deny
+matches nothing while the group is empty.
 
 ### Stage 4 — enable the real deny policy
 
@@ -542,28 +551,38 @@ policy restores `200` immediately.
 Fastest enforcement rollbacks (effective immediately, no restarts):
 
 ```bash
-# Cilium side (after Stage 4)
+# Cilium side (after Stage 4). Flux re-applies the CCNP at the next
+# infra-configs reconcile; make it permanent with the GitOps rollback below.
 kubectl delete ciliumclusterwidenetworkpolicy deny-abuseipdb-ingress
 
 # Cloudflare side: disable/delete the managed custom rule (dashboard or API).
 # The rule is identified by ref "abuseipdb"; deleting only the list leaves a
-# dangling reference, so remove/disable the rule first.
+# dangling reference, so remove/disable the rule first. The next Cloudflare
+# push re-creates or re-enables the rule, so also set
+# CLOUDFLARE_SYNC_ENABLED: "false" (below) to keep it off.
 curl -X DELETE "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/rulesets/$RULESET_ID/rules/$RULE_ID" \
   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"
 ```
 
-To stop feed updates without changing enforcement: set
-`CLOUDFLARE_SYNC_ENABLED: "false"` (and/or `ABUSEIPDB_STALE_BEHAVIOR`), commit,
-reconcile. To remove the Cloudflare rule and list entirely, delete the rule
-first, then the list (the list cannot be deleted while referenced).
+To stop updating the Cloudflare list without changing edge enforcement: set
+`CLOUDFLARE_SYNC_ENABLED: "false"`, commit, reconcile (the list and rule stay as
+they are and are no longer refreshed or stale-cleared; the Cilium sink keeps
+syncing). `ABUSEIPDB_STALE_BEHAVIOR: "retain"` keeps the last list in both
+sinks when the feed goes stale instead of emptying them. To remove the
+Cloudflare rule and list entirely, delete the rule first, then the list (the
+list cannot be deleted while referenced).
 
 GitOps rollback: remove `- abuseipdb-ingress-deny.yaml` from
 `gitops/infrastructure/configs/cilium/kustomization.yaml`; Flux prunes the CCNP.
 
 Full removal: delete `gitops/clusters/taskflow/abuseipdb.yaml`, its entry in
-`gitops/clusters/taskflow/kustomization.yaml`, the
+`gitops/clusters/taskflow/kustomization.yaml`, the `abuseipdb` entry in the
+`dependsOn` of `gitops/clusters/taskflow/reloader.yaml` (Reloader would wait
+for it forever), the deny policy (GitOps rollback above), the
 `gitops/platform/abuseipdb/` directory and the monitoring
-entry, then delete the leftover runtime objects manually:
+entries (`gitops/monitoring/app/abuseipdb.yaml`, both dashboards,
+`allow-abuseipdb-sync-to-loki`; `grep -rl abuseipdb gitops` lists the
+remaining references), then delete the leftover runtime objects manually:
 `kubectl delete ccg abuseipdb`, and the Cloudflare rule + list.
 
 ## Troubleshooting
@@ -580,7 +599,7 @@ entry, then delete the leftover runtime objects manually:
 | `abuseipdb_cloudflare_sync_errors_total{reason="bulk"}` | Bulk operation failed or exceeded the 2m wait; check the Cloudflare audit log and the next sync |
 | `abuseipdb_cloudflare_sync_errors_total{reason="validation"}` | List exceeds `CLOUDFLARE_MAX_ENTRIES` (free plan: 10,000) |
 | Sync errors `kube` | Cilium CRDs missing or RBAC; check `kubectl auth can-i create ciliumcidrgroups --as=system:serviceaccount:abuseipdb:abuseipdb-sync` |
-| DNS/FQDN egress failures | CoreDNS labels changed, or Cilium DNS proxy blocked |
+| DNS/FQDN egress failures | CoreDNS labels changed, Cilium DNS proxy blocked, or CoreDNS `autopath` enabled (its namespace-suffixed answers never match the `toFQDNs` rules; see `gitops/infrastructure/controllers/coredns/release.yaml`) |
 | Envoy 403 for everyone | CCNP references the group but group is misconfigured; check `cilium-dbg policy get` and the group contents |
 | Group owned by something else | Synchronizer refuses to overwrite a group without `app.kubernetes.io/managed-by=abuseipdb-sync` |
 | Cloudflare rule does not block | Rule disabled, expression drifted, or another zone rule skips/challenges first; check the entry point ruleset order |

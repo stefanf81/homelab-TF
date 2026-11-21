@@ -14,8 +14,7 @@ GitOps state.
 
 ```bash
 make init
-make provision
-make kubeconfig
+make apply   # VM + kubeconfig fetch in one plan (make provision / make kubeconfig are debug-only)
 export KUBECONFIG=$PWD/kubeconfig.yaml
 ```
 
@@ -82,16 +81,19 @@ flux get kustomization flux-system
 
 flux reconcile kustomization infra-controllers -n flux-system
 flux reconcile kustomization infra-configs -n flux-system
+flux reconcile kustomization falco -n flux-system
 flux reconcile kustomization abuseipdb -n flux-system
 flux reconcile kustomization trivy-operator -n flux-system
 flux reconcile kustomization taskflow-app -n flux-system
 flux reconcile kustomization reloader -n flux-system
 flux reconcile kustomization monitoring -n flux-system
-flux reconcile kustomization monitoring-logging -n flux-system
 flux reconcile kustomization monitoring-app -n flux-system
 flux reconcile kustomization kyverno-policies -n flux-system
 flux reconcile kustomization policy-reporter -n flux-system
 flux reconcile kustomization hubble-ui -n flux-system
+flux reconcile kustomization renovate -n flux-system
+flux reconcile kustomization renovate-job -n flux-system
+flux reconcile kustomization monitoring-logging -n flux-system
 ```
 
 ## 5. Verify
@@ -332,7 +334,7 @@ kubectl -n flux-system annotate kustomization/taskflow-app \
 kubectl -n taskflow get pods -w
 ```
 
-### 7.6 Verify the pipeline end-to-end
+### 6.5 Verify the pipeline end-to-end
 
 ```bash
 # 1. Automation succeeds (no GitOperationFailed)

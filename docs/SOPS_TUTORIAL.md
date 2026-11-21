@@ -1,12 +1,12 @@
-# Mozilla SOPS & age Secrets Management Guide
+# SOPS & age Secrets Management Guide
 
-This guide explains how **Mozilla SOPS (Secrets Operations)** and **`age`** are configured and used in this project to manage Kubernetes secrets securely within Git.
+This guide explains how **SOPS (Secrets OPerationS; formerly Mozilla SOPS, now the CNCF project at `getsops/sops`)** and **`age`** are configured and used in this project to manage Kubernetes secrets securely within Git.
 
 ---
 
 ## 1. Overview
 
-In GitOps, keeping plain-text secrets in a Git repository is a major security vulnerability. To solve this without adding heavy infrastructure overhead (like HashiCorp Vault), this project uses **Mozilla SOPS** with **`age`** (a modern, simple, and secure alternative to GPG).
+In GitOps, keeping plain-text secrets in a Git repository is a major security vulnerability. To solve this without adding heavy infrastructure overhead (like HashiCorp Vault), this project uses **SOPS** with **`age`** (a modern, simple, and secure alternative to GPG).
 
 ### How it Works:
 1. **Asymmetric Encryption:** Secrets are encrypted using a public `age` key. Anyone with access to the public key can encrypt secrets.
@@ -23,6 +23,7 @@ In GitOps, keeping plain-text secrets in a Git repository is a major security vu
 ## 2. Installation
 
 To view, edit, or create secrets locally, you must install both `sops` and `age` on your workstation.
+`mise install` installs the versions pinned in `mise.toml` (sops 3.13.3, age 1.3.2); the package managers below may ship other versions.
 
 ### macOS (Homebrew)
 ```bash
@@ -73,8 +74,10 @@ creation_rules:
 6. **`gitops/monitoring/platform/grafana-secrets.yaml`**: Grafana admin and GitHub OAuth secrets.
 7. **`gitops/platform/abuseipdb/abuseipdb-secrets.yaml`**: AbuseIPDB API key and Cloudflare API token.
 8. **`gitops/platform/hubble-ui/hubble-ui-secrets.yaml`**: Hubble UI `oauth2-proxy` GitHub OAuth credentials.
-9. **`gitops/platform/policy-reporter/policy-reporter-ui-oauth-secrets.yaml`**: Policy Reporter UI `oauth2-proxy` GitHub OAuth credentials (`policy-reporter-secrets.yaml` is legacy/unused).
+9. **`gitops/platform/policy-reporter/policy-reporter-ui-oauth-secrets.yaml`**: Policy Reporter UI `oauth2-proxy` GitHub OAuth credentials (`policy-reporter-secrets.yaml` is legacy and unused, but still listed in its `kustomization.yaml`).
 10. **`gitops/platform/renovate/job/renovate-secrets.yaml`**: Renovate GitHub credentials and host rules.
+
+CI (`.github/workflows/validate-gitops.yaml`) runs `ruby scripts/check-sops-secrets.rb`: every Secret with `data`/`stringData` under `gitops/` must sit in a `*-secrets.yaml` file, and every such file must be encrypted for the `.sops.yaml` recipient with all values `ENC[...]`. `scripts/validate-gitops.sh` (via `scripts/flux-postbuild.rb`) fails a path that contains SOPS-encrypted documents when its Flux Kustomization has no `spec.decryption`.
 
 ---
 
@@ -86,7 +89,7 @@ If you need to rotate keys or set up a new environment:
 # Generate a new age keypair and output it to key.txt
 age-keygen -o key.txt
 ```
-*The command will output the public key to stdout (which you copy into `.sops.yaml`) and save both the public and private keys in `key.txt`.*
+*The command prints the public key (`Public key: age1...`, which you copy into `.sops.yaml`) and saves both the public and private keys in `key.txt`. Files that are already encrypted keep the old recipient until you re-wrap them: with the old key still in `SOPS_AGE_KEY_FILE`, run `sops updatekeys <file>` for every `*-secrets.yaml`, then replace the `sops-age` Secret in the cluster. Without the old key (a new environment), put your own values into each file and encrypt it again with `sops -e -i` (README step 4).*
 
 ### B. Configuring SOPS to use your Private Key
 Before running any decrypt or edit commands, tell SOPS where your private key resides:
@@ -126,16 +129,17 @@ sops -d gitops/apps/taskflow/taskflow-secrets.yaml
 ```
 
 ### F. Comparing Changes (Git Diff)
-To make `git diff` show decrypted versions of modified secret files instead of unreadable binary diffs, configure Git to use SOPS for diffing:
+To make `git diff` show decrypted versions of modified secret files instead of ciphertext diffs, configure Git to use SOPS for diffing. The repository has no `.gitattributes`, so map the files locally as well:
 ```bash
 git config diff.sops.textconv "sops -d"
+echo '*-secrets.yaml diff=sops' >> .git/info/attributes
 ```
 
 ---
 
 ## 5. GitOps & Flux CD Integration
 
-Flux CD has native integration with Mozilla SOPS, allowing it to decrypt your files directly at the cluster boundary before applying them.
+Flux CD has native integration with SOPS, allowing it to decrypt your files directly at the cluster boundary before applying them.
 
 ### Step 1: Seed the Private Key in Kubernetes
 For Flux to decrypt secrets, you must load your local `key.txt` into the cluster as a Kubernetes Secret. This is a one-time setup step done during cluster bootstrap:
@@ -146,7 +150,7 @@ kubectl create secret generic sops-age -n flux-system \
 ```
 
 ### Step 2: Flux Decryption Configuration
-Your GitOps Sync Kustomization manifests (located under `gitops/clusters/taskflow/`) are configured to use SOPS and reference this cluster secret:
+The Flux Kustomizations under `gitops/clusters/taskflow/` whose paths contain `*-secrets.yaml` files declare `spec.decryption` with this secret: `infra-controllers`, `taskflow-app`, `monitoring`, `abuseipdb`, `hubble-ui`, `policy-reporter` and `renovate-job` (`renovate` declares it too, without an encrypted file of its own). Excerpt of `taskflow.yaml`:
 
 ```yaml
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -155,7 +159,7 @@ metadata:
   name: taskflow-app
   namespace: flux-system
 spec:
-  interval: 10m0s
+  interval: 10m
   path: ./gitops/apps/taskflow
   prune: true
   sourceRef:
@@ -191,6 +195,6 @@ spec:
      ```
   2. Verify the secret exists in the cluster:
      ```bash
-     kubectl get secret sops-age -n flux-system -o yaml
+     kubectl get secret sops-age -n flux-system -o name
      ```
   3. Ensure the key inside the secret matches the key that encrypted the files.

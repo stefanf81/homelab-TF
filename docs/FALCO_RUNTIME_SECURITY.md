@@ -1,6 +1,6 @@
 # Falco Runtime Security: GitOps & Monitoring Guide
 
-This document covers the installation, architecture, Kubernetes-native integration, and monitoring configuration for **Falco** in the TaskFlow homelab cluster. It includes the full root-cause analysis of the Grafana dashboard compatibility issue resolved in this session.
+This document covers the installation, architecture, Kubernetes-native integration, and monitoring configuration for **Falco** in the TaskFlow homelab cluster. It also keeps the root-cause analysis of an earlier Grafana dashboard compatibility issue (since resolved: the dashboard is now provisioned from Git).
 
 ---
 
@@ -16,14 +16,15 @@ In this cluster, Falco is deployed as a cluster-wide runtime security system usi
                                             v
                                   +-------------------+
                                   |  Falco DaemonSet  | (Detects syscall violations)
-                                  +---------+---------+
-                                            | (Internal gRPC)
-                                            v
-                                  +-------------------+
-                                  |   Falcosidekick   | (Routes alerts)
                                   +----+-----------+--+
                                        |           |
-       (Directly writes wgpolicyk8s.io |           | (Prometheus Scrape: Port 8765)
+                       (Internal gRPC) |           | (Prometheus scrape of Falco's
+                                       v           |  /metrics: port 8765)
+                          +------------+---+       |
+                          |  Falcosidekick |       |
+                          | (Routes alerts)|       |
+                          +------------+---+       |
+       (Directly writes wgpolicyk8s.io |           |
         PolicyReport Custom Resources) |           |
                                        v           v
                           +------------+---+   +---+------------+
@@ -49,7 +50,7 @@ In this cluster, Falco is deployed as a cluster-wide runtime security system usi
 All resources are version-controlled and automatically reconciled by Flux CD.
 
 ### Namespace (`gitops/infrastructure/controllers/falco/namespace.yaml`)
-Falco pods require high privileges to inspect kernel syscalls. We exempt the namespace from any restrictive Pod Security Admissions:
+Falco pods require high privileges to inspect kernel syscalls, so the namespace enforces the `privileged` Pod Security level; warn and audit stay `restricted`:
 ```yaml
 apiVersion: v1
 kind: Namespace
@@ -57,11 +58,17 @@ metadata:
   name: falco
   labels:
     pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
 ```
 
 ### Chart source (`gitops/infrastructure/controllers/falco/repository.yaml`)
 The official Falco chart, pulled as an OCI artifact. The version is pinned here
-(`ref.tag`), not in the HelmRelease:
+(`ref.tag` + `ref.digest`), not in the HelmRelease. Do not go below chart 9.2.0 (Falco 0.45.0):
+Falco 0.44.1 crashes on the node's kernel 7.0 (see the comment in the file):
 ```yaml
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: OCIRepository
@@ -75,6 +82,7 @@ spec:
     operation: copy
   ref:
     tag: 9.2.2
+    digest: sha256:08cd4fd501f12b33c8220886a595bb0cc6a6b5bf9713b5fad9e3381148409d6f
   url: oci://ghcr.io/falcosecurity/charts/falco
 ```
 
@@ -178,7 +186,7 @@ spec:
 
 ## 3. Dashboard Compatibility: Root Cause Analysis
 
-This section documents the "no data" problem diagnosed in this session.
+This section documents the "no data" problem diagnosed when Falco was first deployed (Falco 0.44.1, dashboard imported by hand).
 
 ### The Symptom
 After deploying Falco with `metrics.enabled: true` and confirming that VictoriaMetrics was scraping the `/metrics` endpoint successfully (metrics appeared in VM UI), Grafana Dashboard **11914** showed **all panels empty** — "No data" on every query.
@@ -264,14 +272,14 @@ still possible:
 #### Row 1: Events (3 pie charts + 3 time series)
 | Panel | Type | Query |
 |-------|------|-------|
-| **Rules** | Pie chart | `sum by(rule_name) (increase_pure(falcosecurity_falco_rules_matches_total[$__range]))` (instant) |
-| **Sources** | Pie chart | `sum by(source) (increase_pure(falcosecurity_falco_rules_matches_total[$__range]))` (instant) |
-| **Priorities** | Pie chart | `sum by(priority) (increase_pure(falcosecurity_falco_rules_matches_total[$__range]))` (instant), numeric priority renamed to its name |
+| **Rules** | Pie chart | `sum by(rule_name) ((increase_pure(m[$__range]) unless last_over_time(m[1h] offset $__range)) or increase(m[$__range]))` with `m` = `falcosecurity_falco_rules_matches_total` (instant) |
+| **Sources** | Pie chart | Same expression, `sum by(source)` (instant) |
+| **Priorities** | Pie chart | Same expression, `sum by(priority)` (instant), numeric priority renamed to its name |
 | **by Priority over time** | Time series | Same metric, `increase_pure(...[$__interval])`, grouped by `priority` |
 | **by Source over time** | Time series | Same metric, `increase_pure(...[$__interval])`, grouped by `source` |
 | **by Rule over time** | Time series | Same metric, `increase_pure(...[$__interval])`, grouped by `rule_name` |
 
-`increase_pure()` (MetricsQL) is used because a rule's counter only appears after its first match: plain `increase()` in VictoriaMetrics can discard a large first value. The drop panels in row 2 use it for the same reason: a new Falco pod is a new series, and `increase()` hides 10 or more drops that happened before its first scrape (over-time panels also use `[$__interval]`, minimum 1 minute, so that every drop is counted in exactly one point). The trade-off is that a bar equal to a pod's whole running total can appear when the selected range starts before the stored data (14-day retention) or when the scrape labels change without a Falco restart. Falco exports `priority` as a number (`0` emergency, `1` alert, `2` critical, `3` error, `4` warning, `5` notice, `6` informational, `7` debug); the Priorities panels rename it.
+`increase_pure()` (MetricsQL) is used because a rule's counter only appears after its first match: plain `increase()` in VictoriaMetrics can discard a large first value. The pie charts apply it only to series born inside the range and use plain `increase()` for series that have samples in the hour before it, so a scrape gap at the window start does not replay a lifetime total. The drop panels in row 2 use it for the same reason: a new Falco pod is a new series, and `increase()` hides 10 or more drops that happened before its first scrape (over-time panels also use `[$__interval]`, minimum 1 minute, so that every drop is counted in exactly one point). The trade-off is that a bar equal to a pod's whole running total can appear when the selected range starts before the stored data (14-day retention) or when the scrape labels change without a Falco restart. Falco exports `priority` as a number (`0` emergency, `1` alert, `2` critical, `3` error, `4` warning, `5` notice, `6` informational, `7` debug); the Priorities panels rename it.
 
 #### Row 2: Performances (10 time series)
 | Panel | Type | Primary Query |
@@ -296,15 +304,15 @@ The upstream "Scap Drops Buffer Enter" panel was removed: Falco 0.45 exports onl
 | **Engines** | Pie chart | `count by(engine_name) (falcosecurity_scap_engine_name_info)` (instant) |
 
 ### Dashboard Variables
-The dashboard defines five template variables that become dropdown filters at the top. Namespace and pod select the Falco exporter deployment, not the namespace of each detected workload:
+The dashboard defines five template variables that become dropdown filters at the top. Namespace and pod select the Falco DaemonSet pods that export the metrics, not the namespace of each detected workload:
 
 | Variable | Definition | Source |
 |----------|-----------|--------|
 | `$datasource` | Prometheus | Grafana datasource (defaults to VictoriaMetrics) |
-| `$namespace` | `label_values(falcosecurity_falco_cpu_usage_ratio, namespace)` | Falco exporter namespaces |
-| `$source` | `label_values(falcosecurity_falco_rules_matches_total, source)` | All event sources |
+| `$namespace` | `label_values(falcosecurity_falco_cpu_usage_ratio, namespace)` | Namespaces of the Falco pods |
+| `$source` | `label_values(falcosecurity_falco_rules_matches_total{namespace=~"$namespace", pod=~"$pod"}, source)` | Event sources seen by the selected Falco pods |
 | `$priority` | Custom list `emergency : 0` … `debug : 7` | Falco priorities by name (the metric label is the number) |
-| `$pod` | `label_values(falcosecurity_falco_cpu_usage_ratio{namespace=~"$namespace"}, pod)` | Falco exporter pods |
+| `$pod` | `label_values(falcosecurity_falco_cpu_usage_ratio{namespace=~"$namespace"}, pod)` | Falco pods |
 
 ---
 
@@ -393,8 +401,9 @@ curl -s 'http://localhost:8428/vmsingle/api/v1/query?query=falcosecurity_falco_r
 
 ### Trigger a safe, successful security alert
 ```bash
-# Runs a temporary Alpine container, writes below /usr/bin, sleeps for 5s, and auto-deletes
-kubectl run falco-test --image=alpine --restart=Never -i --rm -- sh -c "touch /usr/bin/falco-test-trigger && sleep 5"
+# Runs a temporary Alpine container, writes below /usr/bin, sleeps for 5s, and auto-deletes.
+# The image must carry an explicit tag: Kyverno's disallow-latest-tag policy denies untagged images.
+kubectl run falco-test --image=alpine:3.24.4 --restart=Never -i --rm -- sh -c "touch /usr/bin/falco-test-trigger && sleep 5"
 ```
 
 ### Check created PolicyReport custom resources
