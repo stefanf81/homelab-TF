@@ -18,13 +18,13 @@ resources:
   limits:   cpu 4000m, memory 2560Mi
 ```
 
-**Current config** (`backend.yaml` + image Dockerfile):
+**Current config** (`backend.yaml`; the image Dockerfile carries no sizing flags):
 ```yaml
 # backend.yaml — sizing and GC/logging owned by the deployment (excerpt)
 env:
   - name: JAVA_TOOL_OPTIONS
     value: >-
-      -XX:ActiveProcessorCount=2 -XX:MaxRAMPercentage=50.0
+      -XX:ActiveProcessorCount=2 -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=50.0
       -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:+ExitOnOutOfMemoryError
       -XX:+UseStringDeduplication -XX:+AlwaysPreTouch
       -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC
@@ -165,8 +165,8 @@ The gateway removal moves three clients and two policies to
 `tests/validate-startup-scope.rb` compares all five with the rendered chart, and the Alloy
 pipeline tests ran against a disposable Loki without a gateway. The Cilium policies themselves
 can only be confirmed on the cluster (checks below). The default URL compiled into
-`abuseipdb-sync` names the Loki Service from image `0.3.3-r1` (`config.go`); images up to
-`0.3.2-r2` default to the removed gateway, so keep `LOKI_PUSH_URL` set while one is pinned.
+`abuseipdb-sync` names the Loki Service from image `0.3.3-r1` (`config.go`; the pinned
+`0.3.5-r9` included); images up to `0.3.2-r2` defaulted to the removed gateway.
 
 Check after Flux applies it:
 

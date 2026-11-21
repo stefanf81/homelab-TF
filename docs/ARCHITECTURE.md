@@ -655,7 +655,7 @@ the app because its Grafana route targets the TaskFlow Gateway:
 
 **Reaching the UIs:**
 
-The monitoring UIs are now exposed through the main Cilium Gateway API using zero-config wildcard IP and public DNS routing. See [Gateway Access Guide](GATEWAY_ACCESS_GUIDE.md) for full setup instructions.
+Grafana is exposed through the main Cilium Gateway on its own hostname (no wildcard); VMSingle is not. See [Gateway Access Guide](GATEWAY_ACCESS_GUIDE.md) for full setup instructions.
 
 - **Grafana:** `https://grafana.jokelab.dev`
   *(credentials are supplied by the SOPS-encrypted `grafana-secrets.yaml`; the

@@ -23,7 +23,7 @@ spec:
     - "www.jokelab.dev"
 ```
 
-Because hostname-based filtering is active, the Gateway only responds when the client's TLS SNI matches a known hostname. Requests to the Gateway IP without a matching `Host` header will be rejected (no wildcard fallback).
+Because the routes match on hostname (the `taskflow-gateway` listeners themselves set no `hostname`), the Gateway only routes a request whose `Host` header matches one of these names. Requests to the Gateway IP without a matching `Host` header get no route (no wildcard fallback). On port 80, `http-to-https-redirect` answers all five hostnames (apex, `www`, `grafana`, `kyverno`, `hubble`) with a 301 to HTTPS.
 
 ---
 

@@ -1,8 +1,9 @@
 # Backend Integration Context (for the Spring Boot repo)
 
 This document is **hand-off context for an AI (or engineer) working on the TaskFlow
-Spring Boot backend source repository** (`taskflow-backend`). It explains what the
-*infrastructure* side (this `homelab/TF` repo) already assumes about the backend and
+Spring Boot backend source repository** (`taskflow-enterprise`, published as the
+`ghcr.io/stefanf81/taskflow-backend` image). It explains what the
+*infrastructure* side (this `homelab-TF` repo) already assumes about the backend and
 the monitoring integration that the backend must preserve.
 
 Read `docs/ARCHITECTURE.md` first for the full platform picture. This file is the
@@ -36,7 +37,7 @@ Defined in `gitops/apps/taskflow/backend.yaml`:
 | Listening port | **8080** (ContainerPort `http`) | The backend WAF routes `/api` → `backend:8080`, and the VMServiceScrape targets the same Service. Don't change. |
 | Liveness/readiness | `GET /actuator/health/liveness` and `/actuator/health/readiness` on 8080 | Probes already use these. Actuator health must stay enabled. |
 | Security context | `runAsNonRoot: true`, `UID/GID 10001`, `readOnlyRootFilesystem: true`, `capabilities.drop: [ALL]` | The image **must** run as 10001 with no writes to the image layer. Only `/tmp` and `/var/log/taskflow` (2Gi `emptyDir` for GC logs and OOM heap dumps) are writable. Log application output to **stdout/stderr**. |
-| Env (config & secrets) | `backend-config` ConfigMap (`SPRING_PROFILES_ACTIVE=prod`, `APP_CORS_ALLOWED_ORIGINS`, `APP_TRUSTED_PROXY_REGEX`, `SERVER_TOMCAT_REMOTEIP_REMOTEIPHEADER=x-real-ip`, `APP_SHOP_TIME_ZONE`) + Secrets (`SPRING_SECURITY_PASSWORD`, `SPRING_DATASOURCE_PASSWORD`, `SPRING_DATA_REDIS_PASSWORD`, `APP_RSA_PRIVATE_KEY`, `APP_RSA_PUBLIC_KEY`) | Don't hard-code these; `APP_TRUSTED_PROXY_REGEX` is mandatory in `prod` (startup aborts without it). |
+| Env (config & secrets) | `backend-config` ConfigMap, every key exported via `envFrom` (`SPRING_PROFILES_ACTIVE=prod`, `APP_CORS_ALLOWED_ORIGINS`, `APP_TRUSTED_PROXY_REGEX`, `SERVER_TOMCAT_REMOTEIP_REMOTEIPHEADER=x-real-ip`, `APP_SHOP_TIME_ZONE`, `SERVER_COMPRESSION_*`, Tomcat keep-alive/connection timeouts) + Secrets (`SPRING_SECURITY_PASSWORD`, `SPRING_DATASOURCE_PASSWORD`, `SPRING_DATA_REDIS_PASSWORD`, `APP_RSA_PRIVATE_KEY`, `APP_RSA_PUBLIC_KEY`) | Don't hard-code these; `APP_TRUSTED_PROXY_REGEX` is mandatory in `prod` (startup aborts without it). |
 | JVM heap & runtime | Owned by the deployment's `JAVA_TOOL_OPTIONS`: `-XX:ActiveProcessorCount=2 -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=50.0` → 1GiB pre-touched heap at the 2Gi limit, `MALLOC_ARENA_MAX=2`, memory request 1536Mi, Burstable QoS (no CPU limit) | Preserve `MaxRAMPercentage=50.0`, `InitialRAMPercentage=50.0`, `MaxDirectMemorySize=256m`, and `MaxMetaspaceSize=256m`; never add `-Xshare:*` (conflicts with the image's `-XX:AOTCache`). |
 | Graceful shutdown | 45s termination grace | Configure `server.shutdown=graceful` so in-flight requests drain on rollout. |
 
@@ -149,8 +150,10 @@ If that curl returns metrics, verify the output includes `jvm_memory_used_bytes`
 
 ## 4. Things NOT to do
 
-- **Don't change the listening port from 8080** — the Gateway `HTTPRoute` and the
-  VMServiceScrape both assume 8080.
+- **Don't change the listening port from 8080** — the backend WAF's upstream
+  (`backend-waf.yaml`), the `backend` Service and probes, and the Cilium policies
+  `allow-backend-waf-to-backend` /
+  `allow-vmagent-to-backend` (and therefore the VMServiceScrape) all assume 8080.
 - **Don't connect to Redis without password authentication** — Redis authentication is enabled on the cluster. The deployment injects the password from the SOPS secret into your container under `SPRING_DATA_REDIS_PASSWORD`.
 - **Don't add a `/metrics` path** — Spring Boot Actuator's Prometheus endpoint is
   `/actuator/prometheus` by default; the VMServiceScrape targets exactly that.
