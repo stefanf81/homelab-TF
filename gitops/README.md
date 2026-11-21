@@ -75,7 +75,7 @@ Contains the custom configurations and Custom Resources (CRs) consumed by the co
 This layer houses user-facing workloads and microservices. Workloads here are kept separate from the infrastructure layer to allow application developers to deploy code without risking platform-level system configuration.
 
 #### `apps/taskflow/`
-This folder represents your **TaskFlow** application (Angular 22, Spring Boot 4.1.1, PostgreSQL 18, Redis 8.10, and Jaeger).
+This folder represents your **TaskFlow** application (Angular 22, Spring Boot 4.1.1, PostgreSQL 19, Redis 8.10, and Jaeger).
 * **`backend.yaml`**: Configures the JVM Spring Boot 4.1.1 server with preflight checks (`wait-for-db` init-container) and a 1 GiB heap (`MaxRAMPercentage=50.0` of its 2 GiB cgroup limit) with G1GC tuning (`JAVA_TOOL_OPTIONS`). The deployment owns the JVM sizing flags. The container image uses the mutable `:latest` tag, which Flux pins to its current `sha256` digest via the `# {"$imagepolicy": ...}` marker (see `../FLUX_BOOTSTRAP.md` §7 — the Git source must be writable and the marker must be the *basic* form, not `:digest`).
 * **`backend-waf.yaml` / `frontend-waf.yaml`**: Put Caddy + Coraza CRS in front of the backend and frontend Services. The Gateway routes only to these WAF Services.
 * **`frontend.yaml`**: Configures the Angular 22 client packaged with Nginx, utilizing custom emptyDirs to secure a `readOnlyRootFilesystem`. Same Flux digest-pin behavior as the backend.
