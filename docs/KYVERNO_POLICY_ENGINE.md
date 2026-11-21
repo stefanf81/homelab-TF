@@ -179,13 +179,6 @@ that needs one:
 | `backgroundController` | `generate` rules and mutation of existing resources (`GeneratingPolicy`, `MutatingPolicy` with `mutateExisting`) |
 | `cleanupController` | `DeletingPolicy` / `CleanupPolicy` and the `cleanup.kyverno.io/ttl` label |
 
-After the change rolls out, check that the cleanup controller took its two webhook
-configurations with it; delete them if they are still listed (their Service no longer exists):
-
-```bash
-kubectl get validatingwebhookconfigurations | grep -E 'kyverno-(cleanup|ttl)'
-```
-
 `features.autoUpdateWebhooks.enabled: true` lets Kyverno manage its webhook configurations per
 policy; each `ValidatingPolicy` gets a webhook with the policy's own `failurePolicy`.
 

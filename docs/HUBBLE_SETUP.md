@@ -39,14 +39,7 @@ kubectl port-forward -n kube-system svc/hubble-relay 4244:80
 # hubble observe → 127.0.0.1:4244 → hubble-relay:80 → Cilium Agent
 ```
 
-## Resources Created
-
-### Infrastructure
-
-| File | Resource |
-|------|----------|
-| `gitops/infrastructure/controllers/cilium/release.yaml` | Updated: enabled `hubble`, `hubble.relay`, `hubble.ui`, `hubble.metrics` |
-| `gitops/infrastructure/controllers/coredns/release.yaml` | Updated: added `hubble.jokelab.dev` to hosts |
+## Resources
 
 ### Hubble UI (`gitops/platform/hubble-ui/`)
 
@@ -60,24 +53,17 @@ kubectl port-forward -n kube-system svc/hubble-relay 4244:80
 | `network-policy.yaml` | CiliumNetworkPolicies `hubble-ui-ingress-default-deny` + `allow-gateway-to-hubble-ui` (paired with `gitops/infrastructure/configs/cilium/hubble-isolation.yaml` in `kube-system`) |
 | `kustomization.yaml` | Kustomization listing all resources |
 
-### App Layer Updates
+### Wiring elsewhere (change these together when renaming the host)
 
-| File | Change |
+| File | What it holds for Hubble |
 |------|--------|
-| `gitops/apps/taskflow/certificate.yaml` | Added `hubble.jokelab.dev` SAN |
-| `gitops/apps/taskflow/gateway.yaml` | Added `hubble-ui` namespace to both HTTP/HTTPS listener `allowedRoutes` |
-| `gitops/apps/taskflow/http-redirect.yaml` | Added `hubble.jokelab.dev` to HTTP→HTTPS redirect |
-| `gitops/apps/taskflow/cloudflare-ddns.yaml` | Added `hubble.jokelab.dev` to DNS domains |
-| `gitops/clusters/taskflow/hubble-ui.yaml` | Flux Kustomization for hubble-ui |
-| `gitops/clusters/taskflow/kustomization.yaml` | Added `hubble-ui.yaml` |
-
-### Documentation
-
-| File | Content |
-|------|---------|
-| `docs/TASKFLOW_WAF_ARCHITECTURE.md` | Full WAF + logging architecture |
-| `docs/HUBBLE_SETUP.md` | This file |
-| `docs/TASKFLOW_WAF_RUNBOOK.md` | Operational runbook with troubleshooting |
+| `gitops/infrastructure/controllers/cilium/release.yaml` | `hubble`, `hubble.relay`, `hubble.ui`, `hubble.metrics`, flow export |
+| `gitops/infrastructure/controllers/coredns/release.yaml` | `hubble.jokelab.dev` in the hairpin-NAT `hosts` block |
+| `gitops/apps/taskflow/certificate.yaml` | `hubble.jokelab.dev` SAN |
+| `gitops/apps/taskflow/gateway.yaml` | `hubble-ui` namespace in both listeners' `allowedRoutes` |
+| `gitops/apps/taskflow/http-redirect.yaml` | `hubble.jokelab.dev` in the HTTP→HTTPS redirect |
+| `gitops/apps/taskflow/cloudflare-ddns.yaml` | `hubble.jokelab.dev` DNS record |
+| `gitops/clusters/taskflow/hubble-ui.yaml` | Flux Kustomization (listed in `kustomization.yaml` there) |
 
 ## GitHub OAuth App
 

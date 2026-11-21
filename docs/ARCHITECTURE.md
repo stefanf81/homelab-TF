@@ -567,7 +567,8 @@ Make targets are listed in `README.md`; the Flux reconcile order is in `gitops/F
 4. **`proxmox_insecure = true`** disables TLS verification to Proxmox. Fine for a self-signed homelab, dangerous anywhere else.
 5. **Ubuntu 26.04 ("Resolute")** is pinned to the `release-20261108` cloud image and verified with a SHA-256 checksum in `modules/proxmox/main.tf`.
 6. The whole stack is **single-replica** — there is no HA. A node reboot = full downtime. That's the accepted homelab tradeoff, not a bug.
-7. **Encrypted files must stay encrypted:** edit `*-secrets.yaml` only with `sops <file>`; a plaintext edit breaks Flux decryption for the whole Kustomization.
+7. **CoreDNS is GitOps-managed** (including the hairpin-NAT `hosts` overrides): change `gitops/infrastructure/controllers/coredns/release.yaml`, never the live ConfigMap.
+8. **Encrypted files must stay encrypted:** edit `*-secrets.yaml` only with `sops <file>`; a plaintext edit breaks Flux decryption for the whole Kustomization.
 
 ---
 

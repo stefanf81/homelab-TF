@@ -1,6 +1,6 @@
 # Falco Runtime Security: GitOps & Monitoring Guide
 
-This document covers the installation, architecture, Kubernetes-native integration, and monitoring configuration for **Falco** in the TaskFlow homelab cluster. It also keeps the root-cause analysis of an earlier Grafana dashboard compatibility issue (since resolved: the dashboard is now provisioned from Git).
+This document covers the installation, architecture, Kubernetes-native integration, and monitoring configuration for **Falco** in the TaskFlow homelab cluster.
 
 ---
 
@@ -180,92 +180,26 @@ spec:
       scheme: http
 ```
 
-> **Why `jobLabel: app.kubernetes.io/name` matters:** Without it, VictoriaMetrics auto-generates the `job` label as `namespace/name` of the scrape resource (e.g. `monitoring/falco-metrics`). The provisioned dashboard selects Falco's metrics by name and does not filter on `job`, but a stable `job="falco"` keeps ad-hoc and alert queries such as `up{job="falco"}` predictable. This was fixed in commit `8fb3fc2`.
+> **Why `jobLabel: app.kubernetes.io/name` matters:** Without it, VictoriaMetrics auto-generates the `job` label as `namespace/name` of the scrape resource (e.g. `monitoring/falco-metrics`). The provisioned dashboard selects Falco's metrics by name and does not filter on `job`, but a stable `job="falco"` keeps ad-hoc and alert queries such as `up{job="falco"}` predictable.
 
 ---
 
-## 3. Dashboard Compatibility: Root Cause Analysis
+## 3. Grafana Dashboard
 
-This section documents the "no data" problem diagnosed when Falco was first deployed (Falco 0.44.1, dashboard imported by hand).
+The dashboard is a homelab-adapted copy of the Falco chart's own dashboard
+(`charts/falco/dashboards/falco-dashboard.json` upstream), kept at
+`gitops/monitoring/logging/dashboards/falco-official.json` and provisioned by the
+`monitoring-logging` Kustomization as `ConfigMap/monitoring/falco-dashboard` (label
+`grafana_dashboard: "1"`). Grafana's sidecar loads it into the **Security** folder: open
+**Dashboards → Security → Falco** at `https://grafana.jokelab.dev`. Edit the JSON in Git for
+persistent changes; provenance and update steps are in
+`gitops/monitoring/logging/dashboards/SOURCE.md`.
 
-### The Symptom
-After deploying Falco with `metrics.enabled: true` and confirming that VictoriaMetrics was scraping the `/metrics` endpoint successfully (metrics appeared in VM UI), Grafana Dashboard **11914** showed **all panels empty** — "No data" on every query.
-
-### The Investigation
-
-**Step 1 — Verify scraping works:**
-```promql
-# This query returned results, proving metrics arrive in VictoriaMetrics
-{job="falco"}
-```
-
-**Step 2 — Check what metrics Falco actually exposes:**
-```bash
-# Port-forward to a Falco pod and inspect the metrics endpoint
-kubectl port-forward -n falco pod/falco-xxxxx 8765 &
-curl -s localhost:8765 | grep -oP '^[^#]\S+' | head -20
-```
-This revealed that **Falco v0.44.1's built-in Prometheus endpoint** exposes metrics with the **`falcosecurity_`** prefix:
-```
-falcosecurity_falco_cpu_usage_ratio
-falcosecurity_falco_memory_rss_bytes
-falcosecurity_falco_memory_vsz_bytes
-falcosecurity_falco_n_evts_total
-falcosecurity_falco_outputs_queue_num_drops_total
-falcosecurity_falco_rules_matches_total
-falcosecurity_falco_version_info
-falcosecurity_scap_engine_name_info
-falcosecurity_scap_n_drops_buffer_total
-falcosecurity_scap_n_drops_cpu_total
-falcosecurity_scap_n_drops_full_threadtable_total
-falcosecurity_scap_n_drops_scratch_map_total
-falcosecurity_scap_n_drops_total
-falcosecurity_scap_n_evts_total
-```
-
-**Step 3 — Check what Dashboard 11914 queries:**
-Dashboard 11914 was built for **`falco-exporter`**, a separate (now deprecated) component that:
-- Exposed metrics like `falco_events`, `falco_events_rate`, `falco_rules_count` — using the **`falco_`** prefix at the top level (no `falcosecurity_` namespace)
-- Used different label structures (e.g. `k8s_pod_name` instead of `pod`, `k8s_ns_name` instead of `namespace`)
-
-### Root Cause
-**Grafana Dashboard ID 11914 queries metric names that do not exist in Falco's built-in Prometheus endpoint.** The dashboard was specifically designed for the deprecated `falco-exporter` sidecar, not for the native metrics that Falco 0.38+ ships by default. Since those metric names (`falco_events`, `falco_events_rate`, etc.) are never produced, every panel returns "No data."
-
-### The Fix
-The Falco Helm chart ships with a native Grafana dashboard that queries the correct `falcosecurity_*` metric names. The source JSON is located in the upstream chart at:
-
-```
-https://raw.githubusercontent.com/falcosecurity/charts/master/charts/falco/dashboards/falco-dashboard.json
-```
-
-A homelab-adapted copy is saved at **`gitops/monitoring/logging/dashboards/falco-official.json`** and provisioned through the `monitoring-logging` Flux Kustomization. It defaults to VictoriaMetrics, preserves the existing Falco dashboard UID, and uses native metrics available with the modern eBPF driver. See [Section 4](#4-importing-the-correct-grafana-dashboard) for access and optional manual-import instructions.
-
----
-
-## 4. Importing the Correct Grafana Dashboard
-
-### Step 1: Log in to Grafana
-Navigate to **`https://grafana.jokelab.dev`** and log in.
-
-### Step 2: Remove the Incompatible Dashboard
-1. Go to **Dashboards → Browse**.
-2. Find the imported dashboard (it may be named "Falco Hints" or "Falco Dashboard 11914").
-3. Click it, then click **Dashboard settings (gear icon) → Remove Dashboard**.
-
-### Step 3: Open the Provisioned Dashboard
-The dashboard is generated as `ConfigMap/monitoring/falco-dashboard` with the
-`grafana_dashboard: "1"` label and is placed in the **Security** Grafana folder.
-After the GitOps changes are deployed, Grafana's
-sidecar loads it automatically; open **Dashboards → Security → Falco**. Edit its JSON in Git
-for persistent changes. The existing UID is retained to adopt the earlier
-manual import instead of creating another Falco dashboard.
-
-For a separate Grafana installation without this provisioning, manual import is
-still possible:
-1. Click **Dashboards → New → Import**.
-2. Select **Upload dashboard JSON file** and pick `gitops/monitoring/logging/dashboards/falco-official.json` from this repository.
-3. In the **Prometheus / VictoriaMetrics** drop-down, select the default **VictoriaMetrics** datasource.
-4. Click **Import**.
+> **Do not import Grafana dashboard 11914.** It was built for the deprecated
+> `falco-exporter` (`falco_events`, `falco_rules_count`, `k8s_pod_name` labels) and shows
+> "No data" on every panel against Falco's built-in endpoint, which exposes
+> `falcosecurity_*` metrics (§4). That mismatch was the cause of the empty dashboard when
+> Falco was first deployed.
 
 ### Dashboard Layout (18 visualizations, plus section headers)
 
@@ -316,7 +250,7 @@ The dashboard defines five template variables that become dropdown filters at th
 
 ---
 
-## 5. Complete Metrics Reference
+## 4. Complete Metrics Reference
 
 These are the **actual** metrics that Falco 0.45.2 (chart 9.2.2, modern eBPF driver) exposes on the `/metrics` endpoint. Use these names in PromQL queries, alerting rules (`VMRules`), or custom Grafana panels.
 
@@ -370,7 +304,7 @@ These are the **actual** metrics that Falco 0.45.2 (chart 9.2.2, modern eBPF dri
 
 ---
 
-## 6. Verification & Testing Cheatsheet
+## 5. Verification & Testing Cheatsheet
 
 ### Force Flux to sync changes
 ```bash
@@ -423,22 +357,3 @@ kubectl get policyreport <name> -n <namespace> -o yaml
 5. The **Sources** pie chart should show `syscall`
 6. The **Priorities** chart may show `notice` or `warning`
 7. Performance panels (Memory, CPU, Scap events) should show non-zero data immediately, even without triggering alerts
-
----
-
-## 7. Git History (This Session)
-
-| Commit | Description |
-|--------|-------------|
-| `9bdf97d` | feat: install Falco runtime security agent via Flux (modern eBPF) |
-| `b544a7f` | feat: integrate Falco with Policy Reporter UI via Falcosidekick |
-| `d6700a9` | fix: correct Falcosidekick webhook configuration path in Helm values |
-| `71f8949` | refactor: switch Falco integration to native PolicyReport CRDs |
-| `bfa2fc4` | docs: document Falco GitOps architecture & Grafana monitoring guide |
-| `019c9e3` | fix: align VictoriaMetrics scrape config with Falco's service port 8765 |
-| `8fb3fc2` | fix: set jobLabel: app.kubernetes.io/name on Falco scrape to match Grafana dashboard |
-
-For the full diff of this session, run:
-```bash
-git log --oneline 9bdf97d..8fb3fc2
-```

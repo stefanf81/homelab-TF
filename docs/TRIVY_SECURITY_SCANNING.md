@@ -82,32 +82,18 @@ Additional operator values:
 - Scan concurrency is deliberately capped for the single‑node homelab:
   `scanJobsConcurrentLimit: 1`, `scanNodeCollectorLimit: 1`, `scanJobTimeout: 5m`.
 
-### Why an allowlist instead of namespace exclusions (2026-11-03)
+### Why an allowlist instead of namespace exclusions
 
-Chart 0.38.1 runs operator 0.36.1. Its workload controller attaches
-`InstallModePredicate` only to `For(...)`, not the `Owns(VulnerabilityReport)`,
-`Owns(ExposedSecretReport)` and `Owns(SbomReport)` watches. Owned-report events can
-therefore enqueue an excluded workload, and reconciliation does not recheck namespace
-scope. This is also described in [upstream issue #2817](https://github.com/aquasecurity/trivy-operator/issues/2817).
-
-The live operator had the correct exclusion environment variable, but old Cilium reports
-from August/September still existed in `kube-system`. A rescan created seven scanner
-containers for the same Cilium image (including its init containers): 7 × 512Mi = 3584Mi
-of scheduling requests, above the single node's ~2.34Gi headroom. The job could not
-schedule and subsequently expired; the five-minute timeout prevents it remaining
-Pending indefinitely. `scanJobsConcurrentLimit: 1` limits jobs, not containers inside
-one job.
-
-The allowlist selects MultiNamespace install mode, which scopes the manager cache to
-the application namespaces plus `trivy-system`. Old system reports no longer enter
-the owned-report watches. Scanner requests (512Mi), limits (2Gi), init-container
-coverage and concurrency are unchanged. Existing reports are not deleted by this
-change and can remain visible to other consumers. An already queued scan may persist
-until its normal timeout; no imperative cleanup is required.
-
-Source inspected: [`workload.go`](https://github.com/aquasecurity/trivy-operator/blob/v0.36.1/pkg/vulnerabilityreport/controller/workload.go),
-[`predicate.go`](https://github.com/aquasecurity/trivy-operator/blob/v0.36.1/pkg/operator/predicate/predicate.go),
-[`operator.go`](https://github.com/aquasecurity/trivy-operator/blob/v0.36.1/pkg/operator/operator.go).
+Operator 0.36.1 (chart 0.38.1) applies its namespace filter only to the workload watch,
+not to the owned-report watches (`VulnerabilityReport`, `ExposedSecretReport`,
+`SbomReport`), so an old report in an excluded namespace can still trigger a scan of that
+workload ([upstream issue #2817](https://github.com/aquasecurity/trivy-operator/issues/2817)).
+On 2026-11-03 that produced a scan job for the Cilium image with seven scanner containers
+(7 × 512Mi), more than the node's free requests, which could not schedule. The allowlist
+selects MultiNamespace install mode, which scopes the operator's cache to the application
+namespaces plus `trivy-system`, so reports elsewhere no longer reach it. Scanner requests,
+limits and concurrency are unchanged; existing reports are not deleted. The platform images
+are therefore not scanned in-cluster (SEC-10 in `docs/BACKLOG.md`).
 
 ---
 

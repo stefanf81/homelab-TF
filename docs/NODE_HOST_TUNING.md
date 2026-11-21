@@ -45,7 +45,7 @@ end of §4.5.
 |---|---|---|---|---|---|
 | 1 | CPU governor `performance` | Host | The only change that touches every request: no frequency ramp-up latency | More idle power and heat; thermal throttling on small fanless hosts can cancel it | Already set on this host (`amd-pstate-epp`, governor and EPP `performance`, 2026-11-03) |
 | 2 | `net.ipv4.tcp_mtu_probing = 1` | Node | Prevents stalls of Cloudflare → Envoy connections when PMTU ICMP is dropped (PPPoE/DS-Lite uplinks) | None known; only activates after a black hole is detected | Done (in Terraform) |
-| 3 | Proxmox VE 8 → 9 | Host | Security support (PVE 8 is past end of life), newer kernel/KVM | **Highest risk on the list**: major Debian upgrade, NIC renames, provider/CSI compatibility | Done: host runs PVE 9.2 (kernel 7.0), checked 2026-11-03 |
+| 3 | Proxmox VE 8 → 9 | Host | Security support (PVE 8 is past end of life), newer kernel/KVM | Major Debian upgrade | Done: host runs PVE 9.2 (kernel 7.0), checked 2026-11-03 (§4.4) |
 | 4 | virtio-net multiqueue (`queues = cpu_cores`) | VM | RX/TX softirq over all vCPUs; one `fq` leaf per queue. Only matters when one vCPU saturates on network work | NIC hot-replug on apply (short outage); slightly more CPU per packet | Done 2026-11-03 (`Combined: 10`, `mq` + per-queue `fq`) |
 | 5 | KSM off | Host | Frees host CPU — only if `ksmtuned` is actually scanning (it starts below ~20 % free RAM) | If host RAM is tight, memory use rises and the host may swap | **Keep KSM on here**: on the 15 GiB host it merged ~370 MiB with a 14 GiB VM (2026-11-03) |
 | 6 | Microcode | Host | Stability and security, not speed | Rare regressions; mitigations can cost a little speed | Already installed (`amd64-microcode`) |
@@ -185,60 +185,24 @@ Cilium agent so it re-applies `fq`:
 kubectl -n kube-system rollout restart ds/cilium && kubectl -n kube-system rollout status ds/cilium
 ```
 
-### 3.3 NIC multiqueue — maintenance window (workstation)
+### 3.3 NIC multiqueue (applied 2026-11-03)
 
-```bash
-make init && make fmt && make validate && make lint
-```
+`queues = var.cpu_cores` in `modules/proxmox/main.tf` gives the VM NIC one queue pair per
+vCPU. Applying it hot-replugs the NIC (short outage); reboot the node afterwards so Cilium
+attaches cleanly. Any `make plan` that shows the VM as `-/+` (replace) must stop: it would
+rebuild the node, and `prevent_destroy` makes such a plan fail. The usual cause is
+`disk.file_id` after a cloud-image re-pin, which `ignore_changes` covers.
 
-```bash
-make plan
-```
-
-Expected: `proxmox_virtual_environment_file.cloud_config` **replaced** and
-`proxmox_virtual_environment_vm.k3s_node` **updated in place** (`~ queues = <cpu_cores>`; 10 on this host).
-With the 12 GiB default, the plan also shows `~ dedicated`/`~ floating` 14336 → 12288 (check
-`memory_size` in your `terraform.tfvars` too). The provider reboots the VM for the memory change
-(`reboot_after_update`, default true), which also applies the NIC change; if it only prints a
-warning, reboot manually as below.
-**If the VM shows `-/+` (replace), stop** — that would rebuild the node (since 2026-11-20
-`prevent_destroy` in `modules/proxmox/main.tf` makes such a plan fail). The usual cause is a
-`# forces replacement` on `disk.file_id` (the cloud image download was re-pinned or replaced);
-`disk[0].file_id` is in `ignore_changes` since 2026-11-03 for that reason. Replacing the
-`proxmox_download_file` itself (a re-download of the image) and the `cloud_config` snippet is
-harmless: the VM's disk is an independent copy, and the snippet is ignored on the running node.
-Also check `memory_size` in `terraform.tfvars`: an explicit `14336` there overrides the new
-12 GiB default.
-
-```bash
-make provision
-```
-
-Proxmox hot-replugs the NIC (short outage). Reboot the node so Cilium attaches cleanly:
-
-```bash
-ssh ubuntu@192.168.50.55 'sudo reboot'
-```
-
-Verify: `Combined:` equal to `cpu_cores` (10 on this host), and `mq` with one `fq` per queue.
+Verify: `Combined:` equals `cpu_cores` (10 on this host), `mq` with one `fq` per queue, and
+Cilium reports `EDT with BPF [BBR] [eth0]`:
 
 ```bash
 ssh ubuntu@192.168.50.55 'ethtool -l eth0; tc qdisc show dev eth0 | head'
-```
-
-`Combined: 1` before this change is expected (pre-set maximum 1: Proxmox exposes a single queue pair, so `ethtool -L` cannot raise it from inside the guest). If `Combined` is below `<cpu_cores>` (`6` by default in `variables.tf`, `10` with the host's `terraform.tfvars` override) afterwards:
-
-```bash
-ssh ubuntu@192.168.50.55 'sudo ethtool -L eth0 combined <cpu_cores>'
-```
-
-Cilium should report `EDT with BPF [BBR] [eth0]`:
-
-```bash
 kubectl -n kube-system exec ds/cilium -- cilium-dbg status | grep -iE 'BandwidthManager|Devices'
 ```
 
-Rollback: remove the `queues` line from `modules/proxmox/main.tf` and run `make provision`.
+If `Combined` is lower after a reboot: `ssh ubuntu@192.168.50.55 'sudo ethtool -L eth0 combined <cpu_cores>'`.
+Rollback: remove the `queues` line and `make apply`.
 
 ### 3.4 Graceful node shutdown (k3s restart: ~30–90 s without the API, pods keep running)
 
@@ -402,7 +366,7 @@ nodes, and into the live node's config.yaml followed by a k3s restart.
 ## 4. Proxmox host (root shell)
 
 Not managed by this repository. Use the console, or tmux over SSH, for anything
-that can drop the network (§4.3, §4.4).
+that can drop the network (§4.3).
 
 ### 4.1 Checks
 
@@ -544,67 +508,10 @@ ethtool -K eno1 tso off gso off
 
 Persist with `post-up /usr/sbin/ethtool -K eno1 tso off gso off` in the same stanza.
 
-### 4.4 Proxmox VE 8 → 9 upgrade (own window, backup first)
+### 4.4 Proxmox VE 9
 
-Done on this host (PVE 9.2, kernel 7.0, checked 2026-11-03); kept for reference.
-
-From the [official guide](https://pve.proxmox.com/wiki/Upgrade_from_8_to_9) for a
-standalone node on the no-subscription repository; read its known-issues list first.
-
-Update to 8.4.1 or newer:
-
-```bash
-apt update && apt dist-upgrade && pveversion
-```
-
-Run the checklist; fix and re-run until it is clean:
-
-```bash
-pve8to9 --full
-```
-
-Switch Debian to Trixie:
-
-```bash
-sed -i 's/bookworm/trixie/g' /etc/apt/sources.list
-```
-
-Remove the old Proxmox repository files from `/etc/apt/sources.list.d/`
-(`pve-enterprise.list`, `pve-install-repo.list` or similar), then add the new one:
-
-```bash
-cat > /etc/apt/sources.list.d/proxmox.sources <<'EOF'
-Types: deb
-URIs: http://download.proxmox.com/debian/pve
-Suites: trixie
-Components: pve-no-subscription
-Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
-EOF
-```
-
-Only the intended repositories should be listed. If the upgrade wants to remove
-`proxmox-ve`, stop: a repository is misconfigured.
-
-```bash
-apt update && apt policy
-```
-
-```bash
-apt dist-upgrade
-```
-
-```bash
-pve8to9 && reboot
-```
-
-Afterwards:
-
-- NIC names unchanged (`ip -br link` vs the bridge ports in `/etc/network/interfaces`); `pve-network-interface-pinning` can pin them.
-- `/etc/sysctl.conf` is ignored on PVE 9: keep settings in `/etc/sysctl.d/`.
-- Governor unit and KSM state as set in §4.2.
-- `make plan` from the workstation still works against the 9.x API (bpg provider, Proxmox CSI).
-
----
+The host runs PVE 9.2 (kernel 7.0, checked 2026-11-03); PVE 8 is end of life. The 8 → 9
+upgrade procedure was removed once the upgrade was done (see `git log`).
 
 ### 4.5 Host housekeeping and SSD wear (2026-11-03)
 

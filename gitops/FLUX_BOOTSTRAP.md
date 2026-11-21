@@ -5,12 +5,13 @@ GitOps state.
 
 ## 0. Prereqs
 
+- The workstation tools and Proxmox access listed in the root `README.md` (`mise install`)
 - A remote Git repository containing this tree
-- `tofu`, `kubectl`, `helm`, `flux`, and `ruby` on your workstation (`mise install` pins the CLI toolchain)
-- `key.txt` present locally for the SOPS age secret
-- SSH agent access to the Proxmox host (`root@<proxmox>`) for cloud-init snippet upload
+- `key.txt` (the SOPS age private key) present locally
 
 ## 1. Provision the VM and fetch kubeconfig
+
+Fill in `terraform.tfvars` first (root `README.md`, step 1).
 
 ```bash
 make init
@@ -18,11 +19,25 @@ make apply   # VM + kubeconfig fetch in one plan (make provision / make kubeconf
 export KUBECONFIG=$PWD/kubeconfig.yaml
 ```
 
+If the fetch fails or the file is damaged, copy it by hand (umask keeps it private) and check
+it:
+
+```bash
+(umask 077 && ssh ubuntu@192.168.50.55 "sudo cat /etc/rancher/k3s/k3s.yaml" \
+  | sed 's#https://127.0.0.1:6443#https://192.168.50.55:6443#' > ./kubeconfig.yaml)
+kubectl --kubeconfig ./kubeconfig.yaml get nodes
+```
+
+`yaml: found character that cannot start any token` (stray code fences, tabs) or
+`tls: failed to find any PEM data` (truncated base64 certificate data) mean the file was
+copied through a browser or chat; fetch it again over SSH as above.
+
 ## 2. Bootstrap the pre-Flux foundation (Gateway API CRDs, Cilium, CoreDNS, Flux Operator)
 
-The VM boots k3s with `--flannel-backend=none`, `--disable-kube-proxy`, and
-`--disable coredns`. Two deadlocks occur if you try to run bare `cilium install`
-or install Flux directly on a fresh node:
+The VM boots k3s without a CNI, kube-proxy or CoreDNS (`flannel-backend: none`,
+`disable-kube-proxy: true` and `coredns` in `disable:`, in `/etc/rancher/k3s/config.yaml`).
+Two deadlocks occur if you try to run bare `cilium install` or install Flux directly on a
+fresh node:
 
 1. Without `kube-proxy`, `cilium-agent` needs `kubeProxyReplacement: true` +
    `k8sServiceHost: ${NODE_IP}` (`6443`), `ipam.mode: kubernetes`, and the
@@ -64,6 +79,9 @@ kubectl create secret docker-registry ghcr-pull-secret -n taskflow \
   --docker-username=<github-user> \
   --docker-password=<read-packages-token>
 ```
+
+New environment with your own age key: the committed `*-secrets.yaml` only decrypt with the
+original key, so write your own values and re-encrypt them first (`docs/SOPS.md` §4).
 
 ## 4. Apply the FluxInstance and reconcile layers
 
@@ -111,56 +129,33 @@ current digest and commits `repo:latest@sha256:<digest>` to Git so every rollout
 is auditable and automatic when a new `:latest` is pushed to ghcr. This is wired
 in `gitops/clusters/taskflow/image-automation/` (ImageRepository +
 ImagePolicy + ImageUpdateAutomation) and the `# {"$imagepolicy": ...}` markers in
-`gitops/apps/taskflow/backend.yaml` and `frontend.yaml`.
-
-Two things broke this in the past (with the old `flux bootstrap` install). Both
-were hit and fixed; document them so they aren't hit again.
+`gitops/apps/taskflow/backend.yaml` and `frontend.yaml`. Two requirements are easy
+to break:
 
 ### 6.1 The Git source MUST be writable
 
-`flux bootstrap` creates a **read-only** SSH deploy key by default. Flux only
-needs read access to *pull* manifests, but `ImageUpdateAutomation` must **push**
-the digest-pin commits back. A read-only key fails like this:
+Flux only needs read access to pull, but `ImageUpdateAutomation` **pushes** the
+digest-pin commits with the same `flux-system` credential. A read-only credential
+fails with `GitOperationFailed` (`failed to push to remote`, or "key … marked as read
+only" for an SSH deploy key):
 
-```
-ImageUpdateAutomation/taskflow-images  GitOperationFailed
-  failed to push to remote: unknown error: ERROR: The key you are
-  authenticating with has been marked as read only.
-```
-
-**Detection:**
 ```bash
 kubectl -n flux-system events --for imageupdateautomation/taskflow-images | tail -10
 ```
 
-**Fix (PAT — the robust route used here):**
-1. Create a GitHub PAT with `repo` / `contents:write` on the repo.
-2. Replace the SSH secret with a basic-auth secret:
-   ```bash
-   kubectl -n flux-system delete secret flux-system
-   kubectl -n flux-system create secret generic flux-system \
-     --from-literal=username=<github-user> \
-     --from-literal=password=<PAT>
-   ```
-3. Keep `spec.sync.url` in `gitops/infrastructure/flux-instance/flux-instance.yaml`
-   on HTTPS (`pullSecret: flux-system` stays the same):
-   ```yaml
-   url: https://github.com/stefanf81/homelab-TF.git   # not ssh://git@github.com/...
-   ```
-4. Force a reconcile:
-   ```bash
-   kubectl -n flux-system annotate imageupdateautomation taskflow-images \
-     reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
-   ```
+**Fix:** use a GitHub PAT with `contents:write` in the basic-auth `flux-system` Secret
+(§3) and keep `spec.sync.url` in `gitops/infrastructure/flux-instance/flux-instance.yaml`
+on HTTPS. To replace the token:
 
-**Alternative:** re-add the GitHub deploy key with **✅ Allow write access**
-(Settings → Deploy keys → delete the read-only one → Add deploy key → check the
-box). Note GitHub does **not** let you *edit* an existing key to add write
-access — you must delete and re-add it, pasting the public half of the cluster's
-`flux-system` SSH secret.
+```bash
+kubectl -n flux-system create secret generic flux-system \
+  --from-literal=username=<github-user> --from-literal=password=<PAT> \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n flux-system annotate imageupdateautomation taskflow-images \
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
+```
 
-> ⚠️ Treat any PAT committed to chat/shell history as compromised and rotate it
-> after use.
+> ⚠️ Treat any PAT pasted into chat or shell history as compromised and rotate it.
 
 ### 6.2 Use the *basic* marker on Deployment `image:` lines (not `:digest`)
 
@@ -186,16 +181,9 @@ image: ghcr.io/stefanf81/taskflow-backend:latest # {"$imagepolicy": "flux-system
 # gitops/apps/taskflow/frontend.yaml
 image: ghcr.io/stefanf81/taskflow-frontend:latest # {"$imagepolicy": "flux-system:taskflow-frontend"}
 ```
-Flux then emits `ghcr.io/stefanf81/taskflow-backend:latest@sha256:<digest>`.
-
-**Correct form for HelmRelease** (separate fields) is the only place `:digest`
-belongs:
-```yaml
-image:
-  repository: ghcr.io/stefanf81/podinfo # {"$imagepolicy": "flux-system:policy:name"}
-  tag: latest                           # {"$imagepolicy": "flux-system:policy:tag"}
-  digest: sha256:…                      # {"$imagepolicy": "flux-system:policy:digest"}
-```
+Flux then emits `ghcr.io/stefanf81/taskflow-backend:latest@sha256:<digest>`. The
+`:name`/`:tag`/`:digest` markers are only for Helm values that keep those as
+separate fields.
 
 ### 6.3 Troubleshooting: image automation stuck or controllers missing
 
@@ -211,8 +199,7 @@ kubectl -n flux-system get pods -l app.kubernetes.io/component=image-reflector-c
 **Root cause:** The image controllers are declared in the `FluxInstance`
 (`gitops/infrastructure/flux-instance/flux-instance.yaml`), so they only go
 missing if the operator is down or the component was dropped from that list.
-Before the operator they were applied by hand and lost on every regeneration
-of the bootstrap manifests. Existing `ImageRepository`/`ImagePolicy`/
+Existing `ImageRepository`/`ImagePolicy`/
 `ImageUpdateAutomation` resources can get stuck terminating with finalizers
 (`DeletionTimestamp` set) while the controllers are missing.
 
@@ -269,39 +256,7 @@ kubectl -n flux-system annotate kustomization/flux-system \
   reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 ```
 
-**Fix — force a full end-to-end cycle after controllers are up:**
-
-```bash
-# 1. Force the root kustomization to recreate automation resources
-kubectl -n flux-system annotate kustomization/flux-system \
-  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
-
-# 2. Wait for ImageRepository then force an immediate ghcr.io scan
-kubectl -n flux-system wait --for=condition=Ready imagerepository/taskflow-backend --timeout=60s
-kubectl -n flux-system annotate imagerepository/taskflow-backend \
-  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
-kubectl -n flux-system annotate imagerepository/taskflow-frontend \
-  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
-
-# 3. Check what digest the ImagePolicy resolved
-kubectl -n flux-system get imagepolicy taskflow-backend \
-  -o jsonpath='{.status.latestImage}'
-
-# 4. Force the ImageUpdateAutomation to commit the new digest to Git
-kubectl -n flux-system annotate imageupdateautomation/taskflow-images \
-  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
-
-# 5. Check that the commit succeeded
-kubectl -n flux-system describe imageupdateautomation taskflow-images
-
-# 6. Pull the new Git commit and roll out pods
-flux reconcile source git flux-system
-kubectl -n flux-system annotate kustomization/taskflow-app \
-  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
-
-# 7. Watch the new pods start
-kubectl -n taskflow get pods -w
-```
+Once the controllers are back, run §6.4 to push a cycle through.
 
 ### 6.4 Quick reference: force an immediate image update cycle
 
@@ -351,3 +306,36 @@ kubectl -n taskflow get pods -l 'app in (taskflow-backend,taskflow-frontend)' -o
 Expected: `conditions` shows `reason: Succeeded`, deployment images look like
 `ghcr.io/stefanf81/taskflow-backend:latest@sha256:…`, and a `fluxcdbot` commit
 (`chore: automated TaskFlow image update`) appears on `main`.
+
+## 7. Existing node: hand CoreDNS over to Flux
+
+CoreDNS is managed by Flux (`gitops/infrastructure/controllers/coredns/`), including the
+LAN hairpin-NAT `hosts` overrides for the public hostnames. Never patch the live CoreDNS
+ConfigMap; change the HelmRelease and commit.
+
+New nodes get `coredns` in the k3s `disable:` list from cloud-init. A node installed
+before that still runs the packaged addon; migrate it in a maintenance window. Keep the
+existing settings in `/etc/rancher/k3s/config.yaml` and make the single `disable:` list
+name every disabled component, as `modules/proxmox/main.tf` writes it. `--disable` flags
+still on the unit's `ExecStart` replace the YAML list entirely, so move them into
+`config.yaml` first (`docs/reports/REMEDIATION_PLAN_2026-10.md` REL-00):
+
+```yaml
+disable:
+  - servicelb
+  - traefik
+  - coredns
+  - metrics-server
+  - local-storage
+```
+
+Then restart k3s and let Flux take ownership at once:
+
+```bash
+sudoedit /etc/rancher/k3s/config.yaml
+sudo systemctl restart k3s
+flux reconcile kustomization infra-controllers -n flux-system
+kubectl -n kube-system rollout status deployment/coredns --timeout=5m
+kubectl -n kube-system get svc kube-dns
+kubectl -n kube-system get endpointslice -l k8s-app=kube-dns
+```
