@@ -49,7 +49,7 @@ spec:
           # Public GHCR package, pinned by digest so the running binary is
           # exactly the built/reviewed image. Bump the digest from the build
           # workflow summary when the Go code changes.
-          image: ghcr.io/stefanf81/abuseipdb-sync:0.3.5-r7@sha256:8ff24a7ffcd047377bcf2d891b8b0c4f3008f58520986fd76bdce792dd9bd426
+          image: ghcr.io/stefanf81/abuseipdb-sync:0.3.5-r8@sha256:548735eafc83602c445971c107ad5a5a912e194f1bed5bf4f3ebe21b7e5dff28
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
