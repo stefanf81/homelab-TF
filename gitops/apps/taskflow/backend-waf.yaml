@@ -239,7 +239,10 @@ spec:
       hostUsers: false
       enableServiceLinks: false
       securityContext:
-        fsGroup: 100
+        # UID/GID 65532 is the image's user (distroless "nonroot", from r12 on). Images
+        # up to r11 (Alpine, caddy = 100:101) also run under it: only their /data and
+        # /config are owned by 100, and the emptyDirs below replace both.
+        fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
       imagePullSecrets:
@@ -264,7 +267,8 @@ spec:
               containerPort: 8080
           securityContext:
             runAsNonRoot: true
-            runAsUser: 100
+            runAsUser: 65532
+            runAsGroup: 65532
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:

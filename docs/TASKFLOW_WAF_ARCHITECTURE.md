@@ -147,12 +147,14 @@ docker inspect --format='{{index .RepoDigests 0}}' \
 The Dockerfile uses a multi-stage build:
 
 1. **Builder stage**: Uses `caddy:2.11.9-builder-alpine` to compile Caddy with the Coraza WAF plugin and the rate-limit plugin via `xcaddy` (`http.handlers.waf`, `http.handlers.rate_limit`)
-2. **Runtime stage**: Based on `caddy:2.11.9-alpine`, copies the compiled binary
+2. **Runtime stage** (from r12): Based on `gcr.io/distroless/static-debian13:nonroot`, pinned by digest; copies the compiled static binary. The image has CA certificates, tzdata and `/etc/mime.types`, but no shell, package manager or `curl` (r11 and earlier were based on `caddy:<version>-alpine`)
 3. **Key steps**:
-    - `setcap -r /usr/bin/caddy` — strips file capabilities (required for `allowPrivilegeEscalation: false`)
-    - Creates `caddy` user (UID 100) for non-root execution
-    - Adds `jq` (kept for ad-hoc debugging; the audit pipeline no longer needs it)
+    - `XCADDY_SETCAP=0` in the builder — xcaddy sets no file capability on the binary (required for `allowPrivilegeEscalation: false`); the build fails if `getcap` finds one
+    - Runs as the numeric distroless `nonroot` user (UID/GID 65532)
+    - Stages `/data` and `/config` (owned by 65532) in the builder and sets `XDG_DATA_HOME` / `XDG_CONFIG_HOME`, as the official Caddy image does
     - Exposes port 8080
+
+There is no shell in the container: use `kubectl debug` with an ephemeral container for interactive debugging. `kubectl exec ... -- caddy <command>` (for example `caddy build-info`) still works.
 
 ### Automated tests
 
@@ -199,7 +201,7 @@ and skips the push when the revision tag already exists.
 | Deployment | `taskflow-frontend-waf` | `taskflow-backend-waf` |
 | Service | `taskflow-frontend-waf` (ClusterIP:8080) | `taskflow-backend-waf` (ClusterIP:8080) |
 | ConfigMap | `taskflow-frontend-waf-config` | `taskflow-backend-waf-config` |
-| Security Context | runAsUser: 100, readOnlyRootFilesystem, drop ALL | runAsUser: 100, readOnlyRootFilesystem, drop ALL |
+| Security Context | runAsUser/runAsGroup: 65532, readOnlyRootFilesystem, drop ALL | runAsUser/runAsGroup: 65532, readOnlyRootFilesystem, drop ALL |
 | Resources | 50m CPU req (no CPU limit), 96Mi-512Mi memory (`GOMEMLIMIT=460MiB`) | 100m CPU req (no CPU limit), 128Mi-768Mi memory (`GOMEMLIMIT=690MiB`) |
 | Probes | `/waf-healthz` (startup + readiness + liveness) | `/waf-healthz` (startup + readiness + liveness) |
 
@@ -1062,8 +1064,8 @@ kubectl logs -n monitoring deploy/alloy -c alloy
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `exec /usr/bin/caddy: operation not permitted` | File capabilities on binary | Add `setcap -r /usr/bin/caddy` to Dockerfile |
-| `container has runAsNonRoot and image has non-numeric user` | Missing `runAsUser` | Add `runAsUser: 100` to securityContext |
+| `exec /usr/bin/caddy: operation not permitted` | File capabilities on binary | Keep `ENV XCADDY_SETCAP=0` in the Dockerfile's builder stage |
+| `container has runAsNonRoot and image has non-numeric user` | Image `USER` is a name and the pod sets no `runAsUser` | Keep the numeric `USER 65532:65532` in the Dockerfile and `runAsUser: 65532` in the securityContext |
 | `CreateContainerConfigError` | Volume mount or config issue | Check ConfigMap exists and keys match |
 
 ### Flux Reconciliation Issues
@@ -1085,7 +1087,8 @@ kubectl logs -n monitoring deploy/alloy -c alloy
 ## Security Considerations
 
 - **Private GHCR image**: The WAF image is in a private repository, requiring authentication
-- **Non-root execution**: WAF pods run as UID 100 (caddy user)
+- **Non-root execution**: WAF pods run as UID/GID 65532 (distroless `nonroot`)
+- **Minimal runtime image**: distroless/static, no shell or package manager in the WAF container
 - **Read-only filesystem**: All containers use `readOnlyRootFilesystem: true`
 - **Dropped capabilities**: All capabilities are dropped (`drop: ALL`)
 - **Network isolation**: Each WAF can only reach its corresponding application service
