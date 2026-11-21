@@ -648,21 +648,23 @@ old failures and test the revised configs in disposable network-disabled contain
 
 **Cause**: The Caddy binary has file capabilities (`cap_net_bind_service`) set by `xcaddy build`. With `allowPrivilegeEscalation: false`, the kernel blocks execution of capability-enhanced binaries for non-root users.
 
-**Fix**: Strip file capabilities in the Dockerfile:
+**Fix**: Do not let xcaddy set the capability (the builder image defaults to `XCADDY_SETCAP=1`). The Dockerfile sets this in the builder stage and fails the build if `getcap` still reports one:
 ```dockerfile
-COPY --from=builder /usr/bin/caddy /usr/bin/caddy
-RUN setcap -r /usr/bin/caddy 2>/dev/null || true
+ENV XCADDY_SETCAP=0
 ```
+
+Images up to r11 stripped it afterwards with `RUN setcap -r /usr/bin/caddy`, which needs `setcap` in the runtime image and stores the binary a second time.
 
 #### `container has runAsNonRoot and image has non-numeric user (caddy)`
 
-**Cause**: The security context has `runAsNonRoot: true` but no `runAsUser` specified. Kubernetes can't verify the numeric UID.
+**Cause**: The security context has `runAsNonRoot: true` but no `runAsUser` specified, and the image's `USER` is a name. Kubernetes can't verify the numeric UID. From r12 the image declares `USER 65532:65532` (distroless `nonroot`), so this only occurs with r11 and earlier.
 
-**Fix**: Add `runAsUser: 100` (caddy user UID) to the security context:
+**Fix**: Set the image's UID/GID in the security context:
 ```yaml
 securityContext:
   runAsNonRoot: true
-  runAsUser: 100
+  runAsUser: 65532
+  runAsGroup: 65532
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true
   capabilities:
