@@ -579,11 +579,11 @@ AbuseIPDB-listed sources are rejected even earlier than the HTTPRoute chain: at 
 
 | Control | Where it lives | What it enforces |
 |---------|--------------|------------------|
-| Network isolation | `network-policy.yaml` (DB), `redis.yaml` (redis NP), `jaeger.yaml` (jaeger NP) | Only `app: taskflow-backend` pods may reach Postgres (5432), Redis (6379), or Jaeger OTLP (4317/4318). Everything else is denied by default (Cilium deny-all baseline). |
-| **Jaeger UI locked down** | `httproute.yaml` + `jaeger.yaml` | The `/jaeger` Gateway route was **removed** and the open `16686` ingress rule deleted (ISSUES.md #2). Jaeger UI is now cluster-internal only — reach it via `kubectl port-forward`, never through the public Gateway, because it has no auth. |
+| Network isolation | `network-policy.yaml` (DB), `redis.yaml` (redis NP), `jaeger.yaml` (jaeger NP), `default-deny.yaml` | Only `app: taskflow-backend` pods (plus `postgres-exporter` / `redis-exporter` for their datastore) may reach Postgres (5432), Redis (6379), or Jaeger OTLP (4317/4318). Everything else is denied by `default-deny.yaml` and `namespace-default-deny.yaml`. |
+| **Jaeger UI locked down** | `httproute.yaml` + `jaeger.yaml` | There is no `/jaeger` Gateway route and no ingress rule for `16686`. Jaeger UI is cluster-internal only — reach it via `kubectl port-forward -n taskflow svc/jaeger-ui 16686:16686`, never through the public Gateway, because it has no auth. |
 | Read-only root FS | backend, frontend, WAFs, Postgres, Redis, exporters, DDNS | Containers can't write to their image layer; only explicit `emptyDir`/PVC mounts (`/tmp`, `/var/log/taskflow`, PGDATA, `/data`, Caddy data/config) are writable. Only in-memory Jaeger omits `readOnlyRootFilesystem`. |
-| Non-root + dropped caps | every container | `runAsNonRoot: true`, `capabilities.drop: [ALL]`. Backend/frontend/Redis/Jaeger use UID `10001`; Postgres uses image-native UID `70`. |
-| Secret encryption | `.sops.yaml` + `taskflow-secrets.yaml` | `POSTGRES_PASSWORD`, `SPRING_SECURITY_PASSWORD`, and `REDIS_PASSWORD` are age-encrypted; Flux decrypts at apply time using the `sops-age` Secret. The plaintext `key.txt` is `.gitignore`d. |
+| Non-root + dropped caps | every container | `runAsNonRoot: true`, `capabilities.drop: [ALL]`. Backend/frontend/Redis/Jaeger/exporters use UID `10001`, the WAFs `65532`, DDNS `1000`; Postgres uses image-native UID `70`. |
+| Secret encryption | `.sops.yaml` + `taskflow-secrets.yaml`, `taskflow-jwt-secrets.yaml` | `POSTGRES_PASSWORD`, `SPRING_SECURITY_PASSWORD`, `REDIS_PASSWORD`, `CLOUDFLARE_API_TOKEN` and the JWT RSA key pair are age-encrypted; Flux decrypts at apply time using the `sops-age` Secret. The plaintext `key.txt` is `.gitignore`d. |
 | Immutable images | `image-automation/` | Flux pins every app image to a `@sha256:` digest in Git. |
 | IP reputation denylist | `gitops/platform/abuseipdb/` + `gitops/infrastructure/configs/cilium/abuseipdb-ingress-deny.yaml` | AbuseIPDB-listed sources are blocked at the Cloudflare edge (proxied path) and by Cilium on `reserved:ingress` (direct path). The `CiliumCIDRGroup` and Cloudflare list are runtime-managed and never in Git. |
 
@@ -601,13 +601,13 @@ AbuseIPDB-listed sources are rejected even earlier than the HTTPRoute chain: at 
 | Rotate the AbuseIPDB key / Cloudflare token | `sops edit gitops/platform/abuseipdb/abuseipdb-secrets.yaml` | Flux re-decrypts on next sync |
 | Bump Cilium/Proxmox CSI/cert-manager version | `ref.tag` + `ref.digest` in the relevant `repository.yaml` | Flux upgrades (cert-manager/kyverno/renovate use `crds: Skip`; Cilium/Falco use `CreateReplace`) |
 | Change VM size/network | `terraform.tfvars` + `variables.tf` | `make apply` (some changes force a VM recreate, which `prevent_destroy` refuses until lifted; a recreate re-fetches the kubeconfig). Cloud-init is disabled after the first boot: a larger `disk_size` still needs `growpart`/`resize2fs` on the node, and `ip_address` is fixed for the node's lifetime |
-| Add a TLS cert | `gitops/infrastructure/controllers/cert-manager/` + HTTPS listener in `gateway.yaml` | see `docs/archive/ISSUES.md` #19 |
-| Change VictoriaMetrics retention / storage | `gitops/monitoring/platform/release.yaml` (`vmsingle.spec`, `vmsingle.storage`) | `flux reconcile kustomization monitoring -n flux-system` |
+| Add a hostname to the TLS cert | `dnsNames` in `gitops/apps/taskflow/certificate.yaml` (the Gateway's HTTPS listener already serves `taskflow-tls-secret`) | cert-manager reissues via the `letsencrypt-http01-production` ClusterIssuer (HTTP-01 needs public DNS for the name first) |
+| Change VictoriaMetrics retention / storage | `gitops/monitoring/platform/release.yaml` (`vmsingle.spec.retentionPeriod`, `vmsingle.spec.storage`) | `flux reconcile kustomization monitoring -n flux-system` |
 | Rotate the Grafana admin password | `sops edit gitops/monitoring/platform/grafana-secrets.yaml` | Flux re-decrypts on next sync |
 
 ### 10.8 Footguns / things that will bite you
 
-1. **CORS** (`configmap.yaml`) lists `https://jokelab.dev,https://www.jokelab.dev`. The canonical prod access URL is `www.jokelab.dev` (the `taskflow-route` only serves `www`; the bare apex 301-redirects to it). If you change the published hostname, update this list **and** `certificate.yaml`'s `dnsNames` **and** `httproute.yaml`'s `hostnames`, or the browser's `/api` calls get CORS-rejected. (A localhost-only CORS list was a live bug — ISSUES.md #1.)
+1. **CORS** (`configmap.yaml`) lists `https://jokelab.dev,https://www.jokelab.dev`. The canonical prod access URL is `www.jokelab.dev` (the `taskflow-route` only serves `www`; the bare apex 301-redirects to it). If you change the published hostname, update this list **and** `certificate.yaml`'s `dnsNames` **and** `httproute.yaml`'s `hostnames`, or the browser's `/api` calls get CORS-rejected.
 2. **Jaeger UI is not on the Gateway anymore** — don't re-add a `/jaeger` route without putting auth in front of it.
 3. **Postgres UID is 70 on purpose** — don't "standardize" it to `10001`; the Postgres volume ownership depends on 70.
 4. **`proxmox_insecure = true`** disables TLS verification to Proxmox. Fine for a self-signed homelab, dangerous anywhere else.
@@ -642,8 +642,8 @@ the app because its Grafana route targets the TaskFlow Gateway:
   Application discovery prefers `app.kubernetes.io/name` and falls back to the
   legacy `app` label used by the TaskFlow pod templates. Backend logs go through
   the dedicated multiline pipeline, and WAF logs never enter the generic app path.
-  `monitoring-logging` explicitly `dependsOn` `trivy-operator`, `policy-reporter`,
-  `hubble-ui`, `reloader`, and `renovate` so every platform namespace exists before
+  `monitoring-logging` explicitly `dependsOn` (applied once) `taskflow-app`, `trivy-operator`,
+  `policy-reporter`, `hubble-ui`, `reloader`, `renovate` and `falco` so every tailed namespace exists before
   Helm renders Alloy's namespaced `Role`/`RoleBinding` objects on a cold bootstrap.
   Alloy also derives bounded WAF counters
   (`loki_process_custom_taskflow_waf_*`) that VictoriaMetrics scrapes for the WAF
