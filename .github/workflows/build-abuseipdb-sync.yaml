@@ -84,7 +84,10 @@ jobs:
 
           APP_VER=$(grep '^ARG APP_VERSION=' gitops/images/abuseipdb-sync/Dockerfile | cut -d= -f2 | tr -d ' "')
           REV=$(grep '^ARG IMAGE_REVISION=' gitops/images/abuseipdb-sync/Dockerfile | cut -d= -f2 | tr -d ' "')
-          GO_VER=$(grep '^ARG GO_VERSION=' gitops/images/abuseipdb-sync/Dockerfile | cut -d= -f2 | tr -d ' "')
+          # The Go version is the tag of the digest-pinned builder image
+          # (ARG GO_IMAGE=golang:<version>-alpine@sha256:<digest>), so the tests
+          # below and the image build use the same toolchain version.
+          GO_VER=$(sed -n 's/^ARG GO_IMAGE=golang:\([0-9][0-9.]*\)-alpine@sha256:[0-9a-f]\{64\}$/\1/p' gitops/images/abuseipdb-sync/Dockerfile)
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
 
           [[ "$APP_VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid app version: $APP_VER" >&2; exit 1; }
@@ -171,8 +174,9 @@ jobs:
           push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) && steps.tagcheck.outputs.exists != 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # No Go build-arg: the builder image is pinned by digest in the
+          # Dockerfile (GO_IMAGE), and the version above is read from that pin.
           build-args: |
-            GO_VERSION=${{ steps.versions.outputs.go_version }}
             APP_VERSION=${{ steps.versions.outputs.app_version }}
             IMAGE_REVISION=${{ steps.versions.outputs.revision }}
           # Own cache scope: the default `buildkit` scope is shared with the WAF image
