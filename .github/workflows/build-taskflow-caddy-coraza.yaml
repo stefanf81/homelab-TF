@@ -12,6 +12,7 @@ on:
     paths:
       - 'gitops/images/taskflow-caddy-coraza/**'
       - '.github/workflows/build-taskflow-caddy-coraza.yaml'
+      - '.github/actions/install-trivy/**'
   workflow_dispatch:
     inputs:
       push:
@@ -19,6 +20,10 @@ on:
         required: true
         default: true
         type: boolean
+
+# renovate: datasource=github-releases depName=aquasecurity/trivy
+env:
+  TRIVY_VERSION: v0.76.2
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -39,6 +44,11 @@ jobs:
         with:
           fetch-depth: 0 # the revision guard compares the Dockerfile across the push
           persist-credentials: false # git is only used read-only here
+
+      - name: Lint Dockerfile (hadolint)
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: gitops/images/taskflow-caddy-coraza/Dockerfile
 
       # A changed build recipe must ship under a new revision tag; otherwise the
       # "revision tag already published" check below would silently keep the old
@@ -138,6 +148,18 @@ jobs:
           TEST_IMAGE: taskflow-caddy-coraza:test
         run: gitops/images/taskflow-caddy-coraza/tests/run-tests.sh
 
+      # Hard gate on the image this run would publish: HIGH/CRITICAL findings
+      # with a released fix fail the build (OS packages and the Go modules compiled into Caddy).
+      - name: Install Trivy
+        uses: ./.github/actions/install-trivy
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+
+      - name: Scan image (Trivy, HIGH/CRITICAL with a fix)
+        run: |
+          trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --exit-code 1 --no-progress taskflow-caddy-coraza:test
+
       # Logged in only after the tests: the write token is never present while
       # test code runs.
       - name: Log in to GitHub Container Registry
@@ -196,6 +218,8 @@ jobs:
           # Same builder as the test build above, so its layers are already local;
           # the test build exported them to the cache, no second export needed.
           cache-from: type=gha,scope=taskflow-caddy-coraza
+          # SBOM attestation next to the default provenance.
+          sbom: true
 
       - name: Generate build summary
         run: |

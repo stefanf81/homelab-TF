@@ -9,12 +9,19 @@ ARG CORAZA_CADDY_VERSION=v2.6.2
 # tracked by Renovate on purpose: following its default branch would propose
 # (and could automerge) every upstream commit; move it by hand after review.
 ARG RATE_LIMIT_VERSION=5625512f24f6f59d6f64fb3aafe5eecff0b286db
-ARG IMAGE_REVISION=r12
+# golang.org/x/net is raised above what Caddy 2.11.9 and the plugins require:
+# their v0.60.0 has CVE-2026-78661 (HIGH, x/net/html, fixed in v0.62.0), which
+# the build workflow's Trivy gate rejects. Drop the replace once a Caddy release
+# requires this version or newer itself.
+# renovate: datasource=go depName=golang.org/x/net
+ARG XNET_VERSION=v0.63.0
+ARG IMAGE_REVISION=r13
 
 FROM caddy:${CADDY_VERSION}-builder-alpine AS builder
 
 ARG CORAZA_CADDY_VERSION
 ARG RATE_LIMIT_VERSION
+ARG XNET_VERSION
 
 # The builder image sets XCADDY_SETCAP=1, so xcaddy would put
 # cap_net_bind_service=+ep on the binary, and COPY carries that xattr into the
@@ -28,6 +35,7 @@ ENV XCADDY_SETCAP=0
 RUN xcaddy build \
     --with github.com/corazawaf/coraza-caddy/v2@${CORAZA_CADDY_VERSION} \
     --with github.com/mholt/caddy-ratelimit@${RATE_LIMIT_VERSION} \
+    --replace golang.org/x/net=golang.org/x/net@${XNET_VERSION} \
     && test -z "$(getcap /usr/bin/caddy)"
 
 # Caddy's data and config directories (XDG_DATA_HOME / XDG_CONFIG_HOME below).

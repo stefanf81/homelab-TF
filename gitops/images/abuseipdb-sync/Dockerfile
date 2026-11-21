@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.29@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 
 # Version inputs are parsed by .github/workflows/build-abuseipdb-sync.yaml to
 # derive the image tag and the Go toolchain its tests run on. Keep the ARG
@@ -9,7 +9,7 @@
 # old version next to the new image.
 ARG GO_IMAGE=golang:1.27.4-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280
 ARG APP_VERSION=0.3.5
-ARG IMAGE_REVISION=r8
+ARG IMAGE_REVISION=r9
 
 FROM ${GO_IMAGE} AS build
 ENV GOTOOLCHAIN=local
