@@ -6,10 +6,12 @@
 # permitted path must be explicitly re-opened below. This is the zero-trust
 # posture: a compromised pod in any other namespace cannot reach these workloads.
 #
-# SCOPE NOTE: only INGRESS is default-denied here. EGRESS is intentionally left
-# allow-all (DNS, the backend's outbound API calls, etc.) because tightening
-# egress safely requires enumerating every outbound dependency and cannot be
-# validated against this cluster from here. That is a separate follow-up.
+# SCOPE NOTE: only INGRESS is default-denied for the whole namespace. EGRESS is
+# restricted per workload where the outbound dependencies are known: both WAFs
+# (3, 4) and both metric exporters (9) here, the datastores in default-deny.yaml.
+# The backend, the frontend and cloudflare-ddns still have allow-all egress; a
+# namespace-wide egress default needs their dependencies enumerated first (SEC-04
+# in docs/BACKLOG.md).
 #
 # ROLLBACK (if the Gateway allow is wrong and the app goes dark):
 #   kubectl --kubeconfig kubeconfig.yaml -n taskflow delete -f namespace-default-deny.yaml
@@ -238,3 +240,62 @@ spec:
     - ports:
         - protocol: TCP
           port: 8089
+---
+# 9) The metric exporters hold datastore credentials and are scraped from another
+#    namespace. Each may resolve its Service name and reach its own datastore,
+#    nothing else (no internet, no other pod, not the other datastore).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: isolate-postgres-exporter
+  namespace: taskflow
+spec:
+  endpointSelector:
+    matchLabels:
+      app: postgres-exporter
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: postgres-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            "k8s:k8s-app": kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: isolate-redis-exporter
+  namespace: taskflow
+spec:
+  endpointSelector:
+    matchLabels:
+      app: redis-exporter
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: redis
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            "k8s:k8s-app": kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
