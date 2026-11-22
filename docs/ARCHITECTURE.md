@@ -121,7 +121,7 @@ infra-controllers (Gateway API CRDs + HelmReleases: Cilium, cert-manager,
     ├──▶ falco (runtime security; own Kustomization so a failed Falco release blocks nothing else)
     ├──▶ abuseipdb (AbuseIPDB synchronizer → CiliumCIDRGroup + Cloudflare IP list)
     ├──▶ trivy-operator (Trivy vulnerability/config-audit/compliance operator)
-    ├──▶ kyverno-policies (CEL ValidatingPolicies)
+    ├──▶ kyverno-policies (CEL ValidatingPolicies + ImageValidatingPolicies)
     ├──▶ renovate ──▶ renovate-job (daily dependency update PRs)
     ▼
 infra-configs (Cilium IP pool + L2 policy + Hubble isolation, GatewayClass, PriorityClass,
@@ -447,7 +447,7 @@ homelab-TF/
 │   │   ├── certificate.yaml         # Let's Encrypt TLS cert for jokelab.dev + subdomains
 │   │   ├── cloudflare-ddns.yaml     # Dynamic DNS updater for Cloudflare
 │   │   └── kustomization.yaml       # Resource ordering
-│   ├── apps/kyverno-policies/       # CEL ValidatingPolicies (Deny, fail-open)
+│   ├── apps/kyverno-policies/       # CEL Validating/ImageValidatingPolicies (fail-open)
 │   │
 │   ├── infrastructure/
 │   │   ├── flux-instance/           # FluxInstance CR managed by Flux Operator

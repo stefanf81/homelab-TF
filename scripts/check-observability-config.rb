@@ -85,9 +85,54 @@ class ObservabilityConfigTest < Minitest::Test
       policy = YAML.load_file(path)
       next if policy['kind'] == 'Kustomization'
       assert_equal 'policies.kyverno.io/v1', policy['apiVersion']
-      assert_equal 'ValidatingPolicy', policy['kind']
-      assert_includes policy.dig('spec', 'validationActions'), 'Deny'
+      assert_includes %w[ValidatingPolicy ImageValidatingPolicy], policy['kind'], path
+      actions = policy.dig('spec', 'validationActions')
+      if policy['kind'] == 'ImageValidatingPolicy'
+        # Image verification is rolled out Audit -> Deny (docs/KYVERNO_POLICY_ENGINE.md §8).
+        assert_includes [['Audit'], ['Deny']], actions, path
+      else
+        assert_includes actions, 'Deny', path
+      end
     end
+  end
+
+  # The TaskFlow image policies trust exactly one signer: the publish workflow of
+  # stefanf81/taskflow-enterprise run from main. A regexp identity, another ref or
+  # a wider image glob would let other workflows' images through.
+  TASKFLOW_SIGNER = {
+    'subject' => 'https://github.com/stefanf81/taskflow-enterprise/.github/workflows/pushdockerimage.yml@refs/heads/main',
+    'issuer' => 'https://token.actions.githubusercontent.com'
+  }.freeze
+  TASKFLOW_IMAGE_GLOBS = %w[backend frontend].flat_map do |component|
+    ["ghcr.io/stefanf81/taskflow-#{component}:*", "ghcr.io/stefanf81/taskflow-#{component}@*"]
+  end.freeze
+
+  def test_taskflow_image_policies_pin_the_release_workflow
+    policies = %w[verify-taskflow-images require-taskflow-image-scan].to_h do |name|
+      [name, YAML.load_file(File.join(ROOT, "gitops/apps/kyverno-policies/#{name}.yaml"))]
+    end
+    policies.each do |name, policy|
+      spec = policy.fetch('spec')
+      assert_equal name, policy.dig('metadata', 'name')
+      assert_equal TASKFLOW_IMAGE_GLOBS, spec.fetch('matchImageReferences').map { |m| m.fetch('glob') }, name
+      assert_equal ['taskflow'], [spec.dig('matchConstraints', 'namespaceSelector', 'matchLabels', 'kubernetes.io/metadata.name')], name
+      # Digest pinning and the "every matched image was verified" check stay on.
+      (spec['validationConfigurations'] || {}).each_value { |enabled| refute_equal false, enabled, name }
+      spec.fetch('attestors').each do |attestor|
+        keyless = attestor.dig('cosign', 'keyless')
+        assert_equal [TASKFLOW_SIGNER], keyless.fetch('identities'), "#{name}/#{attestor['name']}"
+        assert_equal ['identities'], keyless.keys, "#{name}/#{attestor['name']}: no extra roots"
+        refute attestor.dig('cosign', 'ctlog', 'insecureIgnoreTlog'), name
+        refute attestor.dig('cosign', 'ctlog', 'insecureIgnoreSCT'), name
+      end
+    end
+
+    verify = policies.fetch('verify-taskflow-images').fetch('spec')
+    scanned = verify.fetch('attestors').find { |a| a['name'] == 'scannedRelease' }
+    assert_equal({ 'scan' => 'passed' }, scanned.dig('cosign', 'annotations'))
+    assert_equal ['https://slsa.dev/provenance/v1'], verify.fetch('attestations').map { |a| a.dig('intoto', 'type') }
+    scan = policies.fetch('require-taskflow-image-scan').fetch('spec')
+    assert_equal ['https://cosign.sigstore.dev/attestation/vuln/v1'], scan.fetch('attestations').map { |a| a.dig('intoto', 'type') }
   end
 
   def documents(path)

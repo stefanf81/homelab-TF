@@ -21,7 +21,7 @@ gitops/
 │   └── abuseipdb/              #   AbuseIPDB synchronizer (IP reputation -> Cilium + Cloudflare)
 ├── apps/                       # 4. User-facing applications (TaskFlow frontend, backend, database)
 │   ├── taskflow/
-│   └── kyverno-policies/       #   CEL ValidatingPolicies (Deny, fail-open); reconciled by kyverno-policies Kustomization
+│   └── kyverno-policies/       #   CEL ValidatingPolicies (Deny) + TaskFlow ImageValidatingPolicies, fail-open; reconciled by kyverno-policies Kustomization
 ├── monitoring/                 # 5. VictoriaMetrics, Grafana, Loki, Alloy, and dashboards
 │   ├── platform/               #   VictoriaMetrics stack, Grafana, routes, grafana secrets
 │   ├── app/                    #   App scrapes + 7 Grafana dashboards (TaskFlow Performance, AbuseIPDB Security, Blocked Sources, cert-manager, Kyverno, Cilium Agent, Hubble Flows)
@@ -54,7 +54,7 @@ Contains the system controllers deployed primarily via **HelmReleases** (plus `g
 * **`coredns/`**: Replaces k3s's disabled packaged addon with a GitOps-managed CoreDNS release (`10.43.0.10`, hairpin NAT `hosts` overrides).
 * **`proxmox-csi/`**: Installs the Proxmox CSI driver to dynamically provision virtual disk storage on Proxmox VE (`proxmox-csi` default and `proxmox-csi-db` for PostgreSQL).
 * **`cert-manager/`**: Handles automated provisioning of Let's Encrypt TLS certificates via Gateway API HTTP-01.
-* **`kyverno/`**: Installs the Kyverno policy engine (`admissionController` + `reportsController`; the idle `backgroundController` and `cleanupController` are disabled). Enforces CEL `ValidatingPolicy` CRs (`policies.kyverno.io/v1`). CRDs are owned by the chart (`crds.install: true`); the Flux `HelmRelease` uses `install.crds: Skip` to avoid CRD ownership conflicts.
+* **`kyverno/`**: Installs the Kyverno policy engine (`admissionController` + `reportsController`; the idle `backgroundController` and `cleanupController` are disabled). Enforces CEL `ValidatingPolicy` and `ImageValidatingPolicy` CRs (`policies.kyverno.io/v1`). CRDs are owned by the chart (`crds.install: true`); the Flux `HelmRelease` uses `install.crds: Skip` to avoid CRD ownership conflicts.
 * **`falco/`**: Installs Falco runtime security as a DaemonSet with the `modern_ebpf` driver and single-replica Falcosidekick writing native Kubernetes `PolicyReport`s. Exposes Prometheus metrics on port 8765. Reconciled by its own `falco` Kustomization (`dependsOn: infra-controllers`).
 * **`trivy-operator/`**: Installs the Trivy vulnerability/config-audit/RBAC/infra/secret/compliance scanner operator (`targetNamespaces: "taskflow,abuseipdb"`). Reconciled by its own `trivy-operator` Kustomization (`dependsOn: infra-controllers`).
 * **`reloader/`**: Stakater Reloader in namespace-scoped mode (`taskflow`, `abuseipdb`), rolling annotated Deployments on ConfigMap/Secret updates. Reconciled by `reloader` (`dependsOn: taskflow-app, abuseipdb`).
