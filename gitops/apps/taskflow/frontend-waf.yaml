@@ -162,6 +162,19 @@ data:
   frontend-exclusions.conf: |
     # No frontend CRS exclusions are configured initially.
     # Add only request-scoped exclusions after observing a legitimate false positive.
+
+    # Not an exclusion, but it has to load before the CRS like one: Coraza 3.8
+    # keeps the first 1000 arguments per source (query string, body) and drops
+    # the rest without a word. The @coraza.conf-recommended embedded in the
+    # connector predates that limit and has no rule for it, so a payload behind
+    # 1000 filler arguments was never shown to the CRS rules. Reject such
+    # requests, as rules 200004/200005 of the current coraza.conf-recommended do.
+    # Remove both once the Caddyfile includes that file from the image
+    # (/usr/share/coraza/coraza.conf-recommended carries them).
+    SecRule ARGUMENTS_LIMIT_REACHED "@eq 1" \
+        "id:1000004,phase:1,t:none,log,deny,status:400,msg:'Argument limit reached; request rejected (GET/PATH args)'"
+    SecRule ARGUMENTS_LIMIT_REACHED "@eq 1" \
+        "id:1000005,phase:2,t:none,log,deny,status:400,msg:'Argument limit reached; request rejected (POST args)'"
   rate-limit.conf: |
     # Frontend general zone: at most 180 requests per 60s per real client IP,
     # IPv6 grouped per /64. disable_metrics avoids per-IP Prometheus series.
