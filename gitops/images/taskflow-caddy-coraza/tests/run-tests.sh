@@ -91,9 +91,9 @@ start_client() { # name ip
   start_python "$1" "$2" python3 -c 'import time; time.sleep(3600)'
 }
 
-req() { # client-container url [Header: value ...]
-  local c="$1" url="$2"; shift 2
-  docker exec "$c" python3 /srv/client.py "$url" "$@"
+req() { # client-container [-X METHOD] url [Header: value ...]
+  local c="$1"; shift
+  docker exec "$c" python3 /srv/client.py "$@"
 }
 
 upstream_count() { # container key
@@ -296,6 +296,18 @@ run_suite() { # waf
   [ "$(json_field "$r" status)" = 403 ] || fail "$waf: Coraza did not block the SQLi test: $r"
 
   if [ "$waf" = backend ]; then
+    say "$waf: request methods"
+    # The API's own methods must pass the CRS method allow-list (rule 911100);
+    # a method the backend does not use stays blocked.
+    local m
+    for m in PUT DELETE; do
+      r="$(req "$cb" -X "$m" "http://$envoy:8080/api/v1/appointments/1")"
+      [ "$(json_field "$r" status)" = 200 ] && [ "$(body_field "$r" method)" = "$m" ] \
+        || fail "$waf: $m did not reach the upstream: $r"
+    done
+    r="$(req "$cb" -X PATCH "http://$envoy:8080/api/v1/appointments/1")"
+    [ "$(json_field "$r" status)" = 403 ] || fail "$waf: PATCH was not blocked: $(json_field "$r" status)"
+
     say "$waf: authentication zone"
     # 4 requests: above the authentication zone (3) but below the api zone (5),
     # so a 429 here can only come from the authentication zone and its match.

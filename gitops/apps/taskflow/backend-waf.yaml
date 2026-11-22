@@ -129,6 +129,13 @@ data:
                     Include /etc/coraza/backend-exclusions.conf
 
                     SecRuleEngine On
+                    # The API uses PUT and DELETE (reschedule and cancel an
+                    # appointment, edit the catalog, barbers and schedules). The
+                    # CRS default is GET HEAD POST OPTIONS, and rule 911100 alone
+                    # reaches the blocking threshold, so without this every PUT
+                    # and DELETE was answered 403 by the WAF. No PATCH: the
+                    # backend has no such endpoint.
+                    SecAction "id:1000003,phase:1,pass,nolog,setvar:'tx.allowed_methods=GET HEAD POST PUT DELETE OPTIONS'"
                     SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=2"
 
                     SecRequestBodyAccess On

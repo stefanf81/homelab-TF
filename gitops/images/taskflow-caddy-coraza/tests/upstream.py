@@ -19,6 +19,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_GET(self) -> None:
+        # Drain a request body (POST/PUT), or it would be read as the next
+        # request on this keep-alive connection.
+        length = int(self.headers.get("Content-Length") or 0)
+        if length:
+            self.rfile.read(length)
+
         if self.path == "/__count":
             with lock:
                 snapshot = dict(counts)
@@ -35,8 +41,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "x_forwarded_for": self.headers.get("X-Forwarded-For", ""),
                 "cf_connecting_ip": self.headers.get("CF-Connecting-IP", ""),
                 "path": self.path,
+                "method": self.command,
             },
         )
+
+    # Every method is echoed the same way; which ones may arrive is the WAF's
+    # decision and what the tests assert.
+    do_POST = do_PUT = do_PATCH = do_DELETE = do_GET
 
     def _send(self, status: int, payload) -> None:
         body = json.dumps(payload).encode()
