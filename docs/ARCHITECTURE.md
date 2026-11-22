@@ -379,7 +379,7 @@ Loki **30d**; app scrapes run every 30–60s. Node sizing: `docs/PERFORMANCE.md`
 | IP reputation denylist | AbuseIPDB feed enforced at two layers by `abuseipdb-sync`: Cloudflare edge (IP list + zone WAF block rule — sees real client IPs behind the proxy) and Cilium (`CiliumCIDRGroup` + cluster-wide deny on `reserved:ingress` — direct-to-origin traffic). Caddy/Coraza are untouched. See `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md` |
 | Pod security | Every TaskFlow container runs `runAsNonRoot`, `allowPrivilegeEscalation=false`, drops ALL capabilities and has a read-only root filesystem (only in-memory Jaeger omits it); writable paths are explicit `emptyDir`/PVC mounts. UIDs: backend, frontend, Redis, Jaeger and exporters `10001`, WAFs `65532`, DDNS `1000`, Postgres the image-native `70` (its volume ownership depends on it). |
 | Jaeger UI | No Gateway route and no ingress rule for `16686`; port-forward only, because it has no auth. |
-| Secrets encryption | All nine `*-secrets.yaml` files are SOPS/age-encrypted and decrypted by Flux at apply time (`docs/SOPS.md`); `key.txt` is ignored by Git |
+| Secrets encryption | All nine `*-secrets.yaml` files are SOPS/age-encrypted and decrypted by Flux at apply time (`docs/SOPS.md`); the private key is kept outside the repository, and key files are ignored by Git |
 | Image pinning | Flux image automation rewrites `:latest` to `@sha256:<digest>` — immutable references in Git |
 | Grafana & VM UIs | Grafana UI is exposed securely on the Gateway at `grafana.jokelab.dev` (protected by GitHub OAuth with SOPS-encrypted credentials). VictoriaMetrics (VMSingle) is kept strictly internal to protect operational metrics, accessible privately via port-forwarding. |
 | In-cluster scrape only | VictoriaMetrics scrapes taskflow services over the cluster network (plain HTTP, no auth). The backend must therefore permit `GET /actuator/prometheus` unauthenticated (see `docs/BACKEND_INTEGRATION_CONTEXT.md` §2.3). |
@@ -401,7 +401,6 @@ homelab-TF/
 ├── .gitignore                       # State files, secrets, kubeconfig, keys
 ├── .sops.yaml                       # SOPS age encryption rules
 ├── kubeconfig.yaml                  # (ignored) k3s cluster access
-├── key.txt                          # (ignored) SOPS age private key
 ├── scripts/                         # bootstrap-foundation.sh, validate-gitops.sh, CI check scripts
 ├── .github/                         # CI workflows, Renovate config
 │

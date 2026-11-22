@@ -7,7 +7,7 @@ GitOps state.
 
 - The workstation tools and Proxmox access listed in the root `README.md` (`mise install`)
 - A remote Git repository containing this tree
-- `key.txt` (the SOPS age private key) present locally
+- The SOPS age private key present locally, with `SOPS_AGE_KEY_FILE` pointing at it (`docs/SOPS.md` §2)
 
 ## 1. Provision the VM and fetch kubeconfig
 
@@ -71,7 +71,7 @@ kubectl -n flux-system create secret generic flux-system \
   --from-literal=password=<PAT with contents:write>
 
 kubectl create secret generic sops-age -n flux-system \
-  --from-file=age.agekey=key.txt
+  --from-file=age.agekey="$SOPS_AGE_KEY_FILE"
 
 kubectl create namespace taskflow --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret docker-registry ghcr-pull-secret -n taskflow \

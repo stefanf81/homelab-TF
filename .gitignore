@@ -32,11 +32,17 @@ override.tf.json
 .terraform.rc
 terraform.rc
 
+# Saved plans (`tofu plan -out=...`) and their JSON renderings hold every planned
+# attribute in clear text, sensitive ones included (k3s_token in the cloud-init snippet)
+*tfplan*
+
 
 # ==============================================================================
 # Kubernetes / Cluster Secret Ignore Patterns
 # ==============================================================================
 kubeconfig.yaml
+# mktemp files of the kubeconfig fetch (modules/k3s-kubeconfig), left behind if it is killed
+kubeconfig.yaml.*
 kubeconfig
 kubeconfig.backup
 *.kubeconfig
@@ -73,7 +79,10 @@ __pycache__/
 # ==============================================================================
 # SOPS / Age Encryption Keys
 # ==============================================================================
-# NEVER commit the private age key — only the public key belongs in .sops.yaml
-key.txt
+# NEVER commit the private age key — only the public key belongs in .sops.yaml.
+# Keys belong outside the repository (docs/SOPS.md §2); these patterns only catch
+# a key that ends up here anyway: key.txt, key.new.txt, keys.txt, age.agekey.
+key*.txt
+*.agekey
 *.age-key
 *.key
