@@ -220,6 +220,19 @@ resource "proxmox_virtual_environment_vm" "k3s_node" {
   stop_on_destroy = true
   on_boot         = true
 
+  # This VM is the whole cluster, so an apply must never power it off on its own.
+  # The provider default (true) shuts the VM down and starts it again whenever a
+  # change is not hot-pluggable (cpu_cores, memory_size in either direction, rng,
+  # agent, scsi_hardware, ip_config), and the plan shows only an in-place update.
+  # With false the change is stored as pending and the apply ends with a warning;
+  # it takes effect at the next Proxmox-side stop/start (`qm reboot <vm_id>` on the
+  # host; a reboot from inside the guest does not apply pending changes). The
+  # provider reads the configuration with pending changes applied, so later plans
+  # are clean: `qm pending <vm_id>` shows what still waits for the restart.
+  # A disk_size increase is applied online, but fails if it is combined with such
+  # a change in one apply: resize the disk in its own apply.
+  reboot_after_update = false
+
   scsi_hardware = "virtio-scsi-single"
 
   rng {
