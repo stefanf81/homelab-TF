@@ -119,7 +119,7 @@ The Dockerfile uses a multi-stage build:
     - Exposes port 8080
     - Raises `golang.org/x/net` with `xcaddy --replace` (from r13) above the version Caddy and the plugins require, for CVE-2026-78661; drop it once Caddy itself requires that version
 
-The build workflow lints the Dockerfile with hadolint, scans the test image with Trivy (HIGH/CRITICAL findings that have a fix fail the build, before any registry login) and publishes an SBOM attestation with the image.
+The build workflow lints the Dockerfile with hadolint, scans the test image with Trivy (HIGH/CRITICAL findings that have a fix fail the build, before any registry login) and publishes through the reusable `.github/workflows/publish-image.yaml`, which signs the image and attests its provenance and Trivy report (checked by the Kyverno policy `verify-homelab-images`).
 
 There is no shell in the container: use `kubectl debug` with an ephemeral container for interactive debugging. `kubectl exec ... -- caddy <command>` (for example `caddy build-info`) still works.
 
