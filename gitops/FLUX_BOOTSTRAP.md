@@ -63,7 +63,8 @@ The `FluxInstance` syncs over HTTPS with the `flux-system` basic-auth Secret; th
 token needs write access because image automation pushes digest pins (see §6.1).
 Flux decrypts `*-secrets.yaml` via the `sops-age` Secret. Create `ghcr-pull-secret`
 in `taskflow` as well (`trivy-operator` also reads `taskflow/ghcr-pull-secret` via
-`privateRegistryScanSecretsNames`). Seed all three **before** applying `FluxInstance`:
+`privateRegistryScanSecretsNames`), and a copy in `kyverno` for image verification. Seed them
+**before** applying `FluxInstance`:
 
 ```bash
 kubectl -n flux-system create secret generic flux-system \
@@ -75,6 +76,14 @@ kubectl create secret generic sops-age -n flux-system \
 
 kubectl create namespace taskflow --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret docker-registry ghcr-pull-secret -n taskflow \
+  --docker-server=ghcr.io \
+  --docker-username=<github-user> \
+  --docker-password=<read-packages-token>
+
+# Same read-only token for Kyverno, which verifies the private WAF image's
+# signatures with its own credentials (verify-homelab-images `credentials`).
+kubectl create namespace kyverno --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret docker-registry ghcr-pull-secret -n kyverno \
   --docker-server=ghcr.io \
   --docker-username=<github-user> \
   --docker-password=<read-packages-token>

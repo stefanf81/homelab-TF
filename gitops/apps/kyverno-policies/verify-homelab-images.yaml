@@ -46,6 +46,13 @@ spec:
     - glob: "ghcr.io/stefanf81/taskflow-caddy-coraza@*"
     - glob: "ghcr.io/stefanf81/abuseipdb-sync:*"
     - glob: "ghcr.io/stefanf81/abuseipdb-sync@*"
+  # taskflow-caddy-coraza is a private GHCR package. Kyverno reads signatures
+  # with its own credentials, not the Pod's imagePullSecrets, from Secrets in
+  # its own namespace: a copy of taskflow/ghcr-pull-secret in `kyverno`, made by
+  # hand like the original (gitops/FLUX_BOOTSTRAP.md §3). A missing Secret is
+  # skipped, so abuseipdb-sync (public) still verifies without it.
+  credentials:
+    secrets: [ghcr-pull-secret]
   attestors:
     # The certificate of a reusable workflow names the reusable workflow
     # (job_workflow_ref), not its caller: both build workflows publish through
