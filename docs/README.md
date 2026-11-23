@@ -45,7 +45,8 @@ Their open/done statements are frozen at their date: current status is in
 it (CI: `.github/workflows/validate-gitops.yaml`, which also runs
 `scripts/bootstrap-foundation.sh --dry-run`, `ruby scripts/check-observability-config.rb`,
 `ruby scripts/check-sops-secrets.rb` and `scripts/check-tool-versions.sh`;
-`.github/workflows/validate-opentofu.yaml` runs `tofu fmt`, `tofu validate` and `tflint`,
+`.github/workflows/validate-opentofu.yaml` runs `tofu fmt`, `tofu validate`, `tflint` and
+`scripts/check-tool-versions.sh` (so a `k3s_version` change is checked against kubectl),
 and `.github/workflows/validate-renovate.yaml` runs `renovate-config-validator --strict`).
 `.github/workflows/validate-waf-config.yaml` additionally runs
 `gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh` across the WAF

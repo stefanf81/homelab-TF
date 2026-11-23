@@ -31,7 +31,8 @@ end of §4.5.
 |---|---|---|
 | VM | CPU type `host`, `virtio-scsi-single` + IOThread, `ssd`, `discard`, virtio RNG, balloon fixed (`floating = dedicated`) | `modules/proxmox/main.tf` |
 | VM | Proxmox firewall off for the NIC (no extra `fwbr` bridge) | provider default |
-| Node | inotify, `fs.file-max`, `fs.aio-max-nr`, swap off, journald capped at 100 MB | cloud-init snippet |
+| Node | inotify, `fs.aio-max-nr`, swap off, journald capped at 100 MB | cloud-init snippet |
+| Node | `fs.file-max` at the kernel maximum | systemd sets it at boot; the snippet no longer lowers it to 2097152 |
 | Node | `vm.max_map_count = 1048576` | Ubuntu (`/usr/lib/sysctl.d/55-map-count.conf`); the snippet no longer lowers it to 262144 |
 | Node | `default_qdisc=fq`, `tcp_congestion_control=bbr`, `tcp_slow_start_after_idle=0`, 4096 backlogs | Cilium bandwidth manager |
 | Node | `kernel.panic=10`, `kernel.panic_on_oops=1`, `vm.overcommit_memory=1` | kubelet (`protectKernelDefaults: false`) |
@@ -82,8 +83,10 @@ Sizing data (2026-11-03, at 14 GiB):
 | Pod working set (`kubectl top node`) | 7935 Mi |
 | Pod memory requests / limits | 8650 Mi / 27978 Mi (66 % / 215 % of allocatable) |
 
-At 12 GiB, allocatable is ~11 GiB (minus the 1000 Mi system/kube reserve and 100 Mi
-eviction), so requests use ~78 % and a 2 Gi backend surge pod still fits. The guest loses
+At 12 GiB, allocatable is ~11 GiB (minus the 1000 Mi system/kube reserve; k3s sets no
+memory eviction threshold of its own, and the 200 Mi hard threshold from §3.7 comes off as
+well once it is applied), so requests use ~78–80 % and a backend surge pod (1536 Mi request)
+still fits. The guest loses
 ~2 GiB of page cache; the host gains ~2 GiB and should stop swapping guest memory.
 
 Do not run `swapoff -a` on the host to pull swapped pages back: it needs as much free RAM as
@@ -122,9 +125,11 @@ invalidates its allocatable memory and leads to OOM kills.
 
 ### 3.1 In Terraform (new nodes)
 
-`modules/proxmox/main.tf` carries items 2, 4 and 8–15. The cloud-init snippet
+`modules/proxmox/main.tf` carries items 2, 4 and 8–15, and the kubelet memory eviction
+thresholds, `disable-helm-controller` and the API audit log of §3.7. The cloud-init snippet
 is in `ignore_changes` (`reports/REMEDIATION_PLAN_2026-10.md` REL-00), so it only
-reaches newly built nodes. The running node needs §3.2, and the NIC change needs §3.3.
+reaches newly built nodes. The running node needs §3.2, the NIC change needs §3.3, and the
+k3s settings need §3.7.
 
 ### 3.2 Running node — no downtime (do this first)
 
@@ -357,9 +362,93 @@ findmnt -no OPTIONS /; cat /sys/kernel/mm/transparent_hugepage/enabled; ls -lh /
 | needrestart / unattended-upgrades installed | Services restart and kernels install on their own schedule; belongs with REL-08 (planned reboots) |
 
 Optional, same drop-in: `serializeImagePulls: false` and `maxParallelImagePulls: 3` for faster
-recovery when many images must be pulled. `disable-helm-controller: true` (unused: Flux manages Helm)
-can go into the declarative `/etc/rancher/k3s/config.yaml` in `modules/proxmox/main.tf` for new
-nodes, and into the live node's config.yaml followed by a k3s restart.
+recovery when many images must be pulled.
+
+### 3.7 Memory and inode eviction, helm controller, API audit log, `fs.file-max` (one k3s restart)
+
+All four are in `modules/proxmox/main.tf` for new nodes. On the running node they need
+one k3s restart (~30–90 s without the API, pods keep running); do it in the same window
+as SEC-02 if that is still open. Copy the file contents from `modules/proxmox/main.tf`,
+which is the single source.
+
+**Before.** What the kubelet uses today, whether anything still uses the helm controller,
+and how much room the scheduler has:
+
+```bash
+N=$(sudo k3s kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
+sudo k3s kubectl get --raw "/api/v1/nodes/$N/proxy/configz" | jq '.kubeletconfig | {evictionHard, evictionSoft, evictionSoftGracePeriod}'
+df -i /   # inode use: the new threshold fires below 5 % free (IFree/Inodes)
+sudo k3s kubectl get helmcharts.helm.cattle.io,helmchartconfigs.helm.cattle.io -A
+sudo k3s kubectl describe node "$N" | grep -A8 'Allocated resources'
+sysctl fs.file-max
+```
+
+Expected: `evictionHard` has only `imagefs.available` and `nodefs.available` at 5 % (the k3s
+default, with **no** memory and **no** inode threshold); `df -i /` `IUse%` well below 95 %
+(otherwise the restart starts with DiskPressure: prune images first, `sudo k3s crictl rmi --prune`);
+no HelmChart objects; `fs.file-max = 2097152`.
+The 200 Mi hard threshold lowers allocatable memory by 200 Mi: memory requests plus one
+backend surge pod (1536 Mi) must still fit, otherwise lower a request first.
+
+**Apply.**
+
+```bash
+# 1. kubelet drop-in: content of 50-eviction.conf from modules/proxmox/main.tf
+sudo tee /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-eviction.conf <<'EOF'
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+evictionHard:
+  memory.available: 200Mi
+  nodefs.inodesFree: 5%
+  imagefs.inodesFree: 5%
+evictionSoft:
+  memory.available: 600Mi
+evictionSoftGracePeriod:
+  memory.available: 1m30s
+evictionMaxPodGracePeriod: 60
+EOF
+
+# 2. audit policy: content of audit-policy.yaml from modules/proxmox/main.tf
+sudoedit /etc/rancher/k3s/audit-policy.yaml && sudo chmod 600 /etc/rancher/k3s/audit-policy.yaml
+python3 -c 'import yaml,sys; p=yaml.safe_load(open(sys.argv[1])); assert p["kind"]=="Policy" and p["rules"]; print(len(p["rules"]), "rules")' /etc/rancher/k3s/audit-policy.yaml
+
+# 3. /etc/rancher/k3s/config.yaml: add `disable-helm-controller: true` and the
+#    `kube-apiserver-arg:` block from modules/proxmox/main.tf
+sudoedit /etc/rancher/k3s/config.yaml
+
+# 4. fs.file-max: remove the line; the running value goes back to the kernel maximum
+sudo sed -i '/^fs.file-max/d' /etc/sysctl.d/99-kubernetes.conf && sudo sysctl -w fs.file-max=9223372036854775807
+
+# 5. restart, with a second SSH session open
+sudo systemctl restart k3s && sudo journalctl -u k3s -f
+```
+
+`python3` with PyYAML is part of the Ubuntu cloud image (cloud-init needs it). The check
+only catches broken YAML; a wrong field name is caught by the API server at start. If k3s
+does not come back within two minutes, the journal names the reason (`audit policy` or
+`kubelet`): remove the `kube-apiserver-arg` block or the drop-in and restart again.
+
+**Verify.**
+
+```bash
+sudo k3s kubectl get --raw "/api/v1/nodes/$N/proxy/configz" | jq '.kubeletconfig | {evictionHard, evictionSoft, evictionSoftGracePeriod, evictionMaxPodGracePeriod}'
+sudo ls -lh /var/lib/rancher/k3s/server/logs/
+sudo tail -n 200 /var/lib/rancher/k3s/server/logs/audit.log | jq -r '[.level, .user.username, .verb, .objectRef.resource] | @tsv' | sort | uniq -c | sort -rn | head
+sudo journalctl -u k3s --since -5min | grep -c 'HelmChart'
+sysctl fs.file-max
+```
+
+Expected: `memory.available` 200Mi (hard) and 600Mi (soft), `nodefs.inodesFree` and
+`imagefs.inodesFree` 5 % next to the two 5 % disk values (`df -i /` shows how far away the
+inode threshold is);
+an `audit.log` that grows; `0` for the HelmChart count (k3s no longer starts those controllers). Look at the audit
+log's size after a day (`ls -lh`): the top lines of the `uniq -c` output show who writes
+most, and a noisy, uninteresting writer gets a `level: None` rule in the policy (in
+`modules/proxmox/main.tf` first, then on the node).
+
+Rollback: delete `50-eviction.conf`, remove the two additions from `config.yaml`, put the
+`fs.file-max` line back, restart k3s. The HelmChart CRDs stay installed either way; with
+the controller off nothing acts on them.
 
 ---
 
