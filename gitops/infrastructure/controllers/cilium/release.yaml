@@ -129,8 +129,41 @@ spec:
       leaseDuration: 60s
       leaseRenewDeadline: 40s
       leaseRetryPeriod: 15s
+    # Resources for the Hubble certificate jobs (hubble.tls.auto.method below). The
+    # chart ships none; cilium-certgen runs for a few seconds.
+    certgen:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          memory: 128Mi
     hubble:
       enabled: true
+      # Hubble mTLS certificates (agent server cert, Relay client cert).
+      # The chart default `method: helm` generates them once with 365 days validity
+      # and then copies the existing Secrets on every upgrade (`lookup`), so nothing
+      # ever renewed them: a year after the first install Relay can no longer
+      # connect to the agent, and the UI and `hubble observe` go empty without any
+      # other symptom. `cronJob` runs cilium-certgen as a Job when the release first
+      # renders it (or its spec changes) and then on the schedule below; each run
+      # issues new leaf certificates from the `cilium-ca` Secret, and the agent and
+      # Relay reload them from the mounted Secrets without a restart. Three runs fit
+      # into one validity period, so one missed run is harmless.
+      # Not `certmanager`: scripts/bootstrap-foundation.sh installs Cilium before
+      # cert-manager exists (and cert-manager needs the CNI to start), so a release
+      # that renders Certificate objects could not be installed on a new node.
+      # The certgen image is digest-pinned by the chart (certgen.image).
+      # The CA (cilium-ca, created by certgen with 3 years validity) is reused and
+      # not renewed; about two years in, the runs start failing on purpose (the CA
+      # would expire before new 365-day leaves). Rotation: docs/HUBBLE_SETUP.md
+      # "mTLS certificates". A failed run shows as a failed Job in kube-system.
+      tls:
+        auto:
+          method: cronJob
+          certValidityDuration: 365
+          # 03:17 on the 1st of every fourth month (chart default is midnight).
+          schedule: "17 3 1 */4 *"
       relay:
         enabled: true
         rollOutPods: true
