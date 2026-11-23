@@ -9,7 +9,7 @@
   "prConcurrentLimit": 10,
   "prHourlyLimit": 0,
   "minimumReleaseAge": "3 days",
-  "minimumReleaseAgeBehaviour": "timestamp-optional",
+  "internalChecksFilter": "strict",
   "enabledManagers": ["custom.regex", "dockerfile", "flux", "github-actions", "gomod", "kubernetes", "mise", "terraform"],
   "ignorePaths": [
     "gitops/infrastructure/controllers/gateway-api/standard-install.yaml",
@@ -136,6 +136,27 @@
       "ignoreTests": false
     },
     {
+      "description": "Registries that publish no release timestamp (GHCR, Quay, gcr.io, registry.k8s.io: every docker source except Docker Hub) cannot be aged, and Renovate's default (timestamp-required) then holds their updates forever. Raise them without the 3-day wait instead, but never merge them unattended: nothing has shown that the release survived three days, and a re-pushed tag looks the same as a new digest. Docker Hub reports when a tag was last pushed, so its updates keep both the wait and the automerge. Every other datasource keeps the default: an update without a timestamp waits on the dependency dashboard instead of skipping the wait. Must stay below the automerge rule: later packageRules override earlier ones.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["/^[^/]+\\.[^/]+//", "!/^(index\\.)?docker\\.io//"],
+      "minimumReleaseAgeBehaviour": "timestamp-optional",
+      "automerge": false
+    },
+    {
+      "description": "Their own group, so the unattended 'patch updates' group is not held back by members that need a review. The own images stay in 'patch updates': their new revision tags are still merged unattended (rule further down). The named groups further down still win for their packages.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["/^[^/]+\\.[^/]+//", "!/^(index\\.)?docker\\.io//", "!kubernetes-sigs/gateway-api", "!ghcr.io/stefanf81/**"],
+      "matchUpdateTypes": ["patch"],
+      "groupName": "patch updates without a release timestamp"
+    },
+    {
+      "description": "A digest-only change of a version-pinned action means its tag was moved to another commit (how 76 of 77 aquasecurity/trivy-action tags were hijacked in March 2026). Renovate ages such an update against the tag's original release date, so the 3-day wait does not hold it back. Never merge it unattended. This costs nothing while every pin carries its full '# vX.Y.Z' comment (a regular release is then a patch, minor or major update). Must stay below the automerge rule.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest"],
+      "groupName": "GitHub Actions whose tag was moved",
+      "automerge": false
+    },
+    {
       "description": "OWASP CRS and the Coraza base config shipped as files in the WAF image (CRS_VERSION / CORAZA_CONF_VERSION in its Dockerfile): one PR of their own instead of the patch group, so a rule-set change can be read against its release notes (coreruleset.org) and reverted by itself. Never automerged, although CRS 4.25 LTS releases are patch updates: the WAF blocks at PL2, and a new false positive on a legitimate request is an outage for that feature. CI shows it (tests/benign-corpus.py in run-tests.sh pins the answer to every legitimate request the app sends), but a person decides whether a changed answer is a fix or a regression. Must stay below the automerge rule above.",
       "matchPackageNames": ["github.com/corazawaf/coraza-coreruleset/**"],
       "groupName": "WAF rule set",
@@ -176,6 +197,13 @@
       "matchPackageNames": ["ghcr.io/stefanf81/abuseipdb-sync"],
       "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-r(?<build>\\d+)$",
       "minimumReleaseAge": "0 days"
+    },
+    {
+      "description": "Own images: a new revision tag is merged unattended (the build workflow tested, scanned, signed and published it). A new digest under an existing tag is not: the workflow never overwrites a revision tag, so that can only be a tag someone replaced in the registry. Must stay below the rule for registries without a release timestamp.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/stefanf81/abuseipdb-sync", "ghcr.io/stefanf81/taskflow-caddy-coraza"],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
     },
     {
       "description": "Own image taskflow-caddy-coraza (tags <caddy>-coraza<coraza>-r<revision>, revision never resets): order by Caddy version then revision. Built and tested by CI, so no release-age wait.",
