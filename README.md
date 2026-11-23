@@ -28,7 +28,7 @@ You also need access to a **Proxmox VE 9.x** host (8.x is end of life) with an A
   - `gitops/infrastructure/configs` – Cilium LB IP pool (`192.168.50.200-250`) and L2 announcement policy, `GatewayClass`, Let's Encrypt ClusterIssuers, `PriorityClass/taskflow-critical`, Hubble pod-network isolation, and the AbuseIPDB ingress deny policy.
   - `gitops/platform` – Policy Reporter + `oauth2-proxy`, Hubble UI `oauth2-proxy`, AbuseIPDB synchronizer, Renovate Operator + scheduled job.
   - `gitops/apps/taskflow` – Spring Boot 4.1.1 backend, Angular 22 frontend, Caddy+Coraza WAFs, PostgreSQL 18.7, Redis 8.10, Jaeger.
-  - `gitops/apps/kyverno-policies` – CEL `ValidatingPolicy` admission rules (`Deny`, fail-open).
+  - `gitops/apps/kyverno-policies` – CEL `ValidatingPolicy` admission rules (`Deny`, fail-open) and `ImageValidatingPolicy` signature/attestation checks for the TaskFlow images.
   - `gitops/monitoring` – VictoriaMetrics TSDB + Grafana stack + metrics-server + Loki/Alloy + 13 custom/vendored dashboards (Taskflow WAF/Access Logs/Rate Limits/Performance, Blocked Sources, AbuseIPDB, Cilium Agent, Hubble Flows, Falco, Trivy, Kyverno, cert-manager, Logging pipeline).
   - `gitops/images` – Custom image sources: TaskFlow Caddy+Coraza WAF and `abuseipdb-sync`.
   - `gitops/clusters/taskflow` – Cluster root Kustomizations and `cluster-vars`.
