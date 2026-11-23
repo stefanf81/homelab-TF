@@ -2,7 +2,7 @@
 """Write fixture WAF logs (Caddy access records, kubelet probes, Coraza audit records) with exactly
 known counts, and the expected metric values, for validate-alloy-metrics.sh.
 usage: validate-alloy-metrics-fixtures.py <logs dir> <truth.json>"""
-import collections, copy, json, random, sys
+import collections, copy, json, pathlib, random, re, sys
 
 out_dir, truth_path = sys.argv[1:3]
 random.seed(11)
@@ -366,9 +366,53 @@ for fixture in platform:
     with open(f"{out_dir}/{fixture['filename']}", "w") as handle:
         handle.write("\n".join(json.dumps({"line": line}) for line in noise + retained) + "\n")
 
+# TaskFlow backend console logs, captured from the real backend (prod profile, Boot 4.2) and only
+# sanitised (paths, JVM options): one plain-pattern run and one ECS JSON run (the prod default),
+# each a normal start/requests/shutdown and a failed start with stack traces. Each file is one pod.
+# Expected entries: a record starts at a Logback date or at "{" (one JSON object per line); every
+# other line (stack frames, "Caused by", the Tomcat thread-leak dump) continues the record before.
+# The JVM's "Picked up JAVA_TOOL_OPTIONS" (stderr, before logging starts) is its own entry.
+FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
+RECORD_START = re.compile(r"^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \[|\{)")
+backend = []
+for fmt in ("plain", "ecs"):
+    for run in ("", "-failed-start"):
+        filename = f"taskflow-backend-{fmt}{run}.log"
+        # Stored as .txt: the repository ignores *.log.
+        lines = (FIXTURES / filename.replace(".log", ".txt")).read_text(encoding="utf-8").rstrip("\n").split("\n")
+        records = []
+        for line in lines:
+            if not records or RECORD_START.match(line) or line.startswith("Picked up JAVA_TOOL_OPTIONS"):
+                records.append(line)
+            else:
+                records[-1] += "\n" + line
+        json_records = [record for record in records if record.startswith("{")]
+        for record in json_records:
+            json.loads(record)  # the ECS fixture must hold one complete object per line
+        assert (fmt == "ecs") == bool(json_records), filename
+        if run:
+            assert any("\n\tat " in r or "\\n\\tat " in r for r in records), f"{filename} needs a stack trace"
+        with open(f"{out_dir}/{filename}", "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+        backend.append({"name": f"backend-{fmt}{run}", "filename": filename, "records": records,
+                        "errors": sum(1 for r in json_records if json.loads(r)["log"]["level"] == "ERROR")})
+
+# One stream holding both formats: plain records (a stack trace included) and then ECS lines. Alloy
+# keeps multiline state per stream once a line has matched firstline; with a date-only firstline the
+# JSON records after a plain one were appended to it (up to max_lines). A pod does not switch format
+# while it runs, but any stray date-prefixed stdout line in an ECS stream has the same effect.
+plain_records = next(f for f in backend if f["name"] == "backend-plain-failed-start")["records"]
+ecs_records = [r for r in next(f for f in backend if f["name"] == "backend-ecs")["records"] if r.startswith("{")]
+stack_trace = next(r for r in plain_records if "\n\tat " in r)
+mixed = plain_records[1:3] + [stack_trace] + ecs_records[:5] + plain_records[-1:] + ecs_records[5:8]
+with open(f"{out_dir}/taskflow-backend-mixed.log", "w", encoding="utf-8") as handle:
+    handle.write("\n".join(mixed) + "\n")
+backend.append({"name": "backend-mixed", "filename": "taskflow-backend-mixed.log", "records": mixed, "errors": 0})
+
 as_rows = lambda counter: [[*key, value] for key, value in counter.items()]
 with open(truth_path, "w") as handle:
     json.dump({"requests": as_rows(requests), "limited": as_rows(limited), "audit": as_rows(audit),
                "detections": as_rows(detections), "rules": as_rows(rules), "histogram": hist, "buckets": BUCKETS,
-               "security": security, "spoofs": spoofs, "rule_ids": RULE_IDS, "platform": platform}, handle)
-print(f"fixtures: {sum(requests.values())} requests, {sum(limited.values())} rate-limited, {sum(audit.values())} audit, {sum(detections.values())} detections")
+               "security": security, "spoofs": spoofs, "rule_ids": RULE_IDS, "platform": platform,
+               "backend": backend}, handle)
+print(f"fixtures: {sum(len(f['records']) for f in backend)} backend records, {sum(requests.values())} requests, {sum(limited.values())} rate-limited, {sum(audit.values())} audit, {sum(detections.values())} detections")
