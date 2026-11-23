@@ -125,6 +125,24 @@ To change it per transaction, use the `ctl:auditEngine=...` rule action.
 | `SecRequestBodyNoFilesLimit` | `1048576` | Max non-file body size (1 MB) |
 | `SecRequestBodyLimitAction` | `Reject` | Not set in the ConfigMaps; Coraza's default with `SecRuleEngine On`. Interrupts the transaction (HTTP 413). `ProcessPartial` (inspect up to the limit, set `INBOUND_DATA_ERROR`) applies only in `DetectionOnly` or when set explicitly. |
 
+## False-positive regression test
+
+`gitops/images/taskflow-caddy-coraza/tests/benign-corpus.py`, run by `run-tests.sh` for both WAFs (so by the
+image build and by "Validate WAF behaviour"), sends 45 legitimate requests shaped exactly like the ones
+taskflow-enterprise sends (paths, methods and field names from its Angular `core/api` clients and Spring
+request records; free text with the punctuation real names, reviews and admin text contain) and pins each
+answer:
+
+- `PASS`: the request must reach the backend. A 403 here is a new false positive and fails CI.
+- `fp(...)`: a known false positive that the shipped rule set blocks today, with the matching rule IDs and a
+  `TODO(W-6)`. It must stay 403, so an update that changes detection in either direction fails CI and gets
+  read by a person. Six are known (review comments, catalog name/description, a time-off reason, a booking
+  of a service whose name has `&` and parentheses), identical on CRS 4.25.0 and 4.25.2 (BACKLOG SEC-21).
+
+After a failing run, the test prints the rule IDs each case matched (from the audit log's `X-Corpus-Case`
+request header). When you add an exclusion for a known false positive, change that case to `PASS` in the same
+commit. When the app gains an endpoint or a free-text field, add a case.
+
 ## Exclusion Files
 
 Create false-positive exclusions in the ConfigMap keys. Two files control timing:

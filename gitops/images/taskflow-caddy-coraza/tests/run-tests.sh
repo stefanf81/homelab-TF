@@ -295,6 +295,16 @@ run_suite() { # waf
   r="$(req "$podclient" "http://$envoy:8080/api?q=1%20UNION%20SELECT%201")"
   [ "$(json_field "$r" status)" = 403 ] || fail "$waf: Coraza did not block the SQLi test: $r"
 
+  say "$waf: legitimate requests (false-positive regression)"
+  # Requests the app really sends must keep their answer when the rule set,
+  # the connector or a ConfigMap changes: PASS cases must reach the upstream,
+  # known false positives must stay 403 until someone decides otherwise
+  # (benign-corpus.py). This is what makes a CRS update safe to review from CI.
+  local corpus_rc=0
+  docker exec "$cb" python3 /srv/benign-corpus.py "$waf" "http://$edge:8080" || corpus_rc=$?
+  docker logs "$caddy" 2>/dev/null | python3 "$HERE/benign-corpus.py" --rules
+  [ "$corpus_rc" -eq 0 ] || fail "$waf: the WAF answered a legitimate request differently than pinned (see above)"
+
   if [ "$waf" = backend ]; then
     say "$waf: request methods"
     # The API's own methods must pass the CRS method allow-list (rule 911100);

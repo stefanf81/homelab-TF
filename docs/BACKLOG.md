@@ -42,6 +42,7 @@ Git cannot show).
 | SEC-18 | Tetragon next to Falco; Cilium mutual auth | Open (long-term) | — | — |
 | SEC-19 | Secrets outside Git (ESO + a vault), SOPS for bootstrap only | Open (long-term) | — | — |
 | SEC-20 | Leftover hardening | Open | Jaeger has a writable root; Alloy runs as root with a hostPath; cloudflare-ddns uses the deprecated `CF_API_TOKEN`; `flux-system` has no PSA labels | `gitops/apps/taskflow/jaeger.yaml`, `gitops/monitoring/logging/alloy-release.yaml` |
+| SEC-21 | WAF false positives on free text (blocking PL2, empty exclusion files) | Open | Six legitimate requests are blocked today and pinned as known false positives in `tests/benign-corpus.py` (review comments, catalog name/description, time-off reason, a service name with `&` and parentheses). Check Loki for those rule IDs on `application="taskflow-backend"`, then request-scoped exclusions per field, or PL1 blocking with `detection_paranoia_level=2` while tuning; flip each case to `PASS` with its exclusion | `gitops/apps/taskflow/backend-waf.yaml`, `gitops/images/taskflow-caddy-coraza/tests/benign-corpus.py` |
 
 ## Performance and networking
 

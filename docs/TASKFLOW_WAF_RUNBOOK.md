@@ -19,8 +19,10 @@ The image is built automatically by
 `gitops/images/taskflow-caddy-coraza/` changes. The manual steps below are a
 fallback.
 
-The published tag should use the version and revision declared by
-`CADDY_VERSION`, `CORAZA_CADDY_VERSION`, and `IMAGE_REVISION` in the Dockerfile.
+The published tag should use the version and revision declared by the builder
+image tag (`FROM caddy:<version>-builder-alpine@sha256:…`), `CORAZA_CADDY_VERSION`,
+and `IMAGE_REVISION` in the Dockerfile. Both base images and the `# syntax=`
+frontend are pinned by tag and digest; Renovate moves tag and digest together.
 Increment `IMAGE_REVISION` when the image recipe changes without either upstream
 version changing; published revision tags must not be overwritten.
 `RATE_LIMIT_VERSION` pins the `mholt/caddy-ratelimit` module to an immutable
@@ -29,8 +31,9 @@ so move it by hand. Renovate's own Dockerfile updates (for example Caddy, the
 Coraza plugin or the distroless digest) bump `IMAGE_REVISION` themselves
 (`bumpVersions` in `.github/renovate.json`).
 
-CI lints the Dockerfile (hadolint), builds the image, runs the identity and
-rate-limit suite in `gitops/images/taskflow-caddy-coraza/tests/` on every PR that
+CI lints the Dockerfile (hadolint), builds the image, runs the identity,
+rate-limit and false-positive regression suite in
+`gitops/images/taskflow-caddy-coraza/tests/` on every PR that
 touches the image directory or the workflow, fails on HIGH/CRITICAL Trivy findings
 that have a fix, and on `main` publishes through `.github/workflows/publish-image.yaml`:
 a cold build pushed by digest, Trivy again on that digest, then a cosign signature
@@ -76,7 +79,7 @@ publish only a revision CI has not published (bump `IMAGE_REVISION` first):
 ```bash
 # Tag <caddy>-coraza<coraza>-r<revision>, derived from the Dockerfile ARGs
 D=gitops/images/taskflow-caddy-coraza/Dockerfile
-IMAGE="ghcr.io/stefanf81/taskflow-caddy-coraza:$(sed -n 's/^ARG CADDY_VERSION=//p' "$D")-coraza$(sed -n 's/^ARG CORAZA_CADDY_VERSION=v//p' "$D")-$(sed -n 's/^ARG IMAGE_REVISION=//p' "$D")"
+IMAGE="ghcr.io/stefanf81/taskflow-caddy-coraza:$(sed -n 's/^FROM caddy:\([0-9.]*\)-builder-alpine@.*/\1/p' "$D")-coraza$(sed -n 's/^ARG CORAZA_CADDY_VERSION=v//p' "$D")-$(sed -n 's/^ARG IMAGE_REVISION=//p' "$D")"
 
 # Build for linux/amd64 (k3s node architecture)
 docker buildx build --platform linux/amd64 --load -t "$IMAGE" \
