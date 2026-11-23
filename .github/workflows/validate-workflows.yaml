@@ -1,0 +1,59 @@
+name: Validate workflows
+
+# Security audit of the workflows and composite actions with zizmor: unpinned
+# or impostor action commits, template injection, dangerous triggers, cache
+# poisoning in publishing workflows, excessive permissions. GH_TOKEN turns on
+# the online audits (impostor commits, known-vulnerable actions); the read-only
+# token is enough. Exceptions: .github/zizmor.yml and inline
+# `# zizmor: ignore[<audit>]` comments, each with its reason.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+      - '.github/zizmor.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+      - '.github/zizmor.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    name: Audit workflows (zizmor)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Audit workflows with zizmor
+        env:
+          # zizmor-image: tracked by the dedicated regex manager in .github/renovate.json
+          ZIZMOR_IMAGE: "ghcr.io/zizmorcore/zizmor:1.32.0@sha256:3014cc8f68f663935f69b3c3e0e41f5ce102b268d97db13db0f62208747f860d"
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --volume "$PWD:/repo:ro" \
+            --workdir /repo \
+            --env GH_TOKEN \
+            "$ZIZMOR_IMAGE" \
+            --format github \
+            .

@@ -1,0 +1,442 @@
+name: Publish Image
+
+# =============================================================================
+# Reusable publication workflow for the images this repository builds
+# (gitops/images/*). The build workflows call it from `main` after their own
+# tests and Trivy gate; it never runs on its own.
+#
+#   push     builds the image cold and pushes it by digest only (no tag), with
+#            BuildKit provenance and SBOM. Holds the GHCR write token.
+#   scan     scans that digest with Trivy (HIGH/CRITICAL with a released fix,
+#            hard gate) and keeps the report in Trivy's cosign-vuln format.
+#            Read-only package access.
+#   promote  checks the report, signs the digest with cosign (keyless,
+#            `scan=passed` annotation), attests SLSA build provenance and the
+#            scan report (actions/attest, pushed to GHCR), verifies all three,
+#            and only then points the tags at the digest. The only job that can
+#            sign.
+#
+# The signing certificate names this file, not the calling workflow:
+#   https://github.com/<owner>/<repo>/.github/workflows/publish-image.yaml@refs/heads/main
+# The Kyverno policy gitops/apps/kyverno-policies/verify-homelab-images.yaml
+# pins that identity, so callers must use it as `./.github/workflows/publish-image.yaml`
+# (same repository, same ref) and the file must keep this name.
+#
+# No Actions cache in any job: a published image must not be built from a
+# cache entry another run (or a pull request) saved. The callers' test builds
+# keep theirs.
+# =============================================================================
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Image name under ghcr.io/<owner>/ (e.g. taskflow-caddy-coraza)
+        type: string
+        required: true
+      context:
+        description: Build context directory, which holds the Dockerfile
+        type: string
+        required: true
+      tag:
+        description: Immutable revision tag; publication is skipped if it already exists
+        type: string
+        required: true
+      extra-tags:
+        description: Further tags (newline-separated) moved to the digest after signing
+        type: string
+        required: false
+        default: ""
+      build-args:
+        description: Docker build arguments (newline-separated KEY=value)
+        type: string
+        required: false
+        default: ""
+
+permissions: {}
+
+# Enforced by the Actions cache service for every job in this workflow.
+cache-mode: none
+
+env:
+  # renovate: datasource=github-releases depName=aquasecurity/trivy
+  TRIVY_VERSION: v0.76.2
+  SCAN_PREDICATE: https://cosign.sigstore.dev/attestation/vuln/v1
+  OIDC_ISSUER: https://token.actions.githubusercontent.com
+
+jobs:
+  ###########################################################
+  # Build cold and push by digest
+  ###########################################################
+
+  push:
+    name: Push ${{ inputs.image }} by digest
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.ref.outputs.image }}
+      digest: ${{ steps.pushed.outputs.digest }}
+      published: ${{ steps.tagcheck.outputs.exists == 'false' }}
+
+    steps:
+      # Inputs come from the calling workflow file, but they are still checked
+      # before they reach a shell, a registry or a tag.
+      - name: Check inputs and ref
+        id: ref
+        env:
+          IMAGE_NAME: ${{ inputs.image }}
+          CONTEXT: ${{ inputs.context }}
+          TAG: ${{ inputs.tag }}
+          EXTRA_TAGS: ${{ inputs.extra-tags }}
+          OWNER: ${{ github.repository_owner }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          # Only `main` publishes: the certificate names the ref, and the
+          # admission policy accepts `refs/heads/main` only.
+          if [[ "$REF" != "refs/heads/main" ]]; then
+            echo "::error::publish-image runs from main only, not ${REF}"
+            exit 1
+          fi
+          [[ "$IMAGE_NAME" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo "::error::invalid image name '$IMAGE_NAME'"; exit 1; }
+          [[ "$CONTEXT" =~ ^gitops/images/[a-z0-9._-]+$ ]] || { echo "::error::context must be gitops/images/<name>, not '$CONTEXT'"; exit 1; }
+          for t in "$TAG" $EXTRA_TAGS; do
+            [[ "$t" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "::error::invalid tag '$t'"; exit 1; }
+          done
+          owner="$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          echo "image=ghcr.io/${owner}/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Published revision tags are immutable: never silently overwrite one. If
+      # the tag already exists (a change that did not touch the build recipe),
+      # nothing is published and scan/promote are skipped. To publish a new
+      # image, bump IMAGE_REVISION (or APP_VERSION).
+      - name: Check whether the revision tag is already published
+        id: tagcheck
+        env:
+          IMAGE: ${{ steps.ref.outputs.image }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          # Only a definite "not found" means unpublished; any other failure
+          # (auth, network, registry outage) fails the run.
+          if err=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" 2>&1 >/dev/null); then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::${IMAGE}:${TAG} is already published; nothing to publish. Bump IMAGE_REVISION to publish a new revision."
+          elif printf '%s\n' "$err" | grep -qF "${IMAGE}:${TAG}: not found"; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::cannot tell whether ${IMAGE}:${TAG} is published: $err"
+            exit 1
+          fi
+
+      - name: Extract Docker metadata
+        id: meta
+        if: steps.tagcheck.outputs.exists == 'false'
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ steps.ref.outputs.image }}
+          tags: type=raw,value=${{ inputs.tag }}
+
+      # By digest only: no tag points at the image until `promote` has signed
+      # and attested it.
+      - name: Build and push by digest
+        id: build
+        if: steps.tagcheck.outputs.exists == 'false'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.context }}/Dockerfile
+          platforms: linux/amd64
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ inputs.build-args }}
+          outputs: type=image,name=${{ steps.ref.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+
+      - name: Record pushed digest
+        id: pushed
+        if: steps.tagcheck.outputs.exists == 'false'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::build step returned no image digest ('$DIGEST')"
+            exit 1
+          fi
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+  ###########################################################
+  # Scan the pushed digest (read-only package access)
+  ###########################################################
+
+  scan:
+    name: Scan ${{ inputs.image }}
+    needs: push
+    if: needs.push.outputs.published == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    # Trivy (a downloaded binary fetching its databases from a registry) can
+    # pull the image, nothing else.
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      # For the local install-trivy action.
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Log in to GitHub Container Registry (read-only)
+        env:
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+
+      - name: Install Trivy
+        uses: ./.github/actions/install-trivy
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+
+      # Same gate as the callers' pre-push scan (HIGH/CRITICAL with a released
+      # fix), now on the digest that will be tagged. One run gates and writes the
+      # report `promote` attests.
+      - name: Scan image (Trivy, HIGH/CRITICAL with a fix)
+        env:
+          IMAGE_REF: ${{ needs.push.outputs.image }}@${{ needs.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --exit-code 1 --no-progress \
+            --format cosign-vuln --output "$RUNNER_TEMP/scan-report.json" \
+            "$IMAGE_REF"
+          jq -r '.scanner.result.Results[]? | "\(.Target): \((.Vulnerabilities // []) | length) finding(s)"' \
+            "$RUNNER_TEMP/scan-report.json"
+
+      - name: Upload scan report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scan-report-${{ inputs.image }}
+          path: ${{ runner.temp }}/scan-report.json
+          if-no-files-found: error
+          retention-days: 7
+
+  ###########################################################
+  # Sign, attest, verify and tag the scanned digest
+  ###########################################################
+
+  promote:
+    name: Sign and promote ${{ inputs.image }}
+    needs:
+      - push
+      - scan
+    runs-on: ubuntu-26.04
+    # Above the worst case of the retries below, so a hanging Sigstore service
+    # ends in the step's own error, not a timeout.
+    timeout-minutes: 25
+    # The only job that can sign: `id-token` for the Sigstore certificate,
+    # `attestations` for actions/attest. It checks out no code and runs only
+    # actions/download-artifact, the cosign installer, cosign, actions/attest,
+    # gh, jq and docker.
+    permissions:
+      packages: write
+      id-token: write
+      attestations: write
+
+    env:
+      IMAGE: ${{ needs.push.outputs.image }}
+      DIGEST: ${{ needs.push.outputs.digest }}
+      # The certificate identity: this reusable workflow at the caller's ref
+      # (callers reference it locally, so it runs at their ref).
+      IDENTITY: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/publish-image.yaml@${{ github.ref }}
+
+    steps:
+      - name: Check digest
+        run: |
+          set -euo pipefail
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::no pushed digest ('$DIGEST')"
+            exit 1
+          fi
+
+      - name: Download scan report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: scan-report-${{ inputs.image }}
+          path: ${{ runner.temp }}/scan
+
+      # Before anything is signed: the report must be Trivy's, name exactly this
+      # digest and list no finding.
+      - name: Check scan report
+        env:
+          REPORT: ${{ runner.temp }}/scan/scan-report.json
+        run: |
+          set -euo pipefail
+          if ! jq -e --arg ref "${IMAGE}@${DIGEST}" '
+              (.scanner.uri | startswith("pkg:github/aquasecurity/trivy@"))
+              and .scanner.result.ArtifactName == $ref
+              and ([.scanner.result.Results[]? | (.Vulnerabilities // [])[], (.Secrets // [])[]] | length == 0)
+            ' "$REPORT" > /dev/null; then
+            echo "::error::the scan report is not a clean Trivy report for ${IMAGE}@${DIGEST}"
+            exit 1
+          fi
+          echo "Scan report checked: $(jq -r '.scanner.uri' "$REPORT"), no findings"
+
+      # cosign, actions/attest (push-to-registry) and imagetools read this login.
+      - name: Log in to GitHub Container Registry
+        env:
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+
+      # Keyless; retried because it depends on the public Sigstore services.
+      # Fails closed: nothing is tagged if signing never succeeds.
+      - name: Sign image
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if cosign sign --yes --timeout 2m -a "scan=passed" "${IMAGE}@${DIGEST}"; then
+              exit 0
+            fi
+            echo "::warning::cosign sign failed (attempt ${attempt} of 3)"
+            if [[ "$attempt" -lt 3 ]]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "::error::could not sign ${IMAGE}@${DIGEST}; nothing was tagged"
+          exit 1
+
+      - name: Attest build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ needs.push.outputs.image }}
+          subject-digest: ${{ needs.push.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest scan report
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ needs.push.outputs.image }}
+          subject-digest: ${{ needs.push.outputs.digest }}
+          predicate-type: ${{ env.SCAN_PREDICATE }}
+          predicate-path: ${{ runner.temp }}/scan/scan-report.json
+          push-to-registry: true
+          create-storage-record: false
+
+      # What the admission policy checks, read back from the registry before
+      # any tag moves. `-a` makes cosign check the cosign signature itself: in
+      # bundle mode it otherwise accepts any bundle with the same identity.
+      - name: Verify signature and attestations
+        env:
+          REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          retry() {
+            local attempt
+            for attempt in 1 2 3; do
+              if "$@"; then
+                return 0
+              fi
+              if [[ "$attempt" -lt 3 ]]; then
+                sleep $((attempt * 10))
+              fi
+            done
+            return 1
+          }
+
+          retry cosign verify "${IMAGE}@${DIGEST}" \
+            --timeout 1m \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer "$OIDC_ISSUER" \
+            -a scan=passed \
+            > /dev/null
+          echo "Signature verified for ${IMAGE}@${DIGEST}"
+
+          for predicate in https://slsa.dev/provenance/v1 "$SCAN_PREDICATE"; do
+            retry gh attestation verify "oci://${IMAGE}@${DIGEST}" \
+              --repo "$REPOSITORY" \
+              --cert-identity "$IDENTITY" \
+              --predicate-type "$predicate"
+            retry gh attestation verify "oci://${IMAGE}@${DIGEST}" \
+              --repo "$REPOSITORY" \
+              --cert-identity "$IDENTITY" \
+              --predicate-type "$predicate" \
+              --bundle-from-oci
+            echo "Attestation verified (GitHub API and GHCR copies): ${predicate}"
+          done
+
+      # The revision tag (immutable) and the moving tags, all at once from the
+      # signed digest, then checked to resolve to it.
+      - name: Tag the signed digest
+        env:
+          TAG: ${{ inputs.tag }}
+          EXTRA_TAGS: ${{ inputs.extra-tags }}
+        run: |
+          set -euo pipefail
+          published=("${IMAGE}:${TAG}")
+          for t in $EXTRA_TAGS; do
+            published+=("${IMAGE}:${t}")
+          done
+          tag_args=()
+          for ref in "${published[@]}"; do
+            tag_args+=(--tag "$ref")
+          done
+          docker buildx imagetools create "${tag_args[@]}" "${IMAGE}@${DIGEST}"
+          for ref in "${published[@]}"; do
+            resolved="$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -r '.digest')"
+            if [[ "$resolved" != "$DIGEST" ]]; then
+              echo "::error::$ref resolves to $resolved, expected the signed digest $DIGEST"
+              exit 1
+            fi
+          done
+
+          {
+            echo "### Published ${IMAGE}"
+            echo
+            echo "- Digest: \`${DIGEST}\`"
+            tags="$(printf ', `%s`' "${published[@]##*:}")"
+            echo "- Tags: ${tags:2}"
+            echo "- Signed by: \`${IDENTITY}\`"
+            echo
+            echo "Pin the GitOps manifest to:"
+            echo '```yaml'
+            echo "image: ${IMAGE}:${TAG}@${DIGEST}"
+            echo '```'
+            echo
+            echo '```bash'
+            echo "cosign verify ${IMAGE}@${DIGEST} \\"
+            echo "  --certificate-identity ${IDENTITY} \\"
+            echo "  --certificate-oidc-issuer ${OIDC_ISSUER} \\"
+            echo "  -a scan=passed"
+            echo
+            echo "gh attestation verify oci://${IMAGE}@${DIGEST} \\"
+            echo "  --repo ${GITHUB_REPOSITORY} \\"
+            echo "  --cert-identity ${IDENTITY} \\"
+            echo "  --predicate-type ${SCAN_PREDICATE}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

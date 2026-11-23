@@ -82,6 +82,18 @@
       ],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "k3s-io/k3s"
+    },
+    {
+      "description": "Update the zizmor image tag and digest together in validate-workflows.yaml",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github\\/workflows\\/validate-workflows\\.yaml$/"
+      ],
+      "matchStrings": [
+        "# zizmor-image: tracked by the dedicated regex manager in \\.github/renovate\\.json\\s+ZIZMOR_IMAGE: \"ghcr\\.io/zizmorcore/zizmor:(?<currentValue>[^@\"]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "depNameTemplate": "ghcr.io/zizmorcore/zizmor",
+      "datasourceTemplate": "docker"
     }
   ],
   "packageRules": [
@@ -230,6 +242,13 @@
       "matchDepNames": ["flux2", "kubectl"],
       "matchUpdateTypes": ["minor", "major"],
       "enabled": false
+    },
+    {
+      "description": "Pin every GitHub Action to a commit digest with a '# vX.Y.Z' comment: a tag can be moved to other code (76 of 77 aquasecurity/trivy-action tags were force-pushed to malicious commits in March 2026). zizmor's unpinned-uses audit (validate-workflows.yaml) fails on a tag ref.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": true
     },
     {
       "description": "k3s tags are v<kubernetes>+k3s<n>. Semver ignores the part after +, so a rebuild (+k3s2) would never be offered: order by Kubernetes version, then by the k3s build number. Release candidates do not match the pattern and are skipped. Never automerge: the PR only changes what a NEW node installs (the cloud-init snippet is in ignore_changes), so it is a reminder. Upgrade the running node first, re-pin the installer commit and checksum in modules/proxmox/main.tf in the same PR, then merge. A minor bump also needs kubectl in mise.toml (scripts/check-tool-versions.sh fails until then). Last rule on purpose, so that its labels and automerge setting win.",

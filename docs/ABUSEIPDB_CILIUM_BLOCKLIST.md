@@ -411,8 +411,10 @@ more so future restarts use the normal lookback.
 cd gitops/images/abuseipdb-sync && go vet ./... && go test ./...
 # a Go/Dockerfile change needs a new APP_VERSION or IMAGE_REVISION in the
 # Dockerfile (the workflow fails otherwise); push to main triggers
-# .github/workflows/build-abuseipdb-sync.yaml
+# .github/workflows/build-abuseipdb-sync.yaml, which publishes a signed and
+# attested image through .github/workflows/publish-image.yaml
 # then pin the `<tag>@<digest>` from the workflow summary in deployment.yaml
+# (Renovate opens that PR too); Kyverno's verify-homelab-images checks the signature
 ```
 
 ### Stage 2 — deploy the synchronizer (Cloudflare edge sink activates)
