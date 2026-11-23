@@ -9,6 +9,11 @@ pass (`automerge` in `.github/renovate.json`; Flux then rolls them out). Minor
 and major updates, and Gateway API bumps (which need a manual CRD bundle swap),
 stay manual.
 
+A k3s update PR (`k3s_version` in `variables.tf`, with the copies in
+`terraform.tfvars.example` and `README.md`) is a reminder, not a rollout: it only changes
+what a new node installs. Upgrade the running node first, re-pin the installer commit and
+checksum in `modules/proxmox/main.tf` in the same PR, then merge. It is never automerged.
+
 CI validates `.github/renovate.json` with `renovate-config-validator --strict`
 (`.github/workflows/validate-renovate.yaml`), using the Renovate version pinned in
 `gitops/platform/renovate/job/renovate-job.yaml`.

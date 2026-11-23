@@ -22,7 +22,7 @@ Bring-up order: `README.md` (provisioning) → `gitops/FLUX_BOOTSTRAP.md` (clust
 ### 2.1 Provisioning Stack
 | Component | Tool / Version | Purpose |
 |-----------|---------------|---------|
-| IaC Engine | OpenTofu (minimum ≥ 1.8.0) | VM provisioning & kubeconfig fetch |
+| IaC Engine | OpenTofu (minimum ≥ 1.12.0) | VM provisioning & kubeconfig fetch |
 | Provider | `bpg/proxmox` v0.122.0 | Proxmox VE API integration |
 | Cloud Image | Ubuntu 26.04 (Resolute), release-20261108, SHA-256 pinned (the VM ignores later re-pins: `disk[0].file_id` is in `ignore_changes`) | k3s host OS |
 | k3s | v1.37.2+k3s1 | Kubernetes distribution |

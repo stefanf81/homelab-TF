@@ -67,8 +67,9 @@ kubeconfig: ensure-cache provision
 
 # Installs Gateway API CRDs, Cilium, CoreDNS and Flux Operator from the exact
 # GitOps chart versions and cluster-vars-substituted values so Flux adopts them.
+# $(CURDIR), not $(PWD): with `make -C <dir>` PWD is still the caller's directory.
 bootstrap-foundation:
-	KUBECONFIG="$${KUBECONFIG:-$(PWD)/kubeconfig.yaml}" scripts/bootstrap-foundation.sh
+	KUBECONFIG="$${KUBECONFIG:-$(CURDIR)/kubeconfig.yaml}" scripts/bootstrap-foundation.sh
 
 all: init apply
 

@@ -61,6 +61,29 @@
       ]
     },
     {
+      "description": "The k3s release that a new node installs: the k3s_version default in variables.tf, marked with `# renovate: datasource=... depName=...` on the line above.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^variables\\.tf$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+default\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+      ]
+    },
+    {
+      "description": "Copies of k3s_version in the example files, so they move in the same PR as variables.tf.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^terraform\\.tfvars\\.example$/",
+        "/^README\\.md$/"
+      ],
+      "matchStrings": [
+        "k3s_version\\s*=\\s*\"(?<currentValue>v[^\"]+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "k3s-io/k3s"
+    },
+    {
       "description": "Update the zizmor image tag and digest together in validate-workflows.yaml",
       "customType": "regex",
       "managerFilePatterns": [
@@ -100,9 +123,9 @@
       "allowedVersions": "<1.7.0"
     },
     {
-      "description": "Group general patch updates together (Gateway API stays separate: its PR needs a manual CRD bundle swap and must not block the group's automerge)",
+      "description": "Group general patch updates together (Gateway API stays separate: its PR needs a manual CRD bundle swap and must not block the group's automerge; k3s stays separate: its PR waits for the node upgrade)",
       "matchUpdateTypes": ["patch"],
-      "matchPackageNames": ["!kubernetes-sigs/gateway-api"],
+      "matchPackageNames": ["!kubernetes-sigs/gateway-api", "!k3s-io/k3s"],
       "groupName": "patch updates"
     },
     {
@@ -226,6 +249,13 @@
         "github-actions"
       ],
       "pinDigests": true
+    },
+    {
+      "description": "k3s tags are v<kubernetes>+k3s<n>. Semver ignores the part after +, so a rebuild (+k3s2) would never be offered: order by Kubernetes version, then by the k3s build number. Release candidates do not match the pattern and are skipped. Never automerge: the PR only changes what a NEW node installs (the cloud-init snippet is in ignore_changes), so it is a reminder. Upgrade the running node first, re-pin the installer commit and checksum in modules/proxmox/main.tf in the same PR, then merge. A minor bump also needs kubectl in mise.toml (scripts/check-tool-versions.sh fails until then). Last rule on purpose, so that its labels and automerge setting win.",
+      "matchPackageNames": ["k3s-io/k3s"],
+      "versioning": "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)\\+k3s(?<build>\\d+)$",
+      "automerge": false,
+      "labels": ["dependencies", "k3s"]
     }
   ]
 }
