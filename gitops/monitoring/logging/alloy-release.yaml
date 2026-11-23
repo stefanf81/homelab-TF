@@ -77,6 +77,8 @@ spec:
           verbs: ["get", "list", "watch"]
       clusterRules: []
     alloy:
+      # No anonymous usage statistics to stats.grafana.org (adds --disable-reporting).
+      enableReporting: false
       # Persist the position database so a restart neither re-tails old lines nor
       # skips new ones (default is /tmp/alloy, which is lost on every restart).
       storagePath: /var/lib/alloy-data
