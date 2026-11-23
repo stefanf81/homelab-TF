@@ -274,8 +274,8 @@ VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 |----------|-------|
 | Image | `jaegertracing/jaeger:2.23.0` |
 | Replicas | 1 |
-| Memory Guard | `--set=extensions.jaeger_storage.backends.some_storage.memory.max_traces=5000` (`GOMEMLIMIT=200MiB`) |
-| Ports | Health: 13133, UI: 16686, OTLP-gRPC: 4317, OTLP-HTTP: 4318 |
+| Config | `jaeger-config.yaml` ConfigMap (`--config`): OTLP HTTP, UI, health only; in-memory store capped at `max_traces: 5000` (`GOMEMLIMIT=200MiB`) |
+| Ports | Health: 13133, UI: 16686, OTLP-HTTP: 4318 (nothing else listens) |
 | Resources | CPU: 25m request, no limit; Memory: 64–256 MiB |
 
 ### 5.7 Cloudflare DDNS (`gitops/apps/taskflow/cloudflare-ddns.yaml`)
@@ -290,7 +290,7 @@ Cloudflare API token.
 |--------|-------------|---------|----------|
 | postgres-db | `app: taskflow-backend`, `app: postgres-exporter` | 5432 | TCP |
 | redis | `app: taskflow-backend`, `app: redis-exporter` | 6379 | TCP |
-| jaeger | `app: taskflow-backend` | 4317, 4318 (OTLP only; UI 16686 is port-forward-only) | TCP |
+| jaeger | `app: taskflow-backend` | 4318 (OTLP HTTP only; UI 16686 is port-forward-only) | TCP |
 
 ### 5.9 Gateway & Routing (`gateway.yaml` + `httproute.yaml`)
 - **Gateway**: `taskflow-gateway`, class `cilium`, ports 80/443, allowed routes restricted to
