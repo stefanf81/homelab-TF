@@ -135,6 +135,51 @@ class ObservabilityConfigTest < Minitest::Test
     assert_equal ['https://cosign.sigstore.dev/attestation/vuln/v1'], scan.fetch('attestations').map { |a| a.dig('intoto', 'type') }
   end
 
+  # The images built here are signed by the reusable publish workflow (its
+  # certificate names publish-image.yaml, not the calling build workflow).
+  HOMELAB_SIGNER = {
+    'subject' => 'https://github.com/stefanf81/homelab-TF/.github/workflows/publish-image.yaml@refs/heads/main',
+    'issuer' => 'https://token.actions.githubusercontent.com'
+  }.freeze
+  HOMELAB_IMAGE_GLOBS = %w[taskflow-caddy-coraza abuseipdb-sync].flat_map do |image|
+    ["ghcr.io/stefanf81/#{image}:*", "ghcr.io/stefanf81/#{image}@*"]
+  end.freeze
+
+  def test_homelab_image_policy_pins_the_publish_workflow
+    policy = YAML.load_file(File.join(ROOT, 'gitops/apps/kyverno-policies/verify-homelab-images.yaml'))
+    spec = policy.fetch('spec')
+    assert_equal 'verify-homelab-images', policy.dig('metadata', 'name')
+    assert_equal HOMELAB_IMAGE_GLOBS, spec.fetch('matchImageReferences').map { |m| m.fetch('glob') }
+    selector = spec.dig('matchConstraints', 'namespaceSelector', 'matchExpressions')
+    assert_equal [{ 'key' => 'kubernetes.io/metadata.name', 'operator' => 'In', 'values' => %w[taskflow abuseipdb] }], selector
+    (spec['validationConfigurations'] || {}).each_value { |enabled| refute_equal false, enabled }
+    spec.fetch('attestors').each do |attestor|
+      keyless = attestor.dig('cosign', 'keyless')
+      assert_equal [HOMELAB_SIGNER], keyless.fetch('identities'), attestor['name']
+      assert_equal ['identities'], keyless.keys, "#{attestor['name']}: no extra roots"
+      refute attestor.dig('cosign', 'ctlog', 'insecureIgnoreTlog')
+      refute attestor.dig('cosign', 'ctlog', 'insecureIgnoreSCT')
+    end
+    scanned = spec.fetch('attestors').find { |a| a['name'] == 'scannedRelease' }
+    assert_equal({ 'scan' => 'passed' }, scanned.dig('cosign', 'annotations'))
+    assert_equal %w[https://slsa.dev/provenance/v1 https://cosign.sigstore.dev/attestation/vuln/v1],
+                 spec.fetch('attestations').map { |a| a.dig('intoto', 'type') }
+
+    # The identity only holds while both build workflows call this file locally
+    # (same repository, same ref) and its promote job alone can sign.
+    %w[build-taskflow-caddy-coraza build-abuseipdb-sync].each do |workflow|
+      text = File.read(File.join(ROOT, ".github/workflows/#{workflow}.yaml"))
+      assert_includes text, "    uses: ./.github/workflows/publish-image.yaml\n", workflow
+      refute_match(/^\s+(id-token|attestations): write/, text.split("\n  publish:\n").first, "#{workflow}: only the publish job may sign")
+    end
+    publish = YAML.load_file(File.join(ROOT, '.github/workflows/publish-image.yaml'))
+    assert_equal({}, publish['permissions'])
+    assert_equal 'none', publish['cache-mode']
+    signers = publish.fetch('jobs').select { |_, job| job.dig('permissions', 'id-token') == 'write' }.keys
+    assert_equal ['promote'], signers
+    assert_equal({ 'contents' => 'read', 'packages' => 'read' }, publish.dig('jobs', 'scan', 'permissions'))
+  end
+
   def documents(path)
     YAML.load_stream(File.read(File.join(ROOT, path))).compact.select { |d| d.is_a?(Hash) }
   end

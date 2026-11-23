@@ -15,7 +15,7 @@ ARG RATE_LIMIT_VERSION=5625512f24f6f59d6f64fb3aafe5eecff0b286db
 # requires this version or newer itself.
 # renovate: datasource=go depName=golang.org/x/net
 ARG XNET_VERSION=v0.63.0
-ARG IMAGE_REVISION=r13
+ARG IMAGE_REVISION=r14
 
 FROM caddy:${CADDY_VERSION}-builder-alpine AS builder
 
