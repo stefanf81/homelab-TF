@@ -467,6 +467,7 @@ homelab-TF/
 │   │       ├── cilium/l2announcement-policy.yaml  # eth* + enp* + ens* interfaces
 │   │       ├── cilium/abuseipdb-ingress-deny.yaml # reserved:ingress deny via cidrGroupRef
 │   │       ├── cilium/hubble-isolation.yaml # kube-system Hubble UI/Relay pod-network isolation
+│   │       ├── cilium/controller-namespaces-isolation.yaml # ingress default-deny: kyverno, cert-manager, csi-proxmox
 │   │       ├── priorityclasses.yaml         # PriorityClass/taskflow-critical
 │   │       ├── letsencrypt-http01-issuers.yaml # Let's Encrypt ClusterIssuers
 │   │       └── gatewayclass.yaml            # Cilium GatewayClass
