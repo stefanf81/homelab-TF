@@ -76,6 +76,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     do_GET = _forward
     do_POST = _forward
+    do_PUT = _forward
+    do_PATCH = _forward
+    do_DELETE = _forward
 
     def log_message(self, *args) -> None:  # keep test output quiet
         pass

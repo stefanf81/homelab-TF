@@ -82,6 +82,9 @@ begin
   security = ini[/^\[security\]\n(.*?)(?=^\[|\z)/m, 1].to_s
   assert(security.match?(/^cookie_secure = true$/), "Grafana HTTPS cookies must be Secure")
   assert(security.match?(/^cookie_samesite = lax$/), "GitHub OAuth requires a compatible SameSite policy")
+  metrics = ini[/^\[metrics\]\n(.*?)(?=^\[|\z)/m, 1].to_s
+  assert(metrics.match?(/^enabled = false$/), "Grafana /metrics is reachable through the public HTTPRoute; keep it off (or authenticated)")
+  assert(stack.none? { |d| d["kind"] == "VMServiceScrape" && d.dig("metadata", "name") == "#{name}-grafana" }, "do not scrape a disabled Grafana /metrics endpoint")
   puts "  OK rendered stack: rule evaluator/write path, persistent bounded queue, SQLite rollout, secure cookies"
 rescue StandardError => error
   warn error.message

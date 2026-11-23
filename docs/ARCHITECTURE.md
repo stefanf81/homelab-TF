@@ -379,7 +379,7 @@ Loki **30d**; app scrapes run every 30–60s. Node sizing: `docs/PERFORMANCE.md`
 | IP reputation denylist | AbuseIPDB feed enforced at two layers by `abuseipdb-sync`: Cloudflare edge (IP list + zone WAF block rule — sees real client IPs behind the proxy) and Cilium (`CiliumCIDRGroup` + cluster-wide deny on `reserved:ingress` — direct-to-origin traffic). Caddy/Coraza are untouched. See `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md` |
 | Pod security | Every TaskFlow container runs `runAsNonRoot`, `allowPrivilegeEscalation=false`, drops ALL capabilities and has a read-only root filesystem (only in-memory Jaeger omits it); writable paths are explicit `emptyDir`/PVC mounts. UIDs: backend, frontend, Redis, Jaeger and exporters `10001`, WAFs `65532`, DDNS `1000`, Postgres the image-native `70` (its volume ownership depends on it). |
 | Jaeger UI | No Gateway route and no ingress rule for `16686`; port-forward only, because it has no auth. |
-| Secrets encryption | All nine `*-secrets.yaml` files are SOPS/age-encrypted and decrypted by Flux at apply time (`docs/SOPS.md`); `key.txt` is ignored by Git |
+| Secrets encryption | All nine `*-secrets.yaml` files are SOPS/age-encrypted and decrypted by Flux at apply time (`docs/SOPS.md`); the private key is kept outside the repository, and key files are ignored by Git |
 | Image pinning | Flux image automation rewrites `:latest` to `@sha256:<digest>` — immutable references in Git |
 | Grafana & VM UIs | Grafana UI is exposed securely on the Gateway at `grafana.jokelab.dev` (protected by GitHub OAuth with SOPS-encrypted credentials). VictoriaMetrics (VMSingle) is kept strictly internal to protect operational metrics, accessible privately via port-forwarding. |
 | In-cluster scrape only | VictoriaMetrics scrapes taskflow services over the cluster network (plain HTTP, no auth). The backend must therefore permit `GET /actuator/prometheus` unauthenticated (see `docs/BACKEND_INTEGRATION_CONTEXT.md` §2.3). |
@@ -401,7 +401,6 @@ homelab-TF/
 ├── .gitignore                       # State files, secrets, kubeconfig, keys
 ├── .sops.yaml                       # SOPS age encryption rules
 ├── kubeconfig.yaml                  # (ignored) k3s cluster access
-├── key.txt                          # (ignored) SOPS age private key
 ├── scripts/                         # bootstrap-foundation.sh, validate-gitops.sh, CI check scripts
 ├── .github/                         # CI workflows, Renovate config
 │
@@ -554,7 +553,7 @@ Make targets are listed in `README.md`; the Flux reconcile order is in `gitops/F
 | Pause either denylist sink | `abuseipdb-ingress-deny` file (Cilium) / `CLOUDFLARE_SYNC_ENABLED` (edge) | see rollback in `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md` |
 | Rotate the AbuseIPDB key / Cloudflare token | `sops edit gitops/platform/abuseipdb/abuseipdb-secrets.yaml` | Flux re-decrypts on next sync |
 | Bump Cilium/Proxmox CSI/cert-manager version | `ref.tag` + `ref.digest` in the relevant `repository.yaml` | Flux upgrades (cert-manager/kyverno/renovate use `crds: Skip`; Cilium/Falco use `CreateReplace`) |
-| Change VM size/network | `terraform.tfvars` + `variables.tf` | `make apply` (some changes force a VM recreate, which `prevent_destroy` refuses until lifted; a recreate re-fetches the kubeconfig). Cloud-init is disabled after the first boot: a larger `disk_size` still needs `growpart`/`resize2fs` on the node, and `ip_address` is fixed for the node's lifetime |
+| Change VM size/network | `terraform.tfvars` + `variables.tf` | `make apply` (some changes force a VM recreate, which `prevent_destroy` refuses until lifted; a recreate re-fetches the kubeconfig). `cpu_cores` and `memory_size` are stored as pending (`reboot_after_update = false`) and take effect at the next `qm reboot <vm_id>` on the Proxmox host, not at a reboot from inside the guest (`qm pending <vm_id>` lists what is waiting). Cloud-init is disabled after the first boot: a larger `disk_size` still needs `growpart`/`resize2fs` on the node, and `ip_address` is fixed for the node's lifetime |
 | Add a hostname to the TLS cert | `dnsNames` in `gitops/apps/taskflow/certificate.yaml` (the Gateway's HTTPS listener already serves `taskflow-tls-secret`) | cert-manager reissues via the `letsencrypt-http01-production` ClusterIssuer (HTTP-01 needs public DNS for the name first) |
 | Change VictoriaMetrics retention / storage | `gitops/monitoring/platform/release.yaml` (`vmsingle.spec.retentionPeriod`, `vmsingle.spec.storage`) | `flux reconcile kustomization monitoring -n flux-system` |
 | Rotate the Grafana admin password | `sops edit gitops/monitoring/platform/grafana-secrets.yaml` | Flux re-decrypts on next sync |

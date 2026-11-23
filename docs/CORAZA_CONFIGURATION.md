@@ -67,6 +67,16 @@ SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=2"
 
 Raise one level at a time, observe detections, add exclusions, then raise again.
 
+## Allowed Methods
+
+CRS rule 911100 blocks every method outside `tx.allowed_methods` (default `GET HEAD POST OPTIONS`); it is a
+critical rule, so one match reaches the blocking threshold. The backend WAF sets
+`GET HEAD POST PUT DELETE OPTIONS` (SecAction `1000003`, directly after `SecRuleEngine On` in its
+`directives` block; not shown in the frontend load order above) because the API uses `PUT` and `DELETE`; the
+frontend WAF keeps the default. When the backend gains an endpoint with another method (for example
+`PATCH`), add it there, or the WAF answers it with 403. The image test suite sends `PUT`, `DELETE` and
+`PATCH` through the backend WAF.
+
 ## Audit Log Parts
 
 Configured by `SecAuditLogParts`. Each letter adds a section:

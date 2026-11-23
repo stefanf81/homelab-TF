@@ -129,6 +129,13 @@ data:
                     Include /etc/coraza/backend-exclusions.conf
 
                     SecRuleEngine On
+                    # The API uses PUT and DELETE (reschedule and cancel an
+                    # appointment, edit the catalog, barbers and schedules). The
+                    # CRS default is GET HEAD POST OPTIONS, and rule 911100 alone
+                    # reaches the blocking threshold, so without this every PUT
+                    # and DELETE was answered 403 by the WAF. No PATCH: the
+                    # backend has no such endpoint.
+                    SecAction "id:1000003,phase:1,pass,nolog,setvar:'tx.allowed_methods=GET HEAD POST PUT DELETE OPTIONS'"
                     SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=2"
 
                     SecRequestBodyAccess On
@@ -169,6 +176,19 @@ data:
   backend-exclusions.conf: |
     # No backend CRS exclusions are configured initially.
     # Add only request-scoped exclusions after observing a legitimate false positive.
+
+    # Not an exclusion, but it has to load before the CRS like one: Coraza 3.8
+    # keeps the first 1000 arguments per source (query string, body) and drops
+    # the rest without a word. The @coraza.conf-recommended embedded in the
+    # connector predates that limit and has no rule for it, so a payload behind
+    # 1000 filler arguments was never shown to the CRS rules. Reject such
+    # requests, as rules 200004/200005 of the current coraza.conf-recommended do.
+    # Remove both once the Caddyfile includes that file from the image
+    # (/usr/share/coraza/coraza.conf-recommended carries them).
+    SecRule ARGUMENTS_LIMIT_REACHED "@eq 1" \
+        "id:1000004,phase:1,t:none,log,deny,status:400,msg:'Argument limit reached; request rejected (GET/PATH args)'"
+    SecRule ARGUMENTS_LIMIT_REACHED "@eq 1" \
+        "id:1000005,phase:2,t:none,log,deny,status:400,msg:'Argument limit reached; request rejected (POST args)'"
   rate-limit.conf: |
     # API zone: at most 300 requests per 60s per real client IP, IPv6 grouped
     # per /64. A long-lived SSE connection counts as one event, so

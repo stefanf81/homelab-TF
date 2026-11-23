@@ -25,7 +25,7 @@ creation_rules:
   (`ENC[AES256_GCM,...]`). `apiVersion`, `kind` and `metadata` stay readable, so the files
   can be reviewed in Git and schema-checked offline (`kubeconform`).
 * **`age`**: the public recipient. `sops` encrypts for it automatically; only the matching
-  private key (`key.txt`, never committed, ignored by `.gitignore`) can decrypt.
+  private key (never committed, kept outside the repository, see §2) can decrypt.
 
 ### Encrypted files
 
@@ -83,12 +83,22 @@ merge:
 (`brew install sops age`) and the
 [release binaries](https://github.com/getsops/sops/releases) also work.
 
-Point SOPS at the private key before decrypting or editing (add it to your shell profile
-with an absolute path):
+Keep the private key outside the repository, so that a copy, backup or sync of the working
+tree never contains it, and point SOPS at it (add the export to your shell profile):
 
 ```bash
-export SOPS_AGE_KEY_FILE=$PWD/key.txt
+export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"
 ```
+
+A key that still lives in the repository root as `key.txt` (the earlier layout) keeps
+working and is ignored by Git; move it once:
+
+```bash
+mkdir -p "$(dirname "$SOPS_AGE_KEY_FILE")" && chmod 700 "$(dirname "$SOPS_AGE_KEY_FILE")"
+mv key.txt "$SOPS_AGE_KEY_FILE" && chmod 600 "$SOPS_AGE_KEY_FILE"
+```
+
+A new environment generates its key in the same place: `age-keygen -o "$SOPS_AGE_KEY_FILE"`.
 
 ---
 
@@ -121,20 +131,39 @@ echo '*-secrets.yaml diff=sops' >> .git/info/attributes
 
 ## 4. Key rotation and new environments
 
-**Rotate the key** (old key still available):
+**Rotate the key** (old key still available). The key file may hold several keys, one
+per line; SOPS and Flux try each of them. That makes the order safe: the cluster can
+decrypt both the old and the new files while the change travels through Git.
 
 ```bash
-age-keygen -o key.new.txt                 # prints "Public key: age1..."
-# 1. put the new public key into .sops.yaml (creation_rules[0].age)
-# 2. re-wrap every file for the new recipient, with the OLD key still in SOPS_AGE_KEY_FILE:
-for f in $(git ls-files '*-secrets.yaml'); do sops updatekeys --yes "$f"; done
-# 3. replace the in-cluster key, then reconcile
+# 1. append a new key to the key file (never into the repository); prints "Public key: age1..."
+age-keygen >> "$SOPS_AGE_KEY_FILE"
+
+# 2. give Flux both keys before any file changes
 kubectl -n flux-system create secret generic sops-age \
-  --from-file=age.agekey=key.new.txt --dry-run=client -o yaml | kubectl apply -f -
+  --from-file=age.agekey="$SOPS_AGE_KEY_FILE" --dry-run=client -o yaml | kubectl apply -f -
+
+# 3. put the new public key into .sops.yaml (creation_rules[0].age), then re-wrap every
+#    file for it and give each file a new data key
+for f in $(git ls-files '*-secrets.yaml'); do sops updatekeys --yes "$f" && sops rotate -i "$f"; done
+ruby scripts/check-sops-secrets.rb          # every file is encrypted for the new recipient
+
+# 4. commit, push, and wait until every Kustomization is Ready again
+flux get kustomizations -A
+
+# 5. delete the old key (its three lines) from the key file, then repeat step 2 so the
+#    cluster holds only the new key; update the offline copy in the password manager
+age-keygen -y "$SOPS_AGE_KEY_FILE"          # prints exactly one public key: the new one
 ```
 
-`sops -r` alone is not enough: it rotates the data key for the file's *existing*
-recipients.
+Both commands in step 3 are needed. `sops updatekeys` changes who can unwrap the file's
+data key but keeps that data key; `sops rotate` creates a new data key but keeps the
+recipients. Without `rotate`, someone who held the old key could still decrypt later
+versions of a file with the data key they already extracted.
+
+Rotation does not protect what is already in the Git history: every earlier commit stays
+readable with the old key. After a suspected leak, change the secret values themselves as
+well (tokens, passwords, the JWT key).
 
 **New environment without the old key:** the existing files cannot be decrypted. Put the
 new public key into `.sops.yaml`, write your own values into each `*-secrets.yaml` as plain
@@ -154,7 +183,7 @@ manager.
 
 | Error | Cause | Fix |
 |---|---|---|
-| `failed to get the data key` / no identity matched | SOPS cannot find the private key, or it is the wrong one | `export SOPS_AGE_KEY_FILE=...`; check that `age-keygen -y key.txt` prints the `recipient:` in the file's `sops:` block |
+| `failed to get the data key` / no identity matched | SOPS cannot find the private key, or it is the wrong one | `export SOPS_AGE_KEY_FILE=...`; check that `age-keygen -y "$SOPS_AGE_KEY_FILE"` prints the `recipient:` in the file's `sops:` block |
 | `MAC mismatch` | The encrypted file was changed outside `sops` | Revert to the last committed version and edit only with `sops <file>` |
 
 ### A Flux Kustomization fails on an encrypted file
@@ -181,7 +210,7 @@ kubectl -n flux-system get secret sops-age -o name
 
 # Is the file encrypted for the key you have?
 grep -A8 '^sops:' <file> | grep recipient
-age-keygen -y key.txt
+age-keygen -y "$SOPS_AGE_KEY_FILE"
 
 # After fixing: reconcile and check the Secret holds real values, not ENC[...]
 flux reconcile kustomization <name> -n flux-system --with-source
