@@ -30,6 +30,14 @@ the script.
 The `validate-waf-dashboard-metrics.py`, `validate-alloy-metrics.sh` and Loki query checks start
 disposable containers and need Docker. `verify-dashboards-live.py` queries a running cluster.
 
+`validate-alloy-metrics.sh` also feeds the TaskFlow backend's console output through the
+shipped backend pipeline: `fixtures/taskflow-backend-*.txt` are real captures (prod profile,
+Spring Boot 4.2; paths and JVM options sanitised) of the plain pattern and of the ECS JSON
+the prod profile writes, each a normal run and a failed start with stack traces, plus a
+generated stream that mixes both. Every record must reach Loki as exactly one entry (stack
+traces reassembled, JSON lines never glued onto a previous record) and Loki must detect the
+ECS records' nested `log.level`. Recapture them when the backend's log format changes.
+
 `validate-alloy-metrics.sh` also feeds synthetic platform logs through the shipped
 Alloy pipeline. Only the exact legacy Kyverno client-go INFO warnings are dropped
 in the four controller streams; unrelated warnings/errors, changed messages,
