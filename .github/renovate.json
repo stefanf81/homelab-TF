@@ -101,6 +101,12 @@
       "ignoreTests": false
     },
     {
+      "description": "OWASP CRS and the Coraza base config shipped as files in the WAF image (CRS_VERSION / CORAZA_CONF_VERSION in its Dockerfile): one PR of their own instead of the patch group, so a rule-set change can be read against its release notes (coreruleset.org) and reverted by itself. Never automerged, although CRS 4.25 LTS releases are patch updates: the WAF blocks at PL2, and a new false positive on a legitimate request is an outage for that feature. CI shows it (tests/benign-corpus.py in run-tests.sh pins the answer to every legitimate request the app sends), but a person decides whether a changed answer is a fix or a regression. Must stay below the automerge rule above.",
+      "matchPackageNames": ["github.com/corazawaf/coraza-coreruleset/**"],
+      "groupName": "WAF rule set",
+      "automerge": false
+    },
+    {
       "description": "Never automerge Gateway API bumps: the update only changes the version comment in gateway-api/kustomization.yaml, while the vendored standard-install.yaml (in ignorePaths) has to be replaced by hand from the matching release in the same PR.",
       "matchPackageNames": ["kubernetes-sigs/gateway-api"],
       "automerge": false

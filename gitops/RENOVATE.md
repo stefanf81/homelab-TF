@@ -6,8 +6,10 @@ Europe/Brussels, then runs a single hardened Renovate executor for that
 repository. Every update is a pull request; Renovate never pushes to `main`
 directly. Digest and patch PRs are merged automatically once their CI checks
 pass (`automerge` in `.github/renovate.json`; Flux then rolls them out). Minor
-and major updates, and Gateway API bumps (which need a manual CRD bundle swap),
-stay manual.
+and major updates, Gateway API bumps (which need a manual CRD bundle swap) and the
+WAF rule set (OWASP CRS and the Coraza base config in the WAF image, also its
+patch releases: a new false positive blocks real users; see
+`docs/CORAZA_CONFIGURATION.md`, "False-positive regression test") stay manual.
 
 CI validates `.github/renovate.json` with `renovate-config-validator --strict`
 (`.github/workflows/validate-renovate.yaml`), using the Renovate version pinned in

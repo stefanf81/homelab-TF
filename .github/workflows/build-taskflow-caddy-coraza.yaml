@@ -90,12 +90,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          CADDY_VER=$(grep '^ARG CADDY_VERSION=' gitops/images/taskflow-caddy-coraza/Dockerfile | cut -d= -f2 | tr -d ' "')
+          # The Caddy version is the builder image's tag. The pattern also requires
+          # the digest pin: without it nothing is extracted and the check below fails.
+          CADDY_VER=$(sed -n 's/^FROM caddy:\([0-9][0-9.]*\)-builder-alpine@sha256:[0-9a-f]\{64\} AS builder$/\1/p' gitops/images/taskflow-caddy-coraza/Dockerfile)
           CORAZA_VER=$(grep '^ARG CORAZA_CADDY_VERSION=' gitops/images/taskflow-caddy-coraza/Dockerfile | cut -d= -f2 | tr -d ' "' | sed 's/^v//')
           REV=$(grep '^ARG IMAGE_REVISION=' gitops/images/taskflow-caddy-coraza/Dockerfile | cut -d= -f2 | tr -d ' "')
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
 
-          [[ "$CADDY_VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid Caddy version: $CADDY_VER" >&2; exit 1; }
+          [[ "$CADDY_VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Cannot read the Caddy version from a digest-pinned 'FROM caddy:<version>-builder-alpine@sha256:... AS builder' line: '$CADDY_VER'" >&2; exit 1; }
+          head -n 1 gitops/images/taskflow-caddy-coraza/Dockerfile | grep -Eq '^# syntax=docker/dockerfile:[0-9.]+@sha256:[0-9a-f]{64}$' \
+            || { echo "The '# syntax=' line must pin docker/dockerfile by tag and digest" >&2; exit 1; }
           [[ "$CORAZA_VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid Coraza version: $CORAZA_VER" >&2; exit 1; }
           [[ "$REV" =~ ^r[0-9]+$ ]] || { echo "Invalid image revision: $REV" >&2; exit 1; }
 

@@ -110,7 +110,7 @@ Deployments pin `tag@digest`. The build, pin and manual-fallback procedures are 
 
 The Dockerfile uses a multi-stage build:
 
-1. **Builder stage**: Uses `caddy:2.11.9-builder-alpine` to compile Caddy with the Coraza WAF plugin and the rate-limit plugin via `xcaddy` (`http.handlers.waf`, `http.handlers.rate_limit`)
+1. **Builder stage**: Uses `caddy:2.11.9-builder-alpine` (pinned by digest, from r14; the `# syntax=` frontend too) to compile Caddy with the Coraza WAF plugin and the rate-limit plugin via `xcaddy` (`http.handlers.waf`, `http.handlers.rate_limit`)
 2. **Runtime stage** (from r12): Based on `gcr.io/distroless/static-debian13:nonroot`, pinned by digest; copies the compiled static binary. The image has CA certificates, tzdata and `/etc/mime.types`, but no shell, package manager or `curl` (r11 and earlier were based on `caddy:<version>-alpine`)
 3. **Key steps**:
     - `XCADDY_SETCAP=0` in the builder — xcaddy sets no file capability on the binary (required for `allowPrivilegeEscalation: false`); the build fails if `getcap` finds one
