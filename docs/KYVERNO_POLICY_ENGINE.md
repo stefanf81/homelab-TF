@@ -64,12 +64,12 @@ gitops/
 │       ├── route.yaml                    # HTTPRoute -> policy-reporter-ui-oauth2-proxy:80 on taskflow-gateway (:443)
 │       └── kustomization.yaml
 ├── apps/
-│   └── kyverno-policies/            # CEL policies (fail-open)
+│   └── kyverno-policies/            # CEL policies (Deny, fail-open)
 │       ├── kustomization.yaml
-│       ├── require-common-labels.yaml        # ValidatingPolicy, Deny
-│       ├── disallow-latest-tag.yaml          # ValidatingPolicy, Deny
-│       ├── verify-taskflow-images.yaml       # ImageValidatingPolicy, Audit -> Deny
-│       └── require-taskflow-image-scan.yaml  # ImageValidatingPolicy, Audit -> Deny
+│       ├── require-common-labels.yaml        # ValidatingPolicy
+│       ├── disallow-latest-tag.yaml          # ValidatingPolicy
+│       ├── verify-taskflow-images.yaml       # ImageValidatingPolicy
+│       └── require-taskflow-image-scan.yaml  # ImageValidatingPolicy
 └── clusters/taskflow/
     ├── infra-controllers.yaml       # reconciles infrastructure/controllers (incl. kyverno)
     ├── kyverno-policies.yaml        # reconciles apps/kyverno-policies (dependsOn infra-controllers)
@@ -208,8 +208,8 @@ workflow has a different certificate identity and is refused.
 
 | Policy | Mode | Rule |
 |---|---|---|
-| `verify-taskflow-images` | Audit, then Deny | A cosign signature whose signed statement carries `scan=passed` (an image published with `skip_scan` is signed `scan=skipped`), and a SLSA build provenance attestation (`https://slsa.dev/provenance/v1`, from `actions/attest`). |
-| `require-taskflow-image-scan` | Audit until the first image with a scan attestation is deployed, then Deny | A Trivy scan report attested as `https://cosign.sigstore.dev/attestation/vuln/v1`, with `predicate.scanner.uri` from `pkg:github/aquasecurity/trivy@`. The publish workflow attests it only for a digest that passed its scan gate, after checking that the report names that digest and lists no vulnerabilities. |
+| `verify-taskflow-images` | Deny | A cosign signature whose signed statement carries `scan=passed` (an image published with `skip_scan` is signed `scan=skipped`), and a SLSA build provenance attestation (`https://slsa.dev/provenance/v1`, from `actions/attest`). |
+| `require-taskflow-image-scan` | Deny | A Trivy scan report attested as `https://cosign.sigstore.dev/attestation/vuln/v1`, with `predicate.scanner.uri` from `pkg:github/aquasecurity/trivy@`. The publish workflow attests it only for a digest that passed its scan gate, after checking that the report names that digest and lists no vulnerabilities. |
 
 Kyverno reads the signatures and attestations from GHCR (Sigstore bundles under the
 `sha256-<digest>` referrers tag, as GHCR has no referrers API) and the Sigstore trust root
@@ -225,11 +225,15 @@ Design choices:
   the hourly background scan reports anything that slipped through. Pod security belongs in Pod
   Security Admission namespace labels, which have no webhook to fail.
 - **Image verification is a security boundary.** Unlike the two hygiene rules, fail-open
-  means an unverified TaskFlow image runs while Kyverno is down. When switching the image
-  policies to `Deny`, decide whether to also set `failurePolicy: Fail`: the blast radius is
-  limited to TaskFlow Pods in `taskflow` (other Pods never reach these policies' rules), but
-  with one admission replica and no alerting a crash-looping Kyverno then stops TaskFlow Pods
-  from being recreated. The background scan reports unverified images either way.
+  means an unverified TaskFlow image runs while Kyverno is down. Both image policies are
+  `Deny` with `failurePolicy: Ignore` for now. `Fail` would close that gap with a blast
+  radius limited to TaskFlow Pods in `taskflow` (other Pods never reach these policies'
+  rules), but with one admission replica and no alerting a crash-looping Kyverno then stops
+  TaskFlow Pods from being recreated. The background scan reports unverified images either way.
+- **Rolling TaskFlow back to an older image.** The image policies refuse every digest
+  published before their checks existed: no signature before 2026-11-21, no scan attestation
+  before 2026-11-23 (publish run 45242783629). Set the policy that would refuse it back to
+  `[Audit]` first (§8, "Back out"), or re-publish the old commit with the current workflow.
 - **Autogen without ReplicaSets.** Validating the controllers makes a bad manifest fail at Flux
   apply time instead of producing a ReplicaSet that cannot create Pods. ReplicaSets are left out
   because the Deployment controller updates old revision-history ReplicaSets, which must not be
@@ -475,9 +479,9 @@ img=$(kubectl -n taskflow get deploy taskflow-backend -o jsonpath='{.spec.templa
 kubectl -n taskflow run kv-test --image="$img" --dry-run=server --command -- true   # allowed
 ```
 
-The scan policy can only move to `Deny` once the deployed backend and frontend digests were
-published by a workflow run that writes the scan attestation; before that its background
-results are `fail` by design.
+Both image policies went to `Deny` without an Audit phase, once the deployed backend and
+frontend digests (publish run 45242783629) had been checked on GHCR to carry the signature,
+the provenance and the scan attestation.
 
 **Back out:** set the policy back to `[Audit]` and push; nothing else needs undoing.
 

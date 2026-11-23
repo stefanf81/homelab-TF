@@ -15,10 +15,11 @@ metadata:
       scan gate, after checking that the report names that digest and lists no
       vulnerabilities.
 spec:
-  # Audit until the first image published with the scan attestation is deployed:
-  # the images deployed when this was written predate it and would fail. Then
-  # switch to [Deny] together with verify-taskflow-images (same failurePolicy).
-  validationActions: [Audit]
+  # Deny, like verify-taskflow-images: the deployed digests (publish run
+  # 45242783629, 2026-11-23, the first with this attestation) were checked on
+  # GHCR to carry it. Every earlier digest lacks it, so a rollback to one needs
+  # this set back to [Audit] first. Same failurePolicy as verify-taskflow-images.
+  validationActions: [Deny]
   failurePolicy: Ignore
   webhookConfiguration:
     timeoutSeconds: 20

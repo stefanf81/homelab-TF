@@ -15,12 +15,13 @@ metadata:
       signed keyless by
       .github/workflows/pushdockerimage.yml@refs/heads/main.
 spec:
-  # Audit first, as every policy here starts (docs/KYVERNO_POLICY_ENGINE.md §8).
-  # The images deployed when this was written (2026-11-21 publish run) carry
-  # both the signature and the provenance; switch to [Deny] once the background
-  # scan reports `pass` for the backend and frontend Pods, and at the same time
-  # decide on failurePolicy (see §5: this one is a security boundary).
-  validationActions: [Audit]
+  # Deny straight away rather than after an Audit phase (docs/
+  # KYVERNO_POLICY_ENGINE.md §8): the deployed digests (publish run
+  # 45242783629, 2026-11-23) were checked on GHCR to carry the signature with
+  # scan=passed and the provenance. Digests published before 2026-11-21 have
+  # neither, so a rollback to one needs this set back to [Audit] first.
+  # Fail open like the other policies; §5 has the trade-off of `Fail` here.
+  validationActions: [Deny]
   failurePolicy: Ignore
   # Verification reads the signature bundles from GHCR and the Sigstore trust
   # root from its TUF CDN; results are cached by Kyverno's image verify cache.
