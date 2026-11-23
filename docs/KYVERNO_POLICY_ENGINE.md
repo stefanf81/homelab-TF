@@ -69,7 +69,8 @@ gitops/
 │       ├── require-common-labels.yaml        # ValidatingPolicy
 │       ├── disallow-latest-tag.yaml          # ValidatingPolicy
 │       ├── verify-taskflow-images.yaml       # ImageValidatingPolicy
-│       └── require-taskflow-image-scan.yaml  # ImageValidatingPolicy
+│       ├── require-taskflow-image-scan.yaml  # ImageValidatingPolicy
+│       └── verify-homelab-images.yaml        # ImageValidatingPolicy (Audit until republished)
 └── clusters/taskflow/
     ├── infra-controllers.yaml       # reconciles infrastructure/controllers (incl. kyverno)
     ├── kyverno-policies.yaml        # reconciles apps/kyverno-policies (dependsOn infra-controllers)
@@ -216,6 +217,20 @@ Kyverno reads the signatures and attestations from GHCR (Sigstore bundles under 
 from its public TUF CDN; the `kyverno` namespace has no egress policy. Results are cached by
 Kyverno's image verify cache. `scripts/check-observability-config.rb` pins the signer
 identity, image globs and attestation types, so widening any of them fails CI.
+
+A third `ImageValidatingPolicy`, `verify-homelab-images`, checks the images this repository
+builds: `ghcr.io/stefanf81/taskflow-caddy-coraza` (both WAFs, `taskflow`) and
+`ghcr.io/stefanf81/abuseipdb-sync` (`abuseipdb`). Both build workflows publish through the
+reusable workflow `.github/workflows/publish-image.yaml` (push by digest, Trivy on that digest
+in a job that can only pull, then sign, attest, verify and tag in the only job that can sign).
+The certificate of a reusable workflow names the reusable workflow, so the one trusted signer
+is `https://github.com/stefanf81/homelab-TF/.github/workflows/publish-image.yaml@refs/heads/main`.
+It requires the cosign signature with `scan=passed`, the SLSA provenance and the Trivy scan
+attestation, the same three as the TaskFlow policies together. It is in `Audit` until both
+images have been republished (WAF `r14`, `abuseipdb-sync` `0.3.5-r10`) and their pins moved to
+the new digests; the earlier digests are unsigned. Then switch it to `Deny` (§8). The config
+check also asserts that both build workflows call `publish-image.yaml` locally and that only
+its `promote` job holds `id-token: write`.
 
 Design choices:
 

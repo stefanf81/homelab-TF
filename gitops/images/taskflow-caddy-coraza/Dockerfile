@@ -37,7 +37,7 @@ ARG CRS_VERSION=v4.25.2
 # coraza-caddy): the file may use directives a newer engine introduced.
 # renovate: datasource=go depName=github.com/corazawaf/coraza-coreruleset/coraza/v3
 ARG CORAZA_CONF_VERSION=v3.8.1
-ARG IMAGE_REVISION=r14
+ARG IMAGE_REVISION=r15
 
 # Tag and digest, like the runtime image below: the tag alone is rebuilt in
 # place (new Go patch release, Alpine updates), so the same Dockerfile could

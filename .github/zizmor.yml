@@ -1,0 +1,12 @@
+# zizmor configuration (https://docs.zizmor.sh/configuration/), read by
+# .github/workflows/validate-workflows.yaml. Exceptions for single lines are
+# inline `# zizmor: ignore[<audit>]` YAML comments with their reason (for a
+# finding inside a `run: |` block, on the `run:` line).
+rules:
+  # Suggests GitHub's `$/` self-repository syntax for local actions and
+  # reusable workflows. The `./` form resolves to the same files at the same
+  # ref, and the signing identity of publish-image.yaml (pinned by the Kyverno
+  # policy verify-homelab-images) has only been confirmed for `./`. Revisit with
+  # workflow lockfiles.
+  self-repository:
+    disable: true

@@ -35,8 +35,11 @@ CI lints the Dockerfile (hadolint), builds the image, runs the identity,
 rate-limit and false-positive regression suite in
 `gitops/images/taskflow-caddy-coraza/tests/` on every PR that
 touches the image directory or the workflow, fails on HIGH/CRITICAL Trivy findings
-that have a fix, and on `main` publishes the image with an SBOM attestation. It
-**skips the push** if the revision tag is already published (bump `IMAGE_REVISION`) so published
+that have a fix, and on `main` publishes through `.github/workflows/publish-image.yaml`:
+a cold build pushed by digest, Trivy again on that digest, then a cosign signature
+(`scan=passed`), SLSA provenance and the scan report as signed attestations, and only then the
+tags. Kyverno's `verify-homelab-images` checks all three at admission. Publication **is skipped**
+if the revision tag is already published (bump `IMAGE_REVISION`) so published
 tags are never overwritten. A changed Dockerfile recipe with an unchanged
 `IMAGE_REVISION` fails the run.
 

@@ -13,6 +13,7 @@ on:
       - 'gitops/images/taskflow-caddy-coraza/**'
       - '.github/workflows/build-taskflow-caddy-coraza.yaml'
       - '.github/actions/install-trivy/**'
+      - '.github/workflows/publish-image.yaml'
   workflow_dispatch:
     inputs:
       push:
@@ -25,22 +26,31 @@ on:
 env:
   TRIVY_VERSION: v0.76.2
 
+# Pull requests cancel superseded runs; a publication from main is never
+# cancelled halfway (the image would be pushed but not signed or tagged).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
-  build-and-push:
-    name: Build & Push Image
+  # Lint, tests and the Trivy gate on a local build, on pull requests and on
+  # main. No registry token: publication is the `publish` job below.
+  test:
+    name: Test Image
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     permissions:
       contents: read
-      packages: write
+    outputs:
+      image_tag: ${{ steps.versions.outputs.image_tag }}
+      extra_tags: ${{ steps.tags.outputs.extra_tags }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # the revision guard compares the Dockerfile across the push
           persist-credentials: false # git is only used read-only here
@@ -119,7 +129,7 @@ jobs:
           echo "  Repository owner: ${REPO_OWNER}"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # PyYAML from the distribution's signed archive instead of an unpinned
       # PyPI download, and before any registry login: nothing that runs before
@@ -133,7 +143,7 @@ jobs:
           python3 -c 'import yaml; print("PyYAML", yaml.__version__)'
 
       - name: Build image for tests (no push)
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: gitops/images/taskflow-caddy-coraza
           file: gitops/images/taskflow-caddy-coraza/Dockerfile
@@ -164,85 +174,43 @@ jobs:
           trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
             --exit-code 1 --no-progress taskflow-caddy-coraza:test
 
-      # Logged in only after the tests: the write token is never present while
-      # test code runs.
-      - name: Log in to GitHub Container Registry
-        if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Published revision tags are immutable: never silently overwrite one.
-      # If the tag already exists the image was published before (e.g. a manual
-      # publish, or a change that did not touch the build recipe), so the push is
-      # skipped. To publish a genuinely new image, bump IMAGE_REVISION.
-      - name: Check whether the revision tag is already published
-        id: tagcheck
-        if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
+      - name: Publication tags
+        id: tags
+        env:
+          SHA: ${{ github.sha }}
+          CADDY: ${{ steps.versions.outputs.caddy_version }}
+          CORAZA: ${{ steps.versions.outputs.coraza_version }}
         run: |
           set -euo pipefail
-          IMAGE="ghcr.io/${{ steps.versions.outputs.repo_owner }}/taskflow-caddy-coraza"
-          TAG="${{ steps.versions.outputs.image_tag }}"
-          # Only a definite "not found" means unpublished. Any other failure (auth,
-          # network, registry outage) used to read as "not published" and let the
-          # push overwrite an existing, supposedly immutable tag.
-          if err=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" 2>&1 >/dev/null); then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::${IMAGE}:${TAG} is already published; skipping push. Bump IMAGE_REVISION to publish a new revision."
-          elif printf '%s\n' "$err" | grep -qF "${IMAGE}:${TAG}: not found"; then
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::cannot tell whether ${IMAGE}:${TAG} is published: $err"
-            exit 1
-          fi
+          # The revision tag stays immutable; these move with every publication.
+          {
+            echo "extra_tags<<EOF"
+            echo "${CADDY}-coraza${CORAZA}"
+            echo "latest"
+            echo "${CADDY}-coraza${CORAZA}-${SHA::7}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        with:
-          images: ghcr.io/${{ steps.versions.outputs.repo_owner }}/taskflow-caddy-coraza
-          tags: |
-            type=raw,value=${{ steps.versions.outputs.image_tag }}
-            type=raw,value=${{ steps.versions.outputs.caddy_version }}-coraza${{ steps.versions.outputs.coraza_version }}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=sha,format=short,prefix=${{ steps.versions.outputs.caddy_version }}-coraza${{ steps.versions.outputs.coraza_version }}-
+  ###########################################################
+  # Publish from main: push by digest, scan, sign, attest, tag
+  ###########################################################
 
-      - name: Build and push container image
-        id: build
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: gitops/images/taskflow-caddy-coraza
-          file: gitops/images/taskflow-caddy-coraza/Dockerfile
-          platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) && steps.tagcheck.outputs.exists != 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # Same builder as the test build above, so its layers are already local;
-          # the test build exported them to the cache, no second export needed.
-          cache-from: type=gha,scope=taskflow-caddy-coraza
-          # SBOM attestation next to the default provenance.
-          sbom: true
-
-      - name: Generate build summary
-        run: |
-          DIGEST="${{ steps.build.outputs.digest }}"
-          IMAGE="ghcr.io/${{ steps.versions.outputs.repo_owner }}/taskflow-caddy-coraza"
-          TAG="${{ steps.versions.outputs.image_tag }}"
-          PUSHED="${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) && steps.tagcheck.outputs.exists != 'true' }}"
-
-          echo "### Container Image Build Succeeded 🚀" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Image**: \`${IMAGE}:${TAG}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Platform**: \`linux/amd64\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Pushed to GHCR**: \`${PUSHED}\`" >> "$GITHUB_STEP_SUMMARY"
-
-          if [ -n "$DIGEST" ]; then
-            echo "- **Digest**: \`${DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "#### GitOps Manifest Reference" >> "$GITHUB_STEP_SUMMARY"
-            echo "\`\`\`yaml" >> "$GITHUB_STEP_SUMMARY"
-            echo "image: ${IMAGE}:${TAG}@${DIGEST}" >> "$GITHUB_STEP_SUMMARY"
-            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
-          fi
+  # The reusable workflow holds the write, signing and attestation tokens, each
+  # in its own job; this job only grants the most any of them needs. Its
+  # signing identity is publish-image.yaml@refs/heads/main, which the Kyverno
+  # policy verify-homelab-images pins.
+  publish:
+    name: Publish
+    needs: test
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/publish-image.yaml
+    with:
+      image: taskflow-caddy-coraza
+      context: gitops/images/taskflow-caddy-coraza
+      tag: ${{ needs.test.outputs.image_tag }}
+      extra-tags: ${{ needs.test.outputs.extra_tags }}

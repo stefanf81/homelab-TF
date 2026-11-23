@@ -110,7 +110,7 @@ Deployments pin `tag@digest`. The build, pin and manual-fallback procedures are 
 
 The Dockerfile uses a multi-stage build:
 
-1. **Builder stage**: Uses `caddy:2.11.9-builder-alpine` (pinned by digest, from r14; the `# syntax=` frontend too) to compile Caddy with the Coraza WAF plugin and the rate-limit plugin via `xcaddy` (`http.handlers.waf`, `http.handlers.rate_limit`)
+1. **Builder stage**: Uses `caddy:2.11.9-builder-alpine` (pinned by digest, from r15; the `# syntax=` frontend too) to compile Caddy with the Coraza WAF plugin and the rate-limit plugin via `xcaddy` (`http.handlers.waf`, `http.handlers.rate_limit`)
 2. **Runtime stage** (from r12): Based on `gcr.io/distroless/static-debian13:nonroot`, pinned by digest; copies the compiled static binary. The image has CA certificates, tzdata and `/etc/mime.types`, but no shell, package manager or `curl` (r11 and earlier were based on `caddy:<version>-alpine`)
 3. **Key steps**:
     - `XCADDY_SETCAP=0` in the builder — xcaddy sets no file capability on the binary (required for `allowPrivilegeEscalation: false`); the build fails if `getcap` finds one
@@ -119,7 +119,7 @@ The Dockerfile uses a multi-stage build:
     - Exposes port 8080
     - Raises `golang.org/x/net` with `xcaddy --replace` (from r13) above the version Caddy and the plugins require, for CVE-2026-78661; drop it once Caddy itself requires that version
 
-The build workflow lints the Dockerfile with hadolint, scans the test image with Trivy (HIGH/CRITICAL findings that have a fix fail the build, before any registry login) and publishes an SBOM attestation with the image.
+The build workflow lints the Dockerfile with hadolint, scans the test image with Trivy (HIGH/CRITICAL findings that have a fix fail the build, before any registry login) and publishes through the reusable `.github/workflows/publish-image.yaml`, which signs the image and attests its provenance and Trivy report (checked by the Kyverno policy `verify-homelab-images`).
 
 There is no shell in the container: use `kubectl debug` with an ephemeral container for interactive debugging. `kubectl exec ... -- caddy <command>` (for example `caddy build-info`) still works.
 

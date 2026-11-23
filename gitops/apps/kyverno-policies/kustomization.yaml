@@ -5,3 +5,4 @@ resources:
   - disallow-latest-tag.yaml
   - verify-taskflow-images.yaml
   - require-taskflow-image-scan.yaml
+  - verify-homelab-images.yaml
