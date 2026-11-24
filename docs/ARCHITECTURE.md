@@ -252,11 +252,12 @@ VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 ### 5.4 PostgreSQL Deployment (`gitops/apps/taskflow/postgres-db.yaml`)
 | Property | Value |
 |----------|-------|
-| Image | `postgres:18.7-alpine` |
+| Image | `postgres:19.0-alpine` |
 | Replicas | 1 |
 | Storage | 10 GiB PVC (`postgres-data`), `storageClassName: proxmox-csi-db` (`cache: none`, `noatime`, ReadWriteOnce) |
+| Data directory | `PGDATA=/var/lib/postgresql/19/docker` on the PVC mounted at `/var/lib/postgresql`; the major in the path must match the image (`scripts/check-postgres-major.rb`), and a major upgrade is a dump and restore in init containers, never an image bump alone |
 | SecurityContext | `readOnlyRootFilesystem: true`, `runAsNonRoot` UID/GID 70 (postgres), drop ALL capabilities, `fsGroup: 70` (`OnRootMismatch`) |
-| Tuning | `shared_buffers=128MB`, `effective_cache_size=384MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `autovacuum_work_mem=32MB`, `max_connections=80`, `jit=off`, `shared_preload_libraries=pg_stat_statements` |
+| Tuning | `shared_buffers=128MB`, `effective_cache_size=384MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `autovacuum_work_mem=32MB`, `max_connections=80`, `shared_preload_libraries=pg_stat_statements` (JIT is off by default since PostgreSQL 19) |
 | SSD / WAL tuning | `random_page_cost=1.1`, `effective_io_concurrency=200`, `checkpoint_timeout=15min`, `wal_buffers=16MB`, `wal_compression=lz4`, `max_wal_size=2GB`, `synchronous_commit=on` |
 | Resources | CPU: 250m request, no limit; Memory: 768 MiB (request = limit) |
 
@@ -427,7 +428,7 @@ homelab-TF/
 │   │   ├── taskflow-jwt-secrets.yaml # SOPS-encrypted: APP_RSA_PRIVATE_KEY, APP_RSA_PUBLIC_KEY
 │   │   ├── backend.yaml             # Spring Boot deployment + ClusterIP service
 │   │   ├── frontend.yaml            # Angular/nginx deployment + ClusterIP service + upstream ConfigMap
-│   │   ├── postgres-db.yaml         # PostgreSQL 18 deployment + ClusterIP service (name: db) + PDB
+│   │   ├── postgres-db.yaml         # PostgreSQL 19 deployment + ClusterIP service (name: db) + PDB
 │   │   ├── postgres-pvc.yaml        # 10Gi Proxmox CSI PVC postgres-data (proxmox-csi-db)
 │   │   ├── postgres-exporter.yaml   # postgres-exporter deployment + service (:9187)
 │   │   ├── redis.yaml               # Redis 8.10 deployment + ClusterIP service + NetworkPolicy

@@ -34,9 +34,154 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
+      # PostgreSQL 18 -> 19 (temporary; remove both init containers once the upgrade has
+      # run and been checked). A new major cannot start on the previous major's data
+      # directory, and the official image has only its own binaries, so the upgrade is a
+      # dump with the 18 image and a restore with the 19 image, both on the PVC:
+      #   /var/lib/postgresql/18/data/pgdata   old cluster, never modified (rollback)
+      #   /var/lib/postgresql/upgrade-18-to-19 dump, row counts
+      #   /var/lib/postgresql/19/docker        new cluster, renamed into place when complete
+      # Both steps are no-ops once 19/docker exists. Any failure leaves the pod in Init
+      # with the 18 cluster untouched; `kubectl -n taskflow logs deploy/postgres-db -c
+      # <name>` says why, and reverting this commit brings 18 back. Rehearsed with these
+      # images, flags and security context (dump + restore of the Flyway schema: ~3 s).
+      # Before merging: take a dump off the cluster, and run the dump step's pre-flight
+      # query against the live server (it must return an empty line).
+      # Afterwards: remove the init containers, then `rm -rf /var/lib/postgresql/18
+      # /var/lib/postgresql/upgrade-18-to-19` in the pod once 19 has run long enough.
+      # Scripts use $NAME, never the braced form: Flux postBuild substitutes that.
+      initContainers:
+        - name: dump-18
+          image: postgres:18.7-alpine@sha256:ff64c9e3bdf8e2120107d3559de8db314e8305f7e38c5105903c6295876738ff
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              OLD=/var/lib/postgresql/18/data/pgdata
+              NEW=/var/lib/postgresql/19/docker
+              STAGE=/var/lib/postgresql/upgrade-18-to-19
+              if [ -s "$NEW/PG_VERSION" ]; then
+                echo "PostgreSQL 19 data directory exists; nothing to dump"
+                exit 0
+              fi
+              if [ ! -s "$OLD/PG_VERSION" ]; then
+                echo "no PostgreSQL 18 data in $OLD and no 19 data in $NEW: refusing to let the server initialise an empty database" >&2
+                exit 1
+              fi
+              rm -rf "$STAGE"
+              mkdir "$STAGE"
+              # Socket only: nothing can connect while the old cluster is being read.
+              pg_ctl -D "$OLD" -w -t 600 -o "-c listen_addresses='' -c shared_preload_libraries=pg_stat_statements" start
+              trap 'pg_ctl -D "$OLD" -m fast -w stop' EXIT
+              q() { psql -U postgres -d "$1" -AtX -v ON_ERROR_STOP=1 -c "$2"; }
+              # Pre-flight: only the taskflow database, owned by postgres, is copied. Anything
+              # else (another database or role, per-database settings, tables in the postgres
+              # database) would be lost silently, so it stops the upgrade instead.
+              extra=$(q postgres "select coalesce(string_agg(x, ', '), '') from (select 'database ' || datname as x from pg_database where not datistemplate and datname not in ('postgres', 'taskflow') union all select 'role ' || rolname from pg_roles where rolname <> 'postgres' and rolname !~ '^pg_' union all select 'a per-database or per-role setting' from pg_db_role_setting union all select 'table ' || c.relname || ' in database postgres' from pg_class c join pg_namespace n on n.oid = c.relnamespace where c.relkind in ('r', 'p') and n.nspname not in ('pg_catalog', 'information_schema')) s")
+              if [ -n "$extra" ]; then
+                echo "this upgrade copies only the taskflow database; also found: $extra" >&2
+                exit 1
+              fi
+              pg_dump -U postgres -d taskflow -Fc -Z zstd:3 -f "$STAGE/taskflow.dump"
+              q taskflow "select string_agg(format('select %L, count(*) from %s', c.oid::regclass, c.oid::regclass), ' union all ' order by c.oid::regclass::text) from pg_class c join pg_namespace n on n.oid = c.relnamespace where c.relkind = 'r' and n.nspname not in ('pg_catalog', 'information_schema')" > "$STAGE/count.sql"
+              psql -U postgres -d taskflow -AtX -v ON_ERROR_STOP=1 -f "$STAGE/count.sql" | sort > "$STAGE/rowcounts.18"
+              touch "$STAGE/dump.complete"
+              echo "dump complete: $(du -h "$STAGE/taskflow.dump" | cut -f1), $(wc -l < "$STAGE/rowcounts.18") tables"
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              memory: 768Mi
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql
+            - name: run
+              mountPath: /run/postgresql
+            - name: tmp
+              mountPath: /tmp
+        - name: restore-19
+          image: postgres:19.0-alpine@sha256:8b0ff4cdf221f0c53d7fcda681d3b461be725c492cd881c5ec9c0ad25023f188
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              NEW=/var/lib/postgresql/19/docker
+              TMP=/var/lib/postgresql/19/restore-in-progress
+              STAGE=/var/lib/postgresql/upgrade-18-to-19
+              if [ -s "$NEW/PG_VERSION" ]; then
+                echo "PostgreSQL 19 data directory exists; nothing to restore"
+                exit 0
+              fi
+              if [ ! -e "$STAGE/dump.complete" ]; then
+                echo "no completed dump in $STAGE: refusing to let the server initialise an empty database" >&2
+                exit 1
+              fi
+              rm -rf "$TMP"
+              # The image's own first-start initialisation (initdb, pg_hba.conf, superuser
+              # password, POSTGRES_DB), in a directory no server is ever started from.
+              PGDATA="$TMP" docker-ensure-initdb.sh
+              pg_ctl -D "$TMP" -w -t 600 -o "-c listen_addresses='' -c shared_preload_libraries=pg_stat_statements" start
+              trap 'pg_ctl -D "$TMP" -m fast -w stop' EXIT
+              pg_restore -U postgres -d taskflow --exit-on-error "$STAGE/taskflow.dump"
+              # A restore carries no planner statistics.
+              psql -U postgres -d taskflow -AtX -v ON_ERROR_STOP=1 -c "analyze"
+              psql -U postgres -d taskflow -AtX -v ON_ERROR_STOP=1 -f "$STAGE/count.sql" | sort > "$STAGE/rowcounts.19"
+              cmp "$STAGE/rowcounts.18" "$STAGE/rowcounts.19"
+              pg_ctl -D "$TMP" -m fast -w stop
+              trap - EXIT
+              sync
+              # The rename is the commit point: until here a retry starts from scratch.
+              mv "$TMP" "$NEW"
+              echo "restore complete: row counts match the PostgreSQL 18 cluster"
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: POSTGRES_DB
+              value: taskflow
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: POSTGRES_PASSWORD
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              memory: 768Mi
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql
+            - name: run
+              mountPath: /run/postgresql
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: postgres
-          image: postgres:18.7-alpine@sha256:ff64c9e3bdf8e2120107d3559de8db314e8305f7e38c5105903c6295876738ff
+          image: postgres:19.0-alpine@sha256:8b0ff4cdf221f0c53d7fcda681d3b461be725c492cd881c5ec9c0ad25023f188
           imagePullPolicy: IfNotPresent
           args:
             # Memory — sized to the data, not a guess: all databases total ~17 MB and the
@@ -94,10 +239,8 @@ spec:
             # (docs/reports/PERF_DEEP_DIVE_2026-10.md §5.4) and set "off" only if it matters.
             - "-c"
             - "synchronous_commit=on"
-            # JIT only compiles plans above jit_above_cost, but a misestimated short OLTP
-            # query can pay tens of milliseconds for it. Also matches the CNPG images.
-            - "-c"
-            - "jit=off"
+            # jit is not set: off by default since PostgreSQL 19 (a misestimated short OLTP
+            # query could pay tens of milliseconds for compilation).
             # Query visibility: per-statement timing (run `CREATE EXTENSION
             # pg_stat_statements;` once in the taskflow database after this rollout),
             # I/O timing per query and WAL fsync timing in pg_stat_io.
@@ -109,17 +252,16 @@ spec:
             - "track_io_timing=on"
             - "-c"
             - "track_wal_io_timing=on"
-            # Logs: slow statements, temp files (work_mem too small) and lock waits
-            # longer than deadlock_timeout (1s).
+            # Logs: slow statements and temp files (work_mem too small). Lock waits longer
+            # than deadlock_timeout (1s) are logged by default since PostgreSQL 19
+            # (log_lock_waits).
             - "-c"
             - "log_min_duration_statement=500ms"
             - "-c"
             - "log_temp_files=0"
-            - "-c"
-            - "log_lock_waits=on"
           securityContext:
-            # postgres:18-alpine runs as UID/GID 70 by design. Do NOT "normalize" this to
-            # 10001 — the PGDATA volume ownership depends on UID 70, and changing it will
+            # The postgres alpine images run as UID/GID 70 by design. Do NOT "normalize" this
+            # to 10001 — the PGDATA volume ownership depends on UID 70, and changing it will
             # prevent PostgreSQL from starting. fsGroup 70 + OnRootMismatch handles perms.
             # Writes go only to PGDATA, the socket directory and /tmp (all mounted below).
             readOnlyRootFilesystem: true
@@ -135,8 +277,13 @@ spec:
               value: taskflow
             - name: POSTGRES_USER
               value: postgres
+            # The image's default for this major (<major>/docker under the volume). The
+            # major here and in the image tag must match (scripts/check-postgres-major.rb
+            # fails CI otherwise): a newer server cannot start on this directory. With
+            # this layout the image also refuses to initialise a new major's directory
+            # while another major's <major>/docker exists, instead of starting empty.
             - name: PGDATA
-              value: /var/lib/postgresql/18/data/pgdata
+              value: /var/lib/postgresql/19/docker
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:

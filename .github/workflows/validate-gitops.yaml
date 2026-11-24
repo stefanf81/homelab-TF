@@ -18,6 +18,7 @@ on:
       - 'scripts/tool-versions.sh'
       - 'scripts/flux-postbuild.rb'
       - 'scripts/check-sops-secrets.rb'
+      - 'scripts/check-postgres-major.rb'
       - '.sops.yaml'
       - 'mise.toml'
       - '.github/workflows/validate-gitops.yaml'
@@ -33,6 +34,7 @@ on:
       - 'scripts/tool-versions.sh'
       - 'scripts/flux-postbuild.rb'
       - 'scripts/check-sops-secrets.rb'
+      - 'scripts/check-postgres-major.rb'
       - '.sops.yaml'
       - 'mise.toml'
       - '.github/workflows/validate-gitops.yaml'
@@ -97,6 +99,9 @@ jobs:
 
       - name: Check that secrets are SOPS-encrypted
         run: ruby scripts/check-sops-secrets.rb
+
+      - name: Check the PostgreSQL image against its data directory
+        run: ruby scripts/check-postgres-major.rb
 
       - name: Check toolchain pins against the cluster
         run: scripts/check-tool-versions.sh

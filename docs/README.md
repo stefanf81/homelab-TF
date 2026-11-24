@@ -44,7 +44,8 @@ Their open/done statements are frozen at their date: current status is in
 `scripts/validate-gitops.sh` renders every path Flux reconciles and schema-checks
 it (CI: `.github/workflows/validate-gitops.yaml`, which also runs
 `scripts/bootstrap-foundation.sh --dry-run`, `ruby scripts/check-observability-config.rb`,
-`ruby scripts/check-sops-secrets.rb` and `scripts/check-tool-versions.sh`;
+`ruby scripts/check-sops-secrets.rb`, `ruby scripts/check-postgres-major.rb` (the PostgreSQL
+image major must match its data directory) and `scripts/check-tool-versions.sh`;
 `.github/workflows/validate-opentofu.yaml` runs `tofu fmt`, `tofu validate`, `tflint` and
 `scripts/check-tool-versions.sh` (so a `k3s_version` change is checked against kubectl),
 and `.github/workflows/validate-renovate.yaml` runs `renovate-config-validator --strict`).
