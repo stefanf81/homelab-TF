@@ -37,7 +37,7 @@ ARG CRS_VERSION=v4.25.2
 # coraza-caddy): the file may use directives a newer engine introduced.
 # renovate: datasource=go depName=github.com/corazawaf/coraza-coreruleset/coraza/v3
 ARG CORAZA_CONF_VERSION=v3.8.1
-ARG IMAGE_REVISION=r15
+ARG IMAGE_REVISION=r16
 
 # Tag and digest, like the runtime image below: the tag alone is rebuilt in
 # place (new Go patch release, Alpine updates), so the same Dockerfile could
@@ -101,7 +101,7 @@ RUN go mod download \
 # Pinned by digest: Renovate updates the digest when the nonroot tag moves (and
 # bumps IMAGE_REVISION). Distroless only updates the current Debian line, so
 # move to the next -debianNN by hand when it ships.
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:aafe993665bf6200db38a02c11a9351e782a84b6a45e7f33b6695638c88e3931
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:8ce6dd87e9823c5b48dcfb2c8604714ccb351ce59607327bcc4957448da279b5
 
 COPY --link --from=builder /usr/bin/caddy /usr/bin/caddy
 COPY --link --from=builder --chown=65532:65532 /rootfs/ /
