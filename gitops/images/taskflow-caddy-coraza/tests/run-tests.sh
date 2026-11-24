@@ -292,6 +292,17 @@ run_suite() { # waf
   [ "$g_allowed" -ge 1 ] && [ "$g_denied" -ge 1 ] \
     || fail "$waf: /waf-healthz through the Gateway is not rate limited"
 
+  # Request bodies that reach SecRequestBodyLimit (64 KiB) are refused with 413
+  # before the CRS inspects them (and so without counting against a rate-limit
+  # zone); 32 KiB, the largest body the application's own proxy accepts, is
+  # inspected and forwarded.
+  r="$(req "$podclient" -X POST --body-bytes 65536 "http://$envoy:8080/api/body")"
+  [ "$(json_field "$r" status)" = 413 ] \
+    || fail "$waf: a 64 KiB body was not refused with 413: $(json_field "$r" status)"
+  r="$(req "$podclient" -X POST --body-bytes 32768 "http://$envoy:8080/api/body")"
+  [ "$(json_field "$r" status)" = 200 ] \
+    || fail "$waf: a 32 KiB body was not forwarded: $(json_field "$r" status)"
+
   r="$(req "$podclient" "http://$envoy:8080/api?q=1%20UNION%20SELECT%201")"
   [ "$(json_field "$r" status)" = 403 ] || fail "$waf: Coraza did not block the SQLi test: $r"
 

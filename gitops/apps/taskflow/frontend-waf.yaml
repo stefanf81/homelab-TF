@@ -141,8 +141,17 @@ data:
                     SecAuditLogFormat JSON
                     SecAuditLogParts ABFHZ
 
-                    SecRequestBodyLimit 10485760
-                    SecRequestBodyNoFilesLimit 1048576
+                    # 64 KiB. Nothing legitimate sends a body to the static
+                    # site (the web app posts to /api only, which the Gateway
+                    # routes to the backend WAF). Reasons as in backend-waf.yaml:
+                    # the body is buffered and inspected in full before the
+                    # rate limiter is reached. (SecRequestBodyNoFilesLimit is
+                    # not set: Coraza does not enforce it.)
+                    SecRequestBodyLimit 65536
+                    # Must not exceed the limit above (Coraza refuses to start
+                    # otherwise; coraza.conf-recommended sets 128 KiB). Equal to
+                    # it, no body is ever written to /tmp.
+                    SecRequestBodyInMemoryLimit 65536
 
                     Include /usr/share/coraza/crs/rules/*.conf
                 `

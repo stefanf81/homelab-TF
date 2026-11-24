@@ -152,8 +152,24 @@ data:
                     SecAuditLogFormat JSON
                     SecAuditLogParts ABFHZ
 
-                    SecRequestBodyLimit 10485760
-                    SecRequestBodyNoFilesLimit 1048576
+                    # 64 KiB. Every API request is small JSON (the DTOs are
+                    # under 4 KiB; the application's own nginx bounds /api
+                    # bodies at 32k) and there are no uploads. A body that
+                    # reaches the limit gets 413 before any rule runs. The
+                    # limit is what bounds the cost of a request: Coraza
+                    # buffers the whole body and the CRS inspects all of it
+                    # before the rate limiter is reached, at roughly a
+                    # CPU-second per 100 KiB at paranoia level 2. With the
+                    # earlier 10 MiB one request could keep a core busy for
+                    # more than a minute.
+                    # (SecRequestBodyNoFilesLimit is not set: Coraza parses the
+                    # directive but does not enforce it, so the former 1 MiB
+                    # value never applied.)
+                    SecRequestBodyLimit 65536
+                    # Must not exceed the limit above (Coraza refuses to start
+                    # otherwise; coraza.conf-recommended sets 128 KiB). Equal to
+                    # it, no body is ever written to /tmp.
+                    SecRequestBodyInMemoryLimit 65536
 
                     Include /usr/share/coraza/crs/rules/*.conf
                 `
