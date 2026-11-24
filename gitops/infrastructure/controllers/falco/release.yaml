@@ -24,6 +24,50 @@ spec:
     driver:
       kind: modern_ebpf
 
+    # No `privileged: true`. The modern eBPF probe needs four capabilities on top of
+    # the runtime defaults (CAP_BPF and CAP_PERFMON exist since kernel 5.8) and an
+    # unconfined AppArmor profile to read other processes' /proc entries. This is
+    # the list the chart renders for `driver.modernEbpf.leastPrivileged: true`;
+    # it is set here instead because that switch uses the deprecated AppArmor
+    # *annotation* (still honoured by the 1.37 kubelet, but on its way out), and a
+    # non-empty containerSecurityContext replaces the chart's computed one.
+    # The pod still mounts /proc, /etc and the containerd socket directory from
+    # the host, so the namespace stays PSA `privileged`.
+    containerSecurityContext:
+      privileged: false
+      capabilities:
+        add:
+          - BPF
+          - SYS_RESOURCE
+          - PERFMON
+          - SYS_PTRACE
+      appArmorProfile:
+        type: Unconfined
+
+    # Schedule before, and never be evicted for, ordinary workloads: the sensor has
+    # to come back first after a reboot and stay up under node pressure.
+    # system-cluster-critical rather than system-node-critical: the latter also
+    # sets oom_score_adj -997, which would make the kernel OOM killer prefer
+    # Postgres or the backend over a 1Gi-limited sensor.
+    podPriorityClassName: system-cluster-critical
+
+    # No falcoctl. With it enabled the chart mounts an emptyDir over /etc/falco and
+    # an init container downloads `falco-rules:5` (a floating major tag) into it at
+    # every pod start, and a sidecar re-pulls it weekly: the detection rules
+    # changed without a commit, Falco could not start without internet access, and
+    # two extra containers ran without resources. The Falco image ships the same
+    # files: for 0.45.2, /etc/falco/falco_rules.yaml is byte-identical to
+    # falco-rules 5.2.0 (what `5` resolves to) and /usr/share/falco/plugins/
+    # libcontainer.so to the container plugin 0.7.6 the chart would download.
+    # Rules now change only with the chart/image bump Renovate proposes.
+    # customRules below still load from /etc/falco/rules.d.
+    falcoctl:
+      artifact:
+        install:
+          enabled: false
+        follow:
+          enabled: false
+
     # Memory is capped; CPU is not: a throttled Falco falls behind the syscall stream
     # and drops events.
     resources:

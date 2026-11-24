@@ -42,7 +42,8 @@ data:
   # only (Cilium keeps working).
   CLOUDFLARE_MAX_ENTRIES: "10000"
   # Stable rule reference used to find/update only our rule in the zone entry
-  # point. Max 10 characters, lowercase.
+  # point. Lowercase letters, digits and underscores, starting with a letter
+  # (validated at startup).
   CLOUDFLARE_RULE_REF: "abuseipdb"
   # ---------------------------------------------------------------------------
   # Cloudflare Security Events collector: polls firewallEventsAdaptive and

@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: jaeger
   namespace: taskflow
+  annotations:
+    configmap.reloader.stakater.com/reload: jaeger-config
   labels:
     app.kubernetes.io/name: jaeger
     app.kubernetes.io/part-of: taskflow
@@ -30,17 +32,14 @@ spec:
           image: jaegertracing/jaeger:2.23.0@sha256:3823829974ccfc2485d2e48b165579091f32295022ae80ca49704e2f4834116e
           imagePullPolicy: IfNotPresent
           env:
-            # v2 built-in all-in-one config uses ${env:JAEGER_LISTEN_HOST:-localhost}
-            # for all endpoints. Setting this to 0.0.0.0 binds OTLP, UI, healthcheck,
-            # and all other ports to the pod's network interface (was localhost).
-            - name: JAEGER_LISTEN_HOST
-              value: "0.0.0.0"
+            # Go soft memory limit: headroom below the 256Mi limit for the trace cap
+            # (max_traces in jaeger-config.yaml).
             - name: GOMEMLIMIT
               value: "200MiB"
           args:
-            # Retain the existing conservative trace cap; the Go soft memory limit leaves
-            # headroom below 256Mi. Built-in config has no obsolete ai.enable_mcp override.
-            - "--set=extensions.jaeger_storage.backends.some_storage.memory.max_traces=5000"
+            # Replaces the image's built-in all-in-one config, which also listened on
+            # the Jaeger v1, Zipkin, OTLP gRPC and other unused ports (jaeger-config.yaml).
+            - "--config=/etc/jaeger/config.yaml"
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
@@ -54,10 +53,12 @@ spec:
               name: health
             - containerPort: 16686
               name: ui
-            - containerPort: 4317
-              name: otlp-grpc
             - containerPort: 4318
               name: otlp-http
+          volumeMounts:
+            - name: config
+              mountPath: /etc/jaeger
+              readOnly: true
           resources:
             # No CPU limit: throttling OTLP ingestion back-pressures the backend's trace
             # exporter. Memory may burst from 64Mi up to the 256Mi RSS cap
@@ -89,6 +90,10 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 2
+      volumes:
+        - name: config
+          configMap:
+            name: jaeger-config
 ---
 apiVersion: v1
 kind: Service
@@ -97,9 +102,6 @@ metadata:
   namespace: taskflow
 spec:
   ports:
-    - name: otlp-grpc
-      port: 4317
-      targetPort: 4317
     - name: otlp-http
       port: 4318
       targetPort: 4318
@@ -138,13 +140,11 @@ spec:
     # other ingress to this pod — so no in-cluster pod can reach the UI. Admin
     # access still works via `kubectl port-forward svc/jaeger-ui 16686:16686`
     # because that traffic originates from the node (Cilium host exemption), not
-    # from another pod. The Gateway route for /jaeger was already removed (#2).
+    # from another pod. There is no Gateway route for the UI.
     - from:
         - podSelector:
             matchLabels:
               app: taskflow-backend
       ports:
-        - protocol: TCP
-          port: 4317
         - protocol: TCP
           port: 4318

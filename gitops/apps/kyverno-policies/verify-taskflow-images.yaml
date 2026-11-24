@@ -1,0 +1,105 @@
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-taskflow-images
+  annotations:
+    policies.kyverno.io/title: Verify TaskFlow Images
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      The TaskFlow backend and frontend images must come out of the publish
+      workflow of stefanf81/taskflow-enterprise, run from main: a cosign
+      signature with the `scan=passed` annotation (so an image published with
+      skip_scan is refused) and a SLSA build provenance attestation, both
+      signed keyless by
+      .github/workflows/pushdockerimage.yml@refs/heads/main.
+spec:
+  # Deny straight away rather than after an Audit phase (docs/
+  # KYVERNO_POLICY_ENGINE.md §8): the deployed digests (publish run
+  # 45242783629, 2026-11-23) were checked on GHCR to carry the signature with
+  # scan=passed and the provenance. Digests published before 2026-11-21 have
+  # neither, so a rollback to one needs this set back to [Audit] first.
+  # Fail open like the other policies; §5 has the trade-off of `Fail` here.
+  validationActions: [Deny]
+  failurePolicy: Ignore
+  # Verification reads the signature bundles from GHCR and the Sigstore trust
+  # root from its TUF CDN; results are cached by Kyverno's image verify cache.
+  webhookConfiguration:
+    timeoutSeconds: 20
+  evaluation:
+    background:
+      enabled: true
+  # Same controller list as disallow-latest-tag (no ReplicaSets).
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: taskflow
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  # Only the two images pushdockerimage.yml publishes. Not `taskflow-*`: that
+  # would also match ghcr.io/stefanf81/taskflow-caddy-coraza, which this
+  # repository builds (.github/workflows/build-taskflow-caddy-coraza.yaml).
+  matchImageReferences:
+    - glob: "ghcr.io/stefanf81/taskflow-backend:*"
+    - glob: "ghcr.io/stefanf81/taskflow-backend@*"
+    - glob: "ghcr.io/stefanf81/taskflow-frontend:*"
+    - glob: "ghcr.io/stefanf81/taskflow-frontend@*"
+  attestors:
+    # The certificate identity of a keyless signature from GitHub Actions is the
+    # workflow file at the ref it ran from. A run from any other branch, or any
+    # other workflow, gets a different identity and is refused.
+    - name: release
+      cosign:
+        keyless:
+          identities:
+            - subject: https://github.com/stefanf81/taskflow-enterprise/.github/workflows/pushdockerimage.yml@refs/heads/main
+              issuer: https://token.actions.githubusercontent.com
+        ctlog:
+          url: https://rekor.sigstore.dev
+    # Same identity, plus the annotation `cosign sign -a scan=...` writes into
+    # the signed statement. The publish workflow signs `scan=skipped` when it is
+    # dispatched with skip_scan, which this attestor does not accept. Kept
+    # separate from `release`: the annotation is only on the cosign signature,
+    # so requiring it would also reject the provenance attestation.
+    - name: scannedRelease
+      cosign:
+        keyless:
+          identities:
+            - subject: https://github.com/stefanf81/taskflow-enterprise/.github/workflows/pushdockerimage.yml@refs/heads/main
+              issuer: https://token.actions.githubusercontent.com
+        ctlog:
+          url: https://rekor.sigstore.dev
+        annotations:
+          scan: passed
+  attestations:
+    # Written by actions/attest in the publish workflow's promote job.
+    - name: provenance
+      intoto:
+        type: https://slsa.dev/provenance/v1
+  # Kyverno fills `images` with matchImageReferences hits only, so this is every
+  # TaskFlow image in the Pod (or Pod template), init and ephemeral containers
+  # included.
+  variables:
+    - name: releaseImages
+      expression: >-
+        images.containers + images.initContainers + images.ephemeralContainers
+  validations:
+    - expression: >-
+        variables.releaseImages.all(image,
+          verifyImageSignatures(image, [attestors.scannedRelease]) > 0)
+      message: >-
+        TaskFlow images must carry a cosign signature with scan=passed from
+        pushdockerimage.yml on main.
+    - expression: >-
+        variables.releaseImages.all(image,
+          verifyAttestationSignatures(image, attestations.provenance, [attestors.release]) > 0)
+      message: >-
+        TaskFlow images must carry a SLSA provenance attestation from
+        pushdockerimage.yml on main.

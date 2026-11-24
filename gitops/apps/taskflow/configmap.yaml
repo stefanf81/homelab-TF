@@ -5,9 +5,13 @@ metadata:
   namespace: taskflow
 data:
   SPRING_PROFILES_ACTIVE: "prod"
+  # Console log format: the image's prod profile writes Elastic Common Schema JSON, one object
+  # per line (CR/LF escaped, so a message cannot forge a record). Alloy's backend pipeline
+  # (monitoring/logging/alloy-release.yaml) accepts both JSON and the plain pattern. To go back
+  # to the plain pattern without a new image, set LOGGING_STRUCTURED_FORMAT_CONSOLE: "" here.
   # Origins the browser may call /api from.
   # - https://jokelab.dev          : bare apex (documented access URL in
-  #                                  GATEWAY_ACCESS_GUIDE.md / ARCHITECTURE.md;
+  #                                  docs/ARCHITECTURE.md §5.9;
   #                                  cert includes this SAN, so it must be allowed
   #                                  even though the Gateway 301-redirects apex->www)
   # - https://www.jokelab.dev      : canonical prod hostname (HTTPRoute hostnames +

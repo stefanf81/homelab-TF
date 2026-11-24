@@ -72,10 +72,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header(key, value)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
-        self.wfile.write(data)
+        if self.command != "HEAD":
+            self.wfile.write(data)
 
     do_GET = _forward
     do_POST = _forward
+    do_PUT = _forward
+    do_PATCH = _forward
+    do_DELETE = _forward
+    do_HEAD = _forward
 
     def log_message(self, *args) -> None:  # keep test output quiet
         pass

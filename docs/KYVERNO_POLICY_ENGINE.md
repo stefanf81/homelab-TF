@@ -57,17 +57,20 @@ gitops/
 │       ├── policy-reporter-secrets.yaml  # (legacy) SOPS OAuth secret, unused after the oauth2-proxy migration
 │       ├── policy-reporter-ui-oauth-secrets.yaml # SOPS OAuth credentials for oauth2-proxy (client-id/client-secret/cookie-secret)
 │       ├── oauth2-proxy-repository.yaml  # OCIRepository oauth2-proxy @ oci://ghcr.io/oauth2-proxy/charts/oauth2-proxy
-│       ├── oauth2-proxy-release.yaml     # HelmRelease oauth2-proxy (github_users allow-list, __Host-o2p-kyverno cookie)
+│       ├── oauth2-proxy-release.yaml     # HelmRelease policy-reporter-ui-oauth2-proxy (chart 10.7.4, github_users allow-list, __Host-o2p-kyverno cookie)
 │       ├── oauth2-proxy-network-policy.yaml # Namespace default-deny + Gateway -> oauth2-proxy + vmagent scrape
 │       ├── release.yaml                  # HelmRelease policy-reporter v3.11.2, ui + plugins, ui.oauth disabled, metrics on, crds: Skip
 │       ├── trivy-adapter-release.yaml    # HelmRelease trivy-operator-polr-adapter v0.11.5 (Trivy CRDs -> PolicyReports)
 │       ├── route.yaml                    # HTTPRoute -> policy-reporter-ui-oauth2-proxy:80 on taskflow-gateway (:443)
 │       └── kustomization.yaml
 ├── apps/
-│   └── kyverno-policies/            # CEL ValidatingPolicies (Deny, fail-open)
+│   └── kyverno-policies/            # CEL policies (Deny, fail-open)
 │       ├── kustomization.yaml
-│       ├── require-common-labels.yaml
-│       └── disallow-latest-tag.yaml
+│       ├── require-common-labels.yaml        # ValidatingPolicy
+│       ├── disallow-latest-tag.yaml          # ValidatingPolicy
+│       ├── verify-taskflow-images.yaml       # ImageValidatingPolicy
+│       ├── require-taskflow-image-scan.yaml  # ImageValidatingPolicy
+│       └── verify-homelab-images.yaml        # ImageValidatingPolicy
 └── clusters/taskflow/
     ├── infra-controllers.yaml       # reconciles infrastructure/controllers (incl. kyverno)
     ├── kyverno-policies.yaml        # reconciles apps/kyverno-policies (dependsOn infra-controllers)
@@ -96,7 +99,8 @@ GitRepository (flux-system)
   policies are applied (avoids `no matches for kind "ValidatingPolicy"`).
 - `policy-reporter` `dependsOn: [infra-controllers, taskflow-app, trivy-operator]` so Kyverno's
   PolicyReport CRDs, Trivy's report CRDs, and the Gateway all exist before the dashboard,
-  adapter, and route are reconciled.
+  adapter, and route are reconciled. The `taskflow-app` entry uses a `readyExpr` (non-empty
+  inventory): the app only has to have applied once, not be Ready.
 
 ---
 
@@ -123,7 +127,7 @@ Gateway exists first, so the route programs immediately and `wait` succeeds.
   `PolicyException`) exists, via a render-time `lookup` and a pre-upgrade hook Job. Do not
   set `disableHooks` on the HelmRelease. Check before upgrading:
   `kubectl get clusterpolicies.kyverno.io,policies.kyverno.io,cleanuppolicies.kyverno.io,clustercleanuppolicies.kyverno.io,policyexceptions.kyverno.io -A`
-- Both policies set `failurePolicy: Ignore`; since 1.20 that also admits a request when
+- Every policy sets `failurePolicy: Ignore`; since 1.20 that also admits a request when
   CEL evaluation hits a runtime error.
 
 ### CRD handling — important gotcha
@@ -178,28 +182,58 @@ that needs one:
 | `backgroundController` | `generate` rules and mutation of existing resources (`GeneratingPolicy`, `MutatingPolicy` with `mutateExisting`) |
 | `cleanupController` | `DeletingPolicy` / `CleanupPolicy` and the `cleanup.kyverno.io/ttl` label |
 
-After the change rolls out, check that the cleanup controller took its two webhook
-configurations with it; delete them if they are still listed (their Service no longer exists):
-
-```bash
-kubectl get validatingwebhookconfigurations | grep -E 'kyverno-(cleanup|ttl)'
-```
-
 `features.autoUpdateWebhooks.enabled: true` lets Kyverno manage its webhook configurations per
 policy; each `ValidatingPolicy` gets a webhook with the policy's own `failurePolicy`.
 
 ---
 
-## 5. Policies (enforced)
+## 5. Policies
 
 Policies live in `gitops/apps/kyverno-policies/`, reconciled by the `kyverno-policies`
-Kustomization. Both are CEL `ValidatingPolicy` objects with `validationActions: [Deny]`,
+Kustomization. Two are CEL `ValidatingPolicy` objects with `validationActions: [Deny]`,
 `failurePolicy: Ignore` and background scanning on:
 
 | Policy | Scope | Rule |
 |---|---|---|
-| `disallow-latest-tag` | Pods in every namespace except `kube-system`, `kyverno`, `flux-system`, `cert-manager`; autogen for Deployments, StatefulSets, DaemonSets, Jobs, CronJobs | Every container and init container uses an `@sha256` digest or an explicit tag other than `latest`. Untagged images are rejected; `:latest@sha256:…` is allowed because the digest is immutable; a registry port (`host:5000/app`) is not mistaken for a tag. |
+| `disallow-latest-tag` | Pods in every namespace except `kube-system`, `kyverno`, `flux-system`, `cert-manager`; autogen for Deployments, StatefulSets, DaemonSets, Jobs, CronJobs | Every container, init container and ephemeral container uses an `@sha256` digest or an explicit tag other than `latest`. Untagged images are rejected; `:latest@sha256:…` is allowed because the digest is immutable; a registry port (`host:5000/app`) is not mistaken for a tag. |
 | `require-common-labels` | Deployments and StatefulSets in `taskflow` | `app.kubernetes.io/name` and `app.kubernetes.io/part-of` are set. |
+
+Two `ImageValidatingPolicy` objects check the TaskFlow images published by
+`stefanf81/taskflow-enterprise` (`.github/workflows/pushdockerimage.yml`). Both match Pods in
+`taskflow` (autogen as above), select only `ghcr.io/stefanf81/taskflow-backend` and
+`ghcr.io/stefanf81/taskflow-frontend` (not `taskflow-caddy-coraza`, which this repository
+builds), and trust exactly one keyless signer:
+`https://github.com/stefanf81/taskflow-enterprise/.github/workflows/pushdockerimage.yml@refs/heads/main`
+from issuer `https://token.actions.githubusercontent.com`. A run from another branch or
+workflow has a different certificate identity and is refused.
+
+| Policy | Mode | Rule |
+|---|---|---|
+| `verify-taskflow-images` | Deny | A cosign signature whose signed statement carries `scan=passed` (an image published with `skip_scan` is signed `scan=skipped`), and a SLSA build provenance attestation (`https://slsa.dev/provenance/v1`, from `actions/attest`). |
+| `require-taskflow-image-scan` | Deny | A Trivy scan report attested as `https://cosign.sigstore.dev/attestation/vuln/v1`, with `predicate.scanner.uri` from `pkg:github/aquasecurity/trivy@`. The publish workflow attests it only for a digest that passed its scan gate, after checking that the report names that digest and lists no vulnerabilities. |
+
+Kyverno reads the signatures and attestations from GHCR (Sigstore bundles under the
+`sha256-<digest>` referrers tag, as GHCR has no referrers API) and the Sigstore trust root
+from its public TUF CDN; the `kyverno` namespace has no egress policy. Results are cached by
+Kyverno's image verify cache. `scripts/check-observability-config.rb` pins the signer
+identity, image globs and attestation types, so widening any of them fails CI.
+
+A third `ImageValidatingPolicy`, `verify-homelab-images`, checks the images this repository
+builds: `ghcr.io/stefanf81/taskflow-caddy-coraza` (both WAFs, `taskflow`) and
+`ghcr.io/stefanf81/abuseipdb-sync` (`abuseipdb`). Both build workflows publish through the
+reusable workflow `.github/workflows/publish-image.yaml` (push by digest, Trivy on that digest
+in a job that can only pull, then sign, attest, verify and tag in the only job that can sign).
+The certificate of a reusable workflow names the reusable workflow, so the one trusted signer
+is `https://github.com/stefanf81/homelab-TF/.github/workflows/publish-image.yaml@refs/heads/main`.
+It requires the cosign signature with `scan=passed`, the SLSA provenance and the Trivy scan
+attestation, the same three as the TaskFlow policies together. It is in `Deny` since both
+Deployments pin revisions published by that workflow (WAF `r15`, `abuseipdb-sync` `0.3.5-r10`),
+whose digests were checked to carry all three; the earlier digests are unsigned. `taskflow-caddy-coraza` is a private GHCR package and Kyverno
+does not use the Pods' `imagePullSecrets`: the policy reads `kyverno/ghcr-pull-secret`, a
+hand-made copy of `taskflow/ghcr-pull-secret` (`gitops/FLUX_BOOTSTRAP.md` §3). Without it the
+WAF image cannot be verified, which under `Deny` refuses new WAF Pods. The config
+check also asserts that both build workflows call `publish-image.yaml` locally and that only
+its `promote` job holds `id-token: write`.
 
 Design choices:
 
@@ -208,13 +242,25 @@ Design choices:
   hygiene rules, not a security boundary: while Kyverno is down Pods are admitted unchecked, and
   the hourly background scan reports anything that slipped through. Pod security belongs in Pod
   Security Admission namespace labels, which have no webhook to fail.
+- **Image verification is a security boundary.** Unlike the two hygiene rules, fail-open
+  means an unverified TaskFlow image runs while Kyverno is down. Both image policies are
+  `Deny` with `failurePolicy: Ignore` for now. `Fail` would close that gap with a blast
+  radius limited to TaskFlow Pods in `taskflow` (other Pods never reach these policies'
+  rules), but with one admission replica and no alerting a crash-looping Kyverno then stops
+  TaskFlow Pods from being recreated. The background scan reports unverified images either way.
+- **Rolling TaskFlow back to an older image.** The image policies refuse every digest
+  published before their checks existed: no signature before 2026-11-21, no scan attestation
+  before 2026-11-23 (publish run 45242783629). Set the policy that would refuse it back to
+  `[Audit]` first (§8, "Back out"), or re-publish the old commit with the current workflow.
+  The same holds for the WAF image (`r13` and older) and `abuseipdb-sync` (`0.3.5-r9` and
+  older) under `verify-homelab-images`.
 - **Autogen without ReplicaSets.** Validating the controllers makes a bad manifest fail at Flux
   apply time instead of producing a ReplicaSet that cannot create Pods. ReplicaSets are left out
   because the Deployment controller updates old revision-history ReplicaSets, which must not be
   blocked.
 
 ### How to add a policy
-1. Write a `ValidatingPolicy` (`policies.kyverno.io/v1`) in `gitops/apps/kyverno-policies/`,
+1. Write a `ValidatingPolicy` or `ImageValidatingPolicy` (`policies.kyverno.io/v1`) in `gitops/apps/kyverno-policies/`,
    starting with `validationActions: [Audit]`, and add it to that folder's `kustomization.yaml`.
 2. Check it compiles: `kubectl apply --dry-run=server -k gitops/apps/kyverno-policies`
    (Kyverno's policy webhook rejects invalid CEL).
@@ -257,23 +303,25 @@ compatibility reads no longer occur.
 ### Trivy Plugin & Adapter
 Two components surface Trivy results in the UI:
 
-1. **`plugin.trivy.enabled: true`** — the Policy Reporter **Trivy plugin** watches the
-   `aquasecurity.github.io` report CRDs Trivy Operator produces (`VulnerabilityReport`,
-   `ConfigAuditReport`, `RbacAssessmentReport`, `ExposedSecretReport`, ...). Policy Reporter
-   then emits its WAF-like `policy` metrics (`policy_report_info`, `policy_report_result`,
-   ...) so findings also appear in the main Policy Reporter metrics.
+1. **`plugin.trivy.enabled: true`** — the Policy Reporter **Trivy plugin** (its own
+   Deployment) enriches the UI with vulnerability details. It does not produce reports or
+   metrics: Policy Reporter's `policy_report_result` metrics (`metrics.mode: custom`, labels
+   `namespace`, `policy`, `status`, `severity`, `source`; `pass`/`skip` not exported; no
+   dashboard reads them yet) are derived from the PolicyReports, so Trivy findings reach
+   them through the adapter below.
 2. **`trivy-operator-polr-adapter`** (HelmRelease `trivy-operator-polr-adapter` v0.11.5,
    chart from `oci://ghcr.io/fjogeleit/charts/trivy-operator-polr-adapter`) — converts the
    Trivy CRDs into vanilla `wgpolicyk8s.io/v1alpha2` `PolicyReport` /
    `ClusterPolicyReport` objects, so they are visible directly in the UI's **report
-   list**. All adapters are enabled (vulnerability, config-audit, RBAC, exposed-secret,
-   compliance, infra-assessment, cluster variants).
+   list**. Eight adapters are enabled (vulnerability, config-audit, RBAC, exposed-secret,
+   compliance, infra-assessment, and the cluster infra-assessment and cluster vulnerability
+   variants).
    
 > **Why both?** The UI report list reads `wgpolicyk8s.io` reports. Trivy does **not**
-> write those natively — hence the adapter. Without the adapter the report list stays
-> Kyverno/Falco-only; without the plugin the `policy` Prometheus metrics stay
-> Kyverno-only. See `docs/TRIVY_SECURITY_SCANNING.md` §6 for what each Trivy report type
-> maps to.
+> write those natively — hence the adapter. Without the adapter the report list and the
+> `policy_report_result` metrics stay Kyverno/Falco-only; without the plugin the UI loses
+> the extra vulnerability details. See `docs/TRIVY_SECURITY_SCANNING.md` §6 for what each
+> Trivy report type maps to.
 
 > **Compliance detail caveat:** the adapter's compliance adapter requires the Trivy
 > operator to emit **detailed** compliance reports. The HelmRelease is configured with
@@ -330,9 +378,10 @@ alongside `jokelab.dev`, `www.jokelab.dev`, `grafana.jokelab.dev`, and `hubble.j
 > `http://kyverno.jokelab.dev/.well-known/acme-challenge/...` through the Gateway, which
 > requires the hostname to resolve. If the SAN is added while the DNS record is missing, the
 > cert stays `InProgress`, and because `taskflow-app` health-checks that Certificate
-> (`wait: true`), the **main app Kustomization goes `Progressing`/`NotReady`** — which also
-> blocks `policy-reporter` (`dependsOn: taskflow-app`). Create the DNS record first, then add
-> the SAN; re-issuance validates and `taskflow-app` returns to Ready.
+> (`wait: true`), the **main app Kustomization goes `Progressing`/`NotReady`** (`policy-reporter`
+> keeps reconciling: its `taskflow-app` dependency only requires the app to have applied once).
+> Create the DNS record first, then add the SAN; re-issuance validates and `taskflow-app`
+> returns to Ready.
 >
 > **Hairpin NAT caveat.** Even when the DNS record exists and resolves to the Gateway's
 > external IP, cert-manager's self-check may **time out** behind a router that doesn't
@@ -383,7 +432,8 @@ The Policy Reporter UI's built-in GitHub OAuth has **no user/org allow-list**, s
 - Pod-network isolation (`gitops/platform/policy-reporter/oauth2-proxy-network-policy.yaml`)
   default-denies cross-namespace ingress to `policy-reporter-ui:8080`, `policy-reporter:8080`
   (REST API), and the plugins, opening only `reserved:ingress` → `oauth2-proxy:4180` and
-  `monitoring/vmagent` → `policy-reporter:8080` (`/metrics`).
+  `monitoring/vmagent` → `policy-reporter:8080` (`/metrics`), plus intra-namespace traffic and
+  `host` (kubelet probes, `kubectl port-forward`).
 - Credentials (`client-id` / `client-secret` / `cookie-secret`) live in the
   SOPS-encrypted `policy-reporter-ui-github-oauth` Secret
   (`policy-reporter-ui-oauth-secrets.yaml`). Create a GitHub OAuth App with the
@@ -415,7 +465,8 @@ kubectl get crds | grep kyverno
 
 # Policies + results
 kubectl get validatingpolicies         # require-common-labels, disallow-latest-tag (READY true)
-kubectl get policyreports -A -o json | jq -r '.items[].results[]? | select(.source=="KyvernoValidatingPolicy") | "\(.policy) \(.result)"' | sort | uniq -c
+kubectl get imagevalidatingpolicies    # verify-taskflow-images, require-taskflow-image-scan (READY true)
+kubectl get policyreports -A -o json | jq -r '.items[].results[]? | select(.source | startswith("Kyverno")) | "\(.policy) \(.result)"' | sort | uniq -c
 
 # Route
 kubectl -n policy-reporter get httproute policy-reporter-ui
@@ -441,6 +492,17 @@ Then open `https://kyverno.jokelab.dev` (after DNS + cert are ready).
 4. Watch *Blocked admissions* on the Grafana Kyverno dashboard; Flux server-side dry runs that
    hit a Deny policy show up there and in the failing Kustomization's status.
 
+For the image policies, prove it with the image the Deployment runs (allowed):
+
+```bash
+img=$(kubectl -n taskflow get deploy taskflow-backend -o jsonpath='{.spec.template.spec.containers[0].image}')
+kubectl -n taskflow run kv-test --image="$img" --dry-run=server --command -- true   # allowed
+```
+
+Both image policies went to `Deny` without an Audit phase, once the deployed backend and
+frontend digests (publish run 45242783629) had been checked on GHCR to carry the signature,
+the provenance and the scan attestation.
+
 **Back out:** set the policy back to `[Audit]` and push; nothing else needs undoing.
 
 ---
@@ -465,10 +527,13 @@ Then open `https://kyverno.jokelab.dev` (after DNS + cert are ready).
 | `Helm install failed … invalid ownership metadata` on Kyverno | `install.crds: CreateReplace` set on the HelmRelease. Change to `Skip` (§4). |
 | `policy-reporter-ui` HTTPRoute shows `Not Programmed` / no address | The `policy-reporter` namespace is missing from the Gateway `allowedRoutes` selector, or the Gateway (`taskflow-app`) hasn't reconciled yet. |
 | Certificate `taskflow-jokelab-cert` stays `InProgress` after adding a new SAN | **Two common causes:** (1) DNS record for the new SAN doesn't exist yet — create it first (§6). (2) DNS exists but cert-manager self-check times out (hairpin NAT) — see next row. |
-| HTTP-01 self-check times out with `context deadline exceeded` | Hairpin NAT: the router can't forward outbound traffic back to the internal Gateway. **Fix:** add a `hosts` entry in CoreDNS to resolve the domain to the internal Gateway IP (`192.168.50.201`) — see §6 for the exact patch. Alternative: switch to DNS-01 with Cloudflare API token. |
+| HTTP-01 self-check times out with `context deadline exceeded` | Hairpin NAT: the router can't forward outbound traffic back to the internal Gateway. **Fix:** add the hostname to the CoreDNS `hosts` line in `gitops/infrastructure/controllers/coredns/release.yaml` so it resolves to the internal Gateway IP (`192.168.50.201`) — see §6 (Fix a). Alternative: switch to DNS-01 with Cloudflare API token. |
 | cert-manager does **not** create a new CertificateRequest after a failed order | The Issuing controller sits on a retry backoff. Deleting the failed CR does **not** reset the timer. **Fix:** delete the Certificate and let Flux recreate it — `kubectl delete certificate -n taskflow taskflow-jokelab-cert && flux -n flux-system reconcile ks taskflow-app`. This resets all issuance state to zero. |
 | No `KyvernoValidatingPolicy` results in `kubectl get policyreports -A` | Reports are generated asynchronously by the reports controller after its background scan (on policy change, then hourly). Wait ~1–2 min; if still empty, check `spec.evaluation.background.enabled` and `kubectl -n kyverno logs deploy/kyverno-reports-controller`. |
 | A policy doesn't seem to evaluate a namespace | Check its `matchConstraints.namespaceSelector` and the global resource filters (§4); `kubectl get validatingpolicy <name> -o yaml` shows `WebhookConfigured` and `RBACPermissionsGranted` in `status`. |
+| An image policy reports `fail` with `no matching attestations` or `signatures not found` | The digest was not published by `pushdockerimage.yml` from `main` (another branch, an older unsigned digest, or a run before the scan attestation existed). Check what is attached: `gh attestation verify oci://<image>@<digest> --repo stefanf81/taskflow-enterprise --cert-identity https://github.com/stefanf81/taskflow-enterprise/.github/workflows/pushdockerimage.yml@refs/heads/main`. |
+| `verify-homelab-images` fails for the WAF image with `401`/`UNAUTHORIZED` or `no matching attestations` while `abuseipdb-sync` passes | `kyverno/ghcr-pull-secret` is missing or its token expired: the WAF package is private. Recreate it with the read-only token (`gitops/FLUX_BOOTSTRAP.md` §3); Kyverno picks it up without a restart. |
+| An image policy reports an error fetching from `ghcr.io` or `tuf-repo-cdn.sigstore.dev` | Kyverno could not reach GHCR or the Sigstore TUF CDN; `kubectl -n kyverno logs deploy/kyverno-admission-controller`. With `failurePolicy: Ignore` the Pod is admitted and the background scan retries. |
 | A Flux Kustomization fails with `admission webhook "vpol.validate.kyverno.svc-…" denied the request` | A manifest breaks a Deny policy; the message names the containers or labels. Fix the manifest, or add a `PolicyException` (§5) if the exception is intended. |
 
 ---

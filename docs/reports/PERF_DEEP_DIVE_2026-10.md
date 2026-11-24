@@ -1,5 +1,10 @@
 # Performance Deep Dive — CPU sizing, Cilium, PostgreSQL (October 2026)
 
+> **Dated snapshot (October 2026), not maintained.** Statements about what is open or done
+> reflect that date and are partly out of date. Current status of every item:
+> [`docs/BACKLOG.md`](../BACKLOG.md).
+> §5.1 budgets a 512 MiB Postgres container; the limit is now 768 MiB.
+
 Detailed investigation of three items from `REMEDIATION_PLAN_2026-10.md`:
 **PERF-02** (CPU reservations, limits and throttling), **PERF-03** (Cilium
 tuning) and **PERF-04** (PostgreSQL tuning). For each: how the mechanism works

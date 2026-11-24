@@ -31,7 +31,8 @@ end of §4.5.
 |---|---|---|
 | VM | CPU type `host`, `virtio-scsi-single` + IOThread, `ssd`, `discard`, virtio RNG, balloon fixed (`floating = dedicated`) | `modules/proxmox/main.tf` |
 | VM | Proxmox firewall off for the NIC (no extra `fwbr` bridge) | provider default |
-| Node | inotify, `fs.file-max`, `fs.aio-max-nr`, swap off, journald capped at 100 MB | cloud-init snippet |
+| Node | inotify, `fs.aio-max-nr`, swap off, journald capped at 100 MB | cloud-init snippet |
+| Node | `fs.file-max` at the kernel maximum | systemd sets it at boot; the snippet no longer lowers it to 2097152 |
 | Node | `vm.max_map_count = 1048576` | Ubuntu (`/usr/lib/sysctl.d/55-map-count.conf`); the snippet no longer lowers it to 262144 |
 | Node | `default_qdisc=fq`, `tcp_congestion_control=bbr`, `tcp_slow_start_after_idle=0`, 4096 backlogs | Cilium bandwidth manager |
 | Node | `kernel.panic=10`, `kernel.panic_on_oops=1`, `vm.overcommit_memory=1` | kubelet (`protectKernelDefaults: false`) |
@@ -45,11 +46,11 @@ end of §4.5.
 |---|---|---|---|---|---|
 | 1 | CPU governor `performance` | Host | The only change that touches every request: no frequency ramp-up latency | More idle power and heat; thermal throttling on small fanless hosts can cancel it | Already set on this host (`amd-pstate-epp`, governor and EPP `performance`, 2026-11-03) |
 | 2 | `net.ipv4.tcp_mtu_probing = 1` | Node | Prevents stalls of Cloudflare → Envoy connections when PMTU ICMP is dropped (PPPoE/DS-Lite uplinks) | None known; only activates after a black hole is detected | Done (in Terraform) |
-| 3 | Proxmox VE 8 → 9 | Host | Security support (PVE 8 is past end of life), newer kernel/KVM | **Highest risk on the list**: major Debian upgrade, NIC renames, provider/CSI compatibility | Done: host runs PVE 9.2 (kernel 7.0), checked 2026-11-03 |
+| 3 | Proxmox VE 8 → 9 | Host | Security support (PVE 8 is past end of life), newer kernel/KVM | Major Debian upgrade | Done: host runs PVE 9.2 (kernel 7.0), checked 2026-11-03 (§4.4) |
 | 4 | virtio-net multiqueue (`queues = cpu_cores`) | VM | RX/TX softirq over all vCPUs; one `fq` leaf per queue. Only matters when one vCPU saturates on network work | NIC hot-replug on apply (short outage); slightly more CPU per packet | Done 2026-11-03 (`Combined: 10`, `mq` + per-queue `fq`) |
 | 5 | KSM off | Host | Frees host CPU — only if `ksmtuned` is actually scanning (it starts below ~20 % free RAM) | If host RAM is tight, memory use rises and the host may swap | **Keep KSM on here**: on the 15 GiB host it merged ~370 MiB with a 14 GiB VM (2026-11-03) |
 | 6 | Microcode | Host | Stability and security, not speed | Rare regressions; mitigations can cost a little speed | Already installed (`amd64-microcode`) |
-| 7 | HA services off (standalone) | Host | Fewer small writes to the boot SSD | Must be re-enabled before clustering | Optional |
+| 7 | HA services off (standalone) | Host | Fewer small writes to the boot SSD | Must be re-enabled before clustering | Done on this host (2026-11-03, §4.2) |
 | 8 | Disable the iSCSI (`iscsid`, `open-iscsi`) and multipath units, snapd and motd-news (packages stay installed) | Node | Tiny: fewer daemons, tens of MB RAM | Re-enable if NFS/iSCSI storage is added; snaps (e.g. Livepatch) stop working | Done (in Terraform) |
 | 9 | Guest I/O scheduler `none` (udev rule) | Node | Probably none: the kernel already picks `none` for multi-queue disks; the rule pins it | On a single-queue disk the guest loses read/write prioritisation (minor) | Done (in Terraform); harmless |
 | 10 | Remove `net.bridge.bridge-nf-call-*` | Node | Cleanup; Cilium has no bridge on the pod path | None | Done (in Terraform) |
@@ -82,8 +83,10 @@ Sizing data (2026-11-03, at 14 GiB):
 | Pod working set (`kubectl top node`) | 7935 Mi |
 | Pod memory requests / limits | 8650 Mi / 27978 Mi (66 % / 215 % of allocatable) |
 
-At 12 GiB, allocatable is ~11 GiB (minus the 1000 Mi system/kube reserve and 100 Mi
-eviction), so requests use ~78 % and a 2 Gi backend surge pod still fits. The guest loses
+At 12 GiB, allocatable is ~11 GiB (minus the 1000 Mi system/kube reserve; k3s sets no
+memory eviction threshold of its own, and the 200 Mi hard threshold from §3.7 comes off as
+well once it is applied), so requests use ~78–80 % and a backend surge pod (1536 Mi request)
+still fits. The guest loses
 ~2 GiB of page cache; the host gains ~2 GiB and should stop swapping guest memory.
 
 Do not run `swapoff -a` on the host to pull swapped pages back: it needs as much free RAM as
@@ -109,7 +112,7 @@ invalidates its allocatable memory and leads to OOM kills.
 | Duplicate `kernel.panic*` sysctls | The kubelet already sets them |
 | `aio=native` on disks | Blockbridge's benchmark warns it can block on thin LVM; keep the `io_uring` default with an IOThread (§6) |
 | 1 GiB hugepages | Small TLB gain; memory is reserved, KSM cannot merge it, and the VM fails to start if pages are not free |
-| kubelet `cpu-manager-policy=static` | Pins the backend to 2 cores and squeezes every other pod onto the remaining 4; a botched switch leaves kubelet unable to start |
+| kubelet `cpu-manager-policy=static` | Only Guaranteed pods with whole-CPU requests get exclusive cores: the backend (Burstable, 500m request, no CPU limit) would need e.g. 2 CPUs as request = limit, which squeezes every other pod onto the remaining cores; a botched switch leaves kubelet unable to start |
 | `machine = "q35"` | Reboot and changed virtual PCI layout for a minor gain |
 | Smaller `vm.dirty_*` limits | Can slow bulk writes (image pulls); measure first |
 | 64 MiB `rmem`/`wmem`, `somaxconn` 65535, `tcp_fastopen` | Sized for 10 GbE/QUIC; see `reports/NETWORK_REVIEW_2026-10.md` §2.5 |
@@ -122,9 +125,11 @@ invalidates its allocatable memory and leads to OOM kills.
 
 ### 3.1 In Terraform (new nodes)
 
-`modules/proxmox/main.tf` carries items 2, 4 and 8–15. The cloud-init snippet
+`modules/proxmox/main.tf` carries items 2, 4 and 8–15, and the kubelet memory eviction
+thresholds, `disable-helm-controller`, the API audit log and `disabled-metrics` of §3.7. The cloud-init snippet
 is in `ignore_changes` (`reports/REMEDIATION_PLAN_2026-10.md` REL-00), so it only
-reaches newly built nodes. The running node needs §3.2, and the NIC change needs §3.3.
+reaches newly built nodes. The running node needs §3.2, the NIC change needs §3.3, and the
+k3s settings need §3.7.
 
 ### 3.2 Running node — no downtime (do this first)
 
@@ -185,59 +190,24 @@ Cilium agent so it re-applies `fq`:
 kubectl -n kube-system rollout restart ds/cilium && kubectl -n kube-system rollout status ds/cilium
 ```
 
-### 3.3 NIC multiqueue — maintenance window (workstation)
+### 3.3 NIC multiqueue (applied 2026-11-03)
 
-```bash
-make init && make fmt && make validate && make lint
-```
+`queues = var.cpu_cores` in `modules/proxmox/main.tf` gives the VM NIC one queue pair per
+vCPU. Applying it hot-replugs the NIC (short outage); reboot the node afterwards so Cilium
+attaches cleanly. Any `make plan` that shows the VM as `-/+` (replace) must stop: it would
+rebuild the node, and `prevent_destroy` makes such a plan fail. The usual cause is
+`disk.file_id` after a cloud-image re-pin, which `ignore_changes` covers.
 
-```bash
-make plan
-```
-
-Expected: `proxmox_virtual_environment_file.cloud_config` **replaced** and
-`proxmox_virtual_environment_vm.k3s_node` **updated in place** (`~ queues = <cpu_cores>`; 10 on this host).
-With the 12 GiB default, the plan also shows `~ dedicated`/`~ floating` 14336 → 12288 (check
-`memory_size` in your `terraform.tfvars` too). The provider reboots the VM for the memory change
-(`reboot_after_update`, default true), which also applies the NIC change; if it only prints a
-warning, reboot manually as below.
-**If the VM shows `-/+` (replace), stop** — that would rebuild the node. The usual cause is a
-`# forces replacement` on `disk.file_id` (the cloud image download was re-pinned or replaced);
-`disk[0].file_id` is in `ignore_changes` since 2026-11-03 for that reason. Replacing the
-`proxmox_download_file` itself (a re-download of the image) and the `cloud_config` snippet is
-harmless: the VM's disk is an independent copy, and the snippet is ignored on the running node.
-Also check `memory_size` in `terraform.tfvars`: an explicit `14336` there overrides the new
-12 GiB default.
-
-```bash
-make provision
-```
-
-Proxmox hot-replugs the NIC (short outage). Reboot the node so Cilium attaches cleanly:
-
-```bash
-ssh ubuntu@192.168.50.55 'sudo reboot'
-```
-
-Verify: `Combined:` equal to `cpu_cores` (10 on this host), and `mq` with one `fq` per queue.
+Verify: `Combined:` equals `cpu_cores` (10 on this host), `mq` with one `fq` per queue, and
+Cilium reports `EDT with BPF [BBR] [eth0]`:
 
 ```bash
 ssh ubuntu@192.168.50.55 'ethtool -l eth0; tc qdisc show dev eth0 | head'
-```
-
-`Combined: 1` before this change is expected (pre-set maximum 1: Proxmox exposes a single queue pair, so `ethtool -L` cannot raise it from inside the guest). If `Combined` is below `<cpu_cores>` (`6` by default in `variables.tf`, `10` with the host's `terraform.tfvars` override) afterwards:
-
-```bash
-ssh ubuntu@192.168.50.55 'sudo ethtool -L eth0 combined <cpu_cores>'
-```
-
-Cilium should report `EDT with BPF [BBR] [eth0]`:
-
-```bash
 kubectl -n kube-system exec ds/cilium -- cilium-dbg status | grep -iE 'BandwidthManager|Devices'
 ```
 
-Rollback: remove the `queues` line from `modules/proxmox/main.tf` and run `make provision`.
+If `Combined` is lower after a reboot: `ssh ubuntu@192.168.50.55 'sudo ethtool -L eth0 combined <cpu_cores>'`.
+Rollback: remove the `queues` line and `make apply`.
 
 ### 3.4 Graceful node shutdown (k3s restart: ~30–90 s without the API, pods keep running)
 
@@ -392,16 +362,121 @@ findmnt -no OPTIONS /; cat /sys/kernel/mm/transparent_hugepage/enabled; ls -lh /
 | needrestart / unattended-upgrades installed | Services restart and kernels install on their own schedule; belongs with REL-08 (planned reboots) |
 
 Optional, same drop-in: `serializeImagePulls: false` and `maxParallelImagePulls: 3` for faster
-recovery when many images must be pulled. `disable-helm-controller: true` (unused: Flux manages Helm)
-can go into the declarative `/etc/rancher/k3s/config.yaml` in `modules/proxmox/main.tf` for new
-nodes, and into the live node's config.yaml followed by a k3s restart.
+recovery when many images must be pulled.
+
+### 3.7 Memory and inode eviction, helm controller, API audit log, `disabled-metrics`, `fs.file-max` (one k3s restart)
+
+All five are in `modules/proxmox/main.tf` for new nodes. On the running node they need
+one k3s restart (~30–90 s without the API, pods keep running); do it in the same window
+as SEC-02 if that is still open. Copy the file contents from `modules/proxmox/main.tf`,
+which is the single source.
+
+`disabled-metrics` (OBS-02) turns off nine apiserver histograms that nothing reads. k3s
+serves a single metrics registry on both the apiserver (`:6443/metrics`) and the kubelet
+(`:10250/metrics`), and its size grows with uptime, because every new resource/verb pair
+adds histogram series. On 2026-11-19 it passed vmagent's 16 MiB limit, and both scrapes
+failed until the 2026-11-24 reboot. `max_scrape_size: 48MiB` in
+`gitops/monitoring/platform/release.yaml` stopped the failures. This flag shrinks the
+body itself, from 11.7 to about 5.5 MB just after boot.
+
+**Before.** What the kubelet uses today, whether anything still uses the helm controller,
+and how much room the scheduler has:
+
+```bash
+N=$(sudo k3s kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
+sudo k3s kubectl get --raw "/api/v1/nodes/$N/proxy/configz" | jq '.kubeletconfig | {evictionHard, evictionSoft, evictionSoftGracePeriod}'
+df -i /   # inode use: the new threshold fires below 5 % free (IFree/Inodes)
+sudo k3s kubectl get helmcharts.helm.cattle.io,helmchartconfigs.helm.cattle.io -A
+sudo k3s kubectl describe node "$N" | grep -A8 'Allocated resources'
+sysctl fs.file-max
+sudo k3s kubectl get --raw /metrics | wc -c   # metrics body size in bytes
+sudo k3s kubectl get --raw /metrics | grep -c '^etcd_request_duration_seconds_bucket'
+```
+
+Expected: `evictionHard` has only `imagefs.available` and `nodefs.available` at 5 % (the k3s
+default, with **no** memory and **no** inode threshold); `df -i /` `IUse%` well below 95 %
+(otherwise the restart starts with DiskPressure: prune images first, `sudo k3s crictl rmi --prune`);
+no HelmChart objects; `fs.file-max = 2097152`; a metrics body of 11–17 MB depending on uptime
+and some thousands of `etcd_request_duration_seconds_bucket` lines.
+The 200 Mi hard threshold lowers allocatable memory by 200 Mi: memory requests plus one
+backend surge pod (1536 Mi) must still fit, otherwise lower a request first.
+
+**Apply.**
+
+```bash
+# 1. kubelet drop-in: content of 50-eviction.conf from modules/proxmox/main.tf
+sudo tee /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-eviction.conf <<'EOF'
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+evictionHard:
+  memory.available: 200Mi
+  nodefs.inodesFree: 5%
+  imagefs.inodesFree: 5%
+evictionSoft:
+  memory.available: 600Mi
+evictionSoftGracePeriod:
+  memory.available: 1m30s
+evictionMaxPodGracePeriod: 60
+EOF
+
+# 2. audit policy: content of audit-policy.yaml from modules/proxmox/main.tf
+sudoedit /etc/rancher/k3s/audit-policy.yaml && sudo chmod 600 /etc/rancher/k3s/audit-policy.yaml
+python3 -c 'import yaml,sys; p=yaml.safe_load(open(sys.argv[1])); assert p["kind"]=="Policy" and p["rules"]; print(len(p["rules"]), "rules")' /etc/rancher/k3s/audit-policy.yaml
+
+# 3. /etc/rancher/k3s/config.yaml: add `disable-helm-controller: true` and the
+#    `kube-apiserver-arg:` block from modules/proxmox/main.tf
+sudoedit /etc/rancher/k3s/config.yaml
+
+# 4. fs.file-max: remove the line; the running value goes back to the kernel maximum
+sudo sed -i '/^fs.file-max/d' /etc/sysctl.d/99-kubernetes.conf && sudo sysctl -w fs.file-max=9223372036854775807
+
+# 5. restart, with a second SSH session open
+sudo systemctl restart k3s && sudo journalctl -u k3s -f
+```
+
+`python3` with PyYAML is part of the Ubuntu cloud image (cloud-init needs it). The check
+only catches broken YAML; a wrong field name is caught by the API server at start. If k3s
+does not come back within two minutes, the journal names the reason (`audit policy` or
+`kubelet`): remove the `kube-apiserver-arg` block or the drop-in and restart again.
+
+**Verify.**
+
+```bash
+sudo k3s kubectl get --raw "/api/v1/nodes/$N/proxy/configz" | jq '.kubeletconfig | {evictionHard, evictionSoft, evictionSoftGracePeriod, evictionMaxPodGracePeriod}'
+sudo ls -lh /var/lib/rancher/k3s/server/logs/
+sudo tail -n 200 /var/lib/rancher/k3s/server/logs/audit.log | jq -r '[.level, .user.username, .verb, .objectRef.resource] | @tsv' | sort | uniq -c | sort -rn | head
+sudo journalctl -u k3s --since -5min | grep -c 'HelmChart'
+sysctl fs.file-max
+sudo k3s kubectl get --raw /metrics | wc -c
+sudo k3s kubectl get --raw /metrics | grep -cE '^(etcd_request_duration_seconds|apiserver_watch_events_dispatch_duration_seconds|apiserver_watch_list_duration_seconds|apiserver_storage_list_duration_seconds|apiserver_request_body_size_bytes|apiserver_response_sizes|apiserver_watch_cache_read_wait_seconds|apiserver_watch_cache_initialization_duration_seconds|apiserver_watch_events_sizes)_'
+sudo k3s kubectl get --raw /metrics | grep -c '^apiserver_request_sli_duration_seconds_bucket'
+```
+
+Expected: `memory.available` 200Mi (hard) and 600Mi (soft), `nodefs.inodesFree` and
+`imagefs.inodesFree` 5 % next to the two 5 % disk values (`df -i /` shows how far away the
+inode threshold is);
+an `audit.log` that grows; `0` for the HelmChart count (k3s no longer starts those controllers). Look at the audit
+log's size after a day (`ls -lh`): the top lines of the `uniq -c` output show who writes
+most, and a noisy, uninteresting writer gets a `level: None` rule in the policy (in
+`modules/proxmox/main.tf` first, then on the node).
+For `disabled-metrics`: a body of about 5.5 MB, `0` lines for the nine disabled families,
+and the SLI histogram still present (non-zero). The flag is only applied to metrics
+registered after the API server reads its flags. If any of the nine families still shows
+up, it was registered earlier in the shared k3s process: remove its name from the flag (in
+`main.tf` too), because the vmagent drop rule and `max_scrape_size` already cover it. In
+VictoriaMetrics, `scrape_response_size_bytes{job="apiserver"}` drops by the same amount,
+and `up{job=~"apiserver|kubelet"}` stays `1`.
+
+Rollback: delete `50-eviction.conf`, remove the additions from `config.yaml`, put the
+`fs.file-max` line back, restart k3s. The HelmChart CRDs stay installed either way; with
+the controller off nothing acts on them.
 
 ---
 
 ## 4. Proxmox host (root shell)
 
 Not managed by this repository. Use the console, or tmux over SSH, for anything
-that can drop the network (§4.3, §4.4).
+that can drop the network (§4.3).
 
 ### 4.1 Checks
 
@@ -543,67 +618,10 @@ ethtool -K eno1 tso off gso off
 
 Persist with `post-up /usr/sbin/ethtool -K eno1 tso off gso off` in the same stanza.
 
-### 4.4 Proxmox VE 8 → 9 upgrade (own window, backup first)
+### 4.4 Proxmox VE 9
 
-Done on this host (PVE 9.2, kernel 7.0, checked 2026-11-03); kept for reference.
-
-From the [official guide](https://pve.proxmox.com/wiki/Upgrade_from_8_to_9) for a
-standalone node on the no-subscription repository; read its known-issues list first.
-
-Update to 8.4.1 or newer:
-
-```bash
-apt update && apt dist-upgrade && pveversion
-```
-
-Run the checklist; fix and re-run until it is clean:
-
-```bash
-pve8to9 --full
-```
-
-Switch Debian to Trixie:
-
-```bash
-sed -i 's/bookworm/trixie/g' /etc/apt/sources.list
-```
-
-Remove the old Proxmox repository files from `/etc/apt/sources.list.d/`
-(`pve-enterprise.list`, `pve-install-repo.list` or similar), then add the new one:
-
-```bash
-cat > /etc/apt/sources.list.d/proxmox.sources <<'EOF'
-Types: deb
-URIs: http://download.proxmox.com/debian/pve
-Suites: trixie
-Components: pve-no-subscription
-Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
-EOF
-```
-
-Only the intended repositories should be listed. If the upgrade wants to remove
-`proxmox-ve`, stop: a repository is misconfigured.
-
-```bash
-apt update && apt policy
-```
-
-```bash
-apt dist-upgrade
-```
-
-```bash
-pve8to9 && reboot
-```
-
-Afterwards:
-
-- NIC names unchanged (`ip -br link` vs the bridge ports in `/etc/network/interfaces`); `pve-network-interface-pinning` can pin them.
-- `/etc/sysctl.conf` is ignored on PVE 9: keep settings in `/etc/sysctl.d/`.
-- Governor unit and KSM state as set in §4.2.
-- `make plan` from the workstation still works against the 9.x API (bpg provider, Proxmox CSI).
-
----
+The host runs PVE 9.2 (kernel 7.0, checked 2026-11-03); PVE 8 is end of life. The 8 → 9
+upgrade procedure was removed once the upgrade was done (see `git log`).
 
 ### 4.5 Host housekeeping and SSD wear (2026-11-03)
 
@@ -674,8 +692,8 @@ Per-volume result (5-minute sample, 2026-11-03): VM root disk 94.9 GB/day, Victo
 - Leases now renewed every 15s (lease 60s, renew 40s unless noted), one commit per component:
 
   | Component | Where | Setting |
-|---|---|---|
-  | Kyverno x4 | `kyverno/release.yaml`, per-controller `extraArgs` | `leaderElectionRetryPeriod: 15s` (Kyverno derives lease 6x = 90s, renew 5x = 75s) |
+  |---|---|---|
+  | Kyverno (admission, reports; the background and cleanup controllers have since been disabled) | `kyverno/release.yaml`, per-controller `extraArgs` (`admissionController.container.extraArgs`) | `leaderElectionRetryPeriod: 15s` (Kyverno derives lease 6x = 90s, renew 5x = 75s) |
   | cilium-operator | `cilium/release.yaml`, `operator.extraArgs` | `--leader-election-*` |
   | VictoriaMetrics operator | `monitoring/platform/release.yaml` | `leader-elect: "false"` + `strategy: Recreate` (no retry-period flag exists) |
   | Flux x6 | FluxInstance kustomize patch (args appended to every controller Deployment) | `--leader-election-*` |
@@ -696,7 +714,7 @@ Per-volume result (5-minute sample, 2026-11-03): VM root disk 94.9 GB/day, Victo
 - **Result, 30 min after the Flux, VictoriaMetrics and lease changes (2026-11-03):**
 
   | Measure | Before | After |
-|---|---|---|
+  |---|---|---|
   | VM root disk (host `dm-*`) | 94.9 GB/day | 17.4 GB/day |
   | Thin-pool metadata (`pve-data_tmeta`) | 11.6 | 0.6 |
   | VictoriaMetrics PVC (host) | 11.6 | 4.8 |

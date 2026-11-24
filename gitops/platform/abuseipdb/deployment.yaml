@@ -1,4 +1,5 @@
-# AbuseIPDB → CiliumCIDRGroup synchronizer.
+# AbuseIPDB synchronizer: maintains CiliumCIDRGroup/abuseipdb and the Cloudflare
+# IP list + WAF rule, and collects Cloudflare Security Events for Grafana.
 #
 # The Deployment runs the synchronizer only; it never serves traffic. The
 # CiliumCIDRGroup/abuseipdb object it maintains is intentionally NOT committed
@@ -49,7 +50,7 @@ spec:
           # Public GHCR package, pinned by digest so the running binary is
           # exactly the built/reviewed image. Bump the digest from the build
           # workflow summary when the Go code changes.
-          image: ghcr.io/stefanf81/abuseipdb-sync:0.3.5-r7@sha256:8ff24a7ffcd047377bcf2d891b8b0c4f3008f58520986fd76bdce792dd9bd426
+          image: ghcr.io/stefanf81/abuseipdb-sync:0.3.5-r10@sha256:bd187b598dc9d08f9e3165aecbf76e600ba84ab89ef8c40288b93aba4ffbda71
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

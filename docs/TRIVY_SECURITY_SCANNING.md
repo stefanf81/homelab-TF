@@ -9,7 +9,7 @@ results are surfaced in Grafana and the Policy Reporter dashboard.
 - **Policy Reporter** — the Trivy results are surfaced in `https://kyverno.jokelab.dev`
   through the `trivy-operator-polr-adapter` (see §6 and `docs/KYVERNO_POLICY_ENGINE.md`).
 - **Grafana** — operator and scan metrics are scraped by VictoriaMetrics and shown on the
-  `Trivy Operator` dashboard (see §7).
+  `Trivy Operator` dashboard (see §5).
 
 Everything is managed through Git; nothing is applied imperatively.
 
@@ -36,8 +36,9 @@ gitops/
 ```
 
 - `trivy-operator/` is reconciled by its **own** cluster Kustomization (`trivy-operator`)
-  that `dependsOn: infra-controllers` (so the Flux `HelmRelease` machinery and namespace
-  exist first). It is **not** part of `infrastructure/controllers/kustomization.yaml`.
+  that `dependsOn: infra-controllers` (so Cilium and the `proxmox-csi` StorageClass named in
+  `trivy.storageClassName` exist first; the `trivy-system` namespace is in this folder). It is
+  **not** part of `infrastructure/controllers/kustomization.yaml`.
 - The adapter lives under `policy-reporter/` and is reconciled by the `policy-reporter`
   Kustomization.
 
@@ -81,32 +82,18 @@ Additional operator values:
 - Scan concurrency is deliberately capped for the single‑node homelab:
   `scanJobsConcurrentLimit: 1`, `scanNodeCollectorLimit: 1`, `scanJobTimeout: 5m`.
 
-### Why an allowlist instead of namespace exclusions (2026-11-03)
+### Why an allowlist instead of namespace exclusions
 
-Chart 0.38.1 runs operator 0.36.1. Its workload controller attaches
-`InstallModePredicate` only to `For(...)`, not the `Owns(VulnerabilityReport)`,
-`Owns(ExposedSecretReport)` and `Owns(SbomReport)` watches. Owned-report events can
-therefore enqueue an excluded workload, and reconciliation does not recheck namespace
-scope. This is also described in [upstream issue #2817](https://github.com/aquasecurity/trivy-operator/issues/2817).
-
-The live operator had the correct exclusion environment variable, but old Cilium reports
-from August/September still existed in `kube-system`. A rescan created seven scanner
-containers for the same Cilium image (including its init containers): 7 × 512Mi = 3584Mi
-of scheduling requests, above the single node's ~2.34Gi headroom. The job could not
-schedule and subsequently expired; the five-minute timeout prevents it remaining
-Pending indefinitely. `scanJobsConcurrentLimit: 1` limits jobs, not containers inside
-one job.
-
-The allowlist selects MultiNamespace install mode, which scopes the manager cache to
-the application namespaces plus `trivy-system`. Old system reports no longer enter
-the owned-report watches. Scanner requests (512Mi), limits (2Gi), init-container
-coverage and concurrency are unchanged. Existing reports are not deleted by this
-change and can remain visible to other consumers. An already queued scan may persist
-until its normal timeout; no imperative cleanup is required.
-
-Source inspected: [`workload.go`](https://github.com/aquasecurity/trivy-operator/blob/v0.36.1/pkg/vulnerabilityreport/controller/workload.go),
-[`predicate.go`](https://github.com/aquasecurity/trivy-operator/blob/v0.36.1/pkg/operator/predicate/predicate.go),
-[`operator.go`](https://github.com/aquasecurity/trivy-operator/blob/v0.36.1/pkg/operator/operator.go).
+Operator 0.36.1 (chart 0.38.1) applies its namespace filter only to the workload watch,
+not to the owned-report watches (`VulnerabilityReport`, `ExposedSecretReport`,
+`SbomReport`), so an old report in an excluded namespace can still trigger a scan of that
+workload ([upstream issue #2817](https://github.com/aquasecurity/trivy-operator/issues/2817)).
+On 2026-11-03 that produced a scan job for the Cilium image with seven scanner containers
+(7 × 512Mi), more than the node's free requests, which could not schedule. The allowlist
+selects MultiNamespace install mode, which scopes the operator's cache to the application
+namespaces plus `trivy-system`, so reports elsewhere no longer reach it. Scanner requests,
+limits and concurrency are unchanged; existing reports are not deleted. The platform images
+are therefore not scanned in-cluster (SEC-10 in `docs/BACKLOG.md`).
 
 ---
 
@@ -160,10 +147,10 @@ spec:
       honorLabels: true                     # keep the findings' own `namespace` label
 ```
 
-The `jobLabel: app.kubernetes.io/name` is **critical** — it sets `job="trivy-operator"`
-instead of the auto-generated `namespace/name`, so the dashboard's PromQL that references
-`trivy_image_vulnerabilities` etc. works without a `job` filter (same pattern as the Falco
-scrape).
+The `jobLabel: app.kubernetes.io/name` sets `job="trivy-operator"` instead of the
+auto-generated `namespace/name`; the dashboard's *Infrastructure metric coverage* stat selects
+`up{job="trivy-operator"}`, while the findings panels select by metric name and do not filter
+on `job` (same pattern as the Falco scrape).
 
 `honorLabels: true` is required as well: the findings metrics carry the scanned resource's
 own `namespace` label. Without it the target label (`namespace="trivy-system"`) wins and the
@@ -195,7 +182,7 @@ Panels (top to bottom):
    secrets count an image once per namespace, however many workloads run it, so the totals match
    the image table. Infra-assessment metric coverage is a separate stat further down (always
    "Not exported" here: the operator only creates namespaced infra reports for kube-system
-   control-plane pods, and kube-system is excluded).
+   control-plane pods, and kube-system is not in `targetNamespaces`).
 2. **Vulnerabilities by Severity** (timeseries, `sum by (severity)`).
 3. **Vulnerabilities by Namespace** (top‑15 by peak, `topk_max`).
 4. **Vulnerabilities by Image** (table, `max by` `image_registry`, `image_repository`,
@@ -220,7 +207,7 @@ objects; the Policy Reporter UI reads those to build its report list. The
   HelmRelease `trivy-operator-polr-adapter` in `policy-reporter` namespace).
 - `useWatchList: false` (a client-go cache-sync workaround), and the `crds.install: false` gate keeps the `wgpolicyk8s.io` CRDs
   owned by Kyverno (which already installs them).
-- All source adapters enabled: `vulnerabilityReports`, `configAuditReports`,
+- Eight source adapters enabled: `vulnerabilityReports`, `configAuditReports`,
   `rbacAssessmentReports`, `exposedSecretReports`, `complianceReports`,
   `infraAssessmentReports`, `clusterInfraAssessmentReports`, `clusterVulnerabilityReports`.
 
@@ -231,9 +218,10 @@ The adapter writes named reports (e.g. `trivy-nginx` in each namespace, or clust
 
 Policy Reporter's own HelmRelease (`policy-reporter`, v3.11.2) additionally has:
 
-- `plugin.trivy.enabled: true` — lets Policy Reporter enrich the reports / metrics with
-  severity data (so the `policy_report_info`/`policy_report_result` metrics and the
-  `Trivy …` UI sources get meaningful colors & filtering).
+- `plugin.trivy.enabled: true` — the Trivy plugin enriches the UI with vulnerability
+  details. It produces no reports or metrics: Trivy findings reach Policy Reporter's
+  `policy_report_result` metrics (`metrics.mode: custom`, `pass`/`skip` not exported) through
+  the adapter's PolicyReports.
 - `ui.sources` lists six Trivy sources (each `type: severity`, excluding `pass`/`skip`):
 
   | Source name | Maps to adapter‑produced report |
@@ -257,9 +245,9 @@ and **Falco** lists and the **Trivy** ones, all under their own source tabs.
 | No `VulnerabilityReport` for a workload | Vulnerability scanning is enabled with `vulnerabilityScannerScanOnlyCurrentRevisions: true`; SBOM generation is disabled. Images are scanned when a workload appears or on each `interval`. Check `kubectl get jobs -A` for pending scans, or the `trivy-operator` operator logs. |
 | ScanJobs / cluster-node collector stuck | Single node + scans capped (`scanJobsConcurrentLimit: 1`, `scanNodeCollectorLimit: 1`). Scale down if slow or bump limits, then watch `kubectl -n trivy-system get pods`. |
 | Compliance report created but `ClusterComplianceReport` status shows `summary` / no detail | Check `trivy-operator` HelmRelease `compliance.reportType`: must be **`all`** for the adapter to work (see §4). Only reports with `reportType: all` carry per‑check results. |
-| No `trivy_*` metrics in VictoriaMetrics | Verify the `VMServiceScrape` (see `monitoring/app/vmservicescrapes.yaml`) matches the operator's labels, that `jobLabel` is `app.kubernetes.io/name`, and that `job="trivy-operator"` shows healthy in vmsingle/VMAggregator. |
+| No `trivy_*` metrics in VictoriaMetrics | Verify the `VMServiceScrape` (see `monitoring/app/vmservicescrapes.yaml`) matches the operator's labels, that `jobLabel` is `app.kubernetes.io/name`, and that `up{job="trivy-operator"}` is `1` (vmagent targets). |
 | Grafana dashboard empty | Check the `$datasource` variable is set to `VictoriaMetrics` and the `$namespace` template variable resolves; the metrics only appear for namespaces with scans (the `trivy_*` metrics are emitted lazily by the operator, not continuously). |
-| `trivy-operator-polr-adapter` pods crash-loop | Adapter needs the `wgpolicyk8s.io` CRDs installed (Kyverno provides them). Ensure `infra-controllers`/`kyverno` is healthy before the `policy-reporter` Kustomization. |
+| `trivy-operator-polr-adapter` pods crash-loop | Adapter needs the `wgpolicyk8s.io` CRDs (Kyverno provides them) and Trivy's report CRDs (`trivy-operator`). The `policy-reporter` Kustomization `dependsOn` both `infra-controllers` and `trivy-operator`; check that both are Ready. |
 | Compliance reports appear in Grafana but not in Policy Reporter | Again typically `reportType: summary`. Flip to `all` in `compliance:` and re-reconcile; existing `ClusterComplianceReport`s will regenerate on next cron slot. |
 
 ---
@@ -275,8 +263,8 @@ kubectl -n trivy-system get pods
 kubectl get vulnerabilityreports,configauditreports,rbacassessmentreports,exposedsecretreports -A
 kubectl get clustercompliancereport
 
-# Adapter-produced PolicyReports for Trivy sources
-kubectl get clusterpolicyreports --all-namespaces | grep trivy
+# Adapter-produced PolicyReports for Trivy sources (namespaced and cluster-scoped)
+kubectl get policyreports,clusterpolicyreports -A | grep trivy
 
 # Scan jobs (created in trivy-system)
 kubectl get jobs -n trivy-system

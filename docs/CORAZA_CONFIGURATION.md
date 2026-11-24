@@ -11,8 +11,24 @@ Reference for tuning and maintaining the Taskflow Caddy+Coraza WAF deployments.
 | Frontend exclusions | Same ConfigMap, key `frontend-exclusions.conf` | Empty until false positives are found |
 | Backend exclusions | Same ConfigMap, key `backend-exclusions.conf` | Empty until false positives are found |
 | Rate-limit zones | Same ConfigMap, key `rate-limit.conf` | Per-client HTTP rate-limit zones imported by Caddyfile |
+| Coraza base config | Image: `/usr/share/coraza/coraza.conf-recommended` | Coraza's recommended configuration (`CORAZA_CONF_VERSION` in the image Dockerfile) |
+| CRS setup + rules | Image: `/usr/share/coraza/crs/crs-setup.conf.example`, `/usr/share/coraza/crs/rules/*.conf` | OWASP CRS (`CRS_VERSION` in the image Dockerfile) |
 
-With `load_owasp_crs`, the connector merges the embedded CRS filesystem with the OS filesystem. `Include @...` loads from the embedded CRS; `Include /etc/coraza/...` loads from the mounted ConfigMap.
+All `Include` lines are plain filesystem paths: `/usr/share/coraza/...` comes from the image, `/etc/coraza/...` from the mounted ConfigMap. `load_owasp_crs` and the `@...` aliases are **not** used: they resolve against the bundle embedded in the `coraza-caddy` connector, which upstream froze at CRS 4.25.0 (see "CRS version" below).
+
+## CRS version
+
+| Pin (image `Dockerfile`) | Go module | Current | Line |
+|---|---|---|---|
+| `CRS_VERSION` | `github.com/corazawaf/coraza-coreruleset/lts/v4` | v4.25.2 | CRS 4.25 LTS: security and regression backports only, quarterly, until Q3 2027 |
+| `CORAZA_CONF_VERSION` | `github.com/corazawaf/coraza-coreruleset/coraza/v3` | v3.8.1 | `coraza.conf-recommended` of the Coraza engine the connector compiles in |
+
+- Renovate tracks both (`# renovate: datasource=go` above each `ARG`) and bumps `IMAGE_REVISION`, in a `WAF rule set` PR of their own that is **never automerged**, LTS patch releases included. The image build runs the behaviour tests, including the false-positive regression test below; read the PR against the CRS release notes and the test output, then merge. A new image is then proposed for both Deployments.
+- The ConfigMaps need an image from `r15` on (the first with `/usr/share/coraza`). With an older image Caddy does not start (`open /usr/share/coraza/coraza.conf-recommended: no such file or directory`); "Validate WAF behaviour" runs the pinned image, so CI rejects that combination.
+- The image build copies the files out of the Go modules (`go mod download`, verified against the Go checksum database). The behaviour tests assert that blocked requests are attributed to exactly the CRS version in the image, and that a request with more arguments than `SecArgumentsLimit` is rejected.
+- Why not the embedded copy: `coraza-caddy` v2.6.2 embeds the legacy module `coraza-coreruleset/v4`, frozen at v4.25.0 — CRS 4.25.0 without the 4.25.1/4.25.2 bypass fixes, and a `coraza.conf-recommended` that predates Coraza 3.8's `SecArgumentsLimit` (without rules 200004/200005 arguments beyond the first 1000 were dropped silently, hiding a payload from the CRS). Later connector releases embed the *latest* CRS line (`crs/v4`) instead; the LTS line is never embedded. Loading from files keeps the rule set independent of the connector version.
+- `tx.crs_xml_attr_inspect=1` (SecAction `1000002`): on the 4.25 LTS line the fix for GHSA-6jp8-c2w2-x7wr (XML attribute values were not inspected) is shipped switched **off**; this turns it on. Remove it when moving to a line without the switch.
+- Moving to the latest CRS line: change the module in the Dockerfile (`ARG` comment and the `RUN` step) to `.../crs/v4`, whose files are named `@owasp_crs` and `@crs-setup.conf.example`. That line adds detections in every minor release (Renovate: minor, manual merge), so replay the tuning workflow below before merging; rule IDs removed in 4.30 (950010–956010) only matter for response inspection, which is off here.
 
 ## Current Deployment Mode
 
@@ -22,22 +38,23 @@ With `load_owasp_crs`, the connector merges the embedded CRS filesystem with the
 
 ```
 directives `
-    Include @coraza.conf-recommended              # 1. Coraza recommended base config
-    Include @crs-setup.conf.example               # 2. CRS setup defaults
+    Include /usr/share/coraza/coraza.conf-recommended         # 1. Coraza recommended base config (image)
+    Include /usr/share/coraza/crs/crs-setup.conf.example      # 2. CRS setup defaults (image)
     Include /etc/coraza/frontend-exclusions.conf  # 3. Before-CRS exclusions
 
     SecRuleEngine On                              # 4. Engine mode (active blocking)
     SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=2" # Paranoia level 2
+    SecAction "id:1000002,phase:1,pass,nolog,setvar:tx.crs_xml_attr_inspect=1"    # LTS: inspect XML attribute values
     SecRequestBodyAccess On                       #    Body processing
     SecResponseBodyAccess Off                     #    Response buffering (off)
     SecAuditEngine RelevantOnly                   #    Audit logging
     SecAuditLog /dev/stdout                       #    Audit JSON to stdout (Alloy redacts credentials at ingest)
     SecAuditLogFormat JSON                        #    JSON audit records
     SecAuditLogParts ABFHZ                        #    Rule-match metadata plus request/response headers
-    SecRequestBodyLimit 10485760                  #    Max request body (10 MB)
-    SecRequestBodyNoFilesLimit 1048576            #    Max body without files (1 MB)
+    SecRequestBodyLimit 65536                     #    Max request body (64 KiB)
+    SecRequestBodyInMemoryLimit 65536             #    Buffer it in memory (must be <= the limit)
 
-    Include @owasp_crs/*.conf                     # 5. CRS rules (embedded)
+    Include /usr/share/coraza/crs/rules/*.conf    # 5. CRS rules (image)
 `
 ```
 
@@ -67,43 +84,43 @@ SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=2"
 
 Raise one level at a time, observe detections, add exclusions, then raise again.
 
+## Allowed Methods
+
+CRS rule 911100 blocks every method outside `tx.allowed_methods` (default `GET HEAD POST OPTIONS`); it is a
+critical rule, so one match reaches the blocking threshold. The backend WAF sets
+`GET HEAD POST PUT DELETE OPTIONS` (SecAction `1000003`, directly after `SecRuleEngine On` in its
+`directives` block; not shown in the frontend load order above) because the API uses `PUT` and `DELETE`; the
+frontend WAF keeps the default. When the backend gains an endpoint with another method (for example
+`PATCH`), add it there, or the WAF answers it with 403. The image test suite sends `PUT`, `DELETE` and
+`PATCH` through the backend WAF.
+
 ## Audit Log Parts
 
 Configured by `SecAuditLogParts`. Each letter adds a section:
 
 | Part | Content |
 |------|---------|
-| A | Audit log header (timestamp, parts) |
+| A | Audit log header (mandatory) |
 | B | Request headers |
-| C | Request body |
-| D | (Reserved, currently unused) |
-| E | Request body after rules |
-| F | Response headers |
-| G | Response body |
+| C | Request body (requires `SecRequestBodyAccess On`) |
+| D | Reserved for intermediary response headers (not implemented) |
+| E | Intermediary response body (requires `SecResponseBodyAccess On`) |
+| F | Final response headers |
+| G | Reserved for the actual response body (not implemented) |
 | H | Audit log trailer, including matched-rule messages and metadata |
-| I | Compact request body (multipart) |
-| J | Uploaded file information |
-| K | Matched rule IDs |
-| L | Final boundary |
-| M | Error messages |
-| N | Phase 1 and 2 compressed output |
-| O | Connection metadata |
-| P | Protocol info |
-| Q | Filename (if logged) |
-| R | Non-standard response codes |
-| S | Rule action messages |
-| T | Timestamp |
-| U | URI path |
-| V | Protocol version |
-| X | Request body inspection notes |
-| Y | Response body inspection notes |
-| Z | End of audit log entry |
+| I | Request body without file contents for multipart (not implemented) |
+| J | Uploaded file information (Coraza v3.7.0+) |
+| K | Every matched rule, in match order |
+| Z | Final boundary, end of the entry (mandatory) |
+
+Coraza accepts only these letters (see the `SecAuditLogParts` reference linked below).
 
 Current setting: **`ABFHZ`** — includes request and response headers plus the `H`
 rule-match metadata. Request bodies remain excluded. Coraza writes these records
-directly to container stdout; Alloy removes inbound `Authorization`,
-`Proxy-Authorization`, and `Cookie` headers and sensitive query parameters while
-ingesting the records. Nothing is written to disk.
+directly to container stdout; Alloy replaces the `Authorization`,
+`Proxy-Authorization`, `Cookie` and `Set-Cookie` header values, sensitive query
+parameter values and the matched data of credential variables with `REDACTED`
+while ingesting the records. No audit log file is written.
 
 ## SecAuditEngine
 
@@ -112,7 +129,8 @@ ingesting the records. Nothing is written to disk.
 | `Off` | Never audit |
 | `On` | Audit all requests |
 | `RelevantOnly` | Audit only transactions with warnings/errors or matching `SecAuditLogRelevantStatus` |
-| `Dynamic` | Per-transaction decision via `SecAuditEngine` rule action |
+
+To change it per transaction, use the `ctl:auditEngine=...` rule action.
 
 ## Body Processing
 
@@ -120,9 +138,32 @@ ingesting the records. Nothing is written to disk.
 |-----------|-------|---------|
 | `SecRequestBodyAccess` | `On` | Enables body buffering and inspection |
 | `SecResponseBodyAccess` | `Off` | Disables response body inspection (recommended for reverse proxy) |
-| `SecRequestBodyLimit` | `10485760` | Max body size in bytes (10 MB). Larger bodies are partially inspected. |
-| `SecRequestBodyNoFilesLimit` | `1048576` | Max non-file body size (1 MB) |
-| `SecRequestBodyLimitAction` | `ProcessPartial` | Default. Inspects bytes within limit, sets `INBOUND_DATA_ERROR` if truncated. |
+| `SecRequestBodyLimit` | `65536` | Max body size in bytes (64 KiB), both WAFs. Bodies that reach it are rejected with 413 before any rule runs (see below). The API's requests are small JSON (the application's own nginx bounds `/api` bodies at 32k) and the static site receives none. |
+| `SecRequestBodyNoFilesLimit` | not set | Coraza parses this directive but does not enforce it (`internal/corazawaf/waf.go`: "no logic based on it is implemented"), so it cannot be used to bound JSON bodies separately from uploads. |
+| `SecRequestBodyInMemoryLimit` | `65536` | Bodies up to this size are buffered in memory, larger ones in `/tmp`. Coraza refuses to start if it is larger than `SecRequestBodyLimit` ("request body limit should be at least the memory limit"; `coraza.conf-recommended` sets 128 KiB), so lower both together. Equal to the limit: nothing is spooled to `/tmp`. |
+| `SecRequestBodyLimitAction` | `Reject` | Not set in the ConfigMaps; Coraza's default with `SecRuleEngine On`. Interrupts the transaction (HTTP 413). `ProcessPartial` (inspect up to the limit, set `INBOUND_DATA_ERROR`) applies only in `DetectionOnly` or when set explicitly. |
+
+The body limit is the main cost control of the WAF: the body is buffered and inspected in full, and that happens before
+the rate limiter (`order coraza_waf first`). At paranoia level 2 inspection costs on the order of a CPU-second per 100 KiB
+of argument data, so raise the limit only for a real need and only on the WAF that needs it.
+
+## False-positive regression test
+
+`gitops/images/taskflow-caddy-coraza/tests/benign-corpus.py`, run by `run-tests.sh` for both WAFs (so by the
+image build and by "Validate WAF behaviour"), sends 45 legitimate requests shaped exactly like the ones
+taskflow-enterprise sends (paths, methods and field names from its Angular `core/api` clients and Spring
+request records; free text with the punctuation real names, reviews and admin text contain) and pins each
+answer:
+
+- `PASS`: the request must reach the backend. A 403 here is a new false positive and fails CI.
+- `fp(...)`: a known false positive that the shipped rule set blocks today, with the matching rule IDs and a
+  `TODO(W-6)`. It must stay 403, so an update that changes detection in either direction fails CI and gets
+  read by a person. Six are known (review comments, catalog name/description, a time-off reason, a booking
+  of a service whose name has `&` and parentheses), identical on CRS 4.25.0 and 4.25.2 (BACKLOG SEC-21).
+
+After a failing run, the test prints the rule IDs each case matched (from the audit log's `X-Corpus-Case`
+request header). When you add an exclusion for a known false positive, change that case to `PASS` in the same
+commit. When the app gains an endpoint or a free-text field, add a case.
 
 ## Exclusion Files
 
@@ -144,7 +185,9 @@ SecRule REQUEST_FILENAME "@beginsWith /api/jobs" \
 
 ### After-CRS Exclusions
 
-To use after-CRS exclusions, add a second `Include` line and a separate ConfigMap key:
+To use after-CRS exclusions, add a separate ConfigMap key and a second `Include`
+line **after** `Include /usr/share/coraza/crs/rules/*.conf`. The Deployment's `coraza-config`
+volume projects only the keys listed under its `items`, so add the new key there too:
 
 ```
 Include /etc/coraza/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf
@@ -171,26 +214,26 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
 | `ARGS:message` | A specific query/form parameter |
 | `ARGS:/^json\.\d+\.jobdescription$/` | Regex match on parameter name |
 | `REQUEST_COOKIES:session` | A specific cookie |
-| `REQUEST_URI` | The request path |
+| `REQUEST_URI` | The request path including the query string |
 | `REQUEST_FILENAME` | The request path without query string |
 | `REQUEST_METHOD` | GET, POST, etc. |
-| `!REQUEST_COOKIES:session` | Negate (remove from exclusion) |
+| `!REQUEST_COOKIES:session` | Negation in `SecRuleUpdateTargetById`: remove this target from the rule |
 
 ## CRS Rule Families
 
 | Rule ID Range | Attack Type |
 |---------------|-------------|
 | 913 | Scanner detection |
-| 920-929 | Protocol enforcement (HTTP methods, headers) |
-| 930-931 | Path traversal |
-| 932-934 | Remote command execution |
+| 920-922 | Protocol enforcement (920), protocol attacks (921), multipart attacks (922) |
+| 930-931 | Local file inclusion / path traversal (930), remote file inclusion (931) |
+| 932-934 | Remote command execution (932), PHP injection (933), generic/Node.js attacks (934) |
 | 941 | XSS (cross-site scripting) |
 | 942 | SQL injection |
 | 943 | Session fixation |
 | 944 | Java attack detection |
 | 949 | Inbound attack-score evaluation |
-| 950-959 | Outbound attack detection |
-| 959-959 | Outbound attack score blocking |
+| 950-956 | Outbound (response) data-leakage detection |
+| 959 | Outbound attack-score evaluation |
 
 ## Tuning Workflow
 
@@ -220,12 +263,16 @@ SecRuleUpdateTargetById 942100 "!REQUEST_COOKIES:campaign"
      gitops/apps/taskflow/frontend-waf.yaml > "$tmp/caddy/rate-limit.conf"
    ruby -ryaml -e 'puts YAML.load_file(ARGV[0]).fetch("data").fetch("frontend-exclusions.conf")' \
      gitops/apps/taskflow/frontend-waf.yaml > "$tmp/coraza/frontend-exclusions.conf"
+   # The image the Deployment pins (tag@digest)
+   img=$(ruby -ryaml -e 'puts YAML.load_stream(File.read(ARGV[0])).compact.find { |d| d["kind"] == "Deployment" }.dig("spec", "template", "spec", "containers", 0, "image")' \
+     gitops/apps/taskflow/frontend-waf.yaml)
    docker run --rm --platform linux/amd64 -v "$tmp/caddy:/etc/caddy:ro" -v "$tmp/coraza:/etc/coraza:ro" \
-     ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9 \
-     validate --config /etc/caddy/Caddyfile --adapter caddyfile
+     "$img" validate --config /etc/caddy/Caddyfile --adapter caddyfile
    rm -rf "$tmp"
    ```
-6. Reconcile and replay the test request. Confirm the false positive is gone and the rule still fires on other inputs.
+   `gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh` does the same
+   for both WAFs (it also needs Helm and kubectl, for the dashboard checks).
+6. Reconcile (Reloader rolls the WAF; see `docs/TASKFLOW_WAF_RUNBOOK.md` § "Apply Caddyfile changes") and replay the test request. Confirm the false positive is gone and the rule still fires on other inputs.
 7. Reconcile and repeat the replay tests after every exclusion or CRS change.
 
 ## Client IP Forwarding
@@ -263,7 +310,9 @@ traffic) and by Cilium on the direct path, before requests reach the WAF. See
 
 - Coraza SecLang Reference: https://coraza.io/docs/seclang/directives/
 - Coraza Body Processing: https://coraza.io/docs/reference/body-processing/
-- CRS Setup File (all tunable knobs): https://github.com/corazawaf/coraza-coreruleset/blob/main/rules/@crs-setup.conf.example
+- CRS Setup File (all tunable knobs): `/usr/share/coraza/crs/crs-setup.conf.example` in the image; upstream: https://github.com/coreruleset/coreruleset/blob/lts/v4.25.x/crs-setup.conf.example
+- CRS / Coraza config Go modules (one per bundle): https://github.com/corazawaf/coraza-coreruleset
+- CRS LTS policy and releases: https://coreruleset.org/20260321/announcing-crs-v4-25-lts/
 - CRS Tuning Guide: https://coreruleset.org/docs/usage-tuning/
 - Coraza Caddy Connector: https://github.com/corazawaf/coraza-caddy/blob/main/README.md
 - Coraza + CRS on Caddy Tutorial: https://www.coraza.io/docs/tutorials/coreruleset/

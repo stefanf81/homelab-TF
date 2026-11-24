@@ -19,28 +19,58 @@ The image is built automatically by
 `gitops/images/taskflow-caddy-coraza/` changes. The manual steps below are a
 fallback.
 
-The published tag should use the version and revision declared by
-`CADDY_VERSION`, `CORAZA_CADDY_VERSION`, and `IMAGE_REVISION` in the Dockerfile.
+The published tag should use the version and revision declared by the builder
+image tag (`FROM caddy:<version>-builder-alpine@sha256:…`), `CORAZA_CADDY_VERSION`,
+and `IMAGE_REVISION` in the Dockerfile. Both base images and the `# syntax=`
+frontend are pinned by tag and digest; Renovate moves tag and digest together.
 Increment `IMAGE_REVISION` when the image recipe changes without either upstream
 version changing; published revision tags must not be overwritten.
 `RATE_LIMIT_VERSION` pins the `mholt/caddy-ratelimit` module to an immutable
-commit (no tagged release has the required options).
+commit (no tagged release has the required options); Renovate does not track it,
+so move it by hand. Renovate's own Dockerfile updates (for example Caddy, the
+Coraza plugin or the distroless digest) bump `IMAGE_REVISION` themselves
+(`bumpVersions` in `.github/renovate.json`).
+`CRS_VERSION` and `CORAZA_CONF_VERSION` pin the rule files the image ships under
+`/usr/share/coraza` (OWASP CRS 4.25 LTS and Coraza's recommended configuration);
+Renovate tracks both. The WAF ConfigMaps `Include` those paths, so a ConfigMap
+that uses them needs an image from r15 on (r14 has no `/usr/share/coraza`): publish
+the image first, then change the ConfigMaps together with the Deployment pins (r15
+and later also still run the older `load_owasp_crs` ConfigMaps, so the pin can move
+first; the reverse, new ConfigMaps on an older image, fails at Caddy start).
 
-CI builds the image, runs the identity and rate-limit suite in
-`gitops/images/taskflow-caddy-coraza/tests/` on every PR, and **skips the push**
+CI lints the Dockerfile (hadolint), builds the image, runs the identity,
+rate-limit and false-positive regression suite in
+`gitops/images/taskflow-caddy-coraza/tests/` on every PR that
+touches the image directory or the workflow, fails on HIGH/CRITICAL Trivy findings
+that have a fix, and on `main` publishes through `.github/workflows/publish-image.yaml`:
+a cold build pushed by digest, Trivy again on that digest, then a cosign signature
+(`scan=passed`), SLSA provenance and the scan report as signed attestations, and only then the
+tags. Kyverno's `verify-homelab-images` checks all three at admission. Publication **is skipped**
 if the revision tag is already published (bump `IMAGE_REVISION`) so published
 tags are never overwritten. A changed Dockerfile recipe with an unchanged
-`IMAGE_REVISION` fails the run. ConfigMap-only changes do not trigger that
+`IMAGE_REVISION` fails the run.
+
+Publishing does not deploy: both WAF Deployments pin `<tag>@sha256:<digest>`
+(currently `2.11.9-coraza2.6.2-r15`). Renovate is configured to track
+`ghcr.io/stefanf81/taskflow-caddy-coraza` in both manifests and propose the new
+pin; it can also be copied by hand from the build summary's `image:` line. Flux
+image automation does not manage this image (only `taskflow-frontend`/`taskflow-backend`).
+
+ConfigMap-only changes do not trigger the build
 workflow, so a second workflow ("Validate WAF config and dashboards") runs
 `tests/validate-configs.sh` on changes to `gitops/apps/taskflow/*-waf.yaml`, the
 dashboards and their kustomization, the Loki datasource, the Loki, Alloy and
 repository releases, `gitops/monitoring/app/**`, the Grafana sidecar config in
-`platform/release.yaml` and the validators themselves (see the workflow's `paths:`);
-it validates the unmodified Caddyfiles and every dashboard JSON. Run either locally with:
+`platform/release.yaml`, the validators themselves and other inputs (see the workflow's `paths:`);
+it validates the unmodified Caddyfiles and every dashboard JSON. A third workflow
+("Validate WAF behaviour", `validate-waf-behaviour.yaml`) runs `tests/run-tests.sh`
+against the images the Deployments pin when `*-waf.yaml` or the tests change.
+Run them locally with:
 
 ```bash
-TEST_IMAGE=ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9 \
-  gitops/images/taskflow-caddy-coraza/tests/run-tests.sh
+# Without TEST_IMAGE each WAF is tested with the image its Deployment pins;
+# set TEST_IMAGE=<image> to test a candidate build.
+gitops/images/taskflow-caddy-coraza/tests/run-tests.sh
 gitops/images/taskflow-caddy-coraza/tests/validate-configs.sh
 ```
 
@@ -50,12 +80,16 @@ permission.
 
 ### Manual Local Build (Alternative)
 
-Build and publish the image locally if needed:
+Build and publish the image locally if needed. The tag comes from the Dockerfile;
+publish only a revision CI has not published (bump `IMAGE_REVISION` first):
 
 ```bash
+# Tag <caddy>-coraza<coraza>-r<revision>, derived from the Dockerfile ARGs
+D=gitops/images/taskflow-caddy-coraza/Dockerfile
+IMAGE="ghcr.io/stefanf81/taskflow-caddy-coraza:$(sed -n 's/^FROM caddy:\([0-9.]*\)-builder-alpine@.*/\1/p' "$D")-coraza$(sed -n 's/^ARG CORAZA_CADDY_VERSION=v//p' "$D")-$(sed -n 's/^ARG IMAGE_REVISION=//p' "$D")"
+
 # Build for linux/amd64 (k3s node architecture)
-docker buildx build --platform linux/amd64 --load \
-  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9 \
+docker buildx build --platform linux/amd64 --load -t "$IMAGE" \
   gitops/images/taskflow-caddy-coraza
 
 # Authenticate to GHCR (requires write:packages; prefer a classic PAT — gho_ tokens may lack GHCR scopes)
@@ -63,16 +97,18 @@ read -r -s GITHUB_TOKEN
 echo "$GITHUB_TOKEN" | docker login ghcr.io -u stefanf81 --password-stdin
 unset GITHUB_TOKEN
 
+# Published revision tags are immutable: stop if this one exists
+docker buildx imagetools inspect "$IMAGE" >/dev/null 2>&1 && echo "already published: bump IMAGE_REVISION"
+
 # Push the image
-docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9
+docker push "$IMAGE"
 
 # Verify both modules are present
-docker run --rm ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9 list-modules \
+docker run --rm "$IMAGE" list-modules \
   | grep -E 'http.handlers.waf|http.handlers.rate_limit'
 
 # Get digest for pinning
-docker inspect --format='{{index .RepoDigests 0}}' \
-  ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9
+docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE"
 ```
 
 Replace the image reference in both WAF Deployments with the digest returned by
@@ -92,9 +128,9 @@ flux reconcile kustomization monitoring-logging -n flux-system --with-source
 Check readiness:
 
 ```bash
-kubectl -n taskflow get deploy,svc,pod taskflow-frontend-waf taskflow-backend-waf
+kubectl -n taskflow get deploy,svc,pod -l app.kubernetes.io/component=waf
 kubectl -n monitoring get helmrelease loki alloy
-kubectl -n monitoring get pvc,pod -l app.kubernetes.io/part-of=taskflow-observability
+kubectl -n monitoring get pvc,pod -l 'app.kubernetes.io/name in (loki,alloy)'
 kubectl get httproute -n taskflow taskflow-route -o yaml
 ```
 
@@ -104,11 +140,12 @@ The route must report `Accepted=True` and `ResolvedRefs=True`.
 
 Both WAFs run Caddy with `admin off`, so Caddy cannot hot-reload. Reloader
 (`gitops/infrastructure/controllers/reloader`) rolls each WAF Deployment when its
-ConfigMap changes (`configmap.reloader.stakater.com/reload` annotation). Reloader
+ConfigMap changes (`configmap.reloader.stakater.com/reload` annotation), so no
+manual restart is required. Reloader
 reacts asynchronously: Flux reconciliation can finish before it updates the
 Deployment, so `rollout status` alone might report the previous rollout's success.
-For a deterministic operator procedure after changing `Caddyfile`, `rate-limit.conf`
-or `*-exclusions.conf` in Git, explicitly restart after reconciliation, then wait.
+To wait deterministically after changing `Caddyfile`, `rate-limit.conf`
+or `*-exclusions.conf` in Git, restart explicitly after reconciliation, then wait.
 This can cause an extra rollout if Reloader has already acted:
 
 ```bash
@@ -119,7 +156,17 @@ kubectl -n taskflow rollout status deployment/taskflow-frontend-waf --timeout=5m
 ```
 
 Verify the new rule set is live by sending a canary request that the new rule
-should match (or confirm fresh audit timestamps in Loki).
+should match (or confirm fresh audit timestamps in Loki). Every audit record names
+the CRS that evaluated it; after an image or rule-set change it must be the
+version the image ships (`CRS_VERSION`), never `OWASP_CRS/4.25.0` (the copy
+embedded in the connector, which the ConfigMaps no longer load):
+
+```bash
+for waf in backend frontend; do
+  kubectl -n taskflow logs "deploy/taskflow-$waf-waf" --since=1h \
+    | grep -o '"rulesets":\["OWASP_CRS/[0-9.]*' | sort | uniq -c
+done
+```
 
 ## Rate limiting
 
@@ -130,8 +177,8 @@ before the limiter; the kubelet's `/waf-healthz` probe (no `X-Forwarded-For`)
 is never rate limited, while `/waf-healthz` requested through the Gateway is
 inspected and limited like any other path.
 
-The stages below document the rollout and remain the re-verification procedure
-after a node change, a trusted-proxy change, or when tuning the zones.
+Re-run the stages below after a node change, a trusted-proxy change, or when
+tuning the zones (they were first run on 2026-09-26, before enforcement was enabled).
 
 Zones (see `gitops/apps/taskflow/*-waf.yaml`, `rate-limit.conf` key):
 
@@ -179,7 +226,7 @@ trusted peer changed. Trust only the address(es) that actually carry Gateway
 traffic; do **not** trust the whole Pod CIDR, or a pod that reaches the Gateway
 could be skipped as a trusted hop.
 
-### Stage 1 — narrow the trusted proxy range (applied 2026-09-26)
+### Stage 1 — update the trusted proxy entry
 
 Both WAF ConfigMaps trust `10.42.0.148/32` plus the Cloudflare ranges. If Stage 0
 yields a different address:
@@ -190,7 +237,7 @@ yields a different address:
    WAFs and wait for the new rollout (do not wait on Reloader with `rollout status` alone).
 3. Run the identity checks below.
 
-### Stage 2 — verify the client identity (passed 2026-09-26; re-run after changes)
+### Stage 2 — verify the client identity
 
 ```bash
 # 1) Different external clients must resolve to different client_ip values
@@ -218,7 +265,8 @@ curl -s -H 'X-Forwarded-For: 1.2.3.4' -H 'CF-Connecting-IP: 5.6.7.8' \
 #    identity), so send the canary through the Gateway VIP like any client.
 #    The trusted peer is the cilium_host /32, so the pod address is not skipped
 #    as a trusted hop and the forged value is ignored.
-kubectl run rl-canary --rm -i --restart=Never --image=curlimages/curl -- \
+#    (Kyverno `disallow-latest-tag` rejects an untagged image.)
+kubectl run rl-canary --rm -i --restart=Never --image=curlimages/curl:8.23.0 -- \
   curl -sk --resolve www.jokelab.dev:443:192.168.50.201 \
     -H 'X-Forwarded-For: 1.2.3.4' -o /dev/null -w '%{http_code}\n' \
     https://www.jokelab.dev/
@@ -226,20 +274,14 @@ kubectl run rl-canary --rm -i --restart=Never --image=curlimages/curl -- \
 
 Confirm on the Taskflow Access Logs dashboard (or via the LogQL above) that
 `client_ip` is the real visitor for external requests. If `client_ip` shows a
-`10.42.x.x`/peer address, the trust list is wrong — stop and fix it before
-enabling enforcement.
+`10.42.x.x`/peer address, the trust list is wrong — fix it at once: with
+enforcement on, all requests that resolve to that address share one rate-limit bucket.
 
-### Stage 3 — enable enforcement (applied 2026-09-26)
+### Stage 3 — verify enforcement
 
-1. **Prerequisite: Stage 1 and Stage 2 must have passed.** The trust list is
-   already narrowed to the observed Envoy peer (`10.42.0.148/32`); if it is ever
-   back to a broad range (e.g. the Pod CIDR), narrow it first.
-2. Ensure the zone block is enabled in the `rate-limit.conf` key of each WAF
-   ConfigMap (frontend `general` 180/min, backend `api` 300/min). It is enabled
-   in Git; after a rollback, restore it by removing the `#` comment markers from
-   the zone block.
-3. Reconcile and roll (same commands as Stage 1).
-4. Verify enforcement from one external client:
+The zone blocks are enabled in Git. After a rollback, re-enable them (remove the `#`
+markers in each `rate-limit.conf` key) only once Stages 1 and 2 pass, then reconcile
+and roll as in Stage 1. Verify from one external client:
 
 ```bash
 # Expect normal statuses until the window fills, then 429 with Retry-After.
@@ -266,8 +308,8 @@ and that `403` Coraza blocks still occur (`is_interrupted:true` audit records).
 
 ### Tune or disable
 
-- **Tune:** edit the zone `events` in the `rate-limit.conf` key, reconcile, and
-  roll. A ConfigMap edit alone changes nothing in the running pods.
+- **Tune:** edit the zone `events` in the `rate-limit.conf` key and reconcile;
+  Reloader rolls the WAF (Caddy cannot hot-reload, see "Apply Caddyfile changes").
 - **Disable:** comment out the `rate_limit { ... }` block in both `rate-limit.conf`
   keys, reconcile, and roll. The pinned WAF image can stay; the module is simply
   unused. Keep the narrowed trusted-proxy configuration.
@@ -276,10 +318,10 @@ and that `403` Coraza blocks still occur (`is_interrupted:true` audit records).
 
 | Symptom | Cause / fix |
 |---------|-------------|
-| `client_ip` in access logs is a `10.42.x.x`/peer address | The trusted proxy list does not match the actual Envoy source, so Caddy ignores XFF. Re-run Stage 0 and fix `<PEER_CIDR>` before enabling enforcement. |
+| `client_ip` in access logs is a `10.42.x.x`/peer address | The trusted proxy list does not match the actual Envoy source, so Caddy ignores XFF. Re-run Stage 0 and fix the peer entry in `trusted_proxies` (both ConfigMaps, Stage 1). |
 | Legitimate clients receive 429 | Limit too low for the workload (shared NAT/CGNAT, polling clients, large SPA reloads). Raise the zone `events` and observe; the 429 access logs include `client_ip`, path, host, and `rate_limit_zone`. |
 | 429s exist but every one has an empty `rate_limit_zone` | They come from the application/upstream, not the limiter (see the "Rejections by source" dashboard panel). |
-| `unrecognized directive: rate_limit` at startup | The pod runs an image without the module. Pin both WAF Deployments to the current `taskflow-caddy-coraza` digest (`2.11.9-coraza2.6.2-r9`+). |
+| `unrecognized directive: rate_limit` at startup | The pod runs an image without the module. Pin both WAF Deployments to a `taskflow-caddy-coraza` image with the module (r9 and later; Git pins r15). |
 
 ## Empty WAF and rate-limit dashboards
 
@@ -530,6 +572,15 @@ three route backends in `gitops/apps/taskflow/httproute.yaml`:
 - `/api` -> `backend:8080`
 - `/` -> `frontend:8080`
 
+The Gateway cannot reach the applications directly: `default-deny-all-ingress`,
+`allow-frontend-waf-to-frontend` and `allow-backend-waf-to-backend`
+(`namespace-default-deny.yaml`) admit only the WAFs. In the same change, admit the Gateway identity
+(`reserved:ingress`, TCP 8080) to each restored application, for example by adding
+`taskflow-frontend`/`taskflow-backend` to the `allow-gateway-to-waf` endpoint selector.
+Without the backend WAF, the backend's `X-Real-IP` trust of the Pod CIDR
+(`APP_TRUSTED_PROXY_REGEX`, `configmap.yaml`) also covers the Envoy peer, so a
+client-supplied `X-Real-IP` could become its client address.
+
 Then reconcile `taskflow-app`. To disable one WAF without changing the other, restore
 only its route backend and leave the other WAF route unchanged.
 
@@ -591,15 +642,11 @@ curl -s -o /dev/null -w "%{http_code}" \
 #### `no match for platform in manifest: not found`
 
 **Cause**: Image was built for arm64 (Apple Silicon) but k3s node is amd64.
+CI builds only `linux/amd64`, so this comes from a manual build.
 
-**Fix**: Rebuild for the correct platform:
-```bash
-docker buildx build --platform linux/amd64 --load \
-  -t ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9 \
-  gitops/images/taskflow-caddy-coraza
-docker push ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r9
-# Update digest in frontend-waf.yaml and backend-waf.yaml
-```
+**Fix**: Bump `IMAGE_REVISION` (published tags are immutable) and let CI publish it,
+or rebuild with `--platform linux/amd64` as in "Manual Local Build" above. Then
+update the `tag@digest` in `frontend-waf.yaml` and `backend-waf.yaml`.
 
 #### `gh auth token` returns empty password for docker login
 
@@ -615,59 +662,26 @@ echo $GITHUB_TOKEN | docker login ghcr.io -u stefanf81 --password-stdin
 
 #### nginx exits after a reboot: `host not found in upstream` / `host not found in resolver`
 
-The November 3, 2026 reboot exposed two startup DNS dependencies:
+nginx resolves upstream names while loading its configuration, so a plain upstream
+name makes the frontend exit whenever CoreDNS is not up yet (seen after the
+2026-11-03 reboot). The override in `gitops/apps/taskflow/frontend.yaml` therefore
+uses a literal resolver IP and `server ... resolve;`, which needs the
+`zone backend_upstream 64k` that the pinned nginx image provides; do not remove the
+zone or deploy an older nginx image without re-running the test below.
 
-- The frontend's plain upstream server name was resolved while nginx loaded its
-  configuration. CoreDNS being temporarily unavailable made nginx exit, even though
-  serving static files does not need the backend.
-- Loki gateway's chart-default `resolver kube-dns.kube-system.svc.cluster.local.;`
-  requires DNS to find the DNS server itself. This also fails during config loading.
-  (The gateway has since been removed, 2026-11-11: clients use the Loki Service on
-  port 3100 directly, so there is no nginx left to start.)
-
-The frontend override in `gitops/apps/taskflow/frontend.yaml` now supplies an
-upstream-level literal resolver IP and `server ... resolve;`. The pinned frontend
-image (nginx 1.30.6) already provides `zone backend_upstream 64k`, required for runtime
-resolution. Do not remove the zone or deploy an older nginx image without re-running
-the smoke test.
-
-The resolver is **10.43.0.10**, matching the `kube-dns` ClusterIP pinned in
-`gitops/infrastructure/controllers/coredns/release.yaml`. The regression test checks
-that the two agree. If changing the cluster DNS IP, update both files.
-
-This allows nginx to start and serve local static/health endpoints before DNS is
-available; upstream requests can still fail until DNS and their backends recover.
-It does not change NetworkPolicy or bypass the WAF routes. In particular, the
-frontend's direct backend proxy is not the production API path. Increasing a startup
-probe's allowance alone would not fix an nginx configuration-time exit.
-
-Run `python3 gitops/monitoring/tests/validate-nginx-dns-startup.py` to reproduce the
-old failures and test the revised configs in disposable network-disabled containers.
+The resolver is **10.43.0.10**, the `kube-dns` ClusterIP pinned in
+`gitops/infrastructure/controllers/coredns/release.yaml`; change both together.
+A longer startup probe would not help: the exit happens at configuration load.
+`python3 gitops/monitoring/tests/validate-nginx-dns-startup.py` reproduces the failure
+and tests the config in disposable network-disabled containers.
 
 #### `exec /usr/bin/caddy: operation not permitted`
 
 **Cause**: The Caddy binary has file capabilities (`cap_net_bind_service`) set by `xcaddy build`. With `allowPrivilegeEscalation: false`, the kernel blocks execution of capability-enhanced binaries for non-root users.
 
-**Fix**: Strip file capabilities in the Dockerfile:
+**Fix**: Do not let xcaddy set the capability (the builder image defaults to `XCADDY_SETCAP=1`). The Dockerfile sets this in the builder stage and fails the build if `getcap` still reports one:
 ```dockerfile
-COPY --from=builder /usr/bin/caddy /usr/bin/caddy
-RUN setcap -r /usr/bin/caddy 2>/dev/null || true
-```
-
-#### `container has runAsNonRoot and image has non-numeric user (caddy)`
-
-**Cause**: The security context has `runAsNonRoot: true` but no `runAsUser` specified. Kubernetes can't verify the numeric UID.
-
-**Fix**: Add `runAsUser: 100` (caddy user UID) to the security context:
-```yaml
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 100
-  allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: true
-  capabilities:
-    drop:
-      - ALL
+ENV XCADDY_SETCAP=0
 ```
 
 #### `CreateContainerConfigError`
@@ -741,7 +755,7 @@ kubectl get cm alloy -n monitoring -o jsonpath='{.data.config\.alloy}'
 kubectl logs -n monitoring deploy/alloy -c alloy | tail -20
 
 # Test Loki connectivity
-kubectl run loki-query --image=curlimages/curl --rm -i --restart=Never -n monitoring -- \
+kubectl run loki-query --image=curlimages/curl:8.23.0 --rm -i --restart=Never -n monitoring -- \
   curl -s 'http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/labels'
 ```
 
@@ -857,15 +871,14 @@ managed by GitOps. When the PAT expires:
      --docker-username=stefanf81 \
      --docker-password="ghp_NEW_TOKEN"
    ```
-3. Secrets in this repository are managed via SOPS + age (see `docs/SOPS_TUTORIAL.md`).
+This Secret is deliberately kept out of Git; the SOPS-encrypted ones are listed in
+`docs/SOPS.md`.
 
-### Coraza Audit Log Parts
+### Coraza audit log
 
-Current setting: `ABFHZ` (request headers, response headers, matched-rule metadata,
-and end marker). It excludes request bodies. Coraza writes records directly to
-container stdout; Alloy sanitizes credential headers and sensitive query values at
-ingest before they reach Loki. Do not add a blocking FIFO/file sink to
-`SecAuditLog` — a stalled reader can block every audited request.
+Parts, engine and redaction: `docs/CORAZA_CONFIGURATION.md` § Audit Log Parts. Do not
+add a blocking FIFO or file sink to `SecAuditLog`: a stalled reader blocks every
+audited request.
 
 ---
 

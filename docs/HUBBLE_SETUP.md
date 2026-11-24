@@ -15,14 +15,15 @@ Local CLI → kubectl port-forward → Hubble Relay (kube-system) ────�
 | Component | Namespace | Service | Port | Purpose |
 |-----------|-----------|---------|------|---------|
 | Hubble UI | `kube-system` | `hubble-ui` | 80 | Web interface for network flow visualization |
-| Hubble Relay | `kube-system` | `hubble-relay` | 80 → 4245 | gRPC relay for CLI access |
+| Hubble Relay | `kube-system` | `hubble-relay` | 80 → 4245 | gRPC relay for Hubble UI and CLI access |
 | oauth2-proxy | `hubble-ui` | `hubble-ui-oauth2-proxy` | 80 → 4180 | GitHub OAuth authentication proxy |
 | Cilium Agent | `kube-system` | — | — | eBPF dataplane + Hubble exporter |
 
 ### Traffic Flow (Public)
 
 1. Browser requests `https://hubble.jokelab.dev`
-2. Cloudflare proxies to cluster IP `192.168.50.201`
+2. Cloudflare proxies to the WAN address, which port-forwards to the Gateway
+   LoadBalancer IP `192.168.50.201` (`GATEWAY_IP`)
 3. Cilium Gateway terminates TLS (certificate: `taskflow-tls-secret`)
 4. HTTPRoute `hubble-ui` routes `/` → `hubble-ui-oauth2-proxy:80` (the
    Service forwards to oauth2-proxy's container port 4180)
@@ -38,14 +39,7 @@ kubectl port-forward -n kube-system svc/hubble-relay 4244:80
 # hubble observe → 127.0.0.1:4244 → hubble-relay:80 → Cilium Agent
 ```
 
-## Resources Created
-
-### Infrastructure
-
-| File | Resource |
-|------|----------|
-| `gitops/infrastructure/controllers/cilium/release.yaml` | Updated: enabled `hubble`, `hubble.relay`, `hubble.ui`, `hubble.metrics` |
-| `gitops/infrastructure/controllers/coredns/release.yaml` | Updated: added `hubble.jokelab.dev` to hosts |
+## Resources
 
 ### Hubble UI (`gitops/platform/hubble-ui/`)
 
@@ -59,24 +53,17 @@ kubectl port-forward -n kube-system svc/hubble-relay 4244:80
 | `network-policy.yaml` | CiliumNetworkPolicies `hubble-ui-ingress-default-deny` + `allow-gateway-to-hubble-ui` (paired with `gitops/infrastructure/configs/cilium/hubble-isolation.yaml` in `kube-system`) |
 | `kustomization.yaml` | Kustomization listing all resources |
 
-### App Layer Updates
+### Wiring elsewhere (change these together when renaming the host)
 
-| File | Change |
+| File | What it holds for Hubble |
 |------|--------|
-| `gitops/apps/taskflow/certificate.yaml` | Added `hubble.jokelab.dev` SAN |
-| `gitops/apps/taskflow/gateway.yaml` | Added `hubble-ui` namespace to both HTTP/HTTPS listener `allowedRoutes` |
-| `gitops/apps/taskflow/http-redirect.yaml` | Added `hubble.jokelab.dev` to HTTP→HTTPS redirect |
-| `gitops/apps/taskflow/cloudflare-ddns.yaml` | Added `hubble.jokelab.dev` to DNS domains |
-| `gitops/clusters/taskflow/hubble-ui.yaml` | Flux Kustomization for hubble-ui |
-| `gitops/clusters/taskflow/kustomization.yaml` | Added `hubble-ui.yaml` |
-
-### Documentation
-
-| File | Content |
-|------|---------|
-| `docs/TASKFLOW_WAF_ARCHITECTURE.md` | Full WAF + logging architecture |
-| `docs/HUBBLE_SETUP.md` | This file |
-| `docs/TASKFLOW_WAF_RUNBOOK.md` | Operational runbook with troubleshooting |
+| `gitops/infrastructure/controllers/cilium/release.yaml` | `hubble`, `hubble.relay`, `hubble.ui`, `hubble.metrics`, flow export |
+| `gitops/infrastructure/controllers/coredns/release.yaml` | `hubble.jokelab.dev` in the hairpin-NAT `hosts` block |
+| `gitops/apps/taskflow/certificate.yaml` | `hubble.jokelab.dev` SAN |
+| `gitops/apps/taskflow/gateway.yaml` | `hubble-ui` namespace in both listeners' `allowedRoutes` |
+| `gitops/apps/taskflow/http-redirect.yaml` | `hubble.jokelab.dev` in the HTTP→HTTPS redirect |
+| `gitops/apps/taskflow/cloudflare-ddns.yaml` | `hubble.jokelab.dev` DNS record |
+| `gitops/clusters/taskflow/hubble-ui.yaml` | Flux Kustomization (listed in `kustomization.yaml` there) |
 
 ## GitHub OAuth App
 
@@ -148,7 +135,8 @@ nohup kubectl port-forward -n kube-system svc/hubble-relay 4244:80 &
 
 ## Cilium Hubble Configuration
 
-Added to `gitops/infrastructure/controllers/cilium/release.yaml`:
+Set in `gitops/infrastructure/controllers/cilium/release.yaml` (excerpt; the
+release also sets `rollOutPods` and per-container resources for Relay and UI):
 
 ```yaml
 hubble:
@@ -165,6 +153,33 @@ hubble:
       - flow
       - icmp
       - httpV2
+```
+
+### mTLS certificates
+
+The agent's Hubble server and Relay talk mTLS with certificates issued from the
+`cilium-ca` Secret (`kube-system`). `hubble.tls.auto.method: cronJob` renews them: a
+`hubble-generate-certs-<hash>` Job whenever a chart install/upgrade changes the job
+spec, and the `hubble-generate-certs` CronJob at 03:17 on the 1st of every fourth
+month. Each run replaces `hubble-server-certs` and `hubble-relay-client-certs` with
+365-day certificates (Relay's own listener has no TLS here, so there are no Relay
+server or UI client certificates).
+
+The CA itself is **not** renewed. certgen v0.4.14 creates `cilium-ca` once with its
+default 3-year validity and reuses it afterwards, and the chart runs it with
+`--ca-enforce-validity-throughout-leaves-duration=true`: once the CA has less than
+365 days left (about two years after it was created), every run fails instead of
+issuing certificates that outlive the CA. Then rotate the CA: delete `cilium-ca`
+and start a run (below); it creates a new CA and new leaves, then restart Relay.
+
+```bash
+# Expiry of the server certificate and of the CA
+kubectl -n kube-system get secret hubble-server-certs -o jsonpath='{.data.tls\.crt}' \
+  | base64 -d | openssl x509 -noout -enddate
+kubectl -n kube-system get secret cilium-ca -o jsonpath='{.data.ca\.crt}' \
+  | base64 -d | openssl x509 -noout -enddate
+# Renew now
+kubectl -n kube-system create job --from=cronjob/hubble-generate-certs hubble-certs-$(date +%s)
 ```
 
 ### Hubble metrics in Grafana (`Hubble Flows`)
@@ -208,7 +223,7 @@ and are shown as `No reason recorded (Envoy denials, incl. AbuseIPDB)`. See
 ## Network Policy
 
 Pod-network isolation covers both namespaces so no compromised in-cluster pod can bypass `oauth2-proxy`:
-- **In `hubble-ui` (`gitops/platform/hubble-ui/network-policy.yaml`):** `hubble-ui-ingress-default-deny` denies cross-namespace pod ingress (preserving `host` probes), and `allow-gateway-to-hubble-ui` allows only the Cilium Gateway (`reserved:ingress`) to reach `oauth2-proxy` on TCP `4180`.
+- **In `hubble-ui` (`gitops/platform/hubble-ui/network-policy.yaml`):** `hubble-ui-ingress-default-deny` denies all pod ingress in the namespace except from `host` (probes, port-forward), and `allow-gateway-to-hubble-ui` allows only the Cilium Gateway (`reserved:ingress`) to reach `oauth2-proxy` on TCP `4180`.
 - **In `kube-system` (`gitops/infrastructure/configs/cilium/hubble-isolation.yaml`):** `restrict-hubble-ui-ingress` restricts `hubble-ui` (`k8s-app: hubble-ui`, container port `8081`) to `hubble-ui/oauth2-proxy` + `host`, and `restrict-hubble-relay-ingress` restricts `hubble-relay` (`k8s-app: hubble-relay`, gRPC port `4245`) to `kube-system/hubble-ui` + `host` (`cilium hubble port-forward` / `kubectl port-forward`).
 
 ## Reconcile Commands
@@ -275,13 +290,18 @@ kubectl delete pod -n hubble-ui -l app.kubernetes.io/name=oauth2-proxy
 
 ### Hubble UI shows "No flows"
 
-**Cause**: Hubble metrics not enabled, or eBPF not loaded.
+**Cause**: Hubble or Hubble Relay not running, or eBPF not loaded (the UI reads flows through Relay, not from the Hubble metrics).
 
 **Fix**:
 ```bash
 ~/bin/cilium status  # Check eBPF dataplane
 kubectl logs -n kube-system -l k8s-app=cilium --tail=20  # Check Cilium logs
 ```
+
+If Relay logs `x509: certificate has expired` (or `Failed to create peer client`),
+the mTLS certificates ran out: renew them as shown under
+[mTLS certificates](#mtls-certificates), then
+`kubectl -n kube-system rollout restart deploy/hubble-relay`.
 
 ### Hubble CLI connection refused
 
@@ -309,7 +329,7 @@ curl -s -L https://github.com/cilium/hubble/releases/latest/download/hubble-darw
 
 **Fix**: Verify:
 - GitHub OAuth App callback URL is exactly `https://hubble.jokelab.dev/oauth2/callback`
-- oauth2-proxy `cookie_domains = [".jokelab.dev"]`
+- oauth2-proxy has no `cookie_domains` (host-only `__Host-o2p-hubble` cookie) and `whitelist_domains = ["hubble.jokelab.dev"]`
 - Browser is accessing `https://hubble.jokelab.dev` (not `http`)
 
 ### DNS not resolving hubble.jokelab.dev
@@ -324,7 +344,7 @@ sudo sh -c 'echo "192.168.50.201 hubble.jokelab.dev" >> /etc/hosts'
 ## Security Notes
 
 - Cookie is secure-only (HTTPS)
-- Cookie domain scoped to `.jokelab.dev`
-- oauth2-proxy runs with read-only root filesystem
-- CiliumNetworkPolicy limits ingress to Gateway only
+- Cookie is host-only (`__Host-o2p-hubble`, no `Domain`), sent only to `hubble.jokelab.dev`
+- oauth2-proxy runs with read-only root filesystem (chart default)
+- CiliumNetworkPolicy limits ingress to Gateway only (plus `host`)
 - Hubble UI has no public LoadBalancer or NodePort

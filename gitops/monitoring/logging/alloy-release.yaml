@@ -77,6 +77,8 @@ spec:
           verbs: ["get", "list", "watch"]
       clusterRules: []
     alloy:
+      # No anonymous usage statistics to stats.grafana.org (adds --disable-reporting).
+      enableReporting: false
       # Persist the position database so a restart neither re-tails old lines nor
       # skips new ones (default is /tmp/alloy, which is lost on every restart).
       storagePath: /var/lib/alloy-data
@@ -627,9 +629,18 @@ spec:
             forward_to = [loki.write.local.receiver]
 
             // Reassemble Java stack traces. Multiline must be the first processing
-            // stage; every default Spring Boot log line starts with an ISO timestamp.
+            // stage. A record starts at a line beginning with a date (the backend's
+            // plain pattern) or with "{" (the prod profile's ECS JSON: one object per
+            // line, CR/LF escaped, stack trace inside error.stack_trace). Both formats
+            // are accepted so the backend image and this release can roll out in either
+            // order, and LOGGING_STRUCTURED_FORMAT_CONSOLE="" stays a rollback. Alloy
+            // keeps a stream's multiline state once a line matched; with a date-only
+            // firstline, JSON lines after any date-prefixed line of the same stream were
+            // glued onto it. Loki needs no parser stage: `| json` reads the ECS fields
+            // and its level detection finds log.level. Tested by
+            // validate-alloy-metrics.sh (real backend output in tests/fixtures).
             stage.multiline {
-              firstline     = "^\\d{4}-\\d{2}-\\d{2}"
+              firstline     = "^(?:\\d{4}-\\d{2}-\\d{2}|\\{)"
               max_wait_time = "2s"
               max_lines     = 256
             }

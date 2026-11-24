@@ -1,4 +1,4 @@
-# Default-deny ingress for the data tier.
+# Default-deny ingress and egress for the data tier.
 #
 # WHY THIS FILE EXISTS
 # --------------------
@@ -23,8 +23,11 @@
 # a live cluster. A full-namespace default-deny + explicit Gateway allow is a
 # sensible follow-up once the running cluster can be tested against.
 #
-# EGRESS is intentionally left allow-all. The datastore clients (backend,
-# exporters) reach out via egress, which this policy does not touch.
+# EGRESS of the three data-tier pods is denied by the second policy in this file
+# (SEC-04): they only answer connections, and a reply to an admitted connection is
+# not "egress" for a stateful policy. The datastore clients keep their own rules:
+# the exporters and both WAFs in namespace-default-deny.yaml; the backend's egress
+# is still allow-all (its SMTP relay is not enumerated yet).
 #
 # CNI NOTES
 # ---------
@@ -51,3 +54,41 @@ spec:
     - Ingress
   # No ingress rules => deny all ingress to the selected pods by default.
   # The restrict-*-access policies below re-open the exact, required paths.
+---
+# Deny ALL egress from the datastore pods (SEC-04).
+#
+# Postgres, Redis and Jaeger never open a connection themselves: no replication, no
+# archiving, no modules or extensions that call out, Jaeger keeps traces in memory,
+# and none of them resolves a name (all three start and serve with no network
+# interface at all, i.e. not even DNS). So nothing is allowed, and a compromised
+# database process (e.g. SQL injection escalated to code execution) cannot download
+# tooling, open a reverse shell or reach any other pod, the node, the LAN or the
+# internet.
+#
+# NOT affected: replies to the admitted clients (backend, exporters, backup),
+# kubelet probes and `kubectl exec` / `port-forward` (they arrive from the node).
+#
+# Add an allow rule here BEFORE introducing anything that makes one of these pods
+# dial out: WAL archiving or pg_basebackup to object storage, postgres_fdw/dblink,
+# Redis replication, a Jaeger storage backend or remote sampling source.
+#
+# ROLLBACK (egress only; the ingress isolation above stays):
+#   kubectl --kubeconfig kubeconfig.yaml -n taskflow delete networkpolicy default-deny-datastore-egress
+# and remove this document from Git so Flux does not re-apply it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-datastore-egress
+  namespace: taskflow
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - postgres-db
+          - redis
+          - jaeger
+  policyTypes:
+    - Egress
+  # No egress rules => deny all egress from the selected pods.

@@ -120,16 +120,30 @@ data:
             # it. Empty for requests that were not rate limited.
             log_append rate_limit_zone {http.rate_limit.exceeded.name}
 
+            # Rule files come from the image (/usr/share/coraza), pinned by
+            # CRS_VERSION / CORAZA_CONF_VERSION in the image Dockerfile. No
+            # `load_owasp_crs`: that would resolve @-aliases from the bundle
+            # embedded in the connector (CRS 4.25.0, frozen upstream) instead.
             coraza_waf {
-                load_owasp_crs
-
                 directives `
-                    Include @coraza.conf-recommended
-                    Include @crs-setup.conf.example
+                    Include /usr/share/coraza/coraza.conf-recommended
+                    Include /usr/share/coraza/crs/crs-setup.conf.example
                     Include /etc/coraza/backend-exclusions.conf
 
                     SecRuleEngine On
+                    # The API uses PUT and DELETE (reschedule and cancel an
+                    # appointment, edit the catalog, barbers and schedules). The
+                    # CRS default is GET HEAD POST OPTIONS, and rule 911100 alone
+                    # reaches the blocking threshold, so without this every PUT
+                    # and DELETE was answered 403 by the WAF. No PATCH: the
+                    # backend has no such endpoint.
+                    SecAction "id:1000003,phase:1,pass,nolog,setvar:'tx.allowed_methods=GET HEAD POST PUT DELETE OPTIONS'"
                     SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=2"
+                    # CRS 4.25 LTS ships the fix for GHSA-6jp8-c2w2-x7wr (attack
+                    # payloads in XML attribute values were not inspected) switched
+                    # off, to keep 4.25.0 behaviour; this turns it on. Drop the line
+                    # when moving to a CRS line that has no such switch (>= 4.28).
+                    SecAction "id:1000002,phase:1,pass,nolog,setvar:tx.crs_xml_attr_inspect=1"
 
                     SecRequestBodyAccess On
                     SecResponseBodyAccess Off
@@ -138,10 +152,26 @@ data:
                     SecAuditLogFormat JSON
                     SecAuditLogParts ABFHZ
 
-                    SecRequestBodyLimit 10485760
-                    SecRequestBodyNoFilesLimit 1048576
+                    # 64 KiB. Every API request is small JSON (the DTOs are
+                    # under 4 KiB; the application's own nginx bounds /api
+                    # bodies at 32k) and there are no uploads. A body that
+                    # reaches the limit gets 413 before any rule runs. The
+                    # limit is what bounds the cost of a request: Coraza
+                    # buffers the whole body and the CRS inspects all of it
+                    # before the rate limiter is reached, at roughly a
+                    # CPU-second per 100 KiB at paranoia level 2. With the
+                    # earlier 10 MiB one request could keep a core busy for
+                    # more than a minute.
+                    # (SecRequestBodyNoFilesLimit is not set: Coraza parses the
+                    # directive but does not enforce it, so the former 1 MiB
+                    # value never applied.)
+                    SecRequestBodyLimit 65536
+                    # Must not exceed the limit above (Coraza refuses to start
+                    # otherwise; coraza.conf-recommended sets 128 KiB). Equal to
+                    # it, no body is ever written to /tmp.
+                    SecRequestBodyInMemoryLimit 65536
 
-                    Include @owasp_crs/*.conf
+                    Include /usr/share/coraza/crs/rules/*.conf
                 `
             }
 
@@ -239,14 +269,17 @@ spec:
       hostUsers: false
       enableServiceLinks: false
       securityContext:
-        fsGroup: 100
+        # UID/GID 65532 is the image's user (distroless "nonroot", from r12 on). Images
+        # up to r11 (Alpine, caddy = 100:101) also run under it: only their /data and
+        # /config are owned by 100, and the emptyDirs below replace both.
+        fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
       imagePullSecrets:
         - name: ghcr-pull-secret
       containers:
         - name: waf
-          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r11@sha256:c2cf665552b7eaf22ca095938d0d6b017477ea88801a0b96ff034f518c85dfda
+          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r15@sha256:da94b8eea045e31c26304d5539852d6741df7627e64512f7c7f9f7c281cb5c9f
           imagePullPolicy: IfNotPresent
           env:
             # No CPU limit (below), so Go would size GOMAXPROCS for every node CPU.
@@ -264,7 +297,8 @@ spec:
               containerPort: 8080
           securityContext:
             runAsNonRoot: true
-            runAsUser: 100
+            runAsUser: 65532
+            runAsGroup: 65532
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:

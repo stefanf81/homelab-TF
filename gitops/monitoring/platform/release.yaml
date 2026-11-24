@@ -28,7 +28,7 @@ spec:
       remediateLastFailure: true
   values:
     # ---------------------------------------------------------------------
-    # Trimmed stack for a 14 GiB single-node homelab. Replaces Prometheus with
+    # Trimmed stack for a 12 GiB single-node homelab. Replaces Prometheus with
     # the dramatically lighter VictoriaMetrics (VMSingle + vmagent).
     # ---------------------------------------------------------------------
     # Evaluate the recording rules required by the bundled Kubernetes dashboards.
@@ -91,9 +91,17 @@ spec:
     # apiserver job (~81k duplicate series). Drop those prefixes here; kubelet_*,
     # rest_client_*, storage and volume metrics stay. The list replaces the chart
     # default, so its three rules are repeated first.
+    #
+    # max_scrape_size: vmagent checks the raw response against its 16 MiB default
+    # BEFORE metricRelabelConfigs drop anything. Both k3s /metrics endpoints serve
+    # the same body, and it grows with uptime (apiserver histograms gain series for
+    # every new resource/verb pair): 11.8 MB just after boot, over 16 MiB after
+    # 12 days of uptime. From 2026-11-19 to 2026-11-24 both scrapes failed and no
+    # apiserver/kubelet metrics were stored. 48 MiB is ~3x the size at which it broke.
     kubelet:
       vmScrape:
         spec:
+          max_scrape_size: 48MiB
           metricRelabelConfigs:
             - action: labeldrop
               regex: (uid)
@@ -110,7 +118,10 @@ spec:
     # Kept: apiserver_request_sli_duration_seconds_bucket (burn-rate/availability
     # rules), workqueue_queue_duration_seconds_bucket (apiserver dashboard) and all
     # _count/_sum series. The endpoint list replaces the chart default, so it is
-    # repeated in full.
+    # repeated in full. All of these except apiserver_request_duration_seconds are
+    # also turned off at the source by the k3s `disabled-metrics` flag
+    # (modules/proxmox/main.tf, NODE_HOST_TUNING.md §3.7). The drop stays for nodes
+    # that don't have the flag yet.
     kubeApiServer:
       vmScrape:
         spec:
@@ -121,6 +132,8 @@ spec:
               tlsConfig:
                 caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
                 serverName: kubernetes
+              # Same body as kubelet /metrics; see the max_scrape_size note there.
+              max_scrape_size: 48MiB
               metricRelabelConfigs:
                 # k3s exposes kubelet metrics on this endpoint too. Keep the
                 # node scrape as their single source; here volume series get
@@ -298,8 +311,13 @@ spec:
         size: 2Gi
       plugins:
         - victoriametrics-metrics-datasource
-      serviceMonitor:
-        path: /metrics
+      # No Grafana self-scrape: /metrics is switched off below (grafana.ini
+      # `metrics.enabled`). No dashboard or rule here reads grafana_* series; pod
+      # health still comes from kube-state-metrics. The former
+      # `serviceMonitor.path` only configured the subchart's ServiceMonitor, which
+      # is disabled, so it had no effect.
+      vmScrape:
+        enabled: false
       envValueFrom:
         GF_AUTH_GITHUB_CLIENT_ID:
           secretKeyRef:
@@ -319,8 +337,11 @@ spec:
           root_url: "https://%(domain)s/"
           serve_from_sub_path: false
         analytics:
+          # No anonymous usage statistics to stats.grafana.org (default on).
+          reporting_enabled: false
           # No update/version-check egress needed in a single-node homelab.
           check_for_updates: false
+          check_for_plugin_updates: false
         plugins:
           # Grafana 13 preinstalls 18 plugins and runs every backend datasource as
           # its own process (~21-27Mi RSS each) inside this container's memory
@@ -329,6 +350,28 @@ spec:
           # from being preinstalled. The Logs/Metrics Drilldown apps stay: they are
           # frontend-only and work with the provisioned datasources.
           disable_plugins: "influxdb,mssql,mysql,grafana-postgresql-datasource,elasticsearch,opentsdb,stackdriver,zipkin,tempo,jaeger,grafana-pyroscope-datasource,grafana-pyroscope-app,grafana-exploretraces-app,grafana-advisor-app"
+        metrics:
+          # Grafana serves /metrics without authentication by default, and the
+          # HTTPRoute sends every path of grafana.${DOMAIN} here, so version,
+          # plugin list, user/dashboard totals and per-handler request stats were
+          # readable from the internet. A route rule for /metrics is not enough:
+          # Cilium's Envoy does not normalise paths, so /%6Detrics misses an Exact
+          # match, while Grafana compares the decoded path and still answers.
+          # To keep the metrics instead, set basic_auth_username/_password from a
+          # SOPS secret (GF_METRICS_BASIC_AUTH_*) and give the vmScrape endpoint
+          # the same basicAuth.
+          enabled: false
+        snapshots:
+          # No "Publish to snapshots.raintank.io": a dashboard snapshot (with its
+          # data) would leave the cluster for a public third-party server. Local
+          # snapshots keep working.
+          external_enabled: false
+        public_dashboards:
+          # Off: no dashboard is meant to be readable without a login. When on,
+          # /public-dashboards/<accessToken> serves a shared dashboard and its
+          # query results anonymously, past the GitHub login restriction. Turning
+          # it off also stops serving any share created earlier in the UI.
+          enabled: false
         auth:
           disable_login_form: true
         "auth.github":

@@ -1,5 +1,10 @@
 # Remediation Plan — October 2026
 
+> **Dated snapshot (October 2026), not maintained.** Statements about what is open or done
+> reflect that date and are partly out of date. Current status of every item:
+> [`docs/BACKLOG.md`](../BACKLOG.md).
+> `POD_SPEC_REVIEW_2026-10.md`, cited in REL-06, was removed; see `git log`.
+
 Issue-by-issue follow-up to `CLUSTER_AUDIT_2026-10.md`. Every issue has:
 evidence (file and line), impact, the solution options with trade-offs, a
 recommended option with copy-pasteable configuration, how to verify it, and how
@@ -1227,61 +1232,28 @@ Check that `policy-reporter-ui-oauth-secrets.yaml` no longer holds the
 
 Falco watches syscalls; nothing records who changed what through the API (a
 leaked kubeconfig, a compromised controller). k3s runs the API server in-process
-and takes `kube-apiserver-arg` from `config.yaml`:
+and takes `kube-apiserver-arg` from `config.yaml`.
 
-```bash
-sudo install -d -m 700 /var/lib/rancher/k3s/server/logs
-sudo tee /var/lib/rancher/k3s/server/audit.yaml >/dev/null <<'EOF'
-apiVersion: audit.k8s.io/v1
-kind: Policy
-omitStages: ["RequestReceived"]
-rules:                                   # first match wins
-  - level: None
-    nonResourceURLs: ["/healthz*", "/livez*", "/readyz*", "/version", "/metrics", "/openapi/*"]
-  - level: None
-    resources:
-      - {group: "", resources: ["events"]}
-      - {group: "events.k8s.io"}
-      - {group: "coordination.k8s.io", resources: ["leases"]}
-  - level: None
-    users: ["system:kube-scheduler", "system:kube-controller-manager", "system:apiserver",
-            "system:k3s-supervisor", "system:k3s-controller"]
-    verbs: ["get", "list", "watch"]
-  - level: None
-    userGroups: ["system:nodes"]
-    verbs: ["get", "list", "watch"]
-  - level: Metadata                      # never log Secret/ConfigMap bodies
-    resources: [{group: "", resources: ["secrets", "configmaps", "serviceaccounts/token"]}]
-  - level: RequestResponse
-    verbs: ["create", "update", "patch", "delete", "deletecollection"]
-    resources:
-      - {group: "rbac.authorization.k8s.io"}
-      - {group: "policy"}
-      - {group: "admissionregistration.k8s.io"}
-      - {group: "networking.k8s.io", resources: ["networkpolicies"]}
-      - {group: "cilium.io"}
-  - level: Metadata
-    resources: [{group: "", resources: ["pods/exec", "pods/attach", "pods/portforward"]}]
-  - level: Metadata
-    verbs: ["create", "update", "patch", "delete", "deletecollection"]
-  - level: None
-EOF
-```
+The policy and the five `kube-apiserver-arg` lines now live in
+`modules/proxmox/main.tf` (`/etc/rancher/k3s/audit-policy.yaml` and `config.yaml`),
+the single source for new nodes and for the running node. It differs from the
+first draft of this section in three ways:
 
-```yaml
-# /etc/rancher/k3s/config.yaml
-kube-apiserver-arg:
-  - audit-policy-file=/var/lib/rancher/k3s/server/audit.yaml
-  - audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log
-  - audit-log-maxage=14
-  - audit-log-maxbackup=5
-  - audit-log-maxsize=50
-```
+- `cilium.io` is no longer logged at `RequestResponse`. The Cilium agent rewrites
+  endpoint, identity and node objects constantly, and `abuseipdb-sync` updates a
+  CIDR group with thousands of entries; full bodies of those would fill the log.
+  Endpoint, identity and node objects are skipped, Cilium policies are logged
+  at `Metadata`.
+- Reads are logged only for Secrets (not the kubelet's own) and for
+  `exec`/`attach`/`portforward`; token reviews, access reviews, endpoint slices
+  and status updates of nodes and pods are skipped.
+- Size limits are 10 × 100 MB and 30 days instead of 5 × 50 MB and 14 days.
 
-An invalid policy stops the API server from starting: keep an SSH session open
-and validate with `sudo k3s check-config`-style dry runs (or by watching
-`journalctl -u k3s -f`) during the restart. To search the log in Grafana, tail
-it with Alloy (`loki.source.file`, requires the DaemonSet variant in PERF-10).
+Procedure for the running node, the check that the policy loads, and how to read
+the log: `docs/NODE_HOST_TUNING.md` §3.7. An invalid policy stops the API server
+from starting, so keep an SSH session open during the restart. To search the log
+in Grafana, tail it with Alloy (`loki.source.file`, requires the DaemonSet variant
+in PERF-10).
 
 ---
 

@@ -12,6 +12,8 @@ on:
     paths:
       - 'gitops/images/abuseipdb-sync/**'
       - '.github/workflows/build-abuseipdb-sync.yaml'
+      - '.github/actions/install-trivy/**'
+      - '.github/workflows/publish-image.yaml'
   workflow_dispatch:
     inputs:
       push:
@@ -20,25 +22,45 @@ on:
         default: true
         type: boolean
 
+# renovate: datasource=github-releases depName=aquasecurity/trivy
+env:
+  TRIVY_VERSION: v0.76.2
+
+# Pull requests cancel superseded runs; a publication from main is never
+# cancelled halfway (the image would be pushed but not signed or tagged).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
-  build-and-push:
-    name: Build & Push Image
+  # Lint, tests and the Trivy gate on a local build, on pull requests and on
+  # main. No registry token: publication is the `publish` job below.
+  test:
+    name: Test Image
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       contents: read
-      packages: write
+    outputs:
+      image_tag: ${{ steps.versions.outputs.image_tag }}
+      app_version: ${{ steps.versions.outputs.app_version }}
+      revision: ${{ steps.versions.outputs.revision }}
+      extra_tags: ${{ steps.tags.outputs.extra_tags }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # revision guard compares the image source across the push
           persist-credentials: false # nothing in this job pushes with git
+
+      - name: Lint Dockerfile (hadolint)
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: gitops/images/abuseipdb-sync/Dockerfile
 
       # A changed image recipe or Go source must ship under a new APP_VERSION or
       # IMAGE_REVISION so published version tags are never overwritten in GHCR.
@@ -84,7 +106,10 @@ jobs:
 
           APP_VER=$(grep '^ARG APP_VERSION=' gitops/images/abuseipdb-sync/Dockerfile | cut -d= -f2 | tr -d ' "')
           REV=$(grep '^ARG IMAGE_REVISION=' gitops/images/abuseipdb-sync/Dockerfile | cut -d= -f2 | tr -d ' "')
-          GO_VER=$(grep '^ARG GO_VERSION=' gitops/images/abuseipdb-sync/Dockerfile | cut -d= -f2 | tr -d ' "')
+          # The Go version is the tag of the digest-pinned builder image
+          # (ARG GO_IMAGE=golang:<version>-alpine@sha256:<digest>), so the tests
+          # below and the image build use the same toolchain version.
+          GO_VER=$(sed -n 's/^ARG GO_IMAGE=golang:\([0-9][0-9.]*\)-alpine@sha256:[0-9a-f]\{64\}$/\1/p' gitops/images/abuseipdb-sync/Dockerfile)
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
 
           [[ "$APP_VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid app version: $APP_VER" >&2; exit 1; }
@@ -120,59 +145,20 @@ jobs:
           go test -race ./...
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Log in to GitHub Container Registry
-        if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Published revision tags are immutable: never silently overwrite one.
-      - name: Check whether the revision tag is already published
-        id: tagcheck
-        if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
-        run: |
-          set -euo pipefail
-          IMAGE="ghcr.io/${{ steps.versions.outputs.repo_owner }}/abuseipdb-sync"
-          TAG="${{ steps.versions.outputs.image_tag }}"
-          # Only a definite "not found" means unpublished. Any other failure (auth,
-          # network, registry outage) used to read as "not published" and let the
-          # push overwrite an existing, supposedly immutable tag.
-          if err=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" 2>&1 >/dev/null); then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::${IMAGE}:${TAG} is already published; skipping push. Bump APP_VERSION or IMAGE_REVISION to publish a new revision."
-          elif printf '%s\n' "$err" | grep -qF "${IMAGE}:${TAG}: not found"; then
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::cannot tell whether ${IMAGE}:${TAG} is published: $err"
-            exit 1
-          fi
-
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        with:
-          images: ghcr.io/${{ steps.versions.outputs.repo_owner }}/abuseipdb-sync
-          tags: |
-            type=raw,value=${{ steps.versions.outputs.image_tag }}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=sha,format=short,prefix=${{ steps.versions.outputs.image_tag }}-
-
-      - name: Build and push container image
-        id: build
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+      # Built into the local daemon for the scan, before any registry login. The
+      # push step below rebuilds from the same cache, so it reuses these layers.
+      - name: Build image for scan (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: gitops/images/abuseipdb-sync
           file: gitops/images/abuseipdb-sync/Dockerfile
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) && steps.tagcheck.outputs.exists != 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          load: true
+          push: false
+          tags: abuseipdb-sync:scan
           build-args: |
-            GO_VERSION=${{ steps.versions.outputs.go_version }}
             APP_VERSION=${{ steps.versions.outputs.app_version }}
             IMAGE_REVISION=${{ steps.versions.outputs.revision }}
           # Own cache scope: the default `buildkit` scope is shared with the WAF image
@@ -180,22 +166,58 @@ jobs:
           cache-from: type=gha,scope=abuseipdb-sync
           cache-to: type=gha,mode=max,scope=abuseipdb-sync
 
-      - name: Generate build summary
-        run: |
-          DIGEST="${{ steps.build.outputs.digest }}"
-          IMAGE="ghcr.io/${{ steps.versions.outputs.repo_owner }}/abuseipdb-sync"
-          TAG="${{ steps.versions.outputs.image_tag }}"
-          PUSHED="${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) && steps.tagcheck.outputs.exists != 'true' }}"
+      # Hard gate on the image this run would publish: HIGH/CRITICAL findings
+      # with a released fix fail the build (OS packages and the Go binary's modules).
+      - name: Install Trivy
+        uses: ./.github/actions/install-trivy
+        with:
+          version: ${{ env.TRIVY_VERSION }}
 
-          echo "### abuseipdb-sync build" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Tag**: \`${TAG}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Pushed to GHCR**: \`${PUSHED}\`" >> "$GITHUB_STEP_SUMMARY"
-          if [ -n "$DIGEST" ]; then
-            echo "- **Digest**: \`${DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Pin the GitOps manifest to:" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            echo "image: ${IMAGE}:${TAG}@${DIGEST}" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          fi
+      - name: Scan image (Trivy, HIGH/CRITICAL with a fix)
+        run: |
+          trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --exit-code 1 --no-progress abuseipdb-sync:scan
+
+      - name: Publication tags
+        id: tags
+        env:
+          TAG: ${{ steps.versions.outputs.image_tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # The revision tag stays immutable; these move with every publication.
+          {
+            echo "extra_tags<<EOF"
+            echo "latest"
+            echo "${TAG}-${SHA::7}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  ###########################################################
+  # Publish from main: push by digest, scan, sign, attest, tag
+  ###########################################################
+
+  # The reusable workflow holds the write, signing and attestation tokens, each
+  # in its own job; this job only grants the most any of them needs. Its
+  # signing identity is publish-image.yaml@refs/heads/main, which the Kyverno
+  # policy verify-homelab-images pins.
+  publish:
+    name: Publish
+    needs: test
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/publish-image.yaml
+    with:
+      image: abuseipdb-sync
+      context: gitops/images/abuseipdb-sync
+      tag: ${{ needs.test.outputs.image_tag }}
+      extra-tags: ${{ needs.test.outputs.extra_tags }}
+      # No Go build-arg: the builder image is pinned by digest in the
+      # Dockerfile (GO_IMAGE).
+      build-args: |
+        APP_VERSION=${{ needs.test.outputs.app_version }}
+        IMAGE_REVISION=${{ needs.test.outputs.revision }}

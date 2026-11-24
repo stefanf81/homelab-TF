@@ -3,3 +3,6 @@ kind: Kustomization
 resources:
   - require-common-labels.yaml
   - disallow-latest-tag.yaml
+  - verify-taskflow-images.yaml
+  - require-taskflow-image-scan.yaml
+  - verify-homelab-images.yaml

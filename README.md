@@ -10,10 +10,10 @@ Cluster workloads and platform controllers are managed declaratively through Git
 Before starting bring-up from scratch, ensure the following CLI tools are installed on your workstation:
 
 - **IaC & Automation:** [OpenTofu](https://opentofu.org/) (≥ 1.8.0), `make`, `ruby`
-- **Kubernetes Management:** `kubectl`, `helm`, [Flux CLI](https://fluxcd.io/flux/cmd/) (≥ 2.x) (optional: [Cilium CLI](https://github.com/cilium/cilium-cli) for ad-hoc `cilium`/`hubble` inspection)
+- **Kubernetes Management:** `kubectl`, `helm`, [Flux CLI](https://fluxcd.io/flux/cmd/) 2.10.x (same minor as the `FluxInstance`; `scripts/check-tool-versions.sh` enforces it) (optional: [Cilium CLI](https://github.com/cilium/cilium-cli) for ad-hoc `cilium`/`hubble` inspection)
 - **Secrets Management:** [SOPS](https://github.com/getsops/sops) (≥ v3.9), [age](https://github.com/FiloSottile/age)
 
-`mise install` (see `mise.toml`) installs pinned versions of OpenTofu, kubectl, Kustomize, Helm, kubeconform, tflint, Flux, SOPS and age; `make lint` and `make validate-gitops` run the same checks as CI.
+`mise install` (see `mise.toml`) installs pinned versions of OpenTofu, kubectl, Kustomize, Helm, kubeconform, tflint, Flux, SOPS and age; `make lint` (tflint) and `make validate-gitops` (render and schema-check every Flux path) run the same checks as the matching CI steps.
 
 You also need access to a **Proxmox VE 9.x** host (8.x is end of life) with an API token (with VM creation, Datastore, and Network privileges) and SSH agent access (`root@<proxmox>`) for cloud-init snippet uploads (`providers.tf`).
 
@@ -25,10 +25,10 @@ You also need access to a **Proxmox VE 9.x** host (8.x is end of life) with an A
 - `modules/k3s-kubeconfig` – SSHs into the node once cloud-init finishes, fetches `/etc/rancher/k3s/k3s.yaml`, and writes a local `kubeconfig.yaml`.
 - `gitops/` – Declarative Flux v2 manifests:
   - `gitops/infrastructure/controllers` – Gateway API CRDs (`v1.6.3`), Cilium v1.20.5, cert-manager, CoreDNS, Proxmox CSI, Kyverno, Falco, Trivy Operator, Reloader, Flux Operator.
-  - `gitops/infrastructure/configs` – Cilium L2 announcement policy (`192.168.50.200-250`), `GatewayClass`, Let's Encrypt ClusterIssuers, `PriorityClass/taskflow-critical`, Hubble pod-network isolation, and the AbuseIPDB ingress deny policy.
+  - `gitops/infrastructure/configs` – Cilium LB IP pool (`192.168.50.200-250`) and L2 announcement policy, `GatewayClass`, Let's Encrypt ClusterIssuers, `PriorityClass/taskflow-critical`, Hubble pod-network isolation, and the AbuseIPDB ingress deny policy.
   - `gitops/platform` – Policy Reporter + `oauth2-proxy`, Hubble UI `oauth2-proxy`, AbuseIPDB synchronizer, Renovate Operator + scheduled job.
   - `gitops/apps/taskflow` – Spring Boot 4.1.1 backend, Angular 22 frontend, Caddy+Coraza WAFs, PostgreSQL 19, Redis 8.10, Jaeger.
-  - `gitops/apps/kyverno-policies` – CEL `ValidatingPolicy` admission rules (`Deny`, fail-open).
+  - `gitops/apps/kyverno-policies` – CEL `ValidatingPolicy` admission rules (`Deny`, fail-open) and `ImageValidatingPolicy` signature/attestation checks for the TaskFlow images.
   - `gitops/monitoring` – VictoriaMetrics TSDB + Grafana stack + metrics-server + Loki/Alloy + 13 custom/vendored dashboards (Taskflow WAF/Access Logs/Rate Limits/Performance, Blocked Sources, AbuseIPDB, Cilium Agent, Hubble Flows, Falco, Trivy, Kyverno, cert-manager, Logging pipeline).
   - `gitops/images` – Custom image sources: TaskFlow Caddy+Coraza WAF and `abuseipdb-sync`.
   - `gitops/clusters/taskflow` – Cluster root Kustomizations and `cluster-vars`.
@@ -84,144 +84,53 @@ export KUBECONFIG=$PWD/kubeconfig.yaml
 kubectl get nodes
 ```
 
-### 3️⃣ Bootstrap Foundation (Gateway API CRDs, Cilium, CoreDNS & Flux Operator)
+### 3️⃣ Bootstrap the Cluster
 
-Because k3s is installed with `--flannel-backend=none`, `--disable-kube-proxy`, and `--disable coredns`, a freshly provisioned node needs Cilium (with `kubeProxyReplacement: true`, `k8sServiceHost: ${NODE_IP}`, and `ipam.mode: kubernetes`) **and** CoreDNS (`10.43.0.10:53`) before Flux can resolve `github.com`/`ghcr.io` inside the cluster.
+Follow [`gitops/FLUX_BOOTSTRAP.md`](gitops/FLUX_BOOTSTRAP.md) §2–5, the single source for
+these steps:
 
-Run `make bootstrap-foundation` (`scripts/bootstrap-foundation.sh`), which installs the Gateway API CRDs (server-side apply) plus `cilium`, `coredns`, and `flux-operator` directly from the pinned chart versions and `cluster-vars`-substituted values in `gitops/infrastructure/controllers/` so Flux adopts all three releases seamlessly on first sync:
+1. `make bootstrap-foundation`: Gateway API CRDs, Cilium, CoreDNS and the Flux Operator from
+   the pinned GitOps charts (the node has no CNI, kube-proxy or CoreDNS until then).
+2. Seed the `flux-system` Git credential (PAT with `contents:write`), the `sops-age` key and
+   `taskflow/ghcr-pull-secret`.
+3. Apply `gitops/infrastructure/flux-instance/flux-instance.yaml` and reconcile the layers in
+   dependency order (needs public DNS and WAN 80/443 for the HTTP-01 certificate).
+4. Verify.
 
-```bash
-make bootstrap-foundation
-```
-
-### 4️⃣ Seed Git, SOPS Age & GHCR Secrets
-
-Create all bootstrap secrets **before** applying `FluxInstance`. Flux authenticates to GitHub over HTTPS via `flux-system` (`contents:write` for image-automation commits) and decrypts `*-secrets.yaml` using `sops-age`:
-
-```bash
-kubectl -n flux-system create secret generic flux-system \
-  --from-literal=username=<github-user> \
-  --from-literal=password=<PAT-with-contents:write>
-
-kubectl create secret generic sops-age -n flux-system \
-  --from-file=age.agekey=key.txt
-```
-
-Create the GHCR pull secret in `taskflow` before `taskflow-app` reconciles (`trivy-operator` also reads `taskflow/ghcr-pull-secret` via `privateRegistryScanSecretsNames`):
-```bash
-kubectl create namespace taskflow --dry-run=client -o yaml | kubectl apply -f -
-kubectl create secret docker-registry ghcr-pull-secret -n taskflow \
-  --docker-server=ghcr.io \
-  --docker-username=<github-user> \
-  --docker-password=<read-packages-token>
-```
-
-> **Note for new environments:** If generating your own age key (`age-keygen -o key.txt`), update the public recipient key in `.sops.yaml` and re-encrypt all `*-secrets.yaml` files via `sops -e -i <file>` before committing to your remote Git repository.
-
-### 5️⃣ Apply `FluxInstance` and Reconcile All Layers
-
-Full sequence and troubleshooting: [`gitops/FLUX_BOOTSTRAP.md`](gitops/FLUX_BOOTSTRAP.md).
-
-```bash
-kubectl apply -f gitops/infrastructure/flux-instance/flux-instance.yaml
-kubectl -n flux-system wait fluxinstance/flux --for=condition=Ready --timeout=5m
-
-# Reconcile Git repository source and root Kustomization
-flux reconcile source git flux-system
-flux reconcile kustomization flux-system
-
-# Reconcile platform and application layers in dependency order
-flux reconcile kustomization infra-controllers -n flux-system
-flux reconcile kustomization infra-configs -n flux-system
-flux reconcile kustomization abuseipdb -n flux-system
-flux reconcile kustomization trivy-operator -n flux-system
-flux reconcile kustomization taskflow-app -n flux-system
-flux reconcile kustomization reloader -n flux-system
-flux reconcile kustomization monitoring -n flux-system
-flux reconcile kustomization monitoring-logging -n flux-system
-flux reconcile kustomization monitoring-app -n flux-system
-flux reconcile kustomization kyverno-policies -n flux-system
-flux reconcile kustomization policy-reporter -n flux-system
-flux reconcile kustomization hubble-ui -n flux-system
-```
-
-### 6️⃣ CoreDNS Management
-
-CoreDNS is managed by Flux in `gitops/infrastructure/controllers/coredns/`. The
-configuration includes the LAN hairpin-NAT overrides for `jokelab.dev` and the
-Gateway hostnames. Do not patch the live CoreDNS ConfigMap; update the HelmRelease
-and commit the change instead.
-
-For an existing node, migrate from the packaged K3s addon during a maintenance
-window. The `--disable coredns` setting in `modules/proxmox/main.tf` applies to new
-nodes only. On an existing node, disable the packaged addon, then immediately
-reconcile Flux so the GitOps-managed release takes ownership:
-
-```bash
-sudoedit /etc/rancher/k3s/config.yaml
-sudo systemctl restart k3s
-flux reconcile kustomization infra-controllers -n flux-system
-kubectl -n kube-system rollout status deployment/coredns --timeout=5m
-kubectl -n kube-system get svc kube-dns
-kubectl -n kube-system get endpointslice -l k8s-app=kube-dns
-```
-
-Preserve the existing settings and add this YAML to the K3s config:
-
-```yaml
-disable:
-  - coredns
-```
-
-### 7️⃣ Verify Cluster & Application Health
-
-```bash
-# Check all pods across the cluster
-kubectl get pods -A
-
-# Check Gateway and HTTPRoute status
-kubectl get gateway,httproute -A
-
-# Verify application secrets are decrypted
-kubectl get secret -n taskflow db-secret backend-secret redis-secret taskflow-jwt-keys cloudflare-secret
-```
-
-Access services via Cilium Gateway:
-- **TaskFlow Web App:** `https://www.jokelab.dev/`
-- **Grafana Observability:** `https://grafana.jokelab.dev/`
+Once it is up:
+- **TaskFlow:** `https://www.jokelab.dev/`
+- **Grafana:** `https://grafana.jokelab.dev/`
 - **Policy Reporter UI:** `https://kyverno.jokelab.dev/`
 - **Hubble UI:** `https://hubble.jokelab.dev/`
 
+Routing and access details: `docs/ARCHITECTURE.md` §5.9.
+
 ---
 
-## 🛡 Built-in Enterprise Architecture & Optimizations
+## 📚 Documentation
 
-To ensure production-grade security, resiliency, and performance on a single-node homelab, several optimizations are built into this repository:
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): how the pieces fit, what to edit for a change, known limitations.
+- [`docs/BACKLOG.md`](docs/BACKLOG.md): open work, verified against the code.
+- [`docs/README.md`](docs/README.md): index of every runbook and reference.
 
-### 1. Control Plane & Provisioning Stability
-* **Reconstruction-Aware Kubeconfig Sync:** The `fetch_kubeconfig` module is linked to the Proxmox VM instance ID. Rebuilding the VM automatically re-fetches the `kubeconfig.yaml`, avoiding stale SSH/TLS certificate errors.
-* **Reproducible Cloud-Init:** The Ubuntu cloud image is release-pinned and SHA-256 verified, and k3s is installed at the explicit version configured by `k3s_version`.
+---
 
-### 2. Cilium CNI, Network Security & Gateway API
-* **High-Performance eBPF CNI:** Flannel and k3s network policies are disabled (`--flannel-backend=none --disable-network-policy`) to let **Cilium v1.20.5** handle eBPF routing, SNAT masquerading, and network security policies.
-* **Kubernetes Gateway API:** Deployed standard Gateway API CRDs (`gateway-api`) and enabled Cilium's Gateway API controller (`gatewayAPI.enabled = true`).
-* **ServiceLB Deconfliction & L2 Announcements:** K3s ServiceLB is disabled (`--disable servicelb`). Cilium L2 announcements (`CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy`) advertise gateway IP `192.168.50.201`.
-* **Zero-Trust Network Policies:** Ingress to database/cache tiers (`postgres-db`, `redis`, `jaeger`) is restricted strictly to backend pods.
-* **IP Reputation Denylist (AbuseIPDB):** A Go synchronizer (`gitops/images/abuseipdb-sync`) maintains a runtime-managed `CiliumCIDRGroup` that a `CiliumClusterwideNetworkPolicy` denies on the direct-to-origin path, and mirrors the same validated list into a Cloudflare account IP list referenced by a zone WAF block rule — the enforcement point that sees real client IPs behind the Cloudflare proxy. Caddy/Coraza are untouched (no list duplication). Per-IP visibility: Grafana `Blocked Sources` (Cloudflare + Cilium); see `docs/ABUSEIPDB_CILIUM_BLOCKLIST.md`.
-
-### 3. Storage Resiliency & Database Performance
-* **Proxmox CSI Storage:** PostgreSQL PVC (`postgres-pvc.yaml`, `postgres-data`) uses **10Gi** on the `proxmox-csi-db` StorageClass (`cache: none`, `noatime`), enabling dynamic virtual disk attachments on the Proxmox VE host (note: Proxmox CSI attaches PV disks with `backup=0` by default, so database backups require an explicit `pg_dump`/CSI backup workflow).
-* **PostgreSQL RAM Tuning:** `shared_buffers = 128MB`, `effective_cache_size = 384MB`, `work_mem = 8MB`, `maintenance_work_mem = 64MB`, `autovacuum_work_mem = 32MB`, `max_connections = 80` within a 768MiB container budget (sized to actual ~17MB data size plus rolling-update Hikari surge, autovacuum, and tmpfs headroom).
-* **Redis Cache Protection:** Ephemeral L2 cache running with `--maxmemory 64mb` and `--maxmemory-policy allkeys-lru` within a 128MiB container budget.
-* **JVM Heap & Off-Heap Guard:** Spring Boot backend uses `MaxRAMPercentage=50.0` (1 GiB heap at a 2 GiB limit) with bounded off-heap (`MaxMetaspaceSize=256m`, `MaxDirectMemorySize=256m`). Its memory request is 1536Mi; QoS is Burstable because CPU has no limit.
-
-### 4. Provider Plugin Cache
-The `Makefile` points OpenTofu's provider plugin cache at `~/.cache/opentofu/plugins` (override with `TF_PLUGIN_CACHE_DIR`), so a fresh `init` after deleting `.terraform/`, or in a second checkout, links the large `bpg/proxmox` binary from the cache instead of downloading it again.
+## 🛠 Make Targets
 
 ```bash
-make cache        # Show cache size
-make cache-clean  # Wipe cached provider binaries
-make all          # Convenience: init + apply
+make init         # tofu init (providers cached in ~/.cache/opentofu/plugins; override TF_PLUGIN_CACHE_DIR)
+make plan         # Non-mutating preview
+make apply        # VM + kubeconfig fetch in one plan
+make bootstrap-foundation  # Pre-Flux foundation (see gitops/FLUX_BOOTSTRAP.md §2)
 make fmt          # Fail on formatting drift (`tofu fmt -recursive` fixes it)
-make validate     # Static validation of the root module and child modules (after `make init`)
+make validate     # Static validation of the root and child modules (after `make init`)
+make lint         # tflint
+make validate-gitops  # Render and schema-check every path Flux reconciles
+make cache        # Show the provider cache size
+make cache-clean  # Wipe cached provider binaries
+make destroy      # Refused while modules/proxmox sets prevent_destroy
 ```
+
+The provider cache lives outside `.terraform/`, so a fresh `init` (after deleting
+`.terraform/`, or in a second checkout) links the large `bpg/proxmox` binary instead of
+downloading it again.

@@ -11,6 +11,7 @@ resources:
   - frontend.yaml
   - frontend-waf.yaml
   - frontend-pdb.yaml
+  - jaeger-config.yaml
   - jaeger.yaml
   - network-policy.yaml
   - default-deny.yaml

@@ -11,7 +11,7 @@
 #
 # SCOPE: `reserved:ingress` is the shared per-node Cilium Envoy identity, so
 # this policy applies cluster-wide to every Gateway/Ingress listener (here:
-# www.jokelab.dev, grafana., kyverno. and hubble.jokelab.dev).
+# jokelab.dev (redirect), www., grafana., kyverno. and hubble.jokelab.dev).
 #
 # SOURCE-IP LIMITATION: the public hostnames are proxied by Cloudflare, so
 # Cilium sees Cloudflare edge addresses for Internet traffic. This policy

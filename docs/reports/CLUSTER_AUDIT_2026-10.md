@@ -1,5 +1,11 @@
 # Cluster Audit — October 2026
 
+> **Dated snapshot (19 October 2026), not maintained.** Statements about what is open or done
+> reflect that date and are partly out of date. Current status of every item:
+> [`docs/BACKLOG.md`](../BACKLOG.md).
+> The companion documents named below (`SOTA_HOMELAB_2026.md`, `BACKLOG_2026.md`)
+> were superseded by this audit and the backlog, and removed; see `git log`.
+
 Full review of every workload Flux reconciles from `gitops/`, plus the k3s/Proxmox
 layer in `modules/`. For each app it answers three questions: is the
 configuration state of the art, can it be tuned for performance, and is it

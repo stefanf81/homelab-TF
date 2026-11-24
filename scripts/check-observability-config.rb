@@ -49,6 +49,42 @@ class ObservabilityConfigTest < Minitest::Test
     refute kubelet_rules.any? { |r| r['action'] == 'drop' && Regexp.new("\\A(?:#{r['regex']})\\z").match?('kubelet_volume_stats_used_bytes') }
   end
 
+  # vmagent checks the raw body against max_scrape_size before metricRelabelConfigs
+  # drop anything. k3s serves the same, uptime-growing registry on both endpoints;
+  # with the 16 MiB default both scrapes failed from 2026-11-19 to 2026-11-24.
+  def test_k3s_metrics_scrapes_allow_large_bodies
+    config = values('gitops/monitoring/platform/release.yaml')
+    sizes = {
+      'kubeApiServer' => config.dig('kubeApiServer', 'vmScrape', 'spec', 'endpoints').first['max_scrape_size'],
+      'kubelet' => config.dig('kubelet', 'vmScrape', 'spec', 'max_scrape_size')
+    }
+    sizes.each do |job, size|
+      match = /\A(\d+)MiB\z/.match(size.to_s)
+      refute_nil match, "#{job}: max_scrape_size must be set in MiB, got #{size.inspect}"
+      assert_operator match[1].to_i, :>=, 32, "#{job}: max_scrape_size below 32MiB"
+    end
+  end
+
+  # k3s disabled-metrics may only turn off apiserver histograms whose buckets the
+  # apiserver scrape already drops; the SLI histogram feeds the burn-rate rules and
+  # apiserver_request_duration_seconds _sum/_count feed the dashboards.
+  def test_k3s_disabled_metrics_are_already_unused
+    snippet = File.read(File.join(ROOT, 'modules/proxmox/main.tf'))
+    flag = snippet[/"disabled-metrics=([^"]+)"/, 1]
+    refute_nil flag, 'disabled-metrics not found in modules/proxmox/main.tf'
+    disabled = flag.split(',')
+    assert_equal disabled.uniq, disabled
+    endpoint = values('gitops/monitoring/platform/release.yaml').dig('kubeApiServer', 'vmScrape', 'spec', 'endpoints').first
+    bucket_drop = endpoint.fetch('metricRelabelConfigs').find { |r| r['action'] == 'drop' && r['regex'].end_with?('_bucket') }
+    refute_nil bucket_drop
+    pattern = Regexp.new("\\A(?:#{bucket_drop.fetch('regex')})\\z")
+    disabled.each do |family|
+      assert_match pattern, "#{family}_bucket", "#{family} is disabled at the source but its buckets are still scraped"
+    end
+    refute_includes disabled, 'apiserver_request_sli_duration_seconds'
+    refute_includes disabled, 'apiserver_request_duration_seconds'
+  end
+
   def test_falco_exceptions_are_exact_client_tuples_on_one_rule
     config = values('gitops/infrastructure/controllers/falco/release.yaml')
     rules = YAML.safe_load(config.fetch('customRules').fetch('homelab-api-clients.yaml'))
@@ -85,9 +121,101 @@ class ObservabilityConfigTest < Minitest::Test
       policy = YAML.load_file(path)
       next if policy['kind'] == 'Kustomization'
       assert_equal 'policies.kyverno.io/v1', policy['apiVersion']
-      assert_equal 'ValidatingPolicy', policy['kind']
-      assert_includes policy.dig('spec', 'validationActions'), 'Deny'
+      assert_includes %w[ValidatingPolicy ImageValidatingPolicy], policy['kind'], path
+      actions = policy.dig('spec', 'validationActions')
+      if policy['kind'] == 'ImageValidatingPolicy'
+        # Image verification is rolled out Audit -> Deny (docs/KYVERNO_POLICY_ENGINE.md §8).
+        assert_includes [['Audit'], ['Deny']], actions, path
+      else
+        assert_includes actions, 'Deny', path
+      end
     end
+  end
+
+  # The TaskFlow image policies trust exactly one signer: the publish workflow of
+  # stefanf81/taskflow-enterprise run from main. A regexp identity, another ref or
+  # a wider image glob would let other workflows' images through.
+  TASKFLOW_SIGNER = {
+    'subject' => 'https://github.com/stefanf81/taskflow-enterprise/.github/workflows/pushdockerimage.yml@refs/heads/main',
+    'issuer' => 'https://token.actions.githubusercontent.com'
+  }.freeze
+  TASKFLOW_IMAGE_GLOBS = %w[backend frontend].flat_map do |component|
+    ["ghcr.io/stefanf81/taskflow-#{component}:*", "ghcr.io/stefanf81/taskflow-#{component}@*"]
+  end.freeze
+
+  def test_taskflow_image_policies_pin_the_release_workflow
+    policies = %w[verify-taskflow-images require-taskflow-image-scan].to_h do |name|
+      [name, YAML.load_file(File.join(ROOT, "gitops/apps/kyverno-policies/#{name}.yaml"))]
+    end
+    policies.each do |name, policy|
+      spec = policy.fetch('spec')
+      assert_equal name, policy.dig('metadata', 'name')
+      assert_equal TASKFLOW_IMAGE_GLOBS, spec.fetch('matchImageReferences').map { |m| m.fetch('glob') }, name
+      assert_equal ['taskflow'], [spec.dig('matchConstraints', 'namespaceSelector', 'matchLabels', 'kubernetes.io/metadata.name')], name
+      # Digest pinning and the "every matched image was verified" check stay on.
+      (spec['validationConfigurations'] || {}).each_value { |enabled| refute_equal false, enabled, name }
+      spec.fetch('attestors').each do |attestor|
+        keyless = attestor.dig('cosign', 'keyless')
+        assert_equal [TASKFLOW_SIGNER], keyless.fetch('identities'), "#{name}/#{attestor['name']}"
+        assert_equal ['identities'], keyless.keys, "#{name}/#{attestor['name']}: no extra roots"
+        refute attestor.dig('cosign', 'ctlog', 'insecureIgnoreTlog'), name
+        refute attestor.dig('cosign', 'ctlog', 'insecureIgnoreSCT'), name
+      end
+    end
+
+    verify = policies.fetch('verify-taskflow-images').fetch('spec')
+    scanned = verify.fetch('attestors').find { |a| a['name'] == 'scannedRelease' }
+    assert_equal({ 'scan' => 'passed' }, scanned.dig('cosign', 'annotations'))
+    assert_equal ['https://slsa.dev/provenance/v1'], verify.fetch('attestations').map { |a| a.dig('intoto', 'type') }
+    scan = policies.fetch('require-taskflow-image-scan').fetch('spec')
+    assert_equal ['https://cosign.sigstore.dev/attestation/vuln/v1'], scan.fetch('attestations').map { |a| a.dig('intoto', 'type') }
+  end
+
+  # The images built here are signed by the reusable publish workflow (its
+  # certificate names publish-image.yaml, not the calling build workflow).
+  HOMELAB_SIGNER = {
+    'subject' => 'https://github.com/stefanf81/homelab-TF/.github/workflows/publish-image.yaml@refs/heads/main',
+    'issuer' => 'https://token.actions.githubusercontent.com'
+  }.freeze
+  HOMELAB_IMAGE_GLOBS = %w[taskflow-caddy-coraza abuseipdb-sync].flat_map do |image|
+    ["ghcr.io/stefanf81/#{image}:*", "ghcr.io/stefanf81/#{image}@*"]
+  end.freeze
+
+  def test_homelab_image_policy_pins_the_publish_workflow
+    policy = YAML.load_file(File.join(ROOT, 'gitops/apps/kyverno-policies/verify-homelab-images.yaml'))
+    spec = policy.fetch('spec')
+    assert_equal 'verify-homelab-images', policy.dig('metadata', 'name')
+    assert_equal HOMELAB_IMAGE_GLOBS, spec.fetch('matchImageReferences').map { |m| m.fetch('glob') }
+    selector = spec.dig('matchConstraints', 'namespaceSelector', 'matchExpressions')
+    assert_equal [{ 'key' => 'kubernetes.io/metadata.name', 'operator' => 'In', 'values' => %w[taskflow abuseipdb] }], selector
+    (spec['validationConfigurations'] || {}).each_value { |enabled| refute_equal false, enabled }
+    spec.fetch('attestors').each do |attestor|
+      keyless = attestor.dig('cosign', 'keyless')
+      assert_equal [HOMELAB_SIGNER], keyless.fetch('identities'), attestor['name']
+      assert_equal ['identities'], keyless.keys, "#{attestor['name']}: no extra roots"
+      refute attestor.dig('cosign', 'ctlog', 'insecureIgnoreTlog')
+      refute attestor.dig('cosign', 'ctlog', 'insecureIgnoreSCT')
+    end
+    scanned = spec.fetch('attestors').find { |a| a['name'] == 'scannedRelease' }
+    assert_equal({ 'scan' => 'passed' }, scanned.dig('cosign', 'annotations'))
+    # The WAF package is private; Kyverno reads it with kyverno/ghcr-pull-secret.
+    assert_equal({ 'secrets' => ['ghcr-pull-secret'] }, spec['credentials'])
+    assert_equal %w[https://slsa.dev/provenance/v1 https://cosign.sigstore.dev/attestation/vuln/v1],
+                 spec.fetch('attestations').map { |a| a.dig('intoto', 'type') }
+
+    # The identity only holds while both build workflows call this file locally
+    # (same repository, same ref) and its promote job alone can sign.
+    %w[build-taskflow-caddy-coraza build-abuseipdb-sync].each do |workflow|
+      text = File.read(File.join(ROOT, ".github/workflows/#{workflow}.yaml"))
+      assert_includes text, "    uses: ./.github/workflows/publish-image.yaml\n", workflow
+      refute_match(/^\s+(id-token|attestations): write/, text.split("\n  publish:\n").first, "#{workflow}: only the publish job may sign")
+    end
+    publish = YAML.load_file(File.join(ROOT, '.github/workflows/publish-image.yaml'))
+    assert_equal({}, publish['permissions'])
+    assert_equal 'none', publish['cache-mode']
+    signers = publish.fetch('jobs').select { |_, job| job.dig('permissions', 'id-token') == 'write' }.keys
+    assert_equal ['promote'], signers
+    assert_equal({ 'contents' => 'read', 'packages' => 'read' }, publish.dig('jobs', 'scan', 'permissions'))
   end
 
   def documents(path)
