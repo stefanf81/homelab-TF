@@ -117,6 +117,10 @@ spec:
                 secretKeyRef:
                   name: redis-secret
                   key: REDIS_PASSWORD
+            # Redis ACL user of the backend (redis.yaml, write-acl); the password above is
+            # that user's. Lettuce then authenticates with `HELLO 3 AUTH taskflow <password>`.
+            - name: SPRING_DATA_REDIS_USERNAME
+              value: taskflow
             - name: APP_RSA_PRIVATE_KEY
               valueFrom:
                 secretKeyRef:

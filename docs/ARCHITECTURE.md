@@ -267,6 +267,8 @@ VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 | Replicas | 1 |
 | Storage | emptyDir (ephemeral, no persistence) |
 | Memory Guard | `--maxmemory 64mb`, `allkeys-lru`, lazyfree eviction, 10 samples |
+| Users (ACL) | `default` off; `taskflow` (backend) may run only the 17 commands it sends; `exporter`, `probe` (PING), `admin` (operator); hashed passwords in an in-memory ACL file written by the `write-acl` init container |
+| Modules | None loaded (`command: ["redis-server"]` skips the image entrypoint that loads search/JSON/time series/Bloom) |
 | Resources | CPU: 50m request, no limit; Memory: 128 MiB (request = limit) |
 
 ### 5.6 Jaeger Deployment (`gitops/apps/taskflow/jaeger.yaml`)
@@ -423,7 +425,7 @@ homelab-TF/
 │   ├── apps/taskflow/               # Application manifests (kustomize)
 │   │   ├── namespace.yaml           # taskflow namespace (PSA restricted) + LimitRange
 │   │   ├── configmap.yaml           # SPRING_PROFILES_ACTIVE, CORS origins, trusted-proxy/client-IP, Tomcat settings
-│   │   ├── taskflow-secrets.yaml    # SOPS-encrypted: POSTGRES_PASSWORD, SPRING_SECURITY_PASSWORD, REDIS_PASSWORD, CLOUDFLARE_API_TOKEN
+│   │   ├── taskflow-secrets.yaml    # SOPS-encrypted: POSTGRES_PASSWORD, SPRING_SECURITY_PASSWORD, REDIS_PASSWORD (+ REDIS_EXPORTER_PASSWORD, REDIS_ADMIN_PASSWORD), CLOUDFLARE_API_TOKEN
 │   │   ├── taskflow-jwt-secrets.yaml # SOPS-encrypted: APP_RSA_PRIVATE_KEY, APP_RSA_PUBLIC_KEY
 │   │   ├── backend.yaml             # Spring Boot deployment + ClusterIP service
 │   │   ├── frontend.yaml            # Angular/nginx deployment + ClusterIP service + upstream ConfigMap
