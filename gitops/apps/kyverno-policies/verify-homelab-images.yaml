@@ -15,10 +15,10 @@ metadata:
       the Trivy scan report as a signed vulnerability attestation, all signed
       keyless by that workflow.
 spec:
-  # Audit until both images have been republished by publish-image.yaml and
-  # their Deployments pinned to the new digests: the digests deployed when this
-  # was written (taskflow-caddy-coraza r13, abuseipdb-sync 0.3.5-r9) are
-  # unsigned and would fail. Then switch to [Deny] (docs/KYVERNO_POLICY_ENGINE.md §8).
+  # Audit until Kyverno is seen to read both images with kyverno/ghcr-pull-secret
+  # (below); both Deployments now pin revisions signed by publish-image.yaml
+  # (WAF r15, abuseipdb-sync 0.3.5-r10). Then switch to [Deny]
+  # (docs/KYVERNO_POLICY_ENGINE.md §8).
   validationActions: [Audit]
   failurePolicy: Ignore
   webhookConfiguration:
