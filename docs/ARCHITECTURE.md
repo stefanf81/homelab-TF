@@ -255,7 +255,7 @@ VictoriaMetrics TSDB ──▶ 8Gi Proxmox CSI PVC
 | Image | `postgres:19.0-alpine` |
 | Replicas | 1 |
 | Storage | 10 GiB PVC (`postgres-data`), `storageClassName: proxmox-csi-db` (`cache: none`, `noatime`, ReadWriteOnce) |
-| Data directory | `PGDATA=/var/lib/postgresql/19/docker` on the PVC mounted at `/var/lib/postgresql`; the major in the path must match the image (`scripts/check-postgres-major.rb`), and a major upgrade is a dump and restore in init containers, never an image bump alone |
+| Data directory | `PGDATA=/var/lib/postgresql/19/docker` on the PVC mounted at `/var/lib/postgresql`; the major in the path must match the image (`scripts/check-postgres-major.rb`), and a major upgrade is a dump and restore in init containers, never an image bump alone (template: commit `a948d20`, #77, 18 → 19) |
 | SecurityContext | `readOnlyRootFilesystem: true`, `runAsNonRoot` UID/GID 70 (postgres), drop ALL capabilities, `fsGroup: 70` (`OnRootMismatch`) |
 | Tuning | `shared_buffers=128MB`, `effective_cache_size=384MB`, `work_mem=8MB`, `maintenance_work_mem=64MB`, `autovacuum_work_mem=32MB`, `max_connections=80`, `shared_preload_libraries=pg_stat_statements` (JIT is off by default since PostgreSQL 19) |
 | SSD / WAL tuning | `random_page_cost=1.1`, `effective_io_concurrency=200`, `checkpoint_timeout=15min`, `wal_buffers=16MB`, `wal_compression=lz4`, `max_wal_size=2GB`, `synchronous_commit=on` |
