@@ -1,0 +1,67 @@
+# Ingress default-deny for the falco namespace.
+#
+# Falcosidekick accepts events on :2801 without authentication. Without a policy
+# any pod in the cluster could POST forged events, which fill the bounded
+# PolicyReport (maxevents 300) and push real findings out, or read Falco's
+# metrics endpoint.
+#
+# Egress stays open for now. Falco itself needs only DNS and Falcosidekick, and
+# Falcosidekick only the API server (PolicyReports), but while falcoctl is enabled
+# the Falco pod downloads its rules from ghcr.io at every start, and an
+# Alertmanager output (optional 04b) would add a path to monitoring. Add an egress
+# default-deny once falcoctl is off and the outputs are settled.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: falco-ingress-default-deny
+  namespace: falco
+spec:
+  endpointSelector: {}
+  ingress:
+    # Kubelet probes and admin `kubectl port-forward`.
+    - fromEntities:
+        - host
+---
+# Only the Falco sensor may deliver events to Falcosidekick (http_output).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-falco-to-falcosidekick
+  namespace: falco
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: falcosidekick
+      app.kubernetes.io/instance: falco
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": falco
+            "k8s:app.kubernetes.io/name": falco
+            "k8s:app.kubernetes.io/instance": falco
+      toPorts:
+        - ports:
+            - port: "2801"
+              protocol: TCP
+---
+# vmagent -> Falco metrics (VMServiceScrape `falco-metrics`, webserver port 8765).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-vmagent-to-falco
+  namespace: falco
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: falco
+      app.kubernetes.io/instance: falco
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            "k8s:app.kubernetes.io/name": vmagent
+            "k8s:app.kubernetes.io/instance": victoria-metrics-k8s-stack
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP

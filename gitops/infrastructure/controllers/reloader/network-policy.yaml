@@ -1,0 +1,12 @@
+# Ingress default-deny for the reloader namespace. Reloader only watches the API
+# server; its :9090 port serves the kubelet probes (and unscraped metrics).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: reloader-ingress-default-deny
+  namespace: reloader
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEntities:
+        - host

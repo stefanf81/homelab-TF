@@ -15,6 +15,11 @@ spec:
 ---
 # Renovate needs cluster DNS plus HTTPS access to GitHub, registries, and Helm
 # repositories. It has no inbound or Kubernetes API access.
+# The job holds the GitHub token and runs code from the dependency ecosystem, so
+# HTTPS is limited to public addresses: private, CGNAT (Tailscale) and link-local
+# ranges are excluded, which keeps the router, the Proxmox host and other LAN
+# devices on :443 out of reach. (Pods and Services are cluster identities, which
+# an ipBlock never selects under Cilium.)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -46,6 +51,12 @@ spec:
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16
       ports:
         - port: 443
           protocol: TCP
