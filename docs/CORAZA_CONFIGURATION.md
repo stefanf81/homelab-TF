@@ -51,8 +51,8 @@ directives `
     SecAuditLog /dev/stdout                       #    Audit JSON to stdout (Alloy redacts credentials at ingest)
     SecAuditLogFormat JSON                        #    JSON audit records
     SecAuditLogParts ABFHZ                        #    Rule-match metadata plus request/response headers
-    SecRequestBodyLimit 10485760                  #    Max request body (10 MB)
-    SecRequestBodyNoFilesLimit 1048576            #    Max body without files (1 MB)
+    SecRequestBodyLimit 65536                     #    Max request body (64 KiB)
+    SecRequestBodyInMemoryLimit 65536             #    Buffer it in memory (must be <= the limit)
 
     Include /usr/share/coraza/crs/rules/*.conf    # 5. CRS rules (image)
 `
@@ -138,9 +138,14 @@ To change it per transaction, use the `ctl:auditEngine=...` rule action.
 |-----------|-------|---------|
 | `SecRequestBodyAccess` | `On` | Enables body buffering and inspection |
 | `SecResponseBodyAccess` | `Off` | Disables response body inspection (recommended for reverse proxy) |
-| `SecRequestBodyLimit` | `10485760` | Max body size in bytes (10 MB). Larger bodies are rejected (see below). |
-| `SecRequestBodyNoFilesLimit` | `1048576` | Max non-file body size (1 MB) |
+| `SecRequestBodyLimit` | `65536` | Max body size in bytes (64 KiB), both WAFs. Bodies that reach it are rejected with 413 before any rule runs (see below). The API's requests are small JSON (the application's own nginx bounds `/api` bodies at 32k) and the static site receives none. |
+| `SecRequestBodyNoFilesLimit` | not set | Coraza parses this directive but does not enforce it (`internal/corazawaf/waf.go`: "no logic based on it is implemented"), so it cannot be used to bound JSON bodies separately from uploads. |
+| `SecRequestBodyInMemoryLimit` | `65536` | Bodies up to this size are buffered in memory, larger ones in `/tmp`. Coraza refuses to start if it is larger than `SecRequestBodyLimit` ("request body limit should be at least the memory limit"; `coraza.conf-recommended` sets 128 KiB), so lower both together. Equal to the limit: nothing is spooled to `/tmp`. |
 | `SecRequestBodyLimitAction` | `Reject` | Not set in the ConfigMaps; Coraza's default with `SecRuleEngine On`. Interrupts the transaction (HTTP 413). `ProcessPartial` (inspect up to the limit, set `INBOUND_DATA_ERROR`) applies only in `DetectionOnly` or when set explicitly. |
+
+The body limit is the main cost control of the WAF: the body is buffered and inspected in full, and that happens before
+the rate limiter (`order coraza_waf first`). At paranoia level 2 inspection costs on the order of a CPU-second per 100 KiB
+of argument data, so raise the limit only for a real need and only on the WAF that needs it.
 
 ## False-positive regression test
 
