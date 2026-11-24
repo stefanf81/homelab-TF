@@ -49,6 +49,42 @@ class ObservabilityConfigTest < Minitest::Test
     refute kubelet_rules.any? { |r| r['action'] == 'drop' && Regexp.new("\\A(?:#{r['regex']})\\z").match?('kubelet_volume_stats_used_bytes') }
   end
 
+  # vmagent checks the raw body against max_scrape_size before metricRelabelConfigs
+  # drop anything. k3s serves the same, uptime-growing registry on both endpoints;
+  # with the 16 MiB default both scrapes failed from 2026-11-19 to 2026-11-24.
+  def test_k3s_metrics_scrapes_allow_large_bodies
+    config = values('gitops/monitoring/platform/release.yaml')
+    sizes = {
+      'kubeApiServer' => config.dig('kubeApiServer', 'vmScrape', 'spec', 'endpoints').first['max_scrape_size'],
+      'kubelet' => config.dig('kubelet', 'vmScrape', 'spec', 'max_scrape_size')
+    }
+    sizes.each do |job, size|
+      match = /\A(\d+)MiB\z/.match(size.to_s)
+      refute_nil match, "#{job}: max_scrape_size must be set in MiB, got #{size.inspect}"
+      assert_operator match[1].to_i, :>=, 32, "#{job}: max_scrape_size below 32MiB"
+    end
+  end
+
+  # k3s disabled-metrics may only turn off apiserver histograms whose buckets the
+  # apiserver scrape already drops; the SLI histogram feeds the burn-rate rules and
+  # apiserver_request_duration_seconds _sum/_count feed the dashboards.
+  def test_k3s_disabled_metrics_are_already_unused
+    snippet = File.read(File.join(ROOT, 'modules/proxmox/main.tf'))
+    flag = snippet[/"disabled-metrics=([^"]+)"/, 1]
+    refute_nil flag, 'disabled-metrics not found in modules/proxmox/main.tf'
+    disabled = flag.split(',')
+    assert_equal disabled.uniq, disabled
+    endpoint = values('gitops/monitoring/platform/release.yaml').dig('kubeApiServer', 'vmScrape', 'spec', 'endpoints').first
+    bucket_drop = endpoint.fetch('metricRelabelConfigs').find { |r| r['action'] == 'drop' && r['regex'].end_with?('_bucket') }
+    refute_nil bucket_drop
+    pattern = Regexp.new("\\A(?:#{bucket_drop.fetch('regex')})\\z")
+    disabled.each do |family|
+      assert_match pattern, "#{family}_bucket", "#{family} is disabled at the source but its buckets are still scraped"
+    end
+    refute_includes disabled, 'apiserver_request_sli_duration_seconds'
+    refute_includes disabled, 'apiserver_request_duration_seconds'
+  end
+
   def test_falco_exceptions_are_exact_client_tuples_on_one_rule
     config = values('gitops/infrastructure/controllers/falco/release.yaml')
     rules = YAML.safe_load(config.fetch('customRules').fetch('homelab-api-clients.yaml'))

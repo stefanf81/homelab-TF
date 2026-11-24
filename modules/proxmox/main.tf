@@ -238,6 +238,13 @@ write_files:
         - "audit-log-maxage=30"
         - "audit-log-maxbackup=10"
         - "audit-log-maxsize=100"
+        # Apiserver histograms that no rule or dashboard reads (vmagent already drops
+        # their _bucket series). k3s serves one shared registry on both :6443 and
+        # kubelet :10250 /metrics, and these nine are ~53% of it (6.2 of 11.7 MB);
+        # the body grows with uptime and passed vmagent's 16 MiB scrape limit on
+        # 2026-11-19. Kept: apiserver_request_duration_seconds (dashboards) and
+        # apiserver_request_sli_duration_seconds (burn-rate rules).
+        - "disabled-metrics=etcd_request_duration_seconds,apiserver_watch_events_dispatch_duration_seconds,apiserver_watch_list_duration_seconds,apiserver_storage_list_duration_seconds,apiserver_request_body_size_bytes,apiserver_response_sizes,apiserver_watch_cache_read_wait_seconds,apiserver_watch_cache_initialization_duration_seconds,apiserver_watch_events_sizes"
 
 runcmd:
   # Load the runtime attachment before K3s starts; container profiles stay enforced.

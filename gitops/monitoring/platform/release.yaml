@@ -91,9 +91,17 @@ spec:
     # apiserver job (~81k duplicate series). Drop those prefixes here; kubelet_*,
     # rest_client_*, storage and volume metrics stay. The list replaces the chart
     # default, so its three rules are repeated first.
+    #
+    # max_scrape_size: vmagent checks the raw response against its 16 MiB default
+    # BEFORE metricRelabelConfigs drop anything. Both k3s /metrics endpoints serve
+    # the same body, and it grows with uptime (apiserver histograms gain series for
+    # every new resource/verb pair): 11.8 MB just after boot, over 16 MiB after
+    # 12 days of uptime. From 2026-11-19 to 2026-11-24 both scrapes failed and no
+    # apiserver/kubelet metrics were stored. 48 MiB is ~3x the size at which it broke.
     kubelet:
       vmScrape:
         spec:
+          max_scrape_size: 48MiB
           metricRelabelConfigs:
             - action: labeldrop
               regex: (uid)
@@ -110,7 +118,10 @@ spec:
     # Kept: apiserver_request_sli_duration_seconds_bucket (burn-rate/availability
     # rules), workqueue_queue_duration_seconds_bucket (apiserver dashboard) and all
     # _count/_sum series. The endpoint list replaces the chart default, so it is
-    # repeated in full.
+    # repeated in full. All of these except apiserver_request_duration_seconds are
+    # also turned off at the source by the k3s `disabled-metrics` flag
+    # (modules/proxmox/main.tf, NODE_HOST_TUNING.md §3.7). The drop stays for nodes
+    # that don't have the flag yet.
     kubeApiServer:
       vmScrape:
         spec:
@@ -121,6 +132,8 @@ spec:
               tlsConfig:
                 caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
                 serverName: kubernetes
+              # Same body as kubelet /metrics; see the max_scrape_size note there.
+              max_scrape_size: 48MiB
               metricRelabelConfigs:
                 # k3s exposes kubelet metrics on this endpoint too. Keep the
                 # node scrape as their single source; here volume series get

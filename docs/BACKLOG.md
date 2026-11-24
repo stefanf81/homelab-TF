@@ -20,6 +20,7 @@ Git cannot show).
 | REL-08 | Automated k3s upgrades (system-upgrade-controller) and OS reboots (kured) | Open | Only after REL-01 and REL-02 | — |
 | HA-01 | 3-node HA (embedded etcd or Talos, API VIP, storage decision) | Open (long-term) | CIL-01/CIL-02 and WireGuard become relevant with a second node | — |
 | OBS-01 | Tracing backend: OTel Collector → Tempo instead of in-memory Jaeger | Open (long-term) | Jaeger all-in-one keeps 5000 traces in memory | `gitops/apps/taskflow/jaeger.yaml` |
+| OBS-02 | k3s `/metrics` body outgrows vmagent's scrape limit | Verify | `max_scrape_size: 48MiB` on the apiserver and kubelet scrapes is in Git (both failed from 2026-11-19 to 2026-11-24; the alerts that fired reached no one, see REL-01). New nodes also get `disabled-metrics` from the snippet. The running node needs `NODE_HOST_TUNING.md` §3.7 (one k3s restart), and the check there confirms the nine families are gone | `gitops/monitoring/platform/release.yaml`, `modules/proxmox/main.tf`, `NODE_HOST_TUNING.md` §3.7 |
 
 ## Security
 

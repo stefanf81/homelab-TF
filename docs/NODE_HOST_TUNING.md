@@ -126,7 +126,7 @@ invalidates its allocatable memory and leads to OOM kills.
 ### 3.1 In Terraform (new nodes)
 
 `modules/proxmox/main.tf` carries items 2, 4 and 8–15, and the kubelet memory eviction
-thresholds, `disable-helm-controller` and the API audit log of §3.7. The cloud-init snippet
+thresholds, `disable-helm-controller`, the API audit log and `disabled-metrics` of §3.7. The cloud-init snippet
 is in `ignore_changes` (`reports/REMEDIATION_PLAN_2026-10.md` REL-00), so it only
 reaches newly built nodes. The running node needs §3.2, the NIC change needs §3.3, and the
 k3s settings need §3.7.
@@ -364,12 +364,20 @@ findmnt -no OPTIONS /; cat /sys/kernel/mm/transparent_hugepage/enabled; ls -lh /
 Optional, same drop-in: `serializeImagePulls: false` and `maxParallelImagePulls: 3` for faster
 recovery when many images must be pulled.
 
-### 3.7 Memory and inode eviction, helm controller, API audit log, `fs.file-max` (one k3s restart)
+### 3.7 Memory and inode eviction, helm controller, API audit log, `disabled-metrics`, `fs.file-max` (one k3s restart)
 
-All four are in `modules/proxmox/main.tf` for new nodes. On the running node they need
+All five are in `modules/proxmox/main.tf` for new nodes. On the running node they need
 one k3s restart (~30–90 s without the API, pods keep running); do it in the same window
 as SEC-02 if that is still open. Copy the file contents from `modules/proxmox/main.tf`,
 which is the single source.
+
+`disabled-metrics` (OBS-02) turns off nine apiserver histograms that nothing reads. k3s
+serves a single metrics registry on both the apiserver (`:6443/metrics`) and the kubelet
+(`:10250/metrics`), and its size grows with uptime, because every new resource/verb pair
+adds histogram series. On 2026-11-19 it passed vmagent's 16 MiB limit, and both scrapes
+failed until the 2026-11-24 reboot. `max_scrape_size: 48MiB` in
+`gitops/monitoring/platform/release.yaml` stopped the failures. This flag shrinks the
+body itself, from 11.7 to about 5.5 MB just after boot.
 
 **Before.** What the kubelet uses today, whether anything still uses the helm controller,
 and how much room the scheduler has:
@@ -381,12 +389,15 @@ df -i /   # inode use: the new threshold fires below 5 % free (IFree/Inodes)
 sudo k3s kubectl get helmcharts.helm.cattle.io,helmchartconfigs.helm.cattle.io -A
 sudo k3s kubectl describe node "$N" | grep -A8 'Allocated resources'
 sysctl fs.file-max
+sudo k3s kubectl get --raw /metrics | wc -c   # metrics body size in bytes
+sudo k3s kubectl get --raw /metrics | grep -c '^etcd_request_duration_seconds_bucket'
 ```
 
 Expected: `evictionHard` has only `imagefs.available` and `nodefs.available` at 5 % (the k3s
 default, with **no** memory and **no** inode threshold); `df -i /` `IUse%` well below 95 %
 (otherwise the restart starts with DiskPressure: prune images first, `sudo k3s crictl rmi --prune`);
-no HelmChart objects; `fs.file-max = 2097152`.
+no HelmChart objects; `fs.file-max = 2097152`; a metrics body of 11–17 MB depending on uptime
+and some thousands of `etcd_request_duration_seconds_bucket` lines.
 The 200 Mi hard threshold lowers allocatable memory by 200 Mi: memory requests plus one
 backend surge pod (1536 Mi) must still fit, otherwise lower a request first.
 
@@ -436,6 +447,9 @@ sudo ls -lh /var/lib/rancher/k3s/server/logs/
 sudo tail -n 200 /var/lib/rancher/k3s/server/logs/audit.log | jq -r '[.level, .user.username, .verb, .objectRef.resource] | @tsv' | sort | uniq -c | sort -rn | head
 sudo journalctl -u k3s --since -5min | grep -c 'HelmChart'
 sysctl fs.file-max
+sudo k3s kubectl get --raw /metrics | wc -c
+sudo k3s kubectl get --raw /metrics | grep -cE '^(etcd_request_duration_seconds|apiserver_watch_events_dispatch_duration_seconds|apiserver_watch_list_duration_seconds|apiserver_storage_list_duration_seconds|apiserver_request_body_size_bytes|apiserver_response_sizes|apiserver_watch_cache_read_wait_seconds|apiserver_watch_cache_initialization_duration_seconds|apiserver_watch_events_sizes)_'
+sudo k3s kubectl get --raw /metrics | grep -c '^apiserver_request_sli_duration_seconds_bucket'
 ```
 
 Expected: `memory.available` 200Mi (hard) and 600Mi (soft), `nodefs.inodesFree` and
@@ -445,8 +459,15 @@ an `audit.log` that grows; `0` for the HelmChart count (k3s no longer starts tho
 log's size after a day (`ls -lh`): the top lines of the `uniq -c` output show who writes
 most, and a noisy, uninteresting writer gets a `level: None` rule in the policy (in
 `modules/proxmox/main.tf` first, then on the node).
+For `disabled-metrics`: a body of about 5.5 MB, `0` lines for the nine disabled families,
+and the SLI histogram still present (non-zero). The flag is only applied to metrics
+registered after the API server reads its flags. If any of the nine families still shows
+up, it was registered earlier in the shared k3s process: remove its name from the flag (in
+`main.tf` too), because the vmagent drop rule and `max_scrape_size` already cover it. In
+VictoriaMetrics, `scrape_response_size_bytes{job="apiserver"}` drops by the same amount,
+and `up{job=~"apiserver|kubelet"}` stays `1`.
 
-Rollback: delete `50-eviction.conf`, remove the two additions from `config.yaml`, put the
+Rollback: delete `50-eviction.conf`, remove the additions from `config.yaml`, put the
 `fs.file-max` line back, restart k3s. The HelmChart CRDs stay installed either way; with
 the controller off nothing acts on them.
 
