@@ -162,6 +162,8 @@ class ObservabilityConfigTest < Minitest::Test
     end
     scanned = spec.fetch('attestors').find { |a| a['name'] == 'scannedRelease' }
     assert_equal({ 'scan' => 'passed' }, scanned.dig('cosign', 'annotations'))
+    # The WAF package is private; Kyverno reads it with kyverno/ghcr-pull-secret.
+    assert_equal({ 'secrets' => ['ghcr-pull-secret'] }, spec['credentials'])
     assert_equal %w[https://slsa.dev/provenance/v1 https://cosign.sigstore.dev/attestation/vuln/v1],
                  spec.fetch('attestations').map { |a| a.dig('intoto', 'type') }
 

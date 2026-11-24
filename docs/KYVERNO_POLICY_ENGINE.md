@@ -228,8 +228,11 @@ is `https://github.com/stefanf81/homelab-TF/.github/workflows/publish-image.yaml
 It requires the cosign signature with `scan=passed`, the SLSA provenance and the Trivy scan
 attestation, the same three as the TaskFlow policies together. It is in `Audit` until both
 images have been republished (WAF `r15`, `abuseipdb-sync` `0.3.5-r10`) and their pins moved to
-the new digests; the earlier digests are unsigned. The WAFs pin the signed `r15`;
-`abuseipdb-sync` still pins the unsigned `0.3.5-r9`. Then switch it to `Deny` (§8). The config
+the new digests; the earlier digests are unsigned. Both pins are now on the signed revisions.
+Then switch it to `Deny` (§8). `taskflow-caddy-coraza` is a private GHCR package and Kyverno
+does not use the Pods' `imagePullSecrets`: the policy reads `kyverno/ghcr-pull-secret`, a
+hand-made copy of `taskflow/ghcr-pull-secret` (`gitops/FLUX_BOOTSTRAP.md` §3). Without it the
+WAF image cannot be verified, which under `Deny` refuses new WAF Pods. The config
 check also asserts that both build workflows call `publish-image.yaml` locally and that only
 its `promote` job holds `id-token: write`.
 
@@ -528,6 +531,7 @@ the provenance and the scan attestation.
 | No `KyvernoValidatingPolicy` results in `kubectl get policyreports -A` | Reports are generated asynchronously by the reports controller after its background scan (on policy change, then hourly). Wait ~1–2 min; if still empty, check `spec.evaluation.background.enabled` and `kubectl -n kyverno logs deploy/kyverno-reports-controller`. |
 | A policy doesn't seem to evaluate a namespace | Check its `matchConstraints.namespaceSelector` and the global resource filters (§4); `kubectl get validatingpolicy <name> -o yaml` shows `WebhookConfigured` and `RBACPermissionsGranted` in `status`. |
 | An image policy reports `fail` with `no matching attestations` or `signatures not found` | The digest was not published by `pushdockerimage.yml` from `main` (another branch, an older unsigned digest, or a run before the scan attestation existed). Check what is attached: `gh attestation verify oci://<image>@<digest> --repo stefanf81/taskflow-enterprise --cert-identity https://github.com/stefanf81/taskflow-enterprise/.github/workflows/pushdockerimage.yml@refs/heads/main`. |
+| `verify-homelab-images` fails for the WAF image with `401`/`UNAUTHORIZED` or `no matching attestations` while `abuseipdb-sync` passes | `kyverno/ghcr-pull-secret` is missing or its token expired: the WAF package is private. Recreate it with the read-only token (`gitops/FLUX_BOOTSTRAP.md` §3); Kyverno picks it up without a restart. |
 | An image policy reports an error fetching from `ghcr.io` or `tuf-repo-cdn.sigstore.dev` | Kyverno could not reach GHCR or the Sigstore TUF CDN; `kubectl -n kyverno logs deploy/kyverno-admission-controller`. With `failurePolicy: Ignore` the Pod is admitted and the background scan retries. |
 | A Flux Kustomization fails with `admission webhook "vpol.validate.kyverno.svc-…" denied the request` | A manifest breaks a Deny policy; the message names the containers or labels. Fix the manifest, or add a `PolicyException` (§5) if the exception is intended. |
 
