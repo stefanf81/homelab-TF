@@ -11,9 +11,10 @@
 # - pointing PGDATA at a new, empty directory makes the image initialise an empty
 #   database, and the backend's Flyway then builds an empty schema in it.
 # Renovate proposes the next major as an image-only change; this check keeps that
-# pull request red until it also migrates the data (dump with the old image and
-# restore with the new one in init containers, see the Git history of that file for
-# the 18 -> 19 upgrade).
+# pull request red until it also migrates the data: a dump with the old image and a
+# restore with the new one in init containers. Commit a948d20 (#77, 18 -> 19) is
+# the template: it adds the two init containers to postgres-db.yaml and moves the
+# image and PGDATA; a follow-up removes the init containers once the new major runs.
 #
 # Offline and read-only. Run: ruby scripts/check-postgres-major.rb
 require "yaml"
