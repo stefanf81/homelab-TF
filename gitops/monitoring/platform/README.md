@@ -44,8 +44,12 @@ number of writers on one node. These updates intentionally trade a short outage
 for exclusive storage access; Alloy configuration-only changes still hot-reload.
 
 Grafana's cookies are Secure with SameSite=Lax, preserving GitHub OAuth redirects.
-Existing dashboard public-sharing settings are unchanged and remain managed in
-Grafana independently of the GitHub login restriction.
+Public (externally shared) dashboards are switched off (`public_dashboards.enabled:
+false`): a shared dashboard would be served without a login, past the GitHub login
+restriction. This also stops serving any share created earlier in the UI.
+Grafana, Loki and Alloy send no usage statistics to Grafana Labs
+(`analytics.reporting_enabled: false`, Alloy `--disable-reporting`), and Grafana
+does not check grafana.com for new Grafana or plugin versions.
 
 ## Disk and log safety
 
