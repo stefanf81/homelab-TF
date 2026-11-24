@@ -22,11 +22,31 @@ spec:
     # proxying to aggregated APIs (metrics-server), and hostNetwork scrapes.
     - fromEntities:
         - host
-    # Cilium Gateway -> Grafana (grafana.jokelab.dev) and health checks.
+---
+# Cilium Gateway -> Grafana only (grafana.jokelab.dev, container port 3000).
+# This used to be a namespace-wide rule: the Gateway identity could reach every
+# pod here, so one HTTPRoute backendRef (or a route attached from another
+# namespace) would have published the unauthenticated VMSingle, Loki or Alloy
+# APIs. Grafana is the only Gateway backend in this namespace.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-gateway-to-grafana
+  namespace: monitoring
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+      app.kubernetes.io/instance: victoria-metrics-k8s-stack
+  ingress:
     - fromEndpoints:
         - matchExpressions:
             - key: reserved:ingress
               operator: Exists
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
 ---
 # The AbuseIPDB synchronizer ships Cloudflare Security Events to Loki directly:
 # the Loki pod's HTTP port 3100 (there is no nginx gateway in front of it). Its

@@ -116,16 +116,23 @@ data:
             # it. Empty for requests that were not rate limited.
             log_append rate_limit_zone {http.rate_limit.exceeded.name}
 
+            # Rule files come from the image (/usr/share/coraza), pinned by
+            # CRS_VERSION / CORAZA_CONF_VERSION in the image Dockerfile. No
+            # `load_owasp_crs`: that would resolve @-aliases from the bundle
+            # embedded in the connector (CRS 4.25.0, frozen upstream) instead.
             coraza_waf {
-                load_owasp_crs
-
                 directives `
-                    Include @coraza.conf-recommended
-                    Include @crs-setup.conf.example
+                    Include /usr/share/coraza/coraza.conf-recommended
+                    Include /usr/share/coraza/crs/crs-setup.conf.example
                     Include /etc/coraza/frontend-exclusions.conf
 
                     SecRuleEngine On
                     SecAction "id:1000001,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=2"
+                    # CRS 4.25 LTS ships the fix for GHSA-6jp8-c2w2-x7wr (attack
+                    # payloads in XML attribute values were not inspected) switched
+                    # off, to keep 4.25.0 behaviour; this turns it on. Drop the line
+                    # when moving to a CRS line that has no such switch (>= 4.28).
+                    SecAction "id:1000002,phase:1,pass,nolog,setvar:tx.crs_xml_attr_inspect=1"
 
                     SecRequestBodyAccess On
                     SecResponseBodyAccess Off
@@ -134,10 +141,19 @@ data:
                     SecAuditLogFormat JSON
                     SecAuditLogParts ABFHZ
 
-                    SecRequestBodyLimit 10485760
-                    SecRequestBodyNoFilesLimit 1048576
+                    # 64 KiB. Nothing legitimate sends a body to the static
+                    # site (the web app posts to /api only, which the Gateway
+                    # routes to the backend WAF). Reasons as in backend-waf.yaml:
+                    # the body is buffered and inspected in full before the
+                    # rate limiter is reached. (SecRequestBodyNoFilesLimit is
+                    # not set: Coraza does not enforce it.)
+                    SecRequestBodyLimit 65536
+                    # Must not exceed the limit above (Coraza refuses to start
+                    # otherwise; coraza.conf-recommended sets 128 KiB). Equal to
+                    # it, no body is ever written to /tmp.
+                    SecRequestBodyInMemoryLimit 65536
 
-                    Include @owasp_crs/*.conf
+                    Include /usr/share/coraza/crs/rules/*.conf
                 `
             }
 
@@ -162,19 +178,6 @@ data:
   frontend-exclusions.conf: |
     # No frontend CRS exclusions are configured initially.
     # Add only request-scoped exclusions after observing a legitimate false positive.
-
-    # Not an exclusion, but it has to load before the CRS like one: Coraza 3.8
-    # keeps the first 1000 arguments per source (query string, body) and drops
-    # the rest without a word. The @coraza.conf-recommended embedded in the
-    # connector predates that limit and has no rule for it, so a payload behind
-    # 1000 filler arguments was never shown to the CRS rules. Reject such
-    # requests, as rules 200004/200005 of the current coraza.conf-recommended do.
-    # Remove both once the Caddyfile includes that file from the image
-    # (/usr/share/coraza/coraza.conf-recommended carries them).
-    SecRule ARGUMENTS_LIMIT_REACHED "@eq 1" \
-        "id:1000004,phase:1,t:none,log,deny,status:400,msg:'Argument limit reached; request rejected (GET/PATH args)'"
-    SecRule ARGUMENTS_LIMIT_REACHED "@eq 1" \
-        "id:1000005,phase:2,t:none,log,deny,status:400,msg:'Argument limit reached; request rejected (POST args)'"
   rate-limit.conf: |
     # Frontend general zone: at most 180 requests per 60s per real client IP,
     # IPv6 grouped per /64. disable_metrics avoids per-IP Prometheus series.
@@ -240,7 +243,7 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: waf
-          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r13@sha256:f7b095a5f9489a6c36e8fa225578ca877102baedc0c0bc6194f9d9e6b862eabf
+          image: ghcr.io/stefanf81/taskflow-caddy-coraza:2.11.9-coraza2.6.2-r15@sha256:da94b8eea045e31c26304d5539852d6741df7627e64512f7c7f9f7c281cb5c9f
           imagePullPolicy: IfNotPresent
           env:
             # No CPU limit (below), so Go would size GOMAXPROCS for every node CPU.

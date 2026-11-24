@@ -44,6 +44,9 @@ kept = blocks.reject do |block|
   replaced.any? { |prefix| head.start_with?(prefix) }
 end
 abort "WAF source block not found in Alloy config" unless waf_forward
+backend_forward = blocks.find { |block| block.first.start_with?('loki.source.kubernetes "taskflow_backend"') }
+                        &.join("\n").to_s[/forward_to\s*=\s*(\[.*?\])/m, 1]
+abort "backend source block not found in Alloy config" unless backend_forward
 # The WAF metrics share the source's synchronous fan-out with the Loki write path.
 # Without the write-ahead log, an unreachable Loki stalls them once the in-memory
 # queue fills (a load larger than these fixtures), so keep it from being dropped.
@@ -95,5 +98,23 @@ text << <<~ALLOY
     forward_to = [loki.process.platform.receiver]
   }
 ALLOY
+# Backend console logs (plain and ECS JSON fixtures) through the backend source's real
+# fan-out, labelled like discovery labels a backend pod; one file = one pod stream.
+backend_targets = JSON.parse(File.read(truth_path)).fetch("backend").map do |fixture|
+  labels = { "__path__" => "/logs/#{fixture.fetch('filename')}", "job" => "taskflow-app", "application" => "taskflow-backend",
+             "namespace" => "taskflow", "pod" => "taskflow-backend-#{fixture.fetch('name')}", "container" => "backend",
+             "fixture_stream" => fixture.fetch("name") }
+  "{ " + labels.map { |key, value| "#{key} = #{value.to_json}" }.join(", ") + " }"
+end
+text << <<~ALLOY
+
+  local.file_match "backend_fixtures" {
+    path_targets = [#{backend_targets.join(",\n")},]
+  }
+  loki.source.file "backend_fixtures" {
+    targets    = local.file_match.backend_fixtures.targets
+    forward_to = #{backend_forward}
+  }
+ALLOY
 File.write(out, text)
-puts "test config: #{kept.length} blocks kept, WAF fan-out #{waf_forward.scan(/loki\.process\.(\w+)\.receiver/).flatten.join(', ')}"
+puts "test config: #{kept.length} blocks kept, WAF fan-out #{waf_forward.scan(/loki\.process\.(\w+)\.receiver/).flatten.join(', ')}, backend #{backend_forward.scan(/loki\.process\.(\w+)\.receiver/).flatten.join(', ')}"

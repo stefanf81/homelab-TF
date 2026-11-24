@@ -1,0 +1,65 @@
+# Jaeger v2 configuration, replacing the image's built-in all-in-one config.
+#
+# The built-in config also opens the Jaeger v1 receivers (14250, 14268, 6831/udp,
+# 6832/udp), Zipkin (9411), OTLP gRPC (4317), remote sampling (5778/5779),
+# expvar (27777), zpages (27778), Prometheus metrics (8888) and the query gRPC
+# API (16685), all on every interface. The backend exports OTLP over HTTP only
+# (application-prod.properties: http://jaeger:4318/v1/traces), so this file keeps
+# OTLP HTTP, the UI and health. Network policy already blocked the rest; now
+# nothing listens on them. Validated with the pinned image:
+#   docker run --rm -v "$PWD/config.yaml:/c.yaml:ro" jaegertracing/jaeger:2.23.0 validate --config=/c.yaml
+# Audit: taskflow-enterprise docs/deployment/jaeger-v2-audit.md.
+# Reloader restarts the Deployment when this ConfigMap changes.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jaeger-config
+  namespace: taskflow
+  labels:
+    app.kubernetes.io/name: jaeger
+    app.kubernetes.io/part-of: taskflow
+data:
+  config.yaml: |
+    service:
+      extensions: [jaeger_storage, jaeger_query, healthcheckv2]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [jaeger_storage_exporter]
+      telemetry:
+        metrics:
+          # Nothing scrapes Jaeger's own metrics; this also closes port 8888.
+          level: none
+    extensions:
+      jaeger_query:
+        storage:
+          traces: some_storage
+        # The UI; reached only through `kubectl port-forward svc/jaeger-ui`.
+        # The MCP endpoint (/api/ai/mcp/) of the built-in config is not enabled.
+        http:
+          endpoint: "0.0.0.0:16686"
+        # The query gRPC API defaults to :16685 on every interface; nothing uses it.
+        grpc:
+          endpoint: "localhost:16685"
+      jaeger_storage:
+        backends:
+          some_storage:
+            memory:
+              # Conservative trace cap; GOMEMLIMIT (jaeger.yaml) leaves headroom
+              # below the 256Mi limit.
+              max_traces: 5000
+      healthcheckv2:
+        use_v2: true
+        http:
+          endpoint: "0.0.0.0:13133"
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: "0.0.0.0:4318"
+    processors:
+      batch:
+    exporters:
+      jaeger_storage_exporter:
+        trace_storage: some_storage

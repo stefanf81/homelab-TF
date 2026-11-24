@@ -1,0 +1,127 @@
+# Ingress default-deny for the controller namespaces that infra-controllers creates
+# (kyverno, cert-manager, csi-proxmox). Their pods serve admission webhooks, health
+# and metrics ports only; without a policy every pod in the cluster can reach them.
+# Egress stays open, as in the other platform namespaces (SEC-04 tracks egress).
+# falco, trivy-system and reloader carry the same kind of policy next to their own
+# release, because their namespaces belong to their own Flux Kustomizations.
+#
+# Who calls what:
+# - Admission webhooks (kyverno :9443, cert-manager-webhook :10250) are called by
+#   the kube-apiserver. On k3s that is a host process, so with Cilium's kube-proxy
+#   replacement the connection arrives with the `host` identity of this node. The
+#   `kube-apiserver` entity is listed as well: it covers an API server on another
+#   node (HA-01), where the source would be `remote-node` carrying that label.
+# - Kubelet probes and `kubectl port-forward` also arrive as `host`. Cilium always
+#   admits the local host to local endpoints (allow-localhost=always under
+#   Kubernetes), so the `host` rules document the intent rather than open anything.
+# - Metrics are scraped by vmagent only.
+#
+# toPorts are container ports (policy is enforced after Service translation).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: kyverno-ingress-default-deny
+  namespace: kyverno
+spec:
+  endpointSelector: {}
+  ingress:
+    # Kubelet probes and admin `kubectl port-forward`.
+    - fromEntities:
+        - host
+    # Admission webhook calls (Service kyverno-svc :443 -> container :9443).
+    - fromEntities:
+        - host
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "9443"
+              protocol: TCP
+---
+# vmagent -> admission and reports controller metrics (VMServiceScrape `kyverno`).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-vmagent-to-kyverno
+  namespace: kyverno
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/instance: kyverno
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            "k8s:app.kubernetes.io/name": vmagent
+            "k8s:app.kubernetes.io/instance": victoria-metrics-k8s-stack
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cert-manager-ingress-default-deny
+  namespace: cert-manager
+spec:
+  endpointSelector: {}
+  ingress:
+    # Kubelet probes (controller :9403, webhook :6080) and `kubectl port-forward`.
+    - fromEntities:
+        - host
+---
+# Validating/mutating/conversion webhook calls from the kube-apiserver
+# (Service cert-manager-webhook :443 -> container :10250). The webhook has
+# failurePolicy Fail: if this is ever wrong, every Certificate/Issuer apply fails.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-apiserver-to-cert-manager-webhook
+  namespace: cert-manager
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: webhook
+      app.kubernetes.io/instance: cert-manager
+  ingress:
+    - fromEntities:
+        - host
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "10250"
+              protocol: TCP
+---
+# vmagent -> controller, cainjector and webhook metrics (VMServiceScrape `cert-manager`).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-vmagent-to-cert-manager
+  namespace: cert-manager
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/instance: cert-manager
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            "k8s:app.kubernetes.io/name": vmagent
+            "k8s:app.kubernetes.io/instance": victoria-metrics-k8s-stack
+      toPorts:
+        - ports:
+            - port: "9402"
+              protocol: TCP
+---
+# The CSI controller and node plugin talk to the kubelet and their sidecars over
+# unix sockets and expose no network port.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: csi-proxmox-ingress-default-deny
+  namespace: csi-proxmox
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEntities:
+        - host

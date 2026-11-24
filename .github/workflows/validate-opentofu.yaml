@@ -2,7 +2,9 @@ name: Validate OpenTofu
 
 # fmt, validate and tflint for the OpenTofu root and modules (no backend, no
 # credentials). Split from validate-gitops.yaml so it runs only when the OpenTofu
-# code or its tool pins change.
+# code or its tool pins change. Also runs scripts/check-tool-versions.sh: it reads
+# the k3s_version default from variables.tf, and validate-gitops.yaml (the other
+# place that runs it) does not trigger on *.tf.
 
 on:
   pull_request:
@@ -15,6 +17,7 @@ on:
       - '.tflint.hcl'
       - 'mise.toml'
       - 'scripts/tool-versions.sh'
+      - 'scripts/check-tool-versions.sh'
       - '.github/workflows/validate-opentofu.yaml'
   push:
     branches:
@@ -26,6 +29,7 @@ on:
       - '.tflint.hcl'
       - 'mise.toml'
       - 'scripts/tool-versions.sh'
+      - 'scripts/check-tool-versions.sh'
       - '.github/workflows/validate-opentofu.yaml'
 
 concurrency:
@@ -73,3 +77,7 @@ jobs:
       # Bundled terraform ruleset (see .tflint.hcl); needs no network.
       - name: Lint
         run: tflint --recursive --format compact
+
+      # A k3s minor bump in variables.tf must come with the matching kubectl in mise.toml.
+      - name: Check toolchain pins against the cluster
+        run: scripts/check-tool-versions.sh

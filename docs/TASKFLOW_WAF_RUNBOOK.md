@@ -19,8 +19,10 @@ The image is built automatically by
 `gitops/images/taskflow-caddy-coraza/` changes. The manual steps below are a
 fallback.
 
-The published tag should use the version and revision declared by
-`CADDY_VERSION`, `CORAZA_CADDY_VERSION`, and `IMAGE_REVISION` in the Dockerfile.
+The published tag should use the version and revision declared by the builder
+image tag (`FROM caddy:<version>-builder-alpine@sha256:…`), `CORAZA_CADDY_VERSION`,
+and `IMAGE_REVISION` in the Dockerfile. Both base images and the `# syntax=`
+frontend are pinned by tag and digest; Renovate moves tag and digest together.
 Increment `IMAGE_REVISION` when the image recipe changes without either upstream
 version changing; published revision tags must not be overwritten.
 `RATE_LIMIT_VERSION` pins the `mholt/caddy-ratelimit` module to an immutable
@@ -28,9 +30,17 @@ commit (no tagged release has the required options); Renovate does not track it,
 so move it by hand. Renovate's own Dockerfile updates (for example Caddy, the
 Coraza plugin or the distroless digest) bump `IMAGE_REVISION` themselves
 (`bumpVersions` in `.github/renovate.json`).
+`CRS_VERSION` and `CORAZA_CONF_VERSION` pin the rule files the image ships under
+`/usr/share/coraza` (OWASP CRS 4.25 LTS and Coraza's recommended configuration);
+Renovate tracks both. The WAF ConfigMaps `Include` those paths, so a ConfigMap
+that uses them needs an image from r15 on (r14 has no `/usr/share/coraza`): publish
+the image first, then change the ConfigMaps together with the Deployment pins (r15
+and later also still run the older `load_owasp_crs` ConfigMaps, so the pin can move
+first; the reverse, new ConfigMaps on an older image, fails at Caddy start).
 
-CI lints the Dockerfile (hadolint), builds the image, runs the identity and
-rate-limit suite in `gitops/images/taskflow-caddy-coraza/tests/` on every PR that
+CI lints the Dockerfile (hadolint), builds the image, runs the identity,
+rate-limit and false-positive regression suite in
+`gitops/images/taskflow-caddy-coraza/tests/` on every PR that
 touches the image directory or the workflow, fails on HIGH/CRITICAL Trivy findings
 that have a fix, and on `main` publishes through `.github/workflows/publish-image.yaml`:
 a cold build pushed by digest, Trivy again on that digest, then a cosign signature
@@ -41,7 +51,7 @@ tags are never overwritten. A changed Dockerfile recipe with an unchanged
 `IMAGE_REVISION` fails the run.
 
 Publishing does not deploy: both WAF Deployments pin `<tag>@sha256:<digest>`
-(currently `2.11.9-coraza2.6.2-r13`). Renovate is configured to track
+(currently `2.11.9-coraza2.6.2-r15`). Renovate is configured to track
 `ghcr.io/stefanf81/taskflow-caddy-coraza` in both manifests and propose the new
 pin; it can also be copied by hand from the build summary's `image:` line. Flux
 image automation does not manage this image (only `taskflow-frontend`/`taskflow-backend`).
@@ -76,7 +86,7 @@ publish only a revision CI has not published (bump `IMAGE_REVISION` first):
 ```bash
 # Tag <caddy>-coraza<coraza>-r<revision>, derived from the Dockerfile ARGs
 D=gitops/images/taskflow-caddy-coraza/Dockerfile
-IMAGE="ghcr.io/stefanf81/taskflow-caddy-coraza:$(sed -n 's/^ARG CADDY_VERSION=//p' "$D")-coraza$(sed -n 's/^ARG CORAZA_CADDY_VERSION=v//p' "$D")-$(sed -n 's/^ARG IMAGE_REVISION=//p' "$D")"
+IMAGE="ghcr.io/stefanf81/taskflow-caddy-coraza:$(sed -n 's/^FROM caddy:\([0-9.]*\)-builder-alpine@.*/\1/p' "$D")-coraza$(sed -n 's/^ARG CORAZA_CADDY_VERSION=v//p' "$D")-$(sed -n 's/^ARG IMAGE_REVISION=//p' "$D")"
 
 # Build for linux/amd64 (k3s node architecture)
 docker buildx build --platform linux/amd64 --load -t "$IMAGE" \
@@ -146,7 +156,17 @@ kubectl -n taskflow rollout status deployment/taskflow-frontend-waf --timeout=5m
 ```
 
 Verify the new rule set is live by sending a canary request that the new rule
-should match (or confirm fresh audit timestamps in Loki).
+should match (or confirm fresh audit timestamps in Loki). Every audit record names
+the CRS that evaluated it; after an image or rule-set change it must be the
+version the image ships (`CRS_VERSION`), never `OWASP_CRS/4.25.0` (the copy
+embedded in the connector, which the ConfigMaps no longer load):
+
+```bash
+for waf in backend frontend; do
+  kubectl -n taskflow logs "deploy/taskflow-$waf-waf" --since=1h \
+    | grep -o '"rulesets":\["OWASP_CRS/[0-9.]*' | sort | uniq -c
+done
+```
 
 ## Rate limiting
 
@@ -301,7 +321,7 @@ and that `403` Coraza blocks still occur (`is_interrupted:true` audit records).
 | `client_ip` in access logs is a `10.42.x.x`/peer address | The trusted proxy list does not match the actual Envoy source, so Caddy ignores XFF. Re-run Stage 0 and fix the peer entry in `trusted_proxies` (both ConfigMaps, Stage 1). |
 | Legitimate clients receive 429 | Limit too low for the workload (shared NAT/CGNAT, polling clients, large SPA reloads). Raise the zone `events` and observe; the 429 access logs include `client_ip`, path, host, and `rate_limit_zone`. |
 | 429s exist but every one has an empty `rate_limit_zone` | They come from the application/upstream, not the limiter (see the "Rejections by source" dashboard panel). |
-| `unrecognized directive: rate_limit` at startup | The pod runs an image without the module. Pin both WAF Deployments to a `taskflow-caddy-coraza` image with the module (r9 and later; Git pins r13). |
+| `unrecognized directive: rate_limit` at startup | The pod runs an image without the module. Pin both WAF Deployments to a `taskflow-caddy-coraza` image with the module (r9 and later; Git pins r15). |
 
 ## Empty WAF and rate-limit dashboards
 

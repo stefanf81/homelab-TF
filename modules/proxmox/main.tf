@@ -60,7 +60,6 @@ write_files:
       net.ipv4.ip_forward = 1
       fs.inotify.max_user_instances = 8192
       fs.inotify.max_user_watches = 524288
-      fs.file-max = 2097152
       fs.aio-max-nr = 1048576
       vm.swappiness = 1
       # PMTU black-hole recovery for host-namespace sockets (Envoy -> Cloudflare).
@@ -110,6 +109,99 @@ write_files:
       imageGCHighThresholdPercent: 75
       imageGCLowThresholdPercent: 65
 
+  # Memory and inode eviction. k3s's own drop-in (00-k3s-defaults.conf) sets
+  # evictionHard to only nodefs/imagefs.available 5 %. A partial map replaces the
+  # kubelet's whole default map (memory.available 100Mi, nodefs/imagefs.inodesFree
+  # 5 %, ...) instead of merging with it, and mergeDefaultEvictionSettings is only
+  # read from a --config file, which k3s does not pass. So without this file the
+  # kubelet never evicts for memory or for inodes: with pod memory limits at about
+  # twice allocatable the kernel OOM killer is the only safeguard, and a root ext4
+  # out of inodes fails every write while the disk still looks half empty.
+  # Drop-ins merge key by key, so the two disk thresholds stay as k3s sets them
+  # (the upstream 10 %/15 % would evict earlier on a disk that image GC already
+  # keeps below 75 %).
+  # Inodes: the upstream 5 % for both. Before evicting pods for inodes the kubelet
+  # deletes dead containers and unused images. containerfs.* cannot be set (the
+  # kubelet copies nodefs/imagefs). No soft inode threshold: inode use grows with
+  # images, not in bursts.
+  # Memory: soft first: below 600Mi for 90s, pods are stopped with up to 60s of
+  # their own grace period (Postgres checkpoints). Hard at 200Mi kills at once and
+  # is the only value that lowers allocatable; kept small so that a backend surge
+  # pod still schedules (docs/NODE_HOST_TUNING.md, host memory).
+  - path: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-eviction.conf
+    content: |
+      apiVersion: kubelet.config.k8s.io/v1beta1
+      kind: KubeletConfiguration
+      evictionHard:
+        memory.available: 200Mi
+        nodefs.inodesFree: 5%
+        imagefs.inodesFree: 5%
+      evictionSoft:
+        memory.available: 600Mi
+      evictionSoftGracePeriod:
+        memory.available: 1m30s
+      evictionMaxPodGracePeriod: 60
+
+  # API audit policy (SEC-15): who changed what through the API. Falco sees
+  # syscalls, not API calls. The first matching rule wins. Kept small on purpose:
+  # no reads except Secrets and exec, no request bodies except RBAC and admission
+  # webhooks, and none of the objects that controllers rewrite all day. An invalid
+  # file stops the API server, so change it only with the check in
+  # docs/NODE_HOST_TUNING.md §3.7.
+  - path: /etc/rancher/k3s/audit-policy.yaml
+    owner: root:root
+    permissions: '0600'
+    content: |
+      apiVersion: audit.k8s.io/v1
+      kind: Policy
+      omitStages: ["RequestReceived"]
+      rules:
+        # Probes, metrics and discovery.
+        - level: None
+          nonResourceURLs: ["/healthz*", "/livez*", "/readyz*", "/version", "/metrics", "/openapi/*", "/api", "/api/*", "/apis", "/apis/*"]
+        # Objects that are rewritten constantly and say nothing about who did what.
+        - level: None
+          resources:
+            - group: ""
+              resources: ["events", "endpoints", "nodes/status", "pods/status"]
+            - group: "events.k8s.io"
+            - group: "coordination.k8s.io"
+              resources: ["leases"]
+            - group: "discovery.k8s.io"
+              resources: ["endpointslices"]
+            - group: "authentication.k8s.io"
+              resources: ["tokenreviews"]
+            - group: "authorization.k8s.io"
+            - group: "cilium.io"
+              resources: ["ciliumendpoints", "ciliumendpoints/status", "ciliumendpointslices", "ciliumidentities", "ciliumnodes", "ciliumnodes/status"]
+        # The kubelet reads the Secrets of the pods it runs.
+        - level: None
+          userGroups: ["system:nodes"]
+          verbs: ["get", "list", "watch"]
+          resources:
+            - group: ""
+              resources: ["secrets"]
+        # Every other access to a Secret and every token request, without the content.
+        - level: Metadata
+          resources:
+            - group: ""
+              resources: ["secrets", "serviceaccounts/token"]
+        # Shells and tunnels into pods (exec is a GET, so it must come before the next rule).
+        - level: Metadata
+          resources:
+            - group: ""
+              resources: ["pods/exec", "pods/attach", "pods/portforward", "pods/ephemeralcontainers"]
+        # All remaining reads.
+        - level: None
+          verbs: ["get", "list", "watch"]
+        # Who may do what, and what intercepts requests: with the full object.
+        - level: RequestResponse
+          resources:
+            - group: "rbac.authorization.k8s.io"
+            - group: "admissionregistration.k8s.io"
+        # Every other write: who, what, when.
+        - level: Metadata
+
   # Declarative k3s server config (0600 root-only): keeps K3S_TOKEN out of
   # /proc/<pid>/cmdline and systemd ExecStart args, and safely JSON-escapes any
   # special characters in the token.
@@ -135,6 +227,17 @@ write_files:
       flannel-backend: "none"
       disable-network-policy: true
       disable-kube-proxy: true
+      # Flux installs every chart; with traefik disabled nothing creates a HelmChart
+      # object, so the embedded controller (and its cluster-admin install jobs) is unused.
+      disable-helm-controller: true
+      # API audit log (policy above). At most 10 x 100 MB, 30 days; the API server
+      # creates the directory itself.
+      kube-apiserver-arg:
+        - "audit-policy-file=/etc/rancher/k3s/audit-policy.yaml"
+        - "audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log"
+        - "audit-log-maxage=30"
+        - "audit-log-maxbackup=10"
+        - "audit-log-maxsize=100"
 
 runcmd:
   # Load the runtime attachment before K3s starts; container profiles stay enforced.

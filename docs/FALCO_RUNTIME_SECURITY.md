@@ -142,6 +142,30 @@ spec:
           prunebypriority: true
 ```
 
+### Privileges, priority and rules source
+
+Not shown in the excerpt above:
+
+* **No `privileged: true`.** `containerSecurityContext` adds `BPF`, `SYS_RESOURCE`,
+  `PERFMON` and `SYS_PTRACE` and sets the AppArmor profile to `Unconfined` (the
+  chart's `leastPrivileged` capability list, written with the `appArmorProfile`
+  field). The host mounts remain, so the namespace stays PSA `privileged`.
+* **`podPriorityClassName: system-cluster-critical`**: scheduled first and exempt
+  from kubelet eviction, without the OOM-killer immunity of `system-node-critical`.
+* **Rules come from the image, not from falcoctl.** `falcoctl.artifact.install` and
+  `.follow` are off; Falco loads the `falco_rules.yaml` and the `container` plugin
+  baked into its image (for 0.45.2 byte-identical to `falco-rules` 5.2.0 and
+  container plugin 0.7.6, the artifacts falcoctl downloaded) plus `customRules`.
+  A rules update is a chart/image bump in Git. To run a newer ruleset than the image ships, re-enable
+  `falcoctl.artifact.install` only, with an exact ref and digest
+  (`falcoctl.config.artifact.install.refs: [falco-rules:5.2.0@sha256:…]`) and
+  `falcoctl.artifact.install.resources`.
+
+Check after a change: `kubectl -n falco logs ds/falco -c falco | grep -iE 'opening|loaded|rules'`
+shows the modern eBPF probe opening and the rule files loading, and
+`kubectl -n falco exec ds/falco -c falco -- cat /proc/1/status | grep CapEff` is
+no longer `000001ffffffffff`.
+
 ### API-client noise tuning
 
 `customRules.homelab-api-clients.yaml` in the HelmRelease appends an exception to

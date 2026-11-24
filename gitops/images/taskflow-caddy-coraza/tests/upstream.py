@@ -47,7 +47,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     # Every method is echoed the same way; which ones may arrive is the WAF's
     # decision and what the tests assert.
-    do_POST = do_PUT = do_PATCH = do_DELETE = do_GET
+    do_POST = do_PUT = do_PATCH = do_DELETE = do_HEAD = do_GET
 
     def _send(self, status: int, payload) -> None:
         body = json.dumps(payload).encode()
@@ -55,7 +55,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def log_message(self, *args) -> None:
         pass

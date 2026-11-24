@@ -6,8 +6,39 @@ Europe/Brussels, then runs a single hardened Renovate executor for that
 repository. Every update is a pull request; Renovate never pushes to `main`
 directly. Digest and patch PRs are merged automatically once their CI checks
 pass (`automerge` in `.github/renovate.json`; Flux then rolls them out). Minor
-and major updates, and Gateway API bumps (which need a manual CRD bundle swap),
-stay manual.
+and major updates, Gateway API bumps (which need a manual CRD bundle swap) and the
+WAF rule set (OWASP CRS and the Coraza base config in the WAF image, also its
+patch releases: a new false positive blocks real users; see
+`docs/CORAZA_CONFIGURATION.md`, "False-positive regression test") stay manual.
+
+Three more kinds of update are never merged unattended:
+
+- **Images and OCI charts from registries without release timestamps** (GHCR,
+  Quay, gcr.io, registry.k8s.io: every docker source except Docker Hub). Renovate
+  cannot age them, so `minimumReleaseAge` would hold them forever; they are raised
+  without the 3-day wait (`minimumReleaseAgeBehaviour: timestamp-optional`, scoped
+  to these registries) and need a review. Their patch updates have their own group,
+  "patch updates without a release timestamp". Docker Hub reports when a tag was
+  pushed, so its updates keep the wait and the automerge. Every other datasource
+  keeps Renovate's default (`timestamp-required`): an update without a timestamp
+  waits on the Dependency Dashboard instead of skipping the wait.
+- **A digest-only change of a pinned GitHub Action** (group "GitHub Actions whose
+  tag was moved"). Every pin carries its full `# vX.Y.Z` comment, so this means the
+  tag was moved to another commit, and Renovate ages it against the tag's original
+  release date. Compare the two commits before merging.
+- **A new digest under an existing tag of the own images** (`abuseipdb-sync`,
+  `taskflow-caddy-coraza`). Their new revision tags are still merged unattended;
+  the workflow never overwrites a tag, so a changed digest means someone replaced it.
+
+`internalChecksFilter: "strict"` (Renovate's default, set explicitly) keeps a branch
+from being created before its wait has passed. These rules sit below the automerge
+rule in `.github/renovate.json`: Renovate applies `packageRules` in order and a later
+match overrides an earlier one.
+
+A k3s update PR (`k3s_version` in `variables.tf`, with the copies in
+`terraform.tfvars.example` and `README.md`) is a reminder, not a rollout: it only changes
+what a new node installs. Upgrade the running node first, re-pin the installer commit and
+checksum in `modules/proxmox/main.tf` in the same PR, then merge. It is never automerged.
 
 CI validates `.github/renovate.json` with `renovate-config-validator --strict`
 (`.github/workflows/validate-renovate.yaml`), using the Renovate version pinned in

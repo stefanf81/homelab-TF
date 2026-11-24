@@ -45,7 +45,14 @@ begin
   config = resource(alloy, "ConfigMap", "alloy").fetch("data").fetch("config.alloy")
   assert(config.include?("drop_malformed = true"), "audit parsing must fail closed")
   assert(!config.include?("$1=REDACTED"), "redaction must replace values, not names")
-  puts "  OK rendered Alloy: exclusive WAL writer, Helm tpl, audit safety guards"
+  container = deployment.dig("spec", "template", "spec", "containers").find { |c| c["name"] == "alloy" }
+  assert(container.fetch("args").include?("--disable-reporting"), "Alloy must not send usage statistics to Grafana Labs")
+  puts "  OK rendered Alloy: exclusive WAL writer, Helm tpl, audit safety guards, no usage reporting"
+
+  _, loki = render("gitops/monitoring/logging/loki-release.yaml", "gitops/monitoring/logging/repositories.yaml")
+  loki_config = YAML.safe_load(resource(loki, "ConfigMap", "loki").fetch("data").fetch("config.yaml"))
+  assert(loki_config.dig("analytics", "reporting_enabled") == false, "Loki must not send usage statistics to Grafana Labs")
+  puts "  OK rendered Loki: no usage reporting"
 
   release, stack = render("gitops/monitoring/platform/release.yaml", "gitops/monitoring/platform/repository.yaml")
   name = release.dig("metadata", "name")
@@ -85,7 +92,13 @@ begin
   metrics = ini[/^\[metrics\]\n(.*?)(?=^\[|\z)/m, 1].to_s
   assert(metrics.match?(/^enabled = false$/), "Grafana /metrics is reachable through the public HTTPRoute; keep it off (or authenticated)")
   assert(stack.none? { |d| d["kind"] == "VMServiceScrape" && d.dig("metadata", "name") == "#{name}-grafana" }, "do not scrape a disabled Grafana /metrics endpoint")
-  puts "  OK rendered stack: rule evaluator/write path, persistent bounded queue, SQLite rollout, secure cookies"
+  public_dashboards = ini[/^\[public_dashboards\]\n(.*?)(?=^\[|\z)/m, 1].to_s
+  assert(public_dashboards.match?(/^enabled = false$/), "public dashboards would serve dashboards and their data without a login")
+  analytics = ini[/^\[analytics\]\n(.*?)(?=^\[|\z)/m, 1].to_s
+  %w[reporting_enabled check_for_updates check_for_plugin_updates].each do |key|
+    assert(analytics.match?(/^#{key} = false$/), "Grafana analytics.#{key} must stay off (no calls to Grafana Labs)")
+  end
+  puts "  OK rendered stack: rule evaluator/write path, persistent bounded queue, SQLite rollout, secure cookies, no public dashboards or usage reporting"
 rescue StandardError => error
   warn error.message
   exit 1

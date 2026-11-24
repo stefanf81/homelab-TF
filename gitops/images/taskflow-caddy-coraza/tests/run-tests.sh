@@ -292,8 +292,54 @@ run_suite() { # waf
   [ "$g_allowed" -ge 1 ] && [ "$g_denied" -ge 1 ] \
     || fail "$waf: /waf-healthz through the Gateway is not rate limited"
 
+  # Request bodies that reach SecRequestBodyLimit (64 KiB) are refused with 413
+  # before the CRS inspects them (and so without counting against a rate-limit
+  # zone); 32 KiB, the largest body the application's own proxy accepts, is
+  # inspected and forwarded.
+  r="$(req "$podclient" -X POST --body-bytes 65536 "http://$envoy:8080/api/body")"
+  [ "$(json_field "$r" status)" = 413 ] \
+    || fail "$waf: a 64 KiB body was not refused with 413: $(json_field "$r" status)"
+  r="$(req "$podclient" -X POST --body-bytes 32768 "http://$envoy:8080/api/body")"
+  [ "$(json_field "$r" status)" = 200 ] \
+    || fail "$waf: a 32 KiB body was not forwarded: $(json_field "$r" status)"
+
   r="$(req "$podclient" "http://$envoy:8080/api?q=1%20UNION%20SELECT%201")"
   [ "$(json_field "$r" status)" = 403 ] || fail "$waf: Coraza did not block the SQLi test: $r"
+
+  say "$waf: rule set"
+  # The audit record of that block names the rule set that evaluated it. It
+  # must be the CRS the image ships under /usr/share/coraza (CRS_VERSION in the
+  # Dockerfile), not the frozen 4.25.0 bundle embedded in the connector: a
+  # Caddyfile that goes back to `load_owasp_crs` / `@owasp_crs` fails here.
+  local shipped_crs
+  shipped_crs="$(docker cp "$caddy:/usr/share/coraza/crs/rules/REQUEST-901-INITIALIZATION.conf" - \
+    | tar -xO | sed -n 's/^SecComponentSignature "\(OWASP_CRS\/[0-9.]*\)"$/\1/p')"
+  [ -n "$shipped_crs" ] || fail "$waf: the image ships no CRS under /usr/share/coraza"
+  case "$(docker logs "$caddy" 2>&1)" in
+    *"\"rulesets\":[\"$shipped_crs\"]"*) ;;
+    *) fail "$waf: the blocking rule set is not the shipped $shipped_crs" ;;
+  esac
+  printf 'rule set: %s\n' "$shipped_crs"
+
+  # Coraza keeps the first SecArgumentsLimit (1000) arguments per source and
+  # drops the rest. The base configuration must reject such a request (rules
+  # 200004/200005 of coraza.conf-recommended); otherwise a payload placed
+  # behind 1000 filler arguments is never shown to the CRS rules.
+  local filler
+  filler="$(python3 -c 'print("&".join(f"a{i}=1" for i in range(1000)))')"
+  r="$(req "$podclient" "http://$envoy:8080/api?$filler&q=1%20UNION%20SELECT%201")"
+  [ "$(json_field "$r" status)" = 400 ] \
+    || fail "$waf: a payload behind 1000 filler arguments was not rejected: $(json_field "$r" status)"
+
+  say "$waf: legitimate requests (false-positive regression)"
+  # Requests the app really sends must keep their answer when the rule set,
+  # the connector or a ConfigMap changes: PASS cases must reach the upstream,
+  # known false positives must stay 403 until someone decides otherwise
+  # (benign-corpus.py). This is what makes a CRS update safe to review from CI.
+  local corpus_rc=0
+  docker exec "$cb" python3 /srv/benign-corpus.py "$waf" "http://$edge:8080" || corpus_rc=$?
+  docker logs "$caddy" 2>/dev/null | python3 "$HERE/benign-corpus.py" --rules
+  [ "$corpus_rc" -eq 0 ] || fail "$waf: the WAF answered a legitimate request differently than pinned (see above)"
 
   if [ "$waf" = backend ]; then
     say "$waf: request methods"

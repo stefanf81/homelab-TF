@@ -155,6 +155,33 @@ hubble:
       - httpV2
 ```
 
+### mTLS certificates
+
+The agent's Hubble server and Relay talk mTLS with certificates issued from the
+`cilium-ca` Secret (`kube-system`). `hubble.tls.auto.method: cronJob` renews them: a
+`hubble-generate-certs-<hash>` Job whenever a chart install/upgrade changes the job
+spec, and the `hubble-generate-certs` CronJob at 03:17 on the 1st of every fourth
+month. Each run replaces `hubble-server-certs` and `hubble-relay-client-certs` with
+365-day certificates (Relay's own listener has no TLS here, so there are no Relay
+server or UI client certificates).
+
+The CA itself is **not** renewed. certgen v0.4.14 creates `cilium-ca` once with its
+default 3-year validity and reuses it afterwards, and the chart runs it with
+`--ca-enforce-validity-throughout-leaves-duration=true`: once the CA has less than
+365 days left (about two years after it was created), every run fails instead of
+issuing certificates that outlive the CA. Then rotate the CA: delete `cilium-ca`
+and start a run (below); it creates a new CA and new leaves, then restart Relay.
+
+```bash
+# Expiry of the server certificate and of the CA
+kubectl -n kube-system get secret hubble-server-certs -o jsonpath='{.data.tls\.crt}' \
+  | base64 -d | openssl x509 -noout -enddate
+kubectl -n kube-system get secret cilium-ca -o jsonpath='{.data.ca\.crt}' \
+  | base64 -d | openssl x509 -noout -enddate
+# Renew now
+kubectl -n kube-system create job --from=cronjob/hubble-generate-certs hubble-certs-$(date +%s)
+```
+
 ### Hubble metrics in Grafana (`Hubble Flows`)
 
 The Hubble metrics above are scraped by VictoriaMetrics (`hubble-metrics`
@@ -270,6 +297,11 @@ kubectl delete pod -n hubble-ui -l app.kubernetes.io/name=oauth2-proxy
 ~/bin/cilium status  # Check eBPF dataplane
 kubectl logs -n kube-system -l k8s-app=cilium --tail=20  # Check Cilium logs
 ```
+
+If Relay logs `x509: certificate has expired` (or `Failed to create peer client`),
+the mTLS certificates ran out: renew them as shown under
+[mTLS certificates](#mtls-certificates), then
+`kubectl -n kube-system rollout restart deploy/hubble-relay`.
 
 ### Hubble CLI connection refused
 

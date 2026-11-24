@@ -40,7 +40,7 @@ spec:
     # of it, so exposing /jaeger would leak full distributed traces (SQL, tokens, PII) to
     # anyone who can reach the Gateway. Reach it instead via:
     #   kubectl port-forward -n taskflow svc/jaeger-ui 16686:16686
-    # OTLP trace ingest (4317/4318) still flows backend -> jaeger internally; see
+    # OTLP trace ingest (HTTP, 4318) still flows backend -> jaeger internally; see
     # network-policy.yaml (restrict-jaeger-access).
 
     # Route default web traffic to the frontend service

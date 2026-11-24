@@ -58,7 +58,7 @@ Audit logs, access logs (including rate-limit 429s), and Coraza records from the
 |-----------|-----------|---------|---------|
 | Caddy | `taskflow` | 2.11.9 | HTTP server + reverse proxy |
 | Coraza (`coraza-caddy` plugin) | `taskflow` | v2.6.2 (plugin version) | WAF engine (OWASP ModSecurity compatible) |
-| OWASP CRS | `taskflow` | v4.25.0 | Core Rule Set for attack detection |
+| OWASP CRS | `taskflow` | v4.25.2 (4.25 LTS line; files in the image, `CRS_VERSION`) | Core Rule Set for attack detection |
 | caddy-ratelimit | `taskflow` | commit `5625512f24` | Sliding-window per-client HTTP rate limiting (429) |
 | Alloy | `monitoring` | 1.16.0 (chart) | Log collection agent |
 | Loki | `monitoring` | 21.4.1 (chart) | Log aggregation and storage |
@@ -100,8 +100,8 @@ Deployments pin `tag@digest`. The build, pin and manual-fallback procedures are 
 [`TASKFLOW_WAF_RUNBOOK.md` § Build the WAF image](TASKFLOW_WAF_RUNBOOK.md#build-the-waf-image).
 
 - **Repository**: `ghcr.io/stefanf81/taskflow-caddy-coraza`
-- **Tag**: `2.11.9-coraza2.6.2-r13`
-- **Digest**: `sha256:f7b095a5f9489a6c36e8fa225578ca877102baedc0c0bc6194f9d9e6b862eabf` (pinned in both WAF Deployments)
+- **Tag**: `2.11.9-coraza2.6.2-r15`
+- **Digest**: `sha256:da94b8eea045e31c26304d5539852d6741df7627e64512f7c7f9f7c281cb5c9f` (pinned in both WAF Deployments; signed and attested by `publish-image.yaml`)
 - **Dockerfile**: `gitops/images/taskflow-caddy-coraza/Dockerfile`
 - **Platform**: `linux/amd64` (k3s node architecture)
 - **Modules**: `github.com/corazawaf/coraza-caddy/v2@v2.6.2`, `github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db`
@@ -110,13 +110,14 @@ Deployments pin `tag@digest`. The build, pin and manual-fallback procedures are 
 
 The Dockerfile uses a multi-stage build:
 
-1. **Builder stage**: Uses `caddy:2.11.9-builder-alpine` to compile Caddy with the Coraza WAF plugin and the rate-limit plugin via `xcaddy` (`http.handlers.waf`, `http.handlers.rate_limit`)
+1. **Builder stage**: Uses `caddy:2.11.9-builder-alpine` (pinned by digest, from r15; the `# syntax=` frontend too) to compile Caddy with the Coraza WAF plugin and the rate-limit plugin via `xcaddy` (`http.handlers.waf`, `http.handlers.rate_limit`)
 2. **Runtime stage** (from r12): Based on `gcr.io/distroless/static-debian13:nonroot`, pinned by digest; copies the compiled static binary. The image has CA certificates, tzdata and `/etc/mime.types`, but no shell, package manager or `curl` (r11 and earlier were based on `caddy:<version>-alpine`)
 3. **Key steps**:
     - `XCADDY_SETCAP=0` in the builder — xcaddy sets no file capability on the binary (required for `allowPrivilegeEscalation: false`); the build fails if `getcap` finds one
     - Runs as the numeric distroless `nonroot` user (UID/GID 65532)
     - Stages `/data` and `/config` (owned by 65532) in the builder and sets `XDG_DATA_HOME` / `XDG_CONFIG_HOME`, as the official Caddy image does
     - Exposes port 8080
+    - Ships OWASP CRS and `coraza.conf-recommended` as root-owned files under `/usr/share/coraza` (from r15), copied from their Go modules at the versions `CRS_VERSION` / `CORAZA_CONF_VERSION` pin; the WAF ConfigMaps `Include` these files instead of the CRS 4.25.0 bundle embedded in the connector (`docs/CORAZA_CONFIGURATION.md` § "CRS version")
     - Raises `golang.org/x/net` with `xcaddy --replace` (from r13) above the version Caddy and the plugins require, for CVE-2026-78661; drop it once Caddy itself requires that version
 
 The build workflow lints the Dockerfile with hadolint, scans the test image with Trivy (HIGH/CRITICAL findings that have a fix fail the build, before any registry login) and publishes through the reusable `.github/workflows/publish-image.yaml`, which signs the image and attests its provenance and Trivy report (checked by the Kyverno policy `verify-homelab-images`).

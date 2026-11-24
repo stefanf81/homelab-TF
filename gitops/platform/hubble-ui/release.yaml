@@ -20,6 +20,10 @@ spec:
       remediateLastFailure: true
   values:
     replicaCount: 1
+    # The proxy never calls the Kubernetes API: no ServiceAccount token in an
+    # internet-facing pod (the chart applies this to the ServiceAccount and the pod).
+    serviceAccount:
+      automountServiceAccountToken: false
     # Single replica + chart default minAvailable: 1 blocks every node drain.
     podDisruptionBudget:
       enabled: false

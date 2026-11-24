@@ -70,6 +70,7 @@ Contains the custom configurations and Custom Resources (CRs) consumed by the co
 * **`cilium/ippool.yaml`**: Configures the LoadBalancer IP pool (`192.168.50.200 - 192.168.50.250`).
 * **`cilium/l2announcement-policy.yaml`**: Advertises LoadBalancer IPs locally via Layer 2 (ARP) using `CiliumL2AnnouncementPolicy`.
 * **`cilium/abuseipdb-ingress-deny.yaml`**: `CiliumClusterwideNetworkPolicy` that denies sources from runtime-managed `CiliumCIDRGroup/abuseipdb` at `reserved:ingress` for direct-to-origin traffic.
+* **`cilium/controller-namespaces-isolation.yaml`**: Ingress default-deny for `kyverno`, `cert-manager` and `csi-proxmox` (webhooks from the API server, metrics from vmagent, probes from the node). `falco`, `trivy-system` and `reloader` have a `network-policy.yaml` next to their release.
 * **`cilium/hubble-isolation.yaml`**: Locks down `hubble-ui` (`:8081`) and `hubble-relay` (`:4245`) in `kube-system` so in-cluster pods cannot bypass `hubble-ui-oauth2-proxy`.
 
 ### 3. `platform/` and `monitoring/`
