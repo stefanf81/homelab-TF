@@ -227,7 +227,7 @@ The certificate of a reusable workflow names the reusable workflow, so the one t
 is `https://github.com/stefanf81/homelab-TF/.github/workflows/publish-image.yaml@refs/heads/main`.
 It requires the cosign signature with `scan=passed`, the SLSA provenance and the Trivy scan
 attestation, the same three as the TaskFlow policies together. It is in `Deny` since both
-Deployments pin revisions published by that workflow (WAF `r15`, `abuseipdb-sync` `0.3.5-r10`),
+Deployments pin revisions published by that workflow (WAF `r17`, `abuseipdb-sync` `0.3.5-r12`),
 whose digests were checked to carry all three; the earlier digests are unsigned. `taskflow-caddy-coraza` is a private GHCR package and Kyverno
 does not use the Pods' `imagePullSecrets`: the policy reads `kyverno/ghcr-pull-secret`, a
 hand-made copy of `taskflow/ghcr-pull-secret` (`gitops/FLUX_BOOTSTRAP.md` §3). Without it the

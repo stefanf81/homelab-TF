@@ -100,8 +100,8 @@ Deployments pin `tag@digest`. The build, pin and manual-fallback procedures are 
 [`TASKFLOW_WAF_RUNBOOK.md` § Build the WAF image](TASKFLOW_WAF_RUNBOOK.md#build-the-waf-image).
 
 - **Repository**: `ghcr.io/stefanf81/taskflow-caddy-coraza`
-- **Tag**: `2.11.9-coraza2.6.2-r15`
-- **Digest**: `sha256:da94b8eea045e31c26304d5539852d6741df7627e64512f7c7f9f7c281cb5c9f` (pinned in both WAF Deployments; signed and attested by `publish-image.yaml`)
+- **Tag**: `2.11.9-coraza2.6.2-r17`
+- **Digest**: `sha256:64045e82ed8c77ebb0590bc297cd889d95e07cb706ffc2045c9d5fa466320073` (pinned in both WAF Deployments; signed and attested by `publish-image.yaml`)
 - **Dockerfile**: `gitops/images/taskflow-caddy-coraza/Dockerfile`
 - **Platform**: `linux/amd64` (k3s node architecture)
 - **Modules**: `github.com/corazawaf/coraza-caddy/v2@v2.6.2`, `github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db`

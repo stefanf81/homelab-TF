@@ -51,7 +51,7 @@ tags are never overwritten. A changed Dockerfile recipe with an unchanged
 `IMAGE_REVISION` fails the run.
 
 Publishing does not deploy: both WAF Deployments pin `<tag>@sha256:<digest>`
-(currently `2.11.9-coraza2.6.2-r15`). Renovate is configured to track
+(currently `2.11.9-coraza2.6.2-r17`). Renovate is configured to track
 `ghcr.io/stefanf81/taskflow-caddy-coraza` in both manifests and propose the new
 pin; it can also be copied by hand from the build summary's `image:` line. Flux
 image automation does not manage this image (only `taskflow-frontend`/`taskflow-backend`).
@@ -321,7 +321,7 @@ and that `403` Coraza blocks still occur (`is_interrupted:true` audit records).
 | `client_ip` in access logs is a `10.42.x.x`/peer address | The trusted proxy list does not match the actual Envoy source, so Caddy ignores XFF. Re-run Stage 0 and fix the peer entry in `trusted_proxies` (both ConfigMaps, Stage 1). |
 | Legitimate clients receive 429 | Limit too low for the workload (shared NAT/CGNAT, polling clients, large SPA reloads). Raise the zone `events` and observe; the 429 access logs include `client_ip`, path, host, and `rate_limit_zone`. |
 | 429s exist but every one has an empty `rate_limit_zone` | They come from the application/upstream, not the limiter (see the "Rejections by source" dashboard panel). |
-| `unrecognized directive: rate_limit` at startup | The pod runs an image without the module. Pin both WAF Deployments to a `taskflow-caddy-coraza` image with the module (r9 and later; Git pins r15). |
+| `unrecognized directive: rate_limit` at startup | The pod runs an image without the module. Pin both WAF Deployments to a `taskflow-caddy-coraza` image with the module (r9 and later; Git pins r17). |
 
 ## Empty WAF and rate-limit dashboards
 
