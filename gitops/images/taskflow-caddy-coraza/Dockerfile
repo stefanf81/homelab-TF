@@ -37,14 +37,14 @@ ARG CRS_VERSION=v4.25.2
 # coraza-caddy): the file may use directives a newer engine introduced.
 # renovate: datasource=go depName=github.com/corazawaf/coraza-coreruleset/coraza/v3
 ARG CORAZA_CONF_VERSION=v3.8.1
-ARG IMAGE_REVISION=r16
+ARG IMAGE_REVISION=r17
 
 # Tag and digest, like the runtime image below: the tag alone is rebuilt in
 # place (new Go patch release, Alpine updates), so the same Dockerfile could
 # produce a different binary. Written out instead of `caddy:${CADDY_VERSION}-…`
 # because Renovate replaces version and digest together only when both are on
 # this line; with the version in an ARG it could not move the tag.
-FROM caddy:2.11.9-builder-alpine@sha256:646fee578e680989ca5c7fd1ce6f1de574d19fd71ef2221810cc0510a9f40c86 AS builder
+FROM caddy:2.11.9-builder-alpine@sha256:86e132d1d6db8850352b2dbc15f82a4cb25363ac305ee41e11405873e5931f37 AS builder
 
 ARG CORAZA_CADDY_VERSION
 ARG RATE_LIMIT_VERSION
