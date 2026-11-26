@@ -11,7 +11,7 @@ spec:
   # Evaluated in Europe/Brussels by the operator's TZ environment variable.
   schedule: "17 3 * * *"
   # Tag and digest: Renovate bumps both; validate-renovate.yaml reads the tag.
-  image: renovate/renovate:44.259.0@sha256:63bec0c6e61553bf30c623f4ebe7e6ae087118c050288f9d47f9a6ab0f8f9bfe
+  image: renovate/renovate:44.263.5@sha256:9806d1b444f2b0b57d7c3b882d453b99c7494db07689c2e1abed8e6ae502b271
   provider:
     name: github
   discoveryFilters:

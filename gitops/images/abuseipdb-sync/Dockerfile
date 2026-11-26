@@ -9,7 +9,7 @@
 # old version next to the new image.
 ARG GO_IMAGE=golang:1.27.4-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280
 ARG APP_VERSION=0.3.5
-ARG IMAGE_REVISION=r11
+ARG IMAGE_REVISION=r12
 
 FROM ${GO_IMAGE} AS build
 ENV GOTOOLCHAIN=local
