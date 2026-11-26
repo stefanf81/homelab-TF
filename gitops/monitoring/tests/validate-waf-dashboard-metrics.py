@@ -4,7 +4,7 @@
 No cluster access or external TSDB URL is accepted: fixture imports and flushes
 only target the disposable process/container created here. Requires Python 3 and
 Docker, or VM_BINARY pointing to a local VictoriaMetrics executable.
-VM_IMAGE defaults to the VMSingle image bundled with stack chart 0.98.1; use the
+VM_IMAGE defaults to the VMSingle image bundled with stack chart 0.99.0; use the
 same version when supplying VM_BINARY.
 """
 import json
@@ -48,7 +48,7 @@ def resolve_vm_image():
         vm = YAML.load_stream(out).compact.find { |d| d["kind"] == "VMSingle" }
         img = vm.dig("spec", "image") || {}
         repo_name = img["repository"] || "victoriametrics/victoria-metrics"
-        tag = img["tag"] || "v1.156.0"
+        tag = img["tag"] || "v1.157.0"
         print "#{repo_name}:#{tag}"
       end
     """
