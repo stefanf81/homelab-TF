@@ -9,7 +9,7 @@
 # old version next to the new image.
 ARG GO_IMAGE=golang:1.27.4-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280
 ARG APP_VERSION=0.3.5
-ARG IMAGE_REVISION=r10
+ARG IMAGE_REVISION=r11
 
 FROM ${GO_IMAGE} AS build
 ENV GOTOOLCHAIN=local
@@ -26,7 +26,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
 # 2026-08-11). Pinned by digest, so a rebuild gets the same base; Renovate
 # updates the digest when the nonroot tag moves (and bumps IMAGE_REVISION). It
 # does not propose the next Debian line: move to -debianNN by hand when it ships.
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:aafe993665bf6200db38a02c11a9351e782a84b6a45e7f33b6695638c88e3931
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:8ce6dd87e9823c5b48dcfb2c8604714ccb351ce59607327bcc4957448da279b5
 COPY --from=build /out/abuseipdb-sync /usr/local/bin/abuseipdb-sync
 USER 65532:65532
 EXPOSE 8080
