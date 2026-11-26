@@ -18,8 +18,8 @@ spec:
   # Deny: both Deployments pin revisions published by publish-image.yaml, and
   # their digests were checked to carry the signature with scan=passed, the
   # provenance and the scan attestation from that workflow on main
-  # (taskflow-caddy-coraza r15 sha256:da94b8ee..., publish run 45261315847;
-  # abuseipdb-sync 0.3.5-r10 sha256:bd187b59..., checked on GHCR). The WAF image
+  # (taskflow-caddy-coraza r17 sha256:64045e82..., publish run 45796565234;
+  # abuseipdb-sync 0.3.5-r12 sha256:6ff5a3ed..., publish run 45796565318). The WAF image
   # is private, so this depends on kyverno/ghcr-pull-secret (credentials below).
   # Digests published before 2026-11-23 (WAF r13 and older, abuseipdb-sync
   # 0.3.5-r9 and older) are unsigned: set this back to [Audit] before rolling
